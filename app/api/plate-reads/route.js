@@ -5,7 +5,7 @@ import {
 } from "@/lib/db";
 import { sendPushoverNotification } from "@/lib/notifications";
 import { sendMqttNotificationByPlate } from "@/lib/mqtt-client";
-import { getAuthConfig } from "@/lib/auth";
+import { requireApiKey } from "@/lib/auth";
 import { getConfig } from "@/lib/settings";
 import { revalidatePlatesPage } from "@/app/actions";
 import { revalidatePath } from "next/cache";
@@ -157,13 +157,12 @@ export async function POST(req) {
     console.log("Received plate read data:", data);
 
     const apiKey = req.headers.get("x-api-key");
-    if (!apiKey) {
-      return Response.json({ error: "API key is required" }, { status: 401 });
-    }
-
-    const authConfig = await getAuthConfig();
-    if (apiKey !== authConfig.apiKey) {
-      return Response.json({ error: "Invalid API key" }, { status: 401 });
+    const apiKeyResult = await requireApiKey(apiKey);
+    if (!apiKeyResult.ok) {
+      return Response.json(
+        { error: apiKeyResult.error },
+        { status: apiKeyResult.status }
+      );
     }
 
     // Initialize common values

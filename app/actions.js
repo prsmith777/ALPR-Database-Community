@@ -63,6 +63,7 @@ import {
 
 import { revalidatePath, revalidateTag, unstable_noStore } from "next/cache";
 import { cookies, headers } from "next/headers";
+import { getSessionCookieOptions } from "@/lib/cookies";
 import { redirect } from "next/navigation";
 import crypto from "crypto";
 import { createHash } from "crypto";
@@ -743,13 +744,14 @@ export async function loginAction(formData) {
     console.log("Created session ID:", sessionId);
 
     const cookieStore = await cookies();
-    cookieStore.set("session", sessionId, {
-      // httpOnly: true,
-      secure: false,
-      sameSite: "lax",
-      maxAge: SESSION_EXPIRATION_SECONDS,
-      path: "/",
-    });
+    cookieStore.set(
+      "session",
+      sessionId,
+      getSessionCookieOptions({
+        // httpOnly: true,
+        maxAge: SESSION_EXPIRATION_SECONDS,
+      })
+    );
 
     return { success: true };
   } catch (error) {
@@ -777,13 +779,14 @@ export async function logoutAction() {
     await invalidateSession(sessionId);
   }
 
-  cookieStore.set("session", "", {
-    // httpOnly: true,
-    secure: false,
-    sameSite: "lax",
-    maxAge: 0,
-    path: "/",
-  });
+  cookieStore.set(
+    "session",
+    "",
+    getSessionCookieOptions({
+      // httpOnly: true,
+      maxAge: 0,
+    })
+  );
 
   redirect("/login");
 }

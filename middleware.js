@@ -1,4 +1,4 @@
-import { NextResponse } from "next/server";
+import { NextResponse } from "next/server.js";
 
 export const config = {
   matcher: ["/((?!_next/static|_next/image|favicon.ico|grid.svg).*)"],
@@ -14,10 +14,10 @@ export async function middleware(request) {
     "/_next",
     "/favicon.ico",
     "/api/plate-reads",
+    "/api/plates",
     "/api/verify-session",
     "/api/health-check",
     "/api/verify-key",
-    "/api/verify-whitelist",
     "/api/check-update",
     "/api/test",
     "/update",
@@ -122,37 +122,9 @@ export async function middleware(request) {
 
   // For all other protected routes, check authentication
   if (!sessionId) {
-    // Now this check should correctly reflect if a session ID was found
     console.log(
-      "No session ID found in cookie. Checking IP whitelist or redirecting to login."
+      "No session ID found in cookie. Redirecting to login; IP whitelist middleware authentication is disabled."
     );
-    // Check IP whitelist (existing logic, kept as is)
-    try {
-      const isWhitelistedIpResponse = await fetch(
-        new URL("/api/verify-whitelist", request.url),
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            ip: request.ip,
-            headers: Object.fromEntries(request.headers),
-          }),
-          signal: AbortSignal.timeout(5000),
-        }
-      );
-
-      if (isWhitelistedIpResponse.ok) {
-        const isWhitelistedIp = (await isWhitelistedIpResponse.json()).allowed;
-        if (isWhitelistedIp) {
-          console.log("IP whitelisted, allowing access.");
-          return NextResponse.next();
-        }
-      }
-    } catch (error) {
-      console.error("IP whitelist check error:", error);
-    }
-
-    console.log("No session or IP not whitelisted, redirecting to /login.");
     return NextResponse.redirect(new URL("/login", request.url));
   }
 

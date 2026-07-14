@@ -119,6 +119,18 @@ irm https://raw.githubusercontent.com/algertc/ALPR-Database/main/install.ps1 | i
 
 ## ⚙️ Setup
 
+### Session Cookie Security
+
+Session cookie protocol security is controlled explicitly with `SESSION_COOKIE_SECURE`:
+
+- Set `SESSION_COOKIE_SECURE=true` when the browser connects over HTTPS, including trusted reverse-proxy deployments that terminate TLS before forwarding to the app.
+- Set `SESSION_COOKIE_SECURE=false` for direct LAN HTTP deployments, such as the default Docker setup exposed on port 3000 without HTTPS.
+- If `SESSION_COOKIE_SECURE` is not configured, cookies remain compatible with the existing direct-HTTP Docker deployment. Production mode alone is not treated as proof that the browser is using HTTPS.
+
+IP-based middleware authentication is temporarily disabled. The existing whitelist settings and endpoint remain for compatibility, but forwarded headers such as `X-Forwarded-For` are not trusted to grant browser or API access until a separate trusted-proxy design can verify the immediate network peer. Use session login for browser access and API keys for integrations.
+
+<br>
+
 ### Get Your API Key
 
 To start sending data, log in to the application and **navigate to settings -> security** in the bottom left hand corner. At the bottom of the page you should see an API key. Click the eye to reveal the key and copy it down for use in Blue Iris.
