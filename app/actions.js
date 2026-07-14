@@ -75,6 +75,8 @@ import {
   hashPasswordBcrypt, // New export to create a bcrypt hash
   getAuthConfig, // Need this to update config
   updateAuthConfig, // Need this to save updated config
+  getSessionCookieOptions,
+  getSessionCookieDeletionOptions,
 } from "@/lib/auth";
 import { formatTimeRange } from "@/lib/utils";
 import path from "path";
@@ -703,8 +705,6 @@ export async function updateNotificationPriority(formData) {
   }
 }
 
-const SESSION_EXPIRATION_SECONDS = 24 * 60 * 60;
-
 export async function loginAction(formData) {
   console.log("Attempting login...");
   const password = formData.get("password");
@@ -743,13 +743,8 @@ export async function loginAction(formData) {
     console.log("Created session ID:", sessionId);
 
     const cookieStore = await cookies();
-    cookieStore.set("session", sessionId, {
-      // httpOnly: true,
-      secure: false,
-      sameSite: "lax",
-      maxAge: SESSION_EXPIRATION_SECONDS,
-      path: "/",
-    });
+    const isHttps = headersList.get("x-forwarded-proto") === "https";
+    cookieStore.set("session", sessionId, getSessionCookieOptions({ isHttps }));
 
     return { success: true };
   } catch (error) {
@@ -777,13 +772,9 @@ export async function logoutAction() {
     await invalidateSession(sessionId);
   }
 
-  cookieStore.set("session", "", {
-    // httpOnly: true,
-    secure: false,
-    sameSite: "lax",
-    maxAge: 0,
-    path: "/",
-  });
+  const headersList = await headers();
+  const isHttps = headersList.get("x-forwarded-proto") === "https";
+  cookieStore.set("session", "", getSessionCookieDeletionOptions({ isHttps }));
 
   redirect("/login");
 }

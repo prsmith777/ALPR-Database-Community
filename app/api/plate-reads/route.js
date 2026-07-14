@@ -5,7 +5,7 @@ import {
 } from "@/lib/db";
 import { sendPushoverNotification } from "@/lib/notifications";
 import { sendMqttNotificationByPlate } from "@/lib/mqtt-client";
-import { getAuthConfig } from "@/lib/auth";
+import { authorizeApiRequest } from "@/lib/auth";
 import { getConfig } from "@/lib/settings";
 import { revalidatePlatesPage } from "@/app/actions";
 import { revalidatePath } from "next/cache";
@@ -153,18 +153,21 @@ export async function POST(req) {
   let dbClient = null;
 
   try {
+    const auth = await authorizeApiRequest(req);
+    if (!auth.ok) {
+      return Response.json(
+        {
+          error:
+            auth.status === 503
+              ? "Authentication temporarily unavailable"
+              : "Unauthorized",
+        },
+        { status: auth.status }
+      );
+    }
+
+    console.log("Received authenticated plate-read request");
     const data = await req.json();
-    console.log("Received plate read data:", data);
-
-    const apiKey = req.headers.get("x-api-key");
-    if (!apiKey) {
-      return Response.json({ error: "API key is required" }, { status: 401 });
-    }
-
-    const authConfig = await getAuthConfig();
-    if (apiKey !== authConfig.apiKey) {
-      return Response.json({ error: "Invalid API key" }, { status: 401 });
-    }
 
     // Initialize common values
     const timestamp = data.timestamp || new Date().toISOString();
@@ -208,10 +211,7 @@ export async function POST(req) {
           }));
         }
       } catch (error) {
-        console.error(
-          "Malformed data from Blue Iris. Your JSON macro is missing the required properties from codeproject. Please update your AI to the newest ALPR model or use plate instead of json macro.",
-          error
-        );
+        console.error("Malformed plate-read AI payload");
         return Response.json(
           {
             error:
@@ -413,14 +413,8 @@ export async function POST(req) {
       { status: processedPlates.length > 0 ? 201 : 409 }
     );
   } catch (error) {
-    console.error("Error processing request:", error);
-    return Response.json(
-      {
-        error: "Internal server error",
-        details: error.message,
-      },
-      { status: 500 }
-    );
+    console.error("Error processing authenticated plate-read request");
+    return Response.json({ error: "Internal server error" }, { status: 500 });
   } finally {
     if (dbClient) {
       dbClient.release();
