@@ -12,14 +12,14 @@ export async function POST(req) {
   } catch (initError) {
     console.error(
       "Auth initialization failed in /api/verify-session:",
-      initError
+      initError,
     );
     return new NextResponse(
       JSON.stringify({
         valid: false,
         message: "Authentication system initialization error",
       }),
-      { status: 500 }
+      { status: 503 },
     );
   }
 
@@ -29,7 +29,7 @@ export async function POST(req) {
     if (!sessionId) {
       return new NextResponse(
         JSON.stringify({ valid: false, message: "Session ID is required" }),
-        { status: 400 }
+        { status: 400 },
       );
     }
 
@@ -41,7 +41,7 @@ export async function POST(req) {
         valid: isValid,
         sessionInfo: sessionInfo,
       }),
-      { status: 200 }
+      { status: 200 },
     );
   } catch (error) {
     console.error("Error in /api/verify-session:", error);
@@ -51,7 +51,7 @@ export async function POST(req) {
         valid: false,
         message: "Internal server error during session verification",
       }),
-      { status: 500 }
+      { status: 503 },
     );
   }
 }

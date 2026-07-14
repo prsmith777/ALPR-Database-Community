@@ -1,228 +1,189 @@
-import { NextResponse } from "next/server";
+import { NextResponse } from "next/server.js";
+import {
+  logSafeRequest,
+  getSessionCookieDeleteOptions,
+} from "./lib/security.js";
+import {
+  getHeaderApiKey,
+  hasQueryApiKey,
+  isProtectedApiPath,
+  jsonAuthError,
+  verificationFailureStatus,
+  SESSION_VERIFY_TIMEOUT_MS,
+  API_KEY_VERIFY_TIMEOUT_MS,
+} from "./lib/authz.js";
 
 export const config = {
   matcher: ["/((?!_next/static|_next/image|favicon.ico|grid.svg).*)"],
   runtime: "nodejs",
 };
 
+const publicPaths = [
+  "/_next",
+  "/favicon.ico",
+  "/api/plate-reads",
+  "/api/verify-session",
+  "/api/health-check",
+  "/api/verify-key",
+  "/api/verify-whitelist",
+  "/api/check-update",
+  "/api/test",
+  "/update",
+  "/180.png",
+  "/512.png",
+  "/192.png",
+  "/1024.png",
+  "/grid.svg",
+  "/manifest.webmanifest",
+];
+
+function clearSession(response) {
+  response.cookies.set("session", "", getSessionCookieDeleteOptions());
+  return response;
+}
+
+function redirectToLogin(request) {
+  return clearSession(NextResponse.redirect(new URL("/login", request.url)));
+}
+
+function apiAuthError(status, message) {
+  return jsonAuthError(status, message);
+}
+
+async function verifyApiKeyWithService(request, apiKey) {
+  const response = await fetch(new URL("/api/verify-key", request.url), {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ apiKey }),
+    signal: AbortSignal.timeout(API_KEY_VERIFY_TIMEOUT_MS),
+  });
+
+  if (!response.ok) {
+    return { valid: false, status: verificationFailureStatus(response.status) };
+  }
+
+  const result = await response.json();
+  return {
+    valid: result?.valid === true,
+    status: result?.valid === true ? 200 : 401,
+  };
+}
+
+async function verifySessionWithService(request, sessionId) {
+  const response = await fetch(new URL("/api/verify-session", request.url), {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ sessionId }),
+    signal: AbortSignal.timeout(SESSION_VERIFY_TIMEOUT_MS),
+  });
+
+  if (!response.ok) {
+    return { valid: false, status: verificationFailureStatus(response.status) };
+  }
+
+  const result = await response.json();
+  return {
+    valid: result?.valid === true,
+    status: result?.valid === true ? 200 : 401,
+  };
+}
+
 export async function middleware(request) {
-  console.log(
-    `${request.method} ${request.nextUrl.pathname}${request.nextUrl.search}`
-  );
+  logSafeRequest(request);
 
-  const publicPaths = [
-    "/_next",
-    "/favicon.ico",
-    "/api/plate-reads",
-    "/api/verify-session",
-    "/api/health-check",
-    "/api/verify-key",
-    "/api/verify-whitelist",
-    "/api/check-update",
-    "/api/test",
-    "/update",
-    "/180.png",
-    "/512.png",
-    "/192.png",
-    "/1024.png",
-    "/grid.svg",
-    "/manifest.webmanifest",
-  ];
+  const pathname = request.nextUrl.pathname;
 
-  const url = new URL(request.url);
-  const queryApiKey = url.searchParams.get("api_key");
+  if (hasQueryApiKey(request.url)) {
+    return isProtectedApiPath(pathname)
+      ? apiAuthError(401, "Query-string API keys are not accepted")
+      : redirectToLogin(request);
+  }
 
-  if (queryApiKey) {
+  if (isProtectedApiPath(pathname)) {
+    const apiKey = getHeaderApiKey(request.headers);
+    if (apiKey) {
+      try {
+        const result = await verifyApiKeyWithService(request, apiKey);
+        if (result.valid) {
+          return NextResponse.next();
+        }
+        return apiAuthError(
+          result.status,
+          result.status === 503
+            ? "Authentication service unavailable"
+            : "Unauthorized",
+        );
+      } catch (error) {
+        console.error("API key verification failed");
+        return apiAuthError(503, "Authentication service unavailable");
+      }
+    }
+  }
+
+  if (publicPaths.some((path) => pathname.startsWith(path))) {
+    return NextResponse.next();
+  }
+
+  const sessionId = request.cookies.get("session")?.value || null;
+
+  if (pathname === "/login") {
+    if (!sessionId) return NextResponse.next();
+
     try {
-      const response = await fetch(new URL("/api/verify-key", request.url), {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ apiKey: queryApiKey }),
-        signal: AbortSignal.timeout(5000),
-      });
-
-      const result = await response.json();
+      const result = await verifySessionWithService(request, sessionId);
       if (result.valid) {
-        const res = NextResponse.next();
-        res.headers.set("x-api-key", queryApiKey);
-        return res;
+        return NextResponse.redirect(new URL("/", request.url));
       }
+      return clearSession(NextResponse.next());
     } catch (error) {
-      console.error("API key verification error:", error);
+      console.error("Session verification failed on login page");
+      return clearSession(NextResponse.next());
     }
   }
 
-  if (publicPaths.some((path) => request.nextUrl.pathname.startsWith(path))) {
-    if (request.nextUrl.pathname === "/api/plates") {
-      const authHeader = request.headers.get("Authorization");
-      if (!authHeader || !authHeader.startsWith("Bearer ")) {
-        return new Response("Unauthorized", { status: 401 });
-      }
-      const apiKey = authHeader.replace("Bearer ", "");
-      try {
-        const response = await fetch(new URL("/api/verify-key", request.url), {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ apiKey }),
-          signal: AbortSignal.timeout(5000),
-        });
-        if (!response.ok) {
-          return new Response("Invalid API Key", { status: 401 });
-        }
-      } catch (error) {
-        console.error("Auth verification error:", error);
-        return new Response("Internal Server Error", { status: 500 });
-      }
-    }
-    return NextResponse.next();
-  }
-
-  // --- REFINED SESSION COOKIE CHECK ---
-  const sessionCookie = request.cookies.get("session");
-  const sessionId = sessionCookie ? sessionCookie.value : null; // Explicitly get value or null
-
-  console.log(
-    `Middleware checking path: ${request.nextUrl.pathname}, Session ID from cookie: ${sessionId}`
-  );
-
-  // SPECIAL HANDLING FOR LOGIN PAGE
-  if (request.nextUrl.pathname === "/login") {
-    if (sessionId) {
-      // Check if sessionId exists
-      try {
-        const response = await fetch(
-          new URL("/api/verify-session", request.url),
-          {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ sessionId }), // Pass sessionId directly
-            signal: AbortSignal.timeout(5000),
-          }
-        );
-
-        if (response.ok) {
-          const result = await response.json();
-          if (result.valid) {
-            console.log(
-              "Authenticated user accessing login, redirecting to home"
-            );
-            return NextResponse.redirect(new URL("/", request.url));
-          }
-          return NextResponse.next();
-        }
-      } catch (error) {
-        console.error("Session verification error on login page:", error);
-        const res = NextResponse.next();
-        res.cookies.delete("session"); // Clear potentially invalid session
-        return res;
-      }
-    }
-    return NextResponse.next(); // No valid session, allow access to login page
-  }
-
-  // For all other protected routes, check authentication
   if (!sessionId) {
-    // Now this check should correctly reflect if a session ID was found
-    console.log(
-      "No session ID found in cookie. Checking IP whitelist or redirecting to login."
-    );
-    // Check IP whitelist (existing logic, kept as is)
-    try {
-      const isWhitelistedIpResponse = await fetch(
-        new URL("/api/verify-whitelist", request.url),
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            ip: request.ip,
-            headers: Object.fromEntries(request.headers),
-          }),
-          signal: AbortSignal.timeout(5000),
-        }
-      );
+    return isProtectedApiPath(pathname)
+      ? apiAuthError(401, "Unauthorized")
+      : redirectToLogin(request);
+  }
 
-      if (isWhitelistedIpResponse.ok) {
-        const isWhitelistedIp = (await isWhitelistedIpResponse.json()).allowed;
-        if (isWhitelistedIp) {
-          console.log("IP whitelisted, allowing access.");
-          return NextResponse.next();
+  try {
+    const result = await verifySessionWithService(request, sessionId);
+    if (!result.valid) {
+      return isProtectedApiPath(pathname)
+        ? apiAuthError(
+            result.status,
+            result.status === 503
+              ? "Authentication service unavailable"
+              : "Unauthorized",
+          )
+        : redirectToLogin(request);
+    }
+  } catch (error) {
+    console.error("Session verification failed in middleware");
+    return isProtectedApiPath(pathname)
+      ? apiAuthError(503, "Authentication service unavailable")
+      : redirectToLogin(request);
+  }
+
+  if (!pathname.startsWith("/api/")) {
+    try {
+      const updateResponse = await fetch(
+        new URL("/api/check-update", request.url),
+        {
+          signal: AbortSignal.timeout(5000),
+        },
+      );
+      if (updateResponse.ok) {
+        const updateData = await updateResponse.json();
+        if (updateData.updateRequired) {
+          return NextResponse.redirect(new URL("/update", request.url));
         }
       }
     } catch (error) {
-      console.error("IP whitelist check error:", error);
+      console.error("Update check error:", error);
     }
-
-    console.log("No session or IP not whitelisted, redirecting to /login.");
-    return NextResponse.redirect(new URL("/login", request.url));
   }
 
-  // Session verification for protected routes
-  try {
-    const response = await fetch(new URL("/api/verify-session", request.url), {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ sessionId }), // Pass sessionId directly
-      signal: AbortSignal.timeout(5000),
-    });
-
-    if (!response.ok) {
-      console.error(
-        `Session verification request failed: ${response.status} for path: ${request.nextUrl.pathname}`
-      );
-      if (response.status >= 400 && response.status < 500) {
-        console.log(
-          "Client error during session verification, redirecting to login and clearing cookie."
-        );
-        const res = NextResponse.redirect(new URL("/login", request.url));
-        res.cookies.delete("session");
-        return res;
-      } else {
-        console.log(
-          "Server error during session verification, allowing access to prevent random logouts."
-        );
-        return NextResponse.next();
-      }
-    }
-
-    const result = await response.json();
-
-    if (!result.valid) {
-      console.log(
-        "Invalid session for protected route, clearing cookie and redirecting to login."
-      );
-      const res = NextResponse.redirect(new URL("/login", request.url));
-      res.cookies.delete("session");
-      return res;
-    }
-
-    if (!request.nextUrl.pathname.startsWith("/api/")) {
-      try {
-        const updateResponse = await fetch(
-          new URL("/api/check-update", request.url),
-          { signal: AbortSignal.timeout(5000) }
-        );
-        if (updateResponse.ok) {
-          const updateData = await updateResponse.json();
-          if (updateData.updateRequired) {
-            return NextResponse.redirect(new URL("/update", request.url));
-          }
-        }
-      } catch (error) {
-        console.error("Update check error:", error);
-      }
-    }
-    return NextResponse.next();
-  } catch (error) {
-    console.error("Session verification fetch error in middleware:", error);
-    if (error.name === "AbortError") {
-      console.log(
-        "Session verification timeout, allowing access to prevent logout."
-      );
-    } else {
-      console.log(
-        "Network error during session verification, allowing access."
-      );
-    }
-    return NextResponse.next();
-  }
+  return NextResponse.next();
 }

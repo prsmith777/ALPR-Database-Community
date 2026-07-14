@@ -18,6 +18,9 @@ export async function POST(request) {
     return Response.json({ valid: false }, { status: 401 });
   } catch (error) {
     console.error("Error verifying API key:", error);
-    return Response.json({ error: "Internal server error" }, { status: 500 });
+    return Response.json(
+      { error: "Authentication service unavailable" },
+      { status: 503 },
+    );
   }
 }

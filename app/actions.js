@@ -76,6 +76,10 @@ import {
   getAuthConfig, // Need this to update config
   updateAuthConfig, // Need this to save updated config
 } from "@/lib/auth";
+import {
+  getSessionCookieOptions,
+  getSessionCookieDeleteOptions,
+} from "@/lib/security";
 import { formatTimeRange } from "@/lib/utils";
 import path from "path";
 import os from "os";
@@ -101,7 +105,7 @@ export async function getDashboardMetrics(
   timeZone,
   startDate,
   endDate,
-  cameraName
+  cameraName,
 ) {
   console.log("Fetching dashboard metrics");
   try {
@@ -115,7 +119,7 @@ export async function getDashboardMetrics(
       metrics.time_data.forEach((read) => {
         const timestamp = new Date(read.timestamp);
         const localTimestamp = new Date(
-          timestamp.toLocaleString("en-US", { timeZone })
+          timestamp.toLocaleString("en-US", { timeZone }),
         );
         const localHour = localTimestamp.getHours();
         hourCounts[localHour] += read.frequency;
@@ -342,7 +346,7 @@ export async function getPlates(
   page = 1,
   pageSize = 25,
   sortConfig = { key: "last_seen_at", direction: "desc" },
-  filters = {}
+  filters = {},
 ) {
   console.log("Querying plate database");
   try {
@@ -453,7 +457,7 @@ export async function fetchPlateInsights(formDataOrPlateNumber, timeZone) {
       insights.time_data.forEach((read) => {
         const timestamp = new Date(read.timestamp);
         const localTimestamp = new Date(
-          timestamp.toLocaleString("en-US", { timeZone: timeZone || "UTC" })
+          timestamp.toLocaleString("en-US", { timeZone: timeZone || "UTC" }),
         );
         const localHour = localTimestamp.getHours();
         hourCounts[localHour] += read.frequency;
@@ -468,7 +472,7 @@ export async function fetchPlateInsights(formDataOrPlateNumber, timeZone) {
     const mostActiveTime =
       timeDistribution.length > 0
         ? timeDistribution.reduce((max, current) =>
-            current.frequency > max.frequency ? current : max
+            current.frequency > max.frequency ? current : max,
           ).hour_block
         : "No data available";
 
@@ -605,7 +609,7 @@ export async function addMqttNotificationAction(formData) {
       name,
       brokerId,
       message,
-      includeKnownPlateInfo
+      includeKnownPlateInfo,
     );
     revalidatePath("/notifications");
     return { success: true, data: result };
@@ -631,7 +635,7 @@ export async function editMqttNotificationAction(formData) {
       name,
       brokerId,
       message,
-      includeKnownPlateInfo
+      includeKnownPlateInfo,
     );
     revalidatePath("/notifications");
     return { success: true, data: result };
@@ -703,8 +707,6 @@ export async function updateNotificationPriority(formData) {
   }
 }
 
-const SESSION_EXPIRATION_SECONDS = 24 * 60 * 60;
-
 export async function loginAction(formData) {
   console.log("Attempting login...");
   const password = formData.get("password");
@@ -740,16 +742,10 @@ export async function loginAction(formData) {
     const userAgent = headersList.get("user-agent") || "Unknown Device";
 
     const sessionId = await createSession(userAgent);
-    console.log("Created session ID:", sessionId);
+    console.log("Created a new authenticated session");
 
     const cookieStore = await cookies();
-    cookieStore.set("session", sessionId, {
-      // httpOnly: true,
-      secure: false,
-      sameSite: "lax",
-      maxAge: SESSION_EXPIRATION_SECONDS,
-      path: "/",
-    });
+    cookieStore.set("session", sessionId, getSessionCookieOptions());
 
     return { success: true };
   } catch (error) {
@@ -777,13 +773,7 @@ export async function logoutAction() {
     await invalidateSession(sessionId);
   }
 
-  cookieStore.set("session", "", {
-    // httpOnly: true,
-    secure: false,
-    sameSite: "lax",
-    maxAge: 0,
-    path: "/",
-  });
+  cookieStore.set("session", "", getSessionCookieDeleteOptions());
 
   redirect("/login");
 }
@@ -840,7 +830,7 @@ export async function updateSettings(formData) {
         password:
           formData.get("dbPassword") === "••••••••"
             ? currentConfig.database.password
-            : formData.get("dbPassword") ?? currentConfig.database.password,
+            : (formData.get("dbPassword") ?? currentConfig.database.password),
       };
     }
 
@@ -853,13 +843,13 @@ export async function updateSettings(formData) {
           app_token:
             formData.get("pushoverAppToken") === "••••••••"
               ? currentConfig.notifications?.pushover?.app_token
-              : formData.get("pushoverAppToken") ??
-                currentConfig.notifications?.pushover?.app_token,
+              : (formData.get("pushoverAppToken") ??
+                currentConfig.notifications?.pushover?.app_token),
           user_key:
             formData.get("pushoverUserKey") === "••••••••"
               ? currentConfig.notifications?.pushover?.user_key
-              : formData.get("pushoverUserKey") ??
-                currentConfig.notifications?.pushover?.user_key,
+              : (formData.get("pushoverUserKey") ??
+                currentConfig.notifications?.pushover?.user_key),
           title:
             formData.get("pushoverTitle") ??
             currentConfig.notifications?.pushover?.title,
@@ -1148,7 +1138,7 @@ export async function migrateImageDataToFiles() {
             await fileStorage.migrateBase64ToFile(
               record.image_data,
               record.plate_number,
-              record.timestamp
+              record.timestamp,
             );
 
           updates.push({ id: record.id, imagePath, thumbnailPath });
@@ -1172,7 +1162,7 @@ export async function migrateImageDataToFiles() {
       }
 
       console.log(
-        `Processed ${processed}/${totalRecords} records (${errors} errors)`
+        `Processed ${processed}/${totalRecords} records (${errors} errors)`,
       );
     }
 
@@ -1241,7 +1231,7 @@ export async function sendMetricsUpdate() {
 
     const fingerprint = createHash("sha256")
       .update(
-        `${earliestPlate.plate_number}:${earliestPlate.first_seen_at}:${systemId}`
+        `${earliestPlate.plate_number}:${earliestPlate.first_seen_at}:${systemId}`,
       )
       .digest("hex");
 
