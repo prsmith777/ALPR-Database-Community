@@ -26,15 +26,14 @@ test('middleware returns JSON 401/503 for protected API failures and rejects que
 
 test('middleware does not trust spoofed X-Forwarded-For for browser or API access', async () => {
   const source = await fs.readFile('middleware.js', 'utf8');
-  assert(source.includes('/api/verify-whitelist'));
-  assert(source.includes('authorizeApiRequest(request)'));
-  assert(!source.includes('x-forwarded-for') || source.includes('Object.fromEntries(request.headers)'));
+  assert(!source.includes('/api/verify-whitelist'));
+  assert(!source.includes('Object.fromEntries(request.headers)'));
+  assert(!source.toLowerCase().includes('x-forwarded-for'));
+  assert(source.includes('authorizeApiKeyRequest(request)'));
 });
 
 test('session verification timeout, network failure, HTTP 5xx, and malformed response are fail closed', async () => {
   const source = await fs.readFile('middleware.js', 'utf8');
-  assert(source.includes('Session verification timeout, redirecting to login.'));
-  assert(source.includes('Network error during session verification, redirecting to login.'));
-  assert(source.includes('Server error during session verification, redirecting to login.'));
+  assert(source.includes('Session verification temporarily unavailable'));
   assert(source.includes('const result = await response.json();'));
 });

@@ -75,9 +75,11 @@ import {
   hashPasswordBcrypt, // New export to create a bcrypt hash
   getAuthConfig, // Need this to update config
   updateAuthConfig, // Need this to save updated config
+} from "@/lib/auth";
+import {
   getSessionCookieOptions,
   getSessionCookieDeletionOptions,
-} from "@/lib/auth";
+} from "@/lib/session-cookie";
 import { formatTimeRange } from "@/lib/utils";
 import path from "path";
 import os from "os";
@@ -740,11 +742,10 @@ export async function loginAction(formData) {
     const userAgent = headersList.get("user-agent") || "Unknown Device";
 
     const sessionId = await createSession(userAgent);
-    console.log("Created session ID:", sessionId);
+    console.log("Created authenticated session");
 
     const cookieStore = await cookies();
-    const isHttps = headersList.get("x-forwarded-proto") === "https";
-    cookieStore.set("session", sessionId, getSessionCookieOptions({ isHttps }));
+    cookieStore.set("session", sessionId, getSessionCookieOptions());
 
     return { success: true };
   } catch (error) {
@@ -772,9 +773,7 @@ export async function logoutAction() {
     await invalidateSession(sessionId);
   }
 
-  const headersList = await headers();
-  const isHttps = headersList.get("x-forwarded-proto") === "https";
-  cookieStore.set("session", "", getSessionCookieDeletionOptions({ isHttps }));
+  cookieStore.set("session", "", getSessionCookieDeletionOptions());
 
   redirect("/login");
 }

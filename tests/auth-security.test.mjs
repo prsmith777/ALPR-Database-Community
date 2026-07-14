@@ -113,9 +113,19 @@ test('session validation covers valid, missing, invalid, and expired sessions', 
 });
 
 test('session cookie creation, deletion, LAN HTTP, and explicit HTTPS attributes', () => {
-  assert.deepEqual(auth.getSessionCookieOptions({ isHttps: false }), { secure: false, sameSite: 'lax', maxAge: 86400, path: '/' });
-  assert.deepEqual(auth.getSessionCookieOptions({ isHttps: true }), { secure: true, sameSite: 'lax', maxAge: 86400, path: '/' });
-  assert.deepEqual(auth.getSessionCookieDeletionOptions({ isHttps: true }), { secure: true, sameSite: 'lax', maxAge: 0, path: '/' });
+  delete process.env.SESSION_COOKIE_SECURE;
+  assert.deepEqual(auth.getSessionCookieOptions(), { httpOnly: true, secure: false, sameSite: 'lax', maxAge: 86400, path: '/' });
+  process.env.SESSION_COOKIE_SECURE = 'false';
+  assert.deepEqual(auth.getSessionCookieOptions(), { httpOnly: true, secure: false, sameSite: 'lax', maxAge: 86400, path: '/' });
+  process.env.SESSION_COOKIE_SECURE = 'true';
+  assert.deepEqual(auth.getSessionCookieOptions(), { httpOnly: true, secure: true, sameSite: 'lax', maxAge: 86400, path: '/' });
+  const deletion = auth.getSessionCookieDeletionOptions();
+  assert.equal(deletion.httpOnly, true);
+  assert.equal(deletion.secure, true);
+  assert.equal(deletion.sameSite, 'lax');
+  assert.equal(deletion.maxAge, 0);
+  assert.equal(deletion.path, '/');
+  assert(deletion.expires instanceof Date);
 });
 
 test('auth tests cannot modify the real authentication file', async () => {

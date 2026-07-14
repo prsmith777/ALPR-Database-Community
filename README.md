@@ -135,11 +135,15 @@ We can make use of the built-in macros to dynamically get the alert data and sen
 
     { "ai_dump":&JSON, "Image":"&ALERT_JPEG", "camera":"&CAM", "ALERT_PATH": "&ALERT_PATH", "ALERT_CLIP": "&ALERT_CLIP", "timestamp":"&ALERT_TIME" }
 
-**Set your API key with the x-api-key header as seen below.**
+**Set your API key with the `x-api-key` header as seen below. `Authorization: Bearer <key>` is also supported. Do not put API keys in the URL query string.**
 ![enter image description here](https://raw.githubusercontent.com/algertc/ALPR-Database/refs/heads/main/Images/alert.JPG)
 
 
 #### Thats it! You're now collecting and storing your ALPR data.
+
+### Session cookie security
+
+Browser session cookies are `HttpOnly`, `SameSite=Lax`, and scoped to `/`. By default they are not marked `Secure` so direct-LAN HTTP Docker deployments continue to work. Set `SESSION_COOKIE_SECURE=true` when serving the app over HTTPS. Set `SESSION_COOKIE_SECURE=false` or leave it unset for non-Secure LAN HTTP cookies. The app does not infer this setting from `X-Forwarded-Proto` or other client-controlled request headers.
 
 <br>
 
