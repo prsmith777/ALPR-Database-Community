@@ -1,6 +1,6 @@
 // app/api/verify-session/route.js (Re-introduced and improved)
 import { verifySession, getSessionInfo, initializeAuth } from "@/lib/auth"; // Import initializeAuth
-import { NextResponse } from "next/server";
+import { NextResponse } from "next/server.js";
 
 export const dynamic = "force-dynamic"; // Ensures this route is not cached
 export const runtime = "nodejs"; // Explicitly run this API route in Node.js runtime

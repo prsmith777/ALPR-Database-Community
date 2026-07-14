@@ -76,6 +76,7 @@ import {
   getAuthConfig, // Need this to update config
   updateAuthConfig, // Need this to save updated config
 } from "@/lib/auth";
+import { clearSessionCookie, setSessionCookie } from "@/lib/security";
 import { formatTimeRange } from "@/lib/utils";
 import path from "path";
 import os from "os";
@@ -703,7 +704,6 @@ export async function updateNotificationPriority(formData) {
   }
 }
 
-const SESSION_EXPIRATION_SECONDS = 24 * 60 * 60;
 
 export async function loginAction(formData) {
   console.log("Attempting login...");
@@ -740,16 +740,10 @@ export async function loginAction(formData) {
     const userAgent = headersList.get("user-agent") || "Unknown Device";
 
     const sessionId = await createSession(userAgent);
-    console.log("Created session ID:", sessionId);
+    console.log("Created session.");
 
     const cookieStore = await cookies();
-    cookieStore.set("session", sessionId, {
-      // httpOnly: true,
-      secure: false,
-      sameSite: "lax",
-      maxAge: SESSION_EXPIRATION_SECONDS,
-      path: "/",
-    });
+    setSessionCookie(cookieStore, sessionId);
 
     return { success: true };
   } catch (error) {
@@ -777,13 +771,7 @@ export async function logoutAction() {
     await invalidateSession(sessionId);
   }
 
-  cookieStore.set("session", "", {
-    // httpOnly: true,
-    secure: false,
-    sameSite: "lax",
-    maxAge: 0,
-    path: "/",
-  });
+  clearSessionCookie(cookieStore);
 
   redirect("/login");
 }
