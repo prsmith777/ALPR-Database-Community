@@ -73,9 +73,17 @@ import {
   invalidateSession,
   verifyPassword, // The function that handles both old/new hashes
   hashPasswordBcrypt, // New export to create a bcrypt hash
+  verifySession,
   getAuthConfig, // Need this to update config
   updateAuthConfig, // Need this to save updated config
 } from "@/lib/auth";
+import {
+  clearSessionCookie,
+  SESSION_COOKIE_NAME,
+  setSessionCookie,
+} from "@/lib/session-cookie.mjs";
+import { createServerActionAuthenticator } from "@/lib/server-action-auth.mjs";
+import { createUpdateActions } from "@/lib/update-actions.mjs";
 import { formatTimeRange } from "@/lib/utils";
 import path from "path";
 import os from "os";
@@ -84,6 +92,28 @@ import split2 from "split2";
 import fileStorage from "@/lib/fileStorage";
 import { getLocalVersionInfo } from "@/lib/version";
 import TrainingDataGenerator from "@/lib/training";
+
+async function readServerActionSessionId() {
+  const cookieStore = await cookies();
+  return cookieStore.get(SESSION_COOKIE_NAME)?.value || null;
+}
+
+const requireUpdateActionSession = createServerActionAuthenticator({
+  readSessionId: readServerActionSessionId,
+  verifySession,
+});
+
+const updateActions = createUpdateActions({
+  authenticate: requireUpdateActionSession,
+  backfillOccurrenceCounts,
+  getTotalRecordsToMigrate,
+  getRecordsToMigrate,
+  migrateBase64ToFile: (...args) => fileStorage.migrateBase64ToFile(...args),
+  updateImagePathsBatch,
+  clearImageDataBatch,
+  markUpdateComplete,
+  verifyImageMigration,
+});
 
 export async function handleGetTags() {
   return await dbGetTags();
@@ -703,8 +733,6 @@ export async function updateNotificationPriority(formData) {
   }
 }
 
-const SESSION_EXPIRATION_SECONDS = 24 * 60 * 60;
-
 export async function loginAction(formData) {
   console.log("Attempting login...");
   const password = formData.get("password");
@@ -740,20 +768,13 @@ export async function loginAction(formData) {
     const userAgent = headersList.get("user-agent") || "Unknown Device";
 
     const sessionId = await createSession(userAgent);
-    console.log("Created session ID:", sessionId);
 
     const cookieStore = await cookies();
-    cookieStore.set("session", sessionId, {
-      // httpOnly: true,
-      secure: false,
-      sameSite: "lax",
-      maxAge: SESSION_EXPIRATION_SECONDS,
-      path: "/",
-    });
+    setSessionCookie(cookieStore, sessionId);
 
     return { success: true };
   } catch (error) {
-    console.error("Login error:", error);
+    console.error("Login failed");
 
     if (
       error &&
@@ -777,13 +798,7 @@ export async function logoutAction() {
     await invalidateSession(sessionId);
   }
 
-  cookieStore.set("session", "", {
-    // httpOnly: true,
-    secure: false,
-    sameSite: "lax",
-    maxAge: 0,
-    path: "/",
-  });
+  clearSessionCookie(cookieStore);
 
   redirect("/login");
 }
@@ -953,7 +968,6 @@ export async function updatePassword(formData) {
 
     // 4. Invalidate all sessions for security after password change
     // This will force all existing users to re-login with the new password.
-    const currentSessions = Object.keys(config.sessions); // Get session IDs before clearing
     // It's more efficient to clear the sessions in memory and then write once.
     config.sessions = {}; // Clear all sessions
     await updateAuthConfig(config); // Save the cleared sessions along with the new password
@@ -964,8 +978,8 @@ export async function updatePassword(formData) {
       message:
         "Password updated successfully. All active sessions have been logged out.",
     };
-  } catch (error) {
-    console.error("Error updating password:", error);
+  } catch {
+    console.error("Password update failed");
     return { error: "An error occurred while changing password." };
   }
 }
@@ -982,8 +996,9 @@ export async function regenerateApiKey() {
 
     revalidatePath("/settings");
     return { success: true, apiKey: newApiKey };
-  } catch (error) {
-    return { success: false, error: error.message };
+  } catch {
+    console.error("API key regeneration failed");
+    return { success: false, error: "Unable to regenerate API key." };
   }
 }
 
@@ -1120,101 +1135,15 @@ export async function getSystemLogs() {
 }
 
 export async function dbBackfill() {
-  console.warn("Backfilling occurrence counts...");
-  return await backfillOccurrenceCounts();
+  return await updateActions.dbBackfill();
 }
 
 export async function migrateImageDataToFiles() {
-  console.log("Starting image data migration...");
-
-  try {
-    const totalRecords = await getTotalRecordsToMigrate();
-    console.log(`Total records to migrate: ${totalRecords}`);
-
-    let processed = 0;
-    let errors = 0;
-    let lastId = 0;
-    const BATCH_SIZE = 100;
-
-    while (true) {
-      const records = await getRecordsToMigrate(BATCH_SIZE, lastId);
-      if (records.length === 0) break;
-
-      const updates = [];
-
-      for (const record of records) {
-        try {
-          const { imagePath, thumbnailPath } =
-            await fileStorage.migrateBase64ToFile(
-              record.image_data,
-              record.plate_number,
-              record.timestamp
-            );
-
-          updates.push({ id: record.id, imagePath, thumbnailPath });
-          processed++;
-        } catch (error) {
-          console.error(`Error processing record ${record.id}:`, error);
-          errors++;
-        }
-
-        lastId = record.id;
-      }
-
-      if (updates.length > 0) {
-        try {
-          await updateImagePathsBatch(updates);
-        } catch (error) {
-          console.error("Error updating batch:", error);
-          errors += updates.length;
-          processed -= updates.length;
-        }
-      }
-
-      console.log(
-        `Processed ${processed}/${totalRecords} records (${errors} errors)`
-      );
-    }
-
-    return {
-      success: true,
-      processed,
-      errors,
-      totalRecords,
-    };
-  } catch (error) {
-    console.error("Migration failed:", error);
-    return {
-      success: false,
-      error: error.message,
-    };
-  }
+  return await updateActions.migrateImageDataToFiles();
 }
 
 export async function clearImageData() {
-  console.log("Starting image data cleanup...");
-
-  try {
-    let totalCleared = 0;
-    let batchCount;
-
-    do {
-      batchCount = await clearImageDataBatch(1000);
-      totalCleared += batchCount;
-      console.log(`Cleared ${totalCleared} records...`);
-    } while (batchCount > 0);
-
-    return {
-      success: true,
-      clearedCount: totalCleared,
-    };
-  } catch (error) {
-    console.error("Cleanup failed:", error);
-    return {
-      success: false,
-      error: error.message,
-    };
-  }
+  return await updateActions.clearImageData();
 }
 
 export async function sendMetricsUpdate() {
@@ -1281,39 +1210,11 @@ export async function checkUpdateRequired() {
 }
 
 export async function completeUpdate() {
-  try {
-    await markUpdateComplete();
-    return { success: true };
-  } catch (error) {
-    console.error("Error marking update complete:", error);
-    return { success: false, error: error.message };
-  }
+  return await updateActions.completeUpdate();
 }
 
 export async function skipImageMigration() {
-  try {
-    const verificationResult = await verifyImageMigration();
-
-    if (!verificationResult.success) {
-      return {
-        success: false,
-        error: "Could not verify migration status",
-      };
-    }
-
-    if (!verificationResult.isComplete) {
-      return {
-        success: false,
-        error: `Cannot skip migration: ${verificationResult.incompleteCount} records still need migration`,
-      };
-    }
-
-    await completeUpdate();
-    return { success: true };
-  } catch (error) {
-    console.error("Error in skipImageMigration:", error);
-    return { success: false, error: error.message };
-  }
+  return await updateActions.skipImageMigration();
 }
 
 export async function generateTrainingData() {

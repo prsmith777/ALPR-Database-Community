@@ -18,7 +18,7 @@ export async function ensureInitialized() {
       await initializeAuth();
       initialized = true;
     } catch (error) {
-      console.error("Failed to initialize auth system:", error);
+      console.error("Authentication system initialization failed");
       throw error;
     } finally {
       initializationPromise = null;

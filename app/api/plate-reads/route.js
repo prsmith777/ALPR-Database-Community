@@ -5,11 +5,10 @@ import {
 } from "@/lib/db";
 import { sendPushoverNotification } from "@/lib/notifications";
 import { sendMqttNotificationByPlate } from "@/lib/mqtt-client";
-import { getAuthConfig } from "@/lib/auth";
 import { getConfig } from "@/lib/settings";
 import { revalidatePlatesPage } from "@/app/actions";
-import { revalidatePath } from "next/cache";
 import fileStorage from "@/lib/fileStorage";
+import { createIntegrationRouteHandler } from "@/lib/request-auth.mjs";
 
 // Revised to use a blacklist of all other possible AI labels if using the memo
 const EXCLUDED_LABELS = [
@@ -149,23 +148,10 @@ function extractPlatesFromMemo(memo) {
   return [...new Set(plates)]; // Remove duplicates
 }
 
-export async function POST(req) {
+async function processPlateRead(data) {
   let dbClient = null;
 
   try {
-    const data = await req.json();
-    console.log("Received plate read data:", data);
-
-    const apiKey = req.headers.get("x-api-key");
-    if (!apiKey) {
-      return Response.json({ error: "API key is required" }, { status: 401 });
-    }
-
-    const authConfig = await getAuthConfig();
-    if (apiKey !== authConfig.apiKey) {
-      return Response.json({ error: "Invalid API key" }, { status: 401 });
-    }
-
     // Initialize common values
     const timestamp = data.timestamp || new Date().toISOString();
     const camera = data.camera || null;
@@ -207,16 +193,10 @@ export async function POST(req) {
             }),
           }));
         }
-      } catch (error) {
-        console.error(
-          "Malformed data from Blue Iris. Your JSON macro is missing the required properties from codeproject. Please update your AI to the newest ALPR model or use plate instead of json macro.",
-          error
-        );
+      } catch {
+        console.error("Invalid Blue Iris plate-read payload");
         return Response.json(
-          {
-            error:
-              "Outdated AI. Update Model in CodeProject or use plate or memo instead of json",
-          },
+          { error: "Invalid plate-read payload" },
           { status: 400 }
         );
       }
@@ -279,12 +259,10 @@ export async function POST(req) {
             }
           );
           if (mqttResult.success && mqttResult.sent > 0) {
-            console.log(
-              `Sent ${mqttResult.sent} MQTT notification(s) for plate ${plateData.plate_number}`
-            );
+            console.log("Sent MQTT plate notification");
           }
-        } catch (error) {
-          console.error("Error sending MQTT notifications:", error);
+        } catch {
+          console.error("MQTT plate notification failed");
           // Don't fail the entire request if MQTT fails
         }
       }
@@ -302,11 +280,8 @@ export async function POST(req) {
             data.Image,
             plateData.plate_number
           );
-        } catch (error) {
-          console.error(
-            `Error saving image for plate ${plateData.plate_number}:`,
-            error
-          );
+        } catch {
+          console.error("Plate image storage failed");
         }
       }
 
@@ -317,8 +292,8 @@ export async function POST(req) {
           const msOffset = parts[2];
           const recId = data.ALERT_CLIP.replace("@", "");
           biPath = `ui3.htm?rec=${recId}-${msOffset}&cam=${camera}`;
-        } catch (error) {
-          console.error("Error constructing bi_path:", error);
+        } catch {
+          console.error("Blue Iris link construction failed");
         }
       }
 
@@ -376,12 +351,12 @@ export async function POST(req) {
     }
 
     const config = await getConfig();
-    cleanupOldRecords(config.general.maxRecords).catch((err) =>
-      console.error("Database pruning failed:", err)
+    cleanupOldRecords(config.general.maxRecords).catch(() =>
+      console.error("Database pruning failed")
     );
 
-    fileStorage.cleanupOldFiles(config.general.retention).catch((error) => {
-      console.error("JPEG pruning failed", error);
+    fileStorage.cleanupOldFiles(config.general.retention).catch(() => {
+      console.error("JPEG pruning failed");
     });
 
     // if (processedPlates.length > 0) {
@@ -398,7 +373,7 @@ export async function POST(req) {
         await new Promise((resolve) => setTimeout(resolve, 100));
         // console.log("⭐ Revalidation completed");
       } catch (error) {
-        console.error("⭐ Revalidation failed:", error);
+        console.error("Plate page revalidation failed");
         throw error;
       }
     }
@@ -412,18 +387,11 @@ export async function POST(req) {
       },
       { status: processedPlates.length > 0 ? 201 : 409 }
     );
-  } catch (error) {
-    console.error("Error processing request:", error);
-    return Response.json(
-      {
-        error: "Internal server error",
-        details: error.message,
-      },
-      { status: 500 }
-    );
   } finally {
     if (dbClient) {
       dbClient.release();
     }
   }
 }
+
+export const POST = createIntegrationRouteHandler(processPlateRead);

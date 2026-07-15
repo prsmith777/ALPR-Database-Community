@@ -72,8 +72,6 @@ export async function POST(request) {
       return NextResponse.json({ allowed: false });
     }
 
-    console.log("Checking IP:", clientIP);
-
     // Load the configuration data
     const config = await getConfig();
     const whitelist = config.homeassistant?.whitelist || [];
@@ -87,13 +85,9 @@ export async function POST(request) {
     const normalizedWhitelist = whitelist.map(normalizeIP);
     const isAllowedIp = normalizedWhitelist.includes(normalizeIP(clientIP));
 
-    if (!isAllowedIp) {
-      console.warn(`IP ${clientIP} is not in the whitelist`);
-    }
-
     return NextResponse.json({ allowed: isAllowedIp });
-  } catch (error) {
-    console.error("Error checking whitelisted IP:", error);
+  } catch {
+    console.error("IP whitelist check failed");
     return NextResponse.json({ allowed: false }, { status: 500 });
   }
 }
