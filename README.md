@@ -129,14 +129,33 @@ To start sending data, log in to the application and **navigate to settings -> s
 
 ### Set up an alert action within Blue Iris:
 
-ALPR recognitions are sent to the `api/plate-reads` endpoint.
+ALPR recognitions are sent to the `/api/plate-reads` endpoint. Integration
+routes under `/api/plate-reads` and `/api/plates` require the API key in either
+of these headers:
+
+```http
+x-api-key: YOUR_API_KEY
+Authorization: Bearer YOUR_API_KEY
+```
+
+Do not place an API key in the URL. Query-string credentials such as
+`?api_key=...` are rejected. Other application API routes use the signed-in
+browser session instead of the integration API key.
 
 We can make use of the built-in macros to dynamically get the alert data and send it as our payload. It should look like this:
 
     { "ai_dump":&JSON, "Image":"&ALERT_JPEG", "camera":"&CAM", "ALERT_PATH": "&ALERT_PATH", "ALERT_CLIP": "&ALERT_CLIP", "timestamp":"&ALERT_TIME" }
 
-**Set your API key with the x-api-key header as seen below.**
+**Set your API key with the `x-api-key` header as seen below.**
 ![enter image description here](https://raw.githubusercontent.com/algertc/ALPR-Database/refs/heads/main/Images/alert.JPG)
+
+Browser sessions use `HttpOnly`, `SameSite=Lax` cookies. Cookies are non-Secure
+by default so direct-LAN HTTP Docker deployments continue to work. Set
+`SESSION_COOKIE_SECURE=true` when the application is served over HTTPS. Cookie
+security is never inferred from `X-Forwarded-Proto` or other request headers.
+
+See [docs/security-baseline.md](docs/security-baseline.md) for the complete
+authentication and failure-handling policy.
 
 
 #### Thats it! You're now collecting and storing your ALPR data.
