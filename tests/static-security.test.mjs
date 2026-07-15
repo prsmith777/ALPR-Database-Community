@@ -27,7 +27,7 @@ test('middleware returns JSON 401/503 for protected API failures and rejects que
 test('middleware does not trust spoofed X-Forwarded-For for browser or API access', async () => {
   const source = await fs.readFile('middleware.js', 'utf8');
   assert(source.includes('/api/verify-whitelist'));
-  assert(source.includes('authorizeApiRequest(request)'));
+  assert(source.includes('authorizeApiKeyRequest(request)'));
   assert(!source.includes('x-forwarded-for') || source.includes('Object.fromEntries(request.headers)'));
 });
 

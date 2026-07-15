@@ -1,4 +1,4 @@
-import { NextResponse } from "next/server";
+import { NextResponse } from "next/server.js";
 
 
 function getApiCredential(request) {
@@ -20,7 +20,7 @@ function getApiCredential(request) {
   return { rejected: false, apiKey: null };
 }
 
-async function authorizeApiRequest(request) {
+export async function authorizeApiKeyRequest(request) {
   const { rejected, apiKey } = getApiCredential(request);
   if (rejected || !apiKey) {
     return { ok: false, status: 401 };
@@ -35,7 +35,17 @@ async function authorizeApiRequest(request) {
     });
 
     if (response.ok) {
-      const result = await response.json();
+      let result;
+      try {
+        result = await response.json();
+      } catch {
+        return { ok: false, status: 503 };
+      }
+
+      if (typeof result?.valid !== "boolean") {
+        return { ok: false, status: 503 };
+      }
+
       return result.valid
         ? { ok: true, status: 200 }
         : { ok: false, status: 401 };
@@ -75,7 +85,7 @@ export async function middleware(request) {
   ];
 
   if (request.nextUrl.pathname.startsWith("/api/plate-reads")) {
-    const auth = await authorizeApiRequest(request);
+    const auth = await authorizeApiKeyRequest(request);
     if (!auth.ok) {
       return NextResponse.json(
         {
@@ -112,7 +122,7 @@ export async function middleware(request) {
           return new Response("Invalid API Key", { status: 401 });
         }
       } catch (error) {
-        console.error("Auth verification error:", error);
+        console.error("API authentication temporarily unavailable");
         return new Response("Internal Server Error", { status: 500 });
       }
     }
@@ -120,7 +130,7 @@ export async function middleware(request) {
   }
 
   if (request.nextUrl.pathname.startsWith("/api/")) {
-    const auth = await authorizeApiRequest(request);
+    const auth = await authorizeApiKeyRequest(request);
     if (!auth.ok) {
       return NextResponse.json(
         {
@@ -140,7 +150,7 @@ export async function middleware(request) {
   const sessionId = sessionCookie ? sessionCookie.value : null; // Explicitly get value or null
 
   console.log(
-    `Middleware checking path: ${request.nextUrl.pathname}, Session ID from cookie: ${sessionId}`
+    `Middleware checking path: ${request.nextUrl.pathname}, session cookie present: ${Boolean(sessionId)}`
   );
 
   // SPECIAL HANDLING FOR LOGIN PAGE
@@ -169,7 +179,7 @@ export async function middleware(request) {
           return NextResponse.next();
         }
       } catch (error) {
-        console.error("Session verification error on login page:", error);
+        console.error("Session verification failed on login page");
         const res = NextResponse.next();
         res.cookies.delete("session"); // Clear potentially invalid session
         return res;
@@ -207,7 +217,7 @@ export async function middleware(request) {
         }
       }
     } catch (error) {
-      console.error("IP whitelist check error:", error);
+      console.error("IP whitelist check failed");
     }
 
     console.log("No session or IP not whitelisted, redirecting to /login.");
@@ -266,12 +276,12 @@ export async function middleware(request) {
           }
         }
       } catch (error) {
-        console.error("Update check error:", error);
+        console.error("Update check failed");
       }
     }
     return NextResponse.next();
   } catch (error) {
-    console.error("Session verification fetch error in middleware:", error);
+    console.error("Session verification request failed in middleware");
     if (error.name === "AbortError") {
       console.log("Session verification timeout, redirecting to login.");
     } else {

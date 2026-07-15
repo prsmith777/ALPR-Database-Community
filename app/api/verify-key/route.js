@@ -17,7 +17,7 @@ export async function POST(request) {
     }
     return Response.json({ valid: false }, { status: 401 });
   } catch (error) {
-    console.error("Error verifying API key:", error);
+    console.error("Error verifying API key");
     return Response.json({ error: "Internal server error" }, { status: 500 });
   }
 }

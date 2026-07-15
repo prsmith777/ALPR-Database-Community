@@ -740,7 +740,7 @@ export async function loginAction(formData) {
     const userAgent = headersList.get("user-agent") || "Unknown Device";
 
     const sessionId = await createSession(userAgent);
-    console.log("Created session ID:", sessionId);
+    console.log("Created login session");
 
     const cookieStore = await cookies();
     const isHttps = headersList.get("x-forwarded-proto") === "https";
@@ -748,7 +748,7 @@ export async function loginAction(formData) {
 
     return { success: true };
   } catch (error) {
-    console.error("Login error:", error);
+    console.error("Login error");
 
     if (
       error &&
