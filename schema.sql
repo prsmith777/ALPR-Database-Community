@@ -217,9 +217,9 @@ CREATE TABLE public.devmgmt (
 
 ALTER TABLE public.devmgmt OWNER TO postgres;
 
-INSERT INTO devmgmt (id, update1)
+INSERT INTO public.devmgmt (id, update1)
 SELECT 1, false
-WHERE NOT EXISTS (SELECT 1 FROM devmgmt);
+WHERE NOT EXISTS (SELECT 1 FROM public.devmgmt);
 
 
 
