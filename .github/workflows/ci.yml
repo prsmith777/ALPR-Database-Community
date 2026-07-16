@@ -1,0 +1,64 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    name: Test, typecheck, lint, and build
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: yarn
+
+      - name: Install dependencies
+        run: yarn install --frozen-lockfile --network-timeout 100000
+
+      - name: Run automated tests
+        run: yarn test
+
+      - name: Run typecheck
+        run: yarn typecheck
+
+      - name: Run lint
+        run: yarn lint
+
+      - name: Build production application
+        run: yarn build
+
+      - name: Verify clean patch formatting
+        run: git diff --check
+
+  docker:
+    name: Build Docker image
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Build production Docker image
+        run: docker build --tag alpr-ci:${{ github.sha }} .
