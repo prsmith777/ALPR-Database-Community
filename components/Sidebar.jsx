@@ -5,6 +5,7 @@ import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { ChatButton } from "@/components/chat/ChatButton";
+import { logoutAction } from "@/app/actions";
 import {
   LayoutDashboard,
   Database,
@@ -13,6 +14,7 @@ import {
   MessageCircleQuestion,
   Menu,
   X,
+  LogOut,
 } from "lucide-react";
 import { BookMarked } from "lucide-react";
 import { Cctv } from "lucide-react";
@@ -147,6 +149,24 @@ export function Sidebar() {
                 Settings
               </TooltipContent>
             </Tooltip>
+
+            <form action={logoutAction}>
+              <Tooltip delayDuration={0}>
+                <TooltipTrigger asChild>
+                  <Button
+                    type="submit"
+                    variant="ghost"
+                    aria-label="Log Out"
+                    className="w-10 h-10 p-0 hover:bg-transparent hover:text-red-500 [&:not(:disabled)]:hover:bg-transparent"
+                  >
+                    <LogOut className="h-5 w-5" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent side="right" className="border-0 bg-muted">
+                  Log Out
+                </TooltipContent>
+              </Tooltip>
+            </form>
           </div>
         </aside>
       </TooltipProvider>
@@ -243,6 +263,17 @@ export function Sidebar() {
               <Settings className="h-5 w-5 mr-3" />
               Settings
             </Button>
+
+            <form action={logoutAction}>
+              <Button
+                type="submit"
+                variant="ghost"
+                className="w-full justify-start text-left h-12 px-4 text-red-500 hover:text-red-500"
+              >
+                <LogOut className="h-5 w-5 mr-3" />
+                Log Out
+              </Button>
+            </form>
 
             {/* Theme toggle */}
             <div className="px-4 py-2 mt-4">
