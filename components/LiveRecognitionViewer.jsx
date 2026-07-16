@@ -282,6 +282,7 @@ export default function LiveRecognitionViewer({
                 alt={`License plate ${latestPlate.plate_number}`}
                 width={1000}
                 height={800}
+                unoptimized
                 style={{
                   maxWidth: "100%",
                   maxHeight: "70vh",
@@ -512,6 +513,7 @@ export default function LiveRecognitionViewer({
                                     : "/placeholder.jpg"
                                 }
                                 alt="Plate image"
+                                unoptimized
                                 fill
                                 sizes="64px"
                                 className="object-cover"

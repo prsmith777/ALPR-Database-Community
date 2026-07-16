@@ -749,6 +749,7 @@ function StructuredContent({ data }) {
                   <Image
                     src={`/images/${image.image_path}`}
                     alt={image.caption || "Detection image"}
+                    unoptimized
                     fill
                     className="object-cover"
                   />

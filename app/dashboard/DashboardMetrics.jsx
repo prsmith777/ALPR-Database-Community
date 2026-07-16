@@ -139,6 +139,7 @@ const PlateImagePreviews = ({ plate, timeFrame }) => {
                 : "/placeholder.jpg"
             }
             alt={`Capture from ${new Date(img.timestamp).toLocaleString()}`}
+            unoptimized
             fill
             className="object-cover"
           />
