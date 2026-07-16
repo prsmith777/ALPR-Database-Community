@@ -38,6 +38,7 @@ export default function PlateImage({ plate, onClick, className }) {
       alt={plate.plate_number}
       width={100}
       height={75}
+      unoptimized
       priority={true}
       placeholder="blur"
       blurDataURL="/fallback.jpg"

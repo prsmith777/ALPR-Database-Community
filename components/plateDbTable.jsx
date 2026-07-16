@@ -1364,6 +1364,7 @@ export default function PlateTable() {
                                 : "/placeholder.jpg"
                             }
                             alt="Vehicle"
+                            unoptimized
                             className="object-cover rounded"
                             fill
                           />
@@ -1407,6 +1408,7 @@ export default function PlateTable() {
                                     : "/placeholder.jpg"
                                 }
                                 alt="Vehicle"
+                                unoptimized
                                 className="object-cover rounded"
                                 width={80}
                                 height={60}
