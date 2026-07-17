@@ -8,30 +8,30 @@ import { getMqttAdminRepository } from "@/lib/mqtt/admin-runtime.mjs";
 export async function GET() {
   try {
     const repository = await getMqttAdminRepository();
-    const brokers = await repository.listBrokers();
-    return Response.json({ success: true, data: brokers });
+    const settings = await repository.getSettings();
+    return Response.json({ success: true, data: settings });
   } catch (error) {
-    console.error("Error fetching MQTT brokers:", error);
+    console.error("Error fetching MQTT settings:", error);
     return Response.json(
-      { success: false, error: "Failed to fetch MQTT brokers" },
+      { success: false, error: "Failed to fetch MQTT settings" },
       { status: 500 }
     );
   }
 }
 
-export async function POST(request) {
+export async function PUT(request) {
   try {
     const data = await readJsonObject(request);
     const repository = await getMqttAdminRepository();
-    const broker = await repository.createBroker(data);
-    return Response.json({ success: true, data: broker }, { status: 201 });
+    const settings = await repository.updateSettings(data);
+    return Response.json({ success: true, data: settings });
   } catch (error) {
     const status = mqttAdminErrorStatus(error);
-    console.error("Error adding MQTT broker:", error);
+    console.error("Error updating MQTT settings:", error);
     return Response.json(
       {
         success: false,
-        error: mqttAdminErrorMessage(error, "Failed to add MQTT broker"),
+        error: mqttAdminErrorMessage(error, "Failed to update MQTT settings"),
       },
       { status }
     );

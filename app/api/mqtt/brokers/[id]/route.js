@@ -1,9 +1,19 @@
-import { getMqttBrokerInfo, editMqttBroker, deleteMqttBroker } from "@/lib/db";
+import {
+  mqttAdminErrorMessage,
+  mqttAdminErrorStatus,
+  readJsonObject,
+} from "@/lib/mqtt/admin-api.mjs";
+import { getMqttAdminRepository } from "@/lib/mqtt/admin-runtime.mjs";
 
-export async function GET(req, { params }) {
+async function getBrokerId(params) {
+  const resolved = await params;
+  return resolved.id;
+}
+
+export async function GET(_request, { params }) {
   try {
-    const { id } = await params;
-    const broker = await getMqttBrokerInfo(parseInt(id));
+    const repository = await getMqttAdminRepository();
+    const broker = await repository.getBroker(await getBrokerId(params));
 
     if (!broker) {
       return Response.json(
@@ -14,66 +24,81 @@ export async function GET(req, { params }) {
 
     return Response.json({ success: true, data: broker });
   } catch (error) {
+    const status = mqttAdminErrorStatus(error);
     console.error("Error fetching MQTT broker:", error);
     return Response.json(
-      { success: false, error: "Failed to fetch MQTT broker" },
-      { status: 500 }
+      {
+        success: false,
+        error: mqttAdminErrorMessage(error, "Failed to fetch MQTT broker"),
+      },
+      { status }
     );
   }
 }
 
-export async function PUT(req, { params }) {
+export async function PUT(request, { params }) {
   try {
-    const { id } = await params;
-    const data = await req.json();
-    const { name, broker, port, topic, username, password, useTls } = data;
+    const data = await readJsonObject(request);
 
-    if (!name || !broker || !topic) {
-      return Response.json(
-        { success: false, error: "Name, broker, and topic are required" },
-        { status: 400 }
-      );
-    }
+    // The edit form intentionally displays no stored password. Submitting that
+    // blank field preserves the current credential; clearPassword explicitly
+    // removes it.
+    if (data.password === "") delete data.password;
 
-    const result = await editMqttBroker(
-      parseInt(id),
-      name,
-      broker,
-      port || 1883,
-      topic,
-      username || null,
-      password || null,
-      useTls || false
+    const repository = await getMqttAdminRepository();
+    const broker = await repository.updateBroker(
+      await getBrokerId(params),
+      data
     );
 
-    if (!result) {
+    if (!broker) {
       return Response.json(
         { success: false, error: "Broker not found" },
         { status: 404 }
       );
     }
 
-    return Response.json({ success: true, data: result });
+    return Response.json({ success: true, data: broker });
   } catch (error) {
+    const status = mqttAdminErrorStatus(error);
     console.error("Error updating MQTT broker:", error);
     return Response.json(
-      { success: false, error: "Failed to update MQTT broker" },
-      { status: 500 }
+      {
+        success: false,
+        error: mqttAdminErrorMessage(error, "Failed to update MQTT broker"),
+      },
+      { status }
     );
   }
 }
 
-export async function DELETE(req, { params }) {
+export async function DELETE(_request, { params }) {
   try {
-    const { id } = await params;
-    await deleteMqttBroker(parseInt(id));
+    const repository = await getMqttAdminRepository();
+    const deleted = await repository.deleteBroker(await getBrokerId(params));
+
+    if (!deleted) {
+      return Response.json(
+        { success: false, error: "Broker not found" },
+        { status: 404 }
+      );
+    }
 
     return Response.json({ success: true });
   } catch (error) {
+    const status = mqttAdminErrorStatus(error);
     console.error("Error deleting MQTT broker:", error);
     return Response.json(
-      { success: false, error: "Failed to delete MQTT broker" },
-      { status: 500 }
+      {
+        success: false,
+        error: mqttAdminErrorMessage(
+          error,
+          status === 409
+            ? "Broker is still used by an MQTT rule or delivery"
+            : "Failed to delete MQTT broker"
+        ),
+      },
+      { status }
     );
   }
 }

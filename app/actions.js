@@ -46,12 +46,6 @@ import {
   updateTagName,
   getTrainingRecordCount,
   confirmPlateRecord,
-  getMqttBrokers,
-  getMqttNotifications,
-  addMqttNotification,
-  editMqttNotification,
-  toggleMqttNotificationEnabled,
-  deleteMqttNotification,
   addUnseenPlate,
 } from "@/lib/db";
 import {
@@ -600,116 +594,6 @@ export async function deleteNotification(formData) {
   }
 }
 
-// MQTT Notification Actions
-export async function getMqttBrokersAction() {
-  try {
-    const brokers = await getMqttBrokers();
-    return { success: true, data: brokers };
-  } catch (error) {
-    console.error("Error fetching MQTT brokers:", error);
-    return { success: false, error: "Failed to fetch MQTT brokers" };
-  }
-}
-
-export async function getMqttNotificationsAction() {
-  try {
-    const notifications = await getMqttNotifications();
-    return { success: true, data: notifications };
-  } catch (error) {
-    console.error("Error fetching MQTT notifications:", error);
-    return { success: false, error: "Failed to fetch MQTT notifications" };
-  }
-}
-
-export async function addMqttNotificationAction(formData) {
-  try {
-    const plateNumber = formData.get("plateNumber");
-    const name = formData.get("name");
-    const brokerId = formData.get("brokerId");
-    const message = formData.get("message");
-    const includeKnownPlateInfo =
-      formData.get("includeKnownPlateInfo") === "true";
-
-    const result = await addMqttNotification(
-      plateNumber,
-      name,
-      brokerId,
-      message,
-      includeKnownPlateInfo
-    );
-    revalidatePath("/notifications");
-    return { success: true, data: result };
-  } catch (error) {
-    console.error("Error adding MQTT notification:", error);
-    return { success: false, error: "Failed to add MQTT notification" };
-  }
-}
-
-export async function editMqttNotificationAction(formData) {
-  try {
-    const id = formData.get("id");
-    const plateNumber = formData.get("plateNumber");
-    const name = formData.get("name");
-    const brokerId = formData.get("brokerId");
-    const message = formData.get("message");
-    const includeKnownPlateInfo =
-      formData.get("includeKnownPlateInfo") === "true";
-
-    const result = await editMqttNotification(
-      id,
-      plateNumber,
-      name,
-      brokerId,
-      message,
-      includeKnownPlateInfo
-    );
-    revalidatePath("/notifications");
-    return { success: true, data: result };
-  } catch (error) {
-    console.error("Error editing MQTT notification:", error);
-    return { success: false, error: "Failed to edit MQTT notification" };
-  }
-}
-
-export async function toggleMqttNotificationAction(formData) {
-  try {
-    const id = formData.get("id");
-    const enabled = formData.get("enabled") === "true";
-
-    const result = await toggleMqttNotificationEnabled(id, enabled);
-    revalidatePath("/notifications");
-    return { success: true, data: result };
-  } catch (error) {
-    console.error("Error toggling MQTT notification:", error);
-    return { success: false, error: "Failed to toggle MQTT notification" };
-  }
-}
-
-export async function deleteMqttNotificationAction(formData) {
-  try {
-    const id = formData.get("id");
-    await deleteMqttNotification(id);
-    revalidatePath("/notifications");
-    return { success: true };
-  } catch (error) {
-    console.error("Error deleting MQTT notification:", error);
-    return { success: false, error: "Failed to delete MQTT notification" };
-  }
-}
-
-export async function testMqttNotificationAction(formData) {
-  try {
-    const { testMqttNotification } = await import("@/lib/mqtt-client");
-    const id = formData.get("id");
-
-    const result = await testMqttNotification(parseInt(id));
-    return result;
-  } catch (error) {
-    console.error("Error testing MQTT notification:", error);
-    return { success: false, error: "Failed to test MQTT notification" };
-  }
-}
-
 export async function updateNotificationPriority(formData) {
   console.log("Updating notification priority");
   try {
@@ -830,14 +714,6 @@ export async function updateSettings(formData) {
         timeFormat: formData.get("timeFormat")
           ? parseInt(formData.get("timeFormat"))
           : currentConfig.general.timeFormat,
-      };
-    }
-
-    if (updateIfExists("mqttBroker") || updateIfExists("mqttTopic")) {
-      newConfig.mqtt = {
-        ...currentConfig.mqtt,
-        broker: formData.get("mqttBroker") ?? currentConfig.mqtt.broker,
-        topic: formData.get("mqttTopic") ?? currentConfig.mqtt.topic,
       };
     }
 
