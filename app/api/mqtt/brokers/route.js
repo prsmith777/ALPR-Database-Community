@@ -1,9 +1,14 @@
-import { getMqttBrokers, addMqttBroker } from "@/lib/db";
-import { getAuthConfig } from "@/lib/auth";
+import {
+  mqttAdminErrorMessage,
+  mqttAdminErrorStatus,
+  readJsonObject,
+} from "@/lib/mqtt/admin-api.mjs";
+import { getMqttAdminRepository } from "@/lib/mqtt/admin-runtime.mjs";
 
-export async function GET(req) {
+export async function GET() {
   try {
-    const brokers = await getMqttBrokers();
+    const repository = await getMqttAdminRepository();
+    const brokers = await repository.listBrokers();
     return Response.json({ success: true, data: brokers });
   } catch (error) {
     console.error("Error fetching MQTT brokers:", error);
@@ -14,34 +19,21 @@ export async function GET(req) {
   }
 }
 
-export async function POST(req) {
+export async function POST(request) {
   try {
-    const data = await req.json();
-    const { name, broker, port, topic, username, password, useTls } = data;
-
-    if (!name || !broker || !topic) {
-      return Response.json(
-        { success: false, error: "Name, broker, and topic are required" },
-        { status: 400 }
-      );
-    }
-
-    const result = await addMqttBroker(
-      name,
-      broker,
-      port || 1883,
-      topic,
-      username || null,
-      password || null,
-      useTls || false
-    );
-
-    return Response.json({ success: true, data: result });
+    const data = await readJsonObject(request);
+    const repository = await getMqttAdminRepository();
+    const broker = await repository.createBroker(data);
+    return Response.json({ success: true, data: broker }, { status: 201 });
   } catch (error) {
+    const status = mqttAdminErrorStatus(error);
     console.error("Error adding MQTT broker:", error);
     return Response.json(
-      { success: false, error: "Failed to add MQTT broker" },
-      { status: 500 }
+      {
+        success: false,
+        error: mqttAdminErrorMessage(error, "Failed to add MQTT broker"),
+      },
+      { status }
     );
   }
 }
