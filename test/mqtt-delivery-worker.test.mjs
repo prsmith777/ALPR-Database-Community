@@ -448,6 +448,7 @@ test("an unrecorded publish failure does not stop later deliveries", async () =>
 });
 
 test("overlapping runOnce calls share one lease-release and claim operation", async () => {
+  const { logger, entries } = makeLogger();
   let releaseCalls = 0;
   let claimCalls = 0;
   let resolveClaim;
@@ -468,6 +469,7 @@ test("overlapping runOnce calls share one lease-release and claim operation", as
     repository,
     clientManager: makeClientManager(),
     workerId: "worker-overlap",
+    logger,
   });
 
   const firstRun = worker.runOnce();
@@ -481,6 +483,10 @@ test("overlapping runOnce calls share one lease-release and claim operation", as
   assert.equal(firstSummary, secondSummary);
   assert.equal(releaseCalls, 1);
   assert.equal(claimCalls, 1);
+  assert.equal(
+    entries.some((entry) => entry.message === "MQTT delivery worker batch complete"),
+    false
+  );
 });
 
 test("polling continues after a batch error and stop aborts the wait and closes connections", async () => {

@@ -271,6 +271,12 @@ async function processPlateRead(data) {
         }
       }
 
+      // Track files as soon as they are created. Any failure between image
+      // storage and COMMIT must remove them along with the rolled-back row.
+      if (imagePaths.imagePath || imagePaths.thumbnailPath) {
+        transactionImages.push(imagePaths);
+      }
+
       let biPath = null;
       if (data.ALERT_CLIP && data.ALERT_PATH && camera) {
         try {
@@ -310,11 +316,11 @@ async function processPlateRead(data) {
             plate_annotation,
             event_identity
           )
-          SELECT $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12
+          SELECT $1, $2, $3, $4, $5, $6::varchar, $7, $8, $9, $10, $11, $12
           WHERE NOT EXISTS (
             SELECT 1 FROM plate_reads
             WHERE plate_number = $1 AND timestamp = $5
-              AND camera_name IS NOT DISTINCT FROM $6
+              AND camera_name IS NOT DISTINCT FROM $6::varchar
           )
           ON CONFLICT DO NOTHING
           RETURNING id
@@ -341,9 +347,12 @@ async function processPlateRead(data) {
         await fileStorage
           .deleteImage(imagePaths.imagePath, imagePaths.thumbnailPath)
           .catch(() => console.error("Duplicate plate image cleanup failed"));
+        const trackedImageIndex = transactionImages.indexOf(imagePaths);
+        if (trackedImageIndex >= 0) {
+          transactionImages.splice(trackedImageIndex, 1);
+        }
       } else {
         const readId = result.rows[0].id;
-        transactionImages.push(imagePaths);
         processedPlates.push({
           plate: plateData.plate_number,
           id: readId,
