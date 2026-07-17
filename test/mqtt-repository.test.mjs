@@ -174,7 +174,7 @@ test("camera discovery updates the existing case-insensitive camera identity", a
     }
     if (sql.startsWith("UPDATE public.mqtt_cameras")) {
       assert.equal(params[0], 7);
-      assert.equal(params[1], seenAt);
+      assert.equal(params[1].getTime(), seenAt.getTime());
       return {
         rows: [
           {
@@ -340,7 +340,7 @@ test("expired processing leases return to retry without incrementing attempts", 
   });
 
   assert.deepEqual(released, [41, 42]);
-  assert.equal(capturedParams[0], now);
+  assert.equal(capturedParams[0].getTime(), now.getTime());
   assert.equal(capturedParams[1].toISOString(), "2026-07-17T03:04:00.000Z");
 });
 
