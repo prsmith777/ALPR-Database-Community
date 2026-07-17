@@ -67,9 +67,19 @@ function makeRuntime({ acceptedResult } = {}) {
 }
 
 test("runtime factory wires the repository, accepted-read service, client manager, and worker", () => {
+  const poolClient = {
+    async query() {
+      return { rows: [] };
+    },
+    release() {},
+  };
+
   const pool = {
     async query() {
       return { rows: [] };
+    },
+    async connect() {
+      return poolClient;
     },
   };
 
