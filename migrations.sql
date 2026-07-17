@@ -243,56 +243,41 @@ CREATE INDEX IF NOT EXISTS idx_mqtt_rule_cameras_camera_id
 CREATE INDEX IF NOT EXISTS idx_mqtt_cameras_enabled
     ON public.mqtt_cameras (enabled) WHERE enabled = TRUE;
 
--- Additional v2 columns are added idempotently for databases that already
--- created an earlier draft of these tables.
-ALTER TABLE IF EXISTS public.mqttbrokers
-    ADD COLUMN IF NOT EXISTS enabled BOOLEAN NOT NULL DEFAULT TRUE,
-    ADD COLUMN IF NOT EXISTS client_id VARCHAR(255),
-    ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP;
+CREATE OR REPLACE FUNCTION public.mqtt_set_updated_at()
+RETURNS TRIGGER AS $$
+BEGIN
+    NEW.updated_at = CURRENT_TIMESTAMP;
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
 
-ALTER TABLE IF EXISTS public.mqtt_settings
-    ADD COLUMN IF NOT EXISTS enabled BOOLEAN NOT NULL DEFAULT FALSE,
-    ADD COLUMN IF NOT EXISTS base_topic VARCHAR(512) NOT NULL DEFAULT 'Blue Iris/ALPR',
-    ADD COLUMN IF NOT EXISTS camera_topic_template VARCHAR(512) NOT NULL DEFAULT '{base_topic}/{camera_key}',
-    ADD COLUMN IF NOT EXISTS default_qos SMALLINT NOT NULL DEFAULT 1,
-    ADD COLUMN IF NOT EXISTS retain_messages BOOLEAN NOT NULL DEFAULT FALSE,
-    ADD COLUMN IF NOT EXISTS payload_profile VARCHAR(50) NOT NULL DEFAULT 'generic_json',
-    ADD COLUMN IF NOT EXISTS local_timezone VARCHAR(100) NOT NULL DEFAULT 'UTC',
-    ADD COLUMN IF NOT EXISTS hour_format SMALLINT NOT NULL DEFAULT 12,
-    ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP;
+DROP TRIGGER IF EXISTS mqttbrokers_set_updated_at ON public.mqttbrokers;
+CREATE TRIGGER mqttbrokers_set_updated_at
+BEFORE UPDATE ON public.mqttbrokers
+FOR EACH ROW EXECUTE FUNCTION public.mqtt_set_updated_at();
 
-ALTER TABLE IF EXISTS public.mqtt_cameras
-    ADD COLUMN IF NOT EXISTS camera_name VARCHAR(255),
-    ADD COLUMN IF NOT EXISTS camera_key VARCHAR(100),
-    ADD COLUMN IF NOT EXISTS enabled BOOLEAN NOT NULL DEFAULT TRUE,
-    ADD COLUMN IF NOT EXISTS topic_override VARCHAR(65535),
-    ADD COLUMN IF NOT EXISTS first_seen_at TIMESTAMPTZ,
-    ADD COLUMN IF NOT EXISTS last_seen_at TIMESTAMPTZ,
-    ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP;
+DROP TRIGGER IF EXISTS mqtt_settings_set_updated_at ON public.mqtt_settings;
+CREATE TRIGGER mqtt_settings_set_updated_at
+BEFORE UPDATE ON public.mqtt_settings
+FOR EACH ROW EXECUTE FUNCTION public.mqtt_set_updated_at();
 
-ALTER TABLE IF EXISTS public.mqtt_rules
-    ADD COLUMN IF NOT EXISTS name VARCHAR(255),
-    ADD COLUMN IF NOT EXISTS enabled BOOLEAN NOT NULL DEFAULT TRUE,
-    ADD COLUMN IF NOT EXISTS match_type VARCHAR(50),
-    ADD COLUMN IF NOT EXISTS match_value TEXT,
-    ADD COLUMN IF NOT EXISTS fuzzy_enabled BOOLEAN NOT NULL DEFAULT FALSE,
-    ADD COLUMN IF NOT EXISTS fuzzy_max_distance SMALLINT NOT NULL DEFAULT 1,
-    ADD COLUMN IF NOT EXISTS fuzzy_min_length SMALLINT NOT NULL DEFAULT 5,
-    ADD COLUMN IF NOT EXISTS fuzzy_require_unique BOOLEAN NOT NULL DEFAULT TRUE,
-    ADD COLUMN IF NOT EXISTS fuzzy_ocr_aware BOOLEAN NOT NULL DEFAULT TRUE,
-    ADD COLUMN IF NOT EXISTS broker_id INTEGER,
-    ADD COLUMN IF NOT EXISTS destination_mode VARCHAR(50) NOT NULL DEFAULT 'per_camera',
-    ADD COLUMN IF NOT EXISTS fixed_topic VARCHAR(65535),
-    ADD COLUMN IF NOT EXISTS message TEXT,
-    ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP;
+DROP TRIGGER IF EXISTS mqtt_cameras_set_updated_at ON public.mqtt_cameras;
+CREATE TRIGGER mqtt_cameras_set_updated_at
+BEFORE UPDATE ON public.mqtt_cameras
+FOR EACH ROW EXECUTE FUNCTION public.mqtt_set_updated_at();
 
--- Retry-safe durable delivery outbox ---------------------------------------
+DROP TRIGGER IF EXISTS mqtt_rules_set_updated_at ON public.mqtt_rules;
+CREATE TRIGGER mqtt_rules_set_updated_at
+BEFORE UPDATE ON public.mqtt_rules
+FOR EACH ROW EXECUTE FUNCTION public.mqtt_set_updated_at();
+
+-- Durable MQTT delivery outbox and activity history -------------------------
+-- A queue row represents one camera observation going to one broker/topic.
+-- The unique dedupe key suppresses only an exact resubmission of that same
+-- camera event and destination; different cameras remain independent.
 CREATE TABLE IF NOT EXISTS public.mqtt_deliveries (
     id BIGSERIAL PRIMARY KEY,
+    dedupe_key VARCHAR(80) NOT NULL UNIQUE,
     event_id VARCHAR(255) NOT NULL,
     read_id INTEGER REFERENCES public.plate_reads(id) ON DELETE SET NULL,
     camera_id INTEGER REFERENCES public.mqtt_cameras(id) ON DELETE SET NULL,
@@ -303,86 +288,69 @@ CREATE TABLE IF NOT EXISTS public.mqtt_deliveries (
     payload JSONB NOT NULL,
     qos SMALLINT NOT NULL DEFAULT 1 CHECK (qos BETWEEN 0 AND 2),
     retain BOOLEAN NOT NULL DEFAULT FALSE,
-    status VARCHAR(30) NOT NULL DEFAULT 'pending'
+    status VARCHAR(20) NOT NULL DEFAULT 'pending'
         CHECK (status IN ('pending', 'processing', 'retry', 'succeeded', 'dead')),
     attempt_count INTEGER NOT NULL DEFAULT 0 CHECK (attempt_count >= 0),
-    max_attempts INTEGER NOT NULL DEFAULT 5 CHECK (max_attempts BETWEEN 1 AND 20),
+    max_attempts SMALLINT NOT NULL DEFAULT 5 CHECK (max_attempts BETWEEN 1 AND 20),
     next_attempt_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    processing_started_at TIMESTAMPTZ,
-    worker_id VARCHAR(255),
+    locked_at TIMESTAMPTZ,
+    locked_by VARCHAR(255),
     last_error TEXT,
     published_at TIMESTAMPTZ,
     created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    CONSTRAINT mqtt_deliveries_identity_unique
-        UNIQUE (event_id, camera_key, broker_id, topic)
+    CONSTRAINT mqtt_deliveries_camera_key_format
+        CHECK (camera_key ~ '^[a-z0-9]+(-[a-z0-9]+)*$'),
+    CONSTRAINT mqtt_deliveries_payload_object
+        CHECK (jsonb_typeof(payload) = 'object'),
+    CONSTRAINT mqtt_deliveries_lock_state CHECK (
+        (
+            status = 'processing'
+            AND locked_at IS NOT NULL
+            AND NULLIF(BTRIM(locked_by), '') IS NOT NULL
+        )
+        OR
+        (
+            status <> 'processing'
+            AND locked_at IS NULL
+            AND locked_by IS NULL
+        )
+    ),
+    CONSTRAINT mqtt_deliveries_published_state CHECK (
+        (status = 'succeeded' AND published_at IS NOT NULL)
+        OR
+        (status <> 'succeeded' AND published_at IS NULL)
+    )
 );
-
-CREATE INDEX IF NOT EXISTS idx_mqtt_deliveries_due
-    ON public.mqtt_deliveries (status, next_attempt_at, id)
-    WHERE status IN ('pending', 'retry');
-CREATE INDEX IF NOT EXISTS idx_mqtt_deliveries_processing
-    ON public.mqtt_deliveries (status, processing_started_at)
-    WHERE status = 'processing';
-CREATE INDEX IF NOT EXISTS idx_mqtt_deliveries_read_id
-    ON public.mqtt_deliveries (read_id);
-CREATE INDEX IF NOT EXISTS idx_mqtt_deliveries_camera_id
-    ON public.mqtt_deliveries (camera_id);
-CREATE INDEX IF NOT EXISTS idx_mqtt_deliveries_broker_id
-    ON public.mqtt_deliveries (broker_id);
-CREATE INDEX IF NOT EXISTS idx_mqtt_deliveries_activity
-    ON public.mqtt_deliveries (created_at DESC, id DESC);
 
 CREATE TABLE IF NOT EXISTS public.mqtt_delivery_attempts (
     id BIGSERIAL PRIMARY KEY,
-    delivery_id BIGINT NOT NULL REFERENCES public.mqtt_deliveries(id) ON DELETE CASCADE,
+    delivery_id BIGINT NOT NULL
+        REFERENCES public.mqtt_deliveries(id) ON DELETE CASCADE,
     attempt_number INTEGER NOT NULL CHECK (attempt_number > 0),
-    worker_id VARCHAR(255),
-    started_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    completed_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    outcome VARCHAR(30) NOT NULL
+    outcome VARCHAR(20) NOT NULL
         CHECK (outcome IN ('succeeded', 'retry', 'dead')),
-    error_name VARCHAR(255),
-    error_code VARCHAR(255),
+    worker_id VARCHAR(255),
+    error_code VARCHAR(100),
     error_message TEXT,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    CONSTRAINT mqtt_delivery_attempts_number_unique
-        UNIQUE (delivery_id, attempt_number)
+    started_at TIMESTAMPTZ NOT NULL,
+    completed_at TIMESTAMPTZ NOT NULL,
+    UNIQUE (delivery_id, attempt_number)
 );
 
-CREATE INDEX IF NOT EXISTS idx_mqtt_delivery_attempts_delivery
+CREATE INDEX IF NOT EXISTS idx_mqtt_deliveries_due
+    ON public.mqtt_deliveries (next_attempt_at, id)
+    WHERE status IN ('pending', 'retry');
+CREATE INDEX IF NOT EXISTS idx_mqtt_deliveries_created_at
+    ON public.mqtt_deliveries (created_at DESC, id DESC);
+CREATE INDEX IF NOT EXISTS idx_mqtt_deliveries_read_id
+    ON public.mqtt_deliveries (read_id);
+CREATE INDEX IF NOT EXISTS idx_mqtt_deliveries_broker_id
+    ON public.mqtt_deliveries (broker_id);
+CREATE INDEX IF NOT EXISTS idx_mqtt_delivery_attempts_delivery_id
     ON public.mqtt_delivery_attempts (delivery_id, attempt_number DESC);
-CREATE INDEX IF NOT EXISTS idx_mqtt_delivery_attempts_created
-    ON public.mqtt_delivery_attempts (created_at DESC, id DESC);
 
--- Shared updated_at trigger used by the MQTT configuration and outbox tables.
-CREATE OR REPLACE FUNCTION public.update_updated_at_column()
-RETURNS TRIGGER AS $$
-BEGIN
-    NEW.updated_at = CURRENT_TIMESTAMP;
-    RETURN NEW;
-END;
-$$ LANGUAGE plpgsql;
-
-DO $$
-DECLARE
-    table_name TEXT;
-    trigger_name TEXT;
-BEGIN
-    FOREACH table_name IN ARRAY ARRAY[
-        'mqttbrokers',
-        'mqtt_settings',
-        'mqtt_cameras',
-        'mqtt_rules',
-        'mqtt_deliveries'
-    ]
-    LOOP
-        trigger_name := table_name || '_updated_at';
-        EXECUTE format('DROP TRIGGER IF EXISTS %I ON public.%I', trigger_name, table_name);
-        EXECUTE format(
-            'CREATE TRIGGER %I BEFORE UPDATE ON public.%I FOR EACH ROW EXECUTE FUNCTION public.update_updated_at_column()',
-            trigger_name,
-            table_name
-        );
-    END LOOP;
-END $$;
+DROP TRIGGER IF EXISTS mqtt_deliveries_set_updated_at ON public.mqtt_deliveries;
+CREATE TRIGGER mqtt_deliveries_set_updated_at
+BEFORE UPDATE ON public.mqtt_deliveries
+FOR EACH ROW EXECUTE FUNCTION public.mqtt_set_updated_at();
