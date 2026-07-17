@@ -8,7 +8,6 @@ import {
   Settings2,
   X,
   Database,
-  Wifi,
   Bell,
   Home,
   Shield,
@@ -39,7 +38,6 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import DashboardLayout from "@/components/layout/MainLayout";
-import { MqttBrokerManager } from "@/components/MqttBrokerManager";
 import {
   updateSettings,
   updatePassword,
@@ -74,7 +72,6 @@ const navigationSections = [
       { title: "AI Training", id: "training", icon: Cpu },
       { title: "Blue Iris", id: "blueiris", icon: Server },
       { title: "HomeAssistant", id: "homeassistant", icon: Home },
-      { title: "MQTT/HTTP", id: "mqtt", icon: Wifi },
     ],
   },
 ];
@@ -106,10 +103,6 @@ export default function SettingsForm({ initialSettings, initialApiKey }) {
         newFormData.append("retention", formData.get("retention"));
         newFormData.append("ignoreNonPlate", formData.get("ignoreNonPlate"));
         newFormData.append("timeFormat", Number(formData.get("timeFormat")));
-        break;
-      case "mqtt":
-        newFormData.append("mqttBroker", formData.get("mqttBroker"));
-        newFormData.append("mqttTopic", formData.get("mqttTopic"));
         break;
       case "database":
         newFormData.append("dbHost", formData.get("dbHost"));
@@ -305,12 +298,6 @@ export default function SettingsForm({ initialSettings, initialApiKey }) {
           />
         </div>
       </div>
-    </div>
-  );
-
-  const renderMqttSection = () => (
-    <div key="mqtt-section">
-      <MqttBrokerManager />
     </div>
   );
 
@@ -703,8 +690,6 @@ export default function SettingsForm({ initialSettings, initialApiKey }) {
     switch (activeSection) {
       case "general":
         return renderGeneralSection();
-      case "mqtt":
-        return renderMqttSection();
       case "database":
         return renderDatabaseSection();
       case "push":
@@ -803,7 +788,7 @@ export default function SettingsForm({ initialSettings, initialApiKey }) {
               )}
 
               {/* Form Content */}
-              {activeSection !== "security" && activeSection !== "mqtt" ? (
+              {activeSection !== "security" ? (
                 <form action={handleSettingsSubmit}>
                   <div className="space-y-8">
                     {renderSection()}
