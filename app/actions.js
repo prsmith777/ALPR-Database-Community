@@ -92,13 +92,13 @@ async function readServerActionSessionId() {
   return cookieStore.get(SESSION_COOKIE_NAME)?.value || null;
 }
 
-const requireUpdateActionSession = createServerActionAuthenticator({
+const requireAuthenticatedSession = createServerActionAuthenticator({
   readSessionId: readServerActionSessionId,
   verifySession,
 });
 
 const updateActions = createUpdateActions({
-  authenticate: requireUpdateActionSession,
+  authenticate: requireAuthenticatedSession,
   backfillOccurrenceCounts,
   getTotalRecordsToMigrate,
   getRecordsToMigrate,
@@ -110,14 +110,17 @@ const updateActions = createUpdateActions({
 });
 
 export async function handleGetTags() {
+  await requireAuthenticatedSession();
   return await dbGetTags();
 }
 
 export async function handleCreateTag(tagName, color) {
+  await requireAuthenticatedSession();
   return await dbCreateTag(tagName, color);
 }
 
 export async function handleDeleteTag(tagName) {
+  await requireAuthenticatedSession();
   return await dbDeleteTag(tagName);
 }
 
@@ -127,6 +130,7 @@ export async function getDashboardMetrics(
   endDate,
   cameraName
 ) {
+  await requireAuthenticatedSession();
   console.log("Fetching dashboard metrics");
   try {
     const metrics = await getMetrics(startDate, endDate, cameraName);
@@ -185,6 +189,7 @@ export async function getDashboardMetrics(
 }
 
 export async function deleteTagFromPlate(formData) {
+  await requireAuthenticatedSession();
   console.log("Deleting tag from plate");
   try {
     const plateNumber = formData.get("plateNumber");
@@ -198,6 +203,7 @@ export async function deleteTagFromPlate(formData) {
 }
 
 export async function deletePlate(formData) {
+  await requireAuthenticatedSession();
   console.log("Deleting known plate");
   try {
     const plateNumber = formData.get("plateNumber");
@@ -210,6 +216,7 @@ export async function deletePlate(formData) {
 }
 
 export async function deletePlateFromDB(formData) {
+  await requireAuthenticatedSession();
   console.log("Deleting plate from database");
   try {
     const plateNumber = formData.get("plateNumber");
@@ -222,6 +229,7 @@ export async function deletePlateFromDB(formData) {
 }
 
 export async function deletePlateRead(formData) {
+  await requireAuthenticatedSession();
   console.log("Deleting plate recognition");
   try {
     const id = formData.get("id"); // use ID
@@ -234,6 +242,7 @@ export async function deletePlateRead(formData) {
 }
 
 export async function getKnownPlatesList() {
+  await requireAuthenticatedSession();
   console.log("Fetching known plates");
   try {
     console.log("known plates action run");
@@ -245,6 +254,7 @@ export async function getKnownPlatesList() {
 }
 
 export async function getTags() {
+  await requireAuthenticatedSession();
   console.log("Fetching tags");
   try {
     return { success: true, data: await getAvailableTags() };
@@ -255,6 +265,7 @@ export async function getTags() {
 }
 
 export async function addTag(formData) {
+  await requireAuthenticatedSession();
   console.log("Adding tag");
   try {
     const name = formData.get("name");
@@ -268,6 +279,7 @@ export async function addTag(formData) {
 }
 
 export async function updateTag(formData) {
+  await requireAuthenticatedSession();
   console.log("Updating tag");
   try {
     const newName = formData.get("name");
@@ -290,6 +302,7 @@ export async function updateTag(formData) {
 }
 
 export async function removeTag(formData) {
+  await requireAuthenticatedSession();
   console.log("Deleting tag");
   try {
     const name = formData.get("name");
@@ -302,6 +315,7 @@ export async function removeTag(formData) {
 }
 
 export async function addKnownPlate(formData) {
+  await requireAuthenticatedSession();
   console.log("Adding known plate");
   try {
     const plateNumber = formData.get("plateNumber");
@@ -317,6 +331,7 @@ export async function addKnownPlate(formData) {
 }
 
 export async function tagPlate(formData) {
+  await requireAuthenticatedSession();
   console.log("Adding tag to plate");
   try {
     const plateNumber = formData.get("plateNumber");
@@ -340,6 +355,7 @@ export async function tagPlate(formData) {
 }
 
 export async function untagPlate(formData) {
+  await requireAuthenticatedSession();
   console.log("Removing tag from plate");
   try {
     const plateNumber = formData.get("plateNumber");
@@ -353,6 +369,7 @@ export async function untagPlate(formData) {
 }
 
 export async function getPlateHistoryData(plateNumber) {
+  await requireAuthenticatedSession();
   console.log("Fetching plate history");
   try {
     return { success: true, data: await getPlateHistory(plateNumber) };
@@ -368,6 +385,7 @@ export async function getPlates(
   sortConfig = { key: "last_seen_at", direction: "desc" },
   filters = {}
 ) {
+  await requireAuthenticatedSession();
   console.log("Querying plate database");
   try {
     const result = await getAllPlates({
@@ -411,6 +429,7 @@ export async function getLatestPlateReads({
   sortField = "",
   sortDirection = "",
 } = {}) {
+  await requireAuthenticatedSession();
   console.log("Fetching latest plate reads");
   try {
     const result = await getPlateReads({
@@ -454,6 +473,7 @@ export async function getLatestPlateReads({
 }
 
 export async function fetchPlateInsights(formDataOrPlateNumber, timeZone) {
+  await requireAuthenticatedSession();
   console.log("Fetching plate insights");
   const config = await getConfig();
   try {
@@ -521,6 +541,7 @@ export async function fetchPlateInsights(formDataOrPlateNumber, timeZone) {
 }
 
 export async function alterPlateFlag(formData) {
+  await requireAuthenticatedSession();
   console.log("Toggling plate flag");
   try {
     const plateNumber = formData.get("plateNumber");
@@ -542,6 +563,7 @@ export async function alterPlateFlag(formData) {
 }
 
 export async function getFlagged() {
+  await requireAuthenticatedSession();
   console.log("Fetching flagged plates");
   try {
     const plates = await getFlaggedPlates();
@@ -553,6 +575,7 @@ export async function getFlagged() {
 }
 
 export async function getNotificationPlates() {
+  await requireAuthenticatedSession();
   console.log("Checking notification plates");
   try {
     const plates = await getNotificationPlatesDB();
@@ -564,6 +587,7 @@ export async function getNotificationPlates() {
 }
 
 export async function addNotificationPlate(formData) {
+  await requireAuthenticatedSession();
   console.log("Adding notification plate");
   const plateNumber = formData.get("plateNumber");
   const result = await addNotificationPlateDB(plateNumber);
@@ -572,6 +596,7 @@ export async function addNotificationPlate(formData) {
 }
 
 export async function toggleNotification(formData) {
+  await requireAuthenticatedSession();
   console.log("Toggling notification");
   const plateNumber = formData.get("plateNumber");
   const enabled = formData.get("enabled") === "true";
@@ -581,6 +606,7 @@ export async function toggleNotification(formData) {
 }
 
 export async function deleteNotification(formData) {
+  await requireAuthenticatedSession();
   console.log("Deleting notification");
   try {
     const plateNumber = formData.get("plateNumber");
@@ -595,6 +621,7 @@ export async function deleteNotification(formData) {
 }
 
 export async function updateNotificationPriority(formData) {
+  await requireAuthenticatedSession();
   console.log("Updating notification priority");
   try {
     // When using Select component, the values come directly as arguments
@@ -688,11 +715,13 @@ export async function logoutAction() {
 }
 
 export async function getSettings() {
+  await requireAuthenticatedSession();
   const config = await getConfig();
   return config;
 }
 
 export async function updateSettings(formData) {
+  await requireAuthenticatedSession();
   try {
     const currentConfig = await getConfig();
 
@@ -806,6 +835,7 @@ export async function updateSettings(formData) {
 }
 
 export async function updatePassword(formData) {
+  await requireAuthenticatedSession();
   const currentPassword = formData.get("currentPassword");
   const newPassword = formData.get("newPassword");
   const confirmPassword = formData.get("confirmPassword");
@@ -861,6 +891,7 @@ export async function updatePassword(formData) {
 }
 
 export async function regenerateApiKey() {
+  await requireAuthenticatedSession();
   try {
     const config = await getAuthConfig();
     const newApiKey = crypto.randomBytes(32).toString("hex");
@@ -879,6 +910,7 @@ export async function regenerateApiKey() {
 }
 
 export async function getCameraNames() {
+  await requireAuthenticatedSession();
   try {
     const cameraNames = await getDistinctCameraNames();
     return {
@@ -895,6 +927,7 @@ export async function getCameraNames() {
 }
 
 export async function correctPlateRead(formData) {
+  await requireAuthenticatedSession();
   try {
     const readId = formData.get("readId");
     const oldPlateNumber = formData.get("oldPlateNumber");
@@ -920,11 +953,13 @@ export async function correctPlateRead(formData) {
 }
 
 export async function getTimeFormat() {
+  await requireAuthenticatedSession();
   const config = await getConfig();
   return config.general.timeFormat;
 }
 
 export async function toggleIgnorePlate(formData) {
+  await requireAuthenticatedSession();
   try {
     const plateNumber = formData.get("plateNumber");
     const ignore = formData.get("ignore") === "true";
@@ -938,6 +973,7 @@ export async function toggleIgnorePlate(formData) {
 }
 
 export async function revalidatePlatesPage() {
+  await requireAuthenticatedSession();
   try {
     console.log("🔴 Starting revalidation");
     revalidatePath("/live_feed");
@@ -949,6 +985,7 @@ export async function revalidatePlatesPage() {
 }
 
 export async function fetchPlateImagePreviews(plateNumber, timeFrame) {
+  await requireAuthenticatedSession();
   const endDate = new Date();
   const startDate = new Date();
 
@@ -973,6 +1010,7 @@ export async function fetchPlateImagePreviews(plateNumber, timeFrame) {
 }
 
 export async function getSystemLogs() {
+  await requireAuthenticatedSession();
   try {
     const logFile = path.join(process.cwd(), "logs", "app.log");
     const content = await fs.readFile(logFile, "utf8");
@@ -1011,18 +1049,22 @@ export async function getSystemLogs() {
 }
 
 export async function dbBackfill() {
+  await requireAuthenticatedSession();
   return await updateActions.dbBackfill();
 }
 
 export async function migrateImageDataToFiles() {
+  await requireAuthenticatedSession();
   return await updateActions.migrateImageDataToFiles();
 }
 
 export async function clearImageData() {
+  await requireAuthenticatedSession();
   return await updateActions.clearImageData();
 }
 
 export async function sendMetricsUpdate() {
+  await requireAuthenticatedSession();
   console.log("[Metrics] Reporting usage metrics...");
   try {
     const [earliestPlate, totalPlates] = await Promise.all([
@@ -1076,6 +1118,7 @@ export async function sendMetricsUpdate() {
 }
 
 export async function checkUpdateRequired() {
+  await requireAuthenticatedSession();
   try {
     const updateStatus = await checkUpdateStatus();
     return !updateStatus;
@@ -1086,14 +1129,17 @@ export async function checkUpdateRequired() {
 }
 
 export async function completeUpdate() {
+  await requireAuthenticatedSession();
   return await updateActions.completeUpdate();
 }
 
 export async function skipImageMigration() {
+  await requireAuthenticatedSession();
   return await updateActions.skipImageMigration();
 }
 
 export async function generateTrainingData() {
+  await requireAuthenticatedSession();
   try {
     const config = await getConfig();
 
@@ -1115,6 +1161,7 @@ export async function generateTrainingData() {
 }
 
 export async function processTrainingData() {
+  await requireAuthenticatedSession();
   try {
     // Check if training is enabled in settings
     const config = await getConfig();
@@ -1143,6 +1190,7 @@ export async function processTrainingData() {
 }
 
 export async function validatePlateRecord(readId, value) {
+  await requireAuthenticatedSession();
   try {
     await confirmPlateRecord(readId, value);
 
@@ -1154,6 +1202,7 @@ export async function validatePlateRecord(readId, value) {
 }
 
 export async function addDBPlate(plate_number, flagged = false) {
+  await requireAuthenticatedSession();
   try {
     await addUnseenPlate(plate_number, flagged);
     revalidatePath("/flagged");

@@ -1,8 +1,7 @@
-FROM node:20-bullseye AS builder
+FROM node:24-bookworm AS builder
 WORKDIR /app
-COPY package.json next.config.js ./
 
-RUN apt-get update && apt-get install -y \
+RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     libcairo2-dev \
     libpango1.0-dev \
@@ -13,25 +12,19 @@ RUN apt-get update && apt-get install -y \
     && rm -rf /var/lib/apt/lists/*
 
 
-# A bunch of canvas bs
 ENV npm_config_canvas_binary_host_mirror=https://github.com/Automattic/node-canvas/releases/download/
 ENV CXXFLAGS="-DSYZX_FEATURE_FLAG=1"
 
-COPY package.json yarn.lock* ./
-RUN yarn install --network-timeout 100000 || \
-    (echo "Retrying with canvas workaround..." && \
-     yarn add canvas@2.11.2 --network-timeout 100000 && \
-     yarn install --network-timeout 100000)
-
+COPY package.json yarn.lock ./
+RUN yarn install --frozen-lockfile --network-timeout 100000
 
 COPY . .
 RUN yarn build
 
-
-FROM node:20-bullseye
+FROM node:24-bookworm-slim
 WORKDIR /app
 
-RUN apt-get update && apt-get install -y \
+RUN apt-get update && apt-get install -y --no-install-recommends \
     libcairo2 \
     libpango-1.0-0 \
     libpangocairo-1.0-0 \
@@ -40,11 +33,11 @@ RUN apt-get update && apt-get install -y \
     librsvg2-2 \
     && rm -rf /var/lib/apt/lists/*
 
-COPY --from=builder /app/.next ./.next
-COPY --from=builder /app/public ./public
-COPY --from=builder /app /app
-COPY --from=builder /app/node_modules ./node_modules
-COPY --from=builder /app/package.json ./package.json
+COPY --from=builder --chown=node:node /app /app
+
+RUN mkdir -p /app/auth /app/config /app/logs /app/storage \
+    && chown -R node:node /app/auth /app/config /app/logs /app/storage
+
 EXPOSE 3000
-RUN mkdir -p /auth
-CMD ["yarn", "start"]
+USER node
+CMD ["node", "node_modules/next/dist/bin/next", "start"]
