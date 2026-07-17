@@ -168,10 +168,10 @@ test("unexpected MQTT failures are returned and cannot block Pushover", async ()
 });
 
 test("the plate route notifies only after a camera-aware successful insert", async () => {
-  const source = await readFile(
-    new URL("../app/api/plate-reads/route.js", import.meta.url),
-    "utf8"
-  );
+  const [source, migrations] = await Promise.all([
+    readFile(new URL("../app/api/plate-reads/route.js", import.meta.url), "utf8"),
+    readFile(new URL("../migrations.sql", import.meta.url), "utf8"),
+  ]);
 
   assert.equal(source.includes("checkPlateForMqttNotification"), false);
   assert.equal(source.includes("sendMqttNotificationByPlate"), false);
@@ -180,6 +180,10 @@ test("the plate route notifies only after a camera-aware successful insert", asy
   assert.match(
     source,
     /plate_number = \$1 AND timestamp = \$5\s+AND camera_name IS NOT DISTINCT FROM \$6/
+  );
+  assert.match(
+    migrations,
+    /CREATE INDEX IF NOT EXISTS idx_plate_reads_event_identity\s+ON public\.plate_reads \(plate_number, timestamp, camera_name\);/
   );
 
   const ignoreCheck = source.indexOf("await isPlateIgnored");
