@@ -1,10 +1,12 @@
-import { cleanupOldRecords, getPool, isPlateIgnored } from "@/lib/db";
 import {
   checkPlateForNotification,
-  checkPlateForMqttNotification,
+  cleanupOldRecords,
+  getPool,
+  isPlateIgnored,
 } from "@/lib/db";
 import { sendPushoverNotification } from "@/lib/notifications";
-import { sendMqttNotificationByPlate } from "@/lib/mqtt-client";
+import { processAcceptedPlateReadEffects } from "@/lib/accepted-plate-read-effects.mjs";
+import { processAcceptedMqttRead } from "@/lib/mqtt/runtime.mjs";
 import { getConfig } from "@/lib/settings";
 import { revalidatePlatesPage } from "@/app/actions";
 import fileStorage from "@/lib/fileStorage";
@@ -152,7 +154,9 @@ async function processPlateRead(data) {
   let dbClient = null;
 
   try {
-    // Initialize common values
+    // Preserve whether Blue Iris supplied a timestamp. The database still gets
+    // a valid server timestamp when it is missing, while the MQTT payload can
+    // label that case as a server-receipt fallback.
     const timestamp = data.timestamp || new Date().toISOString();
     const camera = data.camera || null;
     let plates = [];
@@ -232,41 +236,7 @@ async function processPlateRead(data) {
     const ignoredPlates = [];
 
     for (const plateData of plates) {
-      // Check notifications
-      const shouldNotify = await checkPlateForNotification(
-        plateData.plate_number
-      );
-      if (shouldNotify) {
-        await sendPushoverNotification(
-          plateData.plate_number,
-          null,
-          data.Image
-        );
-      }
-
-      // Check MQTT notifications
-      const shouldMqttNotify = await checkPlateForMqttNotification(
-        plateData.plate_number
-      );
-      if (shouldMqttNotify) {
-        try {
-          const mqttResult = await sendMqttNotificationByPlate(
-            plateData.plate_number,
-            {
-              ...plateData,
-              camera_name: camera,
-              timestamp: timestamp,
-            }
-          );
-          if (mqttResult.success && mqttResult.sent > 0) {
-            console.log("Sent MQTT plate notification");
-          }
-        } catch {
-          console.error("MQTT plate notification failed");
-          // Don't fail the entire request if MQTT fails
-        }
-      }
-
+      // Ignored reads must not store images, create database rows, or notify.
       const isIgnored = await isPlateIgnored(plateData.plate_number);
       if (isIgnored) {
         ignoredPlates.push(plateData.plate_number);
@@ -305,11 +275,11 @@ async function processPlateRead(data) {
         ),
         new_read AS (
           INSERT INTO plate_reads (
-            plate_number, 
-            image_data, 
-            image_path, 
+            plate_number,
+            image_data,
+            image_path,
             thumbnail_path,
-            timestamp, 
+            timestamp,
             camera_name,
             bi_path,
             confidence,
@@ -319,8 +289,9 @@ async function processPlateRead(data) {
           )
           SELECT $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11
           WHERE NOT EXISTS (
-            SELECT 1 FROM plate_reads 
+            SELECT 1 FROM plate_reads
             WHERE plate_number = $1 AND timestamp = $5
+              AND camera_name IS NOT DISTINCT FROM $6
           )
           RETURNING id
         )
@@ -343,10 +314,37 @@ async function processPlateRead(data) {
       if (result.rows.length === 0) {
         duplicatePlates.push(plateData.plate_number);
       } else {
+        const readId = result.rows[0].id;
         processedPlates.push({
           plate: plateData.plate_number,
-          id: result.rows[0].id,
+          id: readId,
         });
+
+        // Notification side effects run only after the read has a durable ID.
+        // The orchestrator is best-effort, and this outer guard ensures an
+        // unexpected integration bug can never reverse the accepted read.
+        try {
+          await processAcceptedPlateReadEffects({
+            read: {
+              ...plateData,
+              id: readId,
+              plate_number: plateData.plate_number,
+              camera_name: camera,
+              timestamp: data.timestamp || null,
+              persisted_timestamp: timestamp,
+              image_path: imagePaths.imagePath,
+              thumbnail_path: imagePaths.thumbnailPath,
+              bi_path: biPath,
+            },
+            imageData: data.Image,
+            shouldSendPushover: checkPlateForNotification,
+            sendPushover: sendPushoverNotification,
+            processMqtt: processAcceptedMqttRead,
+            logger: console,
+          });
+        } catch {
+          console.error("Accepted plate notification processing failed");
+        }
       }
     }
 
