@@ -73,7 +73,7 @@ test("MQTT test publishing queues one standard payload through the durable outbo
   assert.equal(delivery.payload.camera, "Entry LPR 1");
   assert.equal(delivery.payload.camera_key, "entry-lpr-1");
   assert.equal(delivery.payload.timestamp, observedAt.toISOString());
-  assert.equal(delivery.payload.timestamp_source, "blue_iris");
+  assert.equal(delivery.payload.timestamp_source, "server_test");
   assert.equal(delivery.payload.matched_rules, "MQTT Test");
   assert.equal(delivery.payload.message, "MQTT test message");
 });
