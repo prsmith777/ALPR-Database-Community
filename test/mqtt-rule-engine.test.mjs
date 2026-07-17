@@ -6,6 +6,7 @@ import {
   evaluateMqttRules,
   planMqttPublications,
 } from "../lib/mqtt/rule-engine.mjs";
+import { buildMqttPlateReadPayload } from "../lib/mqtt/payload.mjs";
 
 const knownPlates = [
   {
@@ -234,6 +235,82 @@ test("matching rules for one camera and destination consolidate into one publish
   ]);
   assert.equal(result.publications[0].matchedPlateNumber, "DPOM90");
   assert.equal(result.publications[0].identityConflict, false);
+});
+
+test("generic any-plate routing yields to a stronger fuzzy known identity", () => {
+  const rules = [
+    baseRule({
+      id: 1,
+      name: "All Plate Reads",
+      match_type: "any_plate",
+      match_value: "",
+    }),
+    baseRule({
+      id: 2,
+      name: "Family Vehicles",
+      match_type: "tag",
+      match_value: "Family",
+      fuzzy_enabled: true,
+    }),
+  ];
+
+  const result = planMqttPublications({
+    rules,
+    observedPlate: "DP0M90",
+    camera: entryCamera1,
+    knownPlates,
+    settings: {
+      base_topic: "Blue Iris/ALPR",
+      camera_topic_template: "{base_topic}/{camera_key}",
+      local_timezone: "America/Denver",
+      hour_format: 12,
+    },
+  });
+
+  assert.equal(result.publications.length, 1);
+
+  const publication = result.publications[0];
+
+  assert.equal(publication.matchedPlateNumber, "DPOM90");
+  assert.equal(publication.identityConflict, false);
+  assert.equal(publication.candidate.name, "Liz's Lexus");
+  assert.deepEqual(publication.matchMethods, ["fuzzy"]);
+  assert.equal(publication.matchDistance, 1);
+  assert.deepEqual(publication.ruleNames, [
+    "All Plate Reads",
+    "Family Vehicles",
+  ]);
+  assert.deepEqual(
+    publication.evidenceMatches.map((match) => match.ruleName),
+    ["Family Vehicles"]
+  );
+
+  const payload = buildMqttPlateReadPayload({
+    read: {
+      id: 87321,
+      plate_number: "DP0M90",
+      timestamp: "2026-07-17T15:30:45.250Z",
+      confidence: 0.94,
+    },
+    camera: entryCamera1,
+    publication,
+    settings: {
+      local_timezone: "America/Denver",
+      hour_format: 12,
+    },
+  });
+
+  assert.equal(payload.plate_number, "DP0M90");
+  assert.equal(payload.matched_plate_number, "DPOM90");
+  assert.equal(payload.plate_name, "Liz's Lexus");
+  assert.equal(payload.tags, "Family, Resident");
+  assert.equal(payload.match_method, "fuzzy");
+  assert.equal(payload.match_distance, 1);
+  assert.equal(payload.match_quality, "strong");
+  assert.equal(
+    payload.matched_rules,
+    "All Plate Reads, Family Vehicles"
+  );
 });
 
 test("different camera observations always plan independent camera topics", () => {
