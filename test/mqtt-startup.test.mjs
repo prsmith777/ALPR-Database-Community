@@ -5,6 +5,7 @@ import {
   mqttInstrumentationInternals,
   register,
 } from "../instrumentation.js";
+import { registerMqttNodeInstrumentation } from "../instrumentation.node.js";
 import {
   mqttStartupInternals,
   startMqttRuntimeWithRetry,
@@ -126,14 +127,14 @@ test("temporary startup failures schedule a retry that can later succeed", async
   assert.equal(state.lastError, null);
 });
 
-test("Next.js instrumentation skips Edge without importing Node-only MQTT code", async () => {
+test("Next.js instrumentation skips Edge without loading Node-only MQTT code", async () => {
   let loadCalls = 0;
 
-  const result = await register({
+  const result = await mqttInstrumentationInternals.registerForRuntime({
     runtime: "edge",
-    async loadStartup() {
+    async loadNodeInstrumentation() {
       loadCalls += 1;
-      throw new Error("Edge must not import MQTT startup");
+      throw new Error("Edge must not import Node MQTT instrumentation");
     },
   });
 
@@ -142,12 +143,35 @@ test("Next.js instrumentation skips Edge without importing Node-only MQTT code",
   assert.equal(loadCalls, 0);
 });
 
-test("Next.js Node instrumentation delegates to the resilient startup wrapper", async () => {
+test("Next.js Node instrumentation delegates through the Node-only adapter", async () => {
   const { logger } = makeLogger();
   let receivedLogger;
 
-  const result = await register({
+  const result = await mqttInstrumentationInternals.registerForRuntime({
     runtime: "nodejs",
+    logger,
+    async loadNodeInstrumentation() {
+      return {
+        async registerMqttNodeInstrumentation(options) {
+          receivedLogger = options.logger;
+          return {
+            status: "started",
+            reused: false,
+          };
+        },
+      };
+    },
+  });
+
+  assert.equal(result.status, "started");
+  assert.equal(receivedLogger, logger);
+});
+
+test("Node-only instrumentation loads the resilient MQTT startup wrapper", async () => {
+  const { logger } = makeLogger();
+  let receivedLogger;
+
+  const result = await registerMqttNodeInstrumentation({
     logger,
     async loadStartup() {
       return {
@@ -169,17 +193,17 @@ test("Next.js Node instrumentation delegates to the resilient startup wrapper", 
 test("instrumentation import failures are logged without blocking the server", async () => {
   const { logger, entries } = makeLogger();
 
-  const result = await register({
+  const result = await mqttInstrumentationInternals.registerForRuntime({
     runtime: "nodejs",
     logger,
-    async loadStartup() {
-      throw new Error("Unable to load MQTT startup module");
+    async loadNodeInstrumentation() {
+      throw new Error("Unable to load Node MQTT instrumentation");
     },
   });
 
   assert.equal(result.status, "error");
   assert.equal(result.runtime, "nodejs");
-  assert.match(result.error.message, /Unable to load MQTT startup module/);
+  assert.match(result.error.message, /Unable to load Node MQTT instrumentation/);
   assert.equal(entries.length, 1);
   assert.equal(entries[0].level, "error");
   assert.match(entries[0].message, /instrumentation registration failed/);
@@ -187,4 +211,18 @@ test("instrumentation import failures are logged without blocking the server", a
     mqttInstrumentationInternals.safeError(new Error("test")),
     { name: "Error", code: "", message: "test" }
   );
+});
+
+test("the production register function skips non-Node runtimes", async () => {
+  const previousRuntime = process.env.NEXT_RUNTIME;
+  process.env.NEXT_RUNTIME = "edge";
+
+  try {
+    const result = await register();
+    assert.equal(result.status, "skipped");
+    assert.equal(result.runtime, "edge");
+  } finally {
+    if (previousRuntime === undefined) delete process.env.NEXT_RUNTIME;
+    else process.env.NEXT_RUNTIME = previousRuntime;
+  }
 });
