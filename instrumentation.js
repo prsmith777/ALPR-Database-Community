@@ -8,14 +8,10 @@ function safeError(error) {
   };
 }
 
-/**
- * Next.js invokes register() once for each server instance. MQTT is Node-only,
- * so Edge initialization exits without importing PostgreSQL or mqtt packages.
- */
-export async function register({
-  runtime = process.env.NEXT_RUNTIME,
+async function registerForRuntime({
+  runtime,
   logger = console,
-  loadStartup = () => import("./lib/mqtt/startup.mjs"),
+  loadNodeInstrumentation,
 } = {}) {
   if (runtime !== "nodejs") {
     return {
@@ -24,13 +20,21 @@ export async function register({
     };
   }
 
+  if (typeof loadNodeInstrumentation !== "function") {
+    throw new Error("Node instrumentation loader must be a function");
+  }
+
   try {
-    const startup = await loadStartup();
-    if (typeof startup?.startMqttRuntimeWithRetry !== "function") {
-      throw new Error("MQTT startup module did not expose startMqttRuntimeWithRetry()");
+    const nodeInstrumentation = await loadNodeInstrumentation();
+    if (
+      typeof nodeInstrumentation?.registerMqttNodeInstrumentation !== "function"
+    ) {
+      throw new Error(
+        "Node instrumentation did not expose registerMqttNodeInstrumentation()"
+      );
     }
 
-    return await startup.startMqttRuntimeWithRetry({ logger });
+    return await nodeInstrumentation.registerMqttNodeInstrumentation({ logger });
   } catch (error) {
     const normalized = safeError(error);
     logger?.error?.("MQTT instrumentation registration failed", {
@@ -45,6 +49,25 @@ export async function register({
   }
 }
 
+/**
+ * Next.js invokes register() once for each server instance. Keep the literal
+ * NEXT_RUNTIME guard around the Node-only import so the Edge compilation never
+ * follows PostgreSQL or MQTT dependencies.
+ */
+export async function register() {
+  const runtime = process.env.NEXT_RUNTIME;
+
+  if (runtime === "nodejs") {
+    return registerForRuntime({
+      runtime,
+      loadNodeInstrumentation: () => import("./instrumentation.node.js"),
+    });
+  }
+
+  return registerForRuntime({ runtime });
+}
+
 export const mqttInstrumentationInternals = Object.freeze({
   safeError,
+  registerForRuntime,
 });
