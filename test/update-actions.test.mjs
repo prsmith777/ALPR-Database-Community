@@ -173,12 +173,12 @@ test("valid authenticated update actions preserve existing behavior", async () =
 test("app server actions delegate all five operations to the authenticated action set", async () => {
   const source = await fs.readFile(new URL("../app/actions.js", import.meta.url), "utf8");
 
-  assert.match(source, /authenticate:\s*requireUpdateActionSession/);
+  assert.match(source, /authenticate:\s*requireAuthenticatedSession/);
   for (const name of ACTION_NAMES) {
     assert.match(
       source,
       new RegExp(
-        `export async function ${name}\\([^)]*\\) \\{\\s*return await updateActions\\.${name}\\([^)]*\\);\\s*\\}`
+        `export async function ${name}\\([^)]*\\) \\{\\s*await requireAuthenticatedSession\\(\\);\\s*return await updateActions\\.${name}\\([^)]*\\);\\s*\\}`
       )
     );
   }

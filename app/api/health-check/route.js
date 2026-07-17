@@ -8,10 +8,11 @@ export async function GET() {
     await client.query("SELECT 1");
     client.release();
     return Response.json({ status: "ok" });
-  } catch (error) {
+  } catch {
+    console.error("Database health check failed");
     return Response.json(
-      { status: "error", message: error.message },
-      { status: 500 }
+      { status: "error" },
+      { status: 503 }
     );
   }
 }
