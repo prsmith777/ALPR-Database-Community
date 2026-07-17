@@ -1,39 +1,34 @@
 "use client";
 
-import { useRouter, usePathname } from "next/navigation";
-import { cn } from "@/lib/utils";
-import { Button } from "@/components/ui/button";
-import { ThemeToggle } from "@/components/ThemeToggle";
-import { ChatButton } from "@/components/chat/ChatButton";
-import { logoutAction } from "@/app/actions";
+import { useState } from "react";
+import { usePathname, useRouter } from "next/navigation";
 import {
-  LayoutDashboard,
+  Antenna,
+  BellPlus,
+  BookMarked,
+  Cctv,
   Database,
+  Flag,
+  LayoutDashboard,
+  LogOut,
+  Menu,
   Settings,
   TerminalSquare,
-  MessageCircleQuestion,
-  Menu,
   X,
-  LogOut,
 } from "lucide-react";
-import { BookMarked } from "lucide-react";
-import { Cctv } from "lucide-react";
-import { Flag } from "lucide-react";
-import { BellPlus } from "lucide-react";
-import { SquareTerminal } from "lucide-react";
-import { GiCartwheel } from "react-icons/gi";
-import { Antenna } from "lucide-react";
-import TPMS from "@/components/icons/tpms";
-import { useState, useEffect } from "react";
 
+import { logoutAction } from "@/app/actions";
+import { ChatButton } from "@/components/chat/ChatButton";
+import { ThemeToggle } from "@/components/ThemeToggle";
+import { Button } from "@/components/ui/button";
+import { Sheet, SheetContent } from "@/components/ui/sheet";
 import {
   Tooltip,
   TooltipContent,
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
-
-import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
+import { cn } from "@/lib/utils";
 
 const navItems = [
   { icon: LayoutDashboard, label: "Dashboard", href: "/dashboard" },
@@ -42,16 +37,15 @@ const navItems = [
   { icon: BookMarked, label: "Known Plates", href: "/known_plates" },
   { icon: Flag, label: "Watchlist", href: "/flagged" },
   { icon: BellPlus, label: "Notifications", href: "/notifications" },
-  // { icon: TPMS, label: "TPMS", href: "/tpms" },
+  { icon: Antenna, label: "MQTT", href: "/mqtt" },
 ];
 
-// Items to show in the mobile bottom navigation
 const mobileNavItems = [
   { icon: LayoutDashboard, label: "Dashboard", href: "/dashboard" },
   { icon: Cctv, label: "Live Feed", href: "/live_feed" },
   { icon: Database, label: "Database", href: "/database" },
   { icon: BookMarked, label: "Plates", href: "/known_plates" },
-  { icon: Menu, label: "More", href: "#more" }, // This will open the menu
+  { icon: Menu, label: "More", href: "#more" },
 ];
 
 export function Sidebar() {
@@ -59,7 +53,6 @@ export function Sidebar() {
   const pathname = usePathname();
   const [isSheetOpen, setIsSheetOpen] = useState(false);
 
-  // Function to navigate and close the sheet if open
   const navigateTo = (href) => {
     if (href === "#more") {
       setIsSheetOpen(true);
@@ -70,29 +63,26 @@ export function Sidebar() {
   };
 
   const isPathActive = (path) => {
-    // Special case for root dashboard to avoid matching everything
     if (path === "/dashboard") {
       return pathname === "/dashboard" || pathname === "/";
     }
-    // For other paths, check if the current path starts with this path
-    // but make sure it's a complete path segment match ("/live_feed" should match "/live_feed/something" but not "/live_feed_something")
     return pathname === path || pathname.startsWith(`${path}/`);
   };
 
   return (
     <>
-      {/* Desktop Sidebar */}
       <TooltipProvider>
-        <aside className="hidden sm:flex flex-col justify-between h-screen bg-background border-r w-14">
-          <nav className="flex flex-col items-center pt-4 space-y-2">
+        <aside className="hidden h-screen w-14 flex-col justify-between border-r bg-background sm:flex">
+          <nav className="flex flex-col items-center space-y-2 pt-4">
             {navItems.map((item) => (
               <Tooltip key={item.href} delayDuration={0}>
                 <TooltipTrigger asChild>
                   <Button
                     variant="ghost"
                     onClick={() => router.push(item.href)}
+                    aria-label={item.label}
                     className={cn(
-                      "w-10 h-10 p-0 hover:bg-transparent [&:not(:disabled)]:hover:bg-transparent",
+                      "h-10 w-10 p-0 hover:bg-transparent [&:not(:disabled)]:hover:bg-transparent",
                       isPathActive(item.href)
                         ? "text-blue-500"
                         : "hover:text-blue-500"
@@ -107,7 +97,8 @@ export function Sidebar() {
               </Tooltip>
             ))}
           </nav>
-          <div className="flex flex-col items-center pb-4 space-y-2">
+
+          <div className="flex flex-col items-center space-y-2 pb-4">
             <ThemeToggle />
             <ChatButton />
             <Tooltip delayDuration={0}>
@@ -115,8 +106,9 @@ export function Sidebar() {
                 <Button
                   variant="ghost"
                   onClick={() => router.push("/logs")}
+                  aria-label="System Logs"
                   className={cn(
-                    "w-10 h-10 p-0 hover:bg-transparent [&:not(:disabled)]:hover:bg-transparent",
+                    "h-10 w-10 p-0 hover:bg-transparent [&:not(:disabled)]:hover:bg-transparent",
                     isPathActive("/logs")
                       ? "text-blue-500"
                       : "hover:text-blue-500"
@@ -135,8 +127,9 @@ export function Sidebar() {
                 <Button
                   variant="ghost"
                   onClick={() => router.push("/settings")}
+                  aria-label="Settings"
                   className={cn(
-                    "w-10 h-10 p-0 hover:bg-transparent [&:not(:disabled)]:hover:bg-transparent",
+                    "h-10 w-10 p-0 hover:bg-transparent [&:not(:disabled)]:hover:bg-transparent",
                     isPathActive("/settings")
                       ? "text-blue-500"
                       : "hover:text-blue-500"
@@ -157,7 +150,7 @@ export function Sidebar() {
                     type="submit"
                     variant="ghost"
                     aria-label="Log Out"
-                    className="w-10 h-10 p-0 hover:bg-transparent hover:text-red-500 [&:not(:disabled)]:hover:bg-transparent"
+                    className="h-10 w-10 p-0 hover:bg-transparent hover:text-red-500 [&:not(:disabled)]:hover:bg-transparent"
                   >
                     <LogOut className="h-5 w-5" />
                   </Button>
@@ -171,8 +164,7 @@ export function Sidebar() {
         </aside>
       </TooltipProvider>
 
-      {/* Mobile Bottom Navigation */}
-      <nav className="sm:hidden fixed bottom-0 left-0 right-0 bg-background border-t flex justify-around items-center h-24 z-50 pb-4">
+      <nav className="fixed bottom-0 left-0 right-0 z-50 flex h-24 items-center justify-around border-t bg-background pb-4 sm:hidden">
         {mobileNavItems.map((item) => (
           <Button
             key={item.href}
@@ -180,87 +172,78 @@ export function Sidebar() {
             size="sm"
             onClick={() => navigateTo(item.href)}
             className={cn(
-              "flex flex-col items-center justify-center h-full w-full rounded-none py-1 px-0",
-              pathname === item.href ? "text-blue-500" : "text-muted-foreground"
+              "flex h-full w-full flex-col items-center justify-center rounded-none px-0 py-1",
+              pathname === item.href
+                ? "text-blue-500"
+                : "text-muted-foreground"
             )}
           >
-            <item.icon className="h-5 w-5 mb-1" />
+            <item.icon className="mb-1 h-5 w-5" />
             <span className="text-[10px]">{item.label}</span>
           </Button>
         ))}
       </nav>
 
-      {/* Mobile Menu Sheet */}
       <Sheet open={isSheetOpen} onOpenChange={setIsSheetOpen}>
         <SheetContent side="bottom" className="h-[80vh] px-0 pt-0">
-          <div className="sticky top-0 bg-background z-10 flex justify-between items-center px-4 py-3 border-b">
-            <h2 className="font-semibold text-lg">Menu</h2>
+          <div className="sticky top-0 z-10 flex items-center justify-between border-b bg-background px-4 py-3">
+            <h2 className="text-lg font-semibold">Menu</h2>
             <Button
               variant="ghost"
               size="icon"
               onClick={() => setIsSheetOpen(false)}
               className="h-8 w-8"
+              aria-label="Close menu"
             >
               <X className="h-5 w-5" />
             </Button>
           </div>
-          <div className="px-2 py-4 space-y-1 overflow-y-auto max-h-[calc(80vh-60px)]">
-            {/* Main navigation items */}
+
+          <div className="max-h-[calc(80vh-60px)] space-y-1 overflow-y-auto px-2 py-4">
             {navItems.map((item) => (
               <Button
                 key={item.href}
                 variant="ghost"
                 className={cn(
-                  "w-full justify-start text-left h-12 px-4",
-                  pathname === item.href
+                  "h-12 w-full justify-start px-4 text-left",
+                  isPathActive(item.href)
                     ? "bg-muted text-blue-500"
                     : "text-foreground"
                 )}
-                onClick={() => {
-                  router.push(item.href);
-                  setIsSheetOpen(false);
-                }}
+                onClick={() => navigateTo(item.href)}
               >
-                <item.icon className="h-5 w-5 mr-3" />
+                <item.icon className="mr-3 h-5 w-5" />
                 {item.label}
               </Button>
             ))}
 
-            {/* Divider */}
-            <div className="h-px bg-border my-4" />
+            <div className="my-4 h-px bg-border" />
 
-            {/* Additional items */}
             <Button
               variant="ghost"
               className={cn(
-                "w-full justify-start text-left h-12 px-4",
-                pathname === "/logs"
+                "h-12 w-full justify-start px-4 text-left",
+                isPathActive("/logs")
                   ? "bg-muted text-blue-500"
                   : "text-foreground"
               )}
-              onClick={() => {
-                router.push("/logs");
-                setIsSheetOpen(false);
-              }}
+              onClick={() => navigateTo("/logs")}
             >
-              <TerminalSquare className="h-5 w-5 mr-3" />
+              <TerminalSquare className="mr-3 h-5 w-5" />
               System Logs
             </Button>
 
             <Button
               variant="ghost"
               className={cn(
-                "w-full justify-start text-left h-12 px-4",
-                pathname === "/settings"
+                "h-12 w-full justify-start px-4 text-left",
+                isPathActive("/settings")
                   ? "bg-muted text-blue-500"
                   : "text-foreground"
               )}
-              onClick={() => {
-                router.push("/settings");
-                setIsSheetOpen(false);
-              }}
+              onClick={() => navigateTo("/settings")}
             >
-              <Settings className="h-5 w-5 mr-3" />
+              <Settings className="mr-3 h-5 w-5" />
               Settings
             </Button>
 
@@ -268,15 +251,14 @@ export function Sidebar() {
               <Button
                 type="submit"
                 variant="ghost"
-                className="w-full justify-start text-left h-12 px-4 text-red-500 hover:text-red-500"
+                className="h-12 w-full justify-start px-4 text-left text-red-500 hover:text-red-500"
               >
-                <LogOut className="h-5 w-5 mr-3" />
+                <LogOut className="mr-3 h-5 w-5" />
                 Log Out
               </Button>
             </form>
 
-            {/* Theme toggle */}
-            <div className="px-4 py-2 mt-4">
+            <div className="mt-4 px-4 py-2">
               <div className="flex items-center">
                 <span className="mr-auto">Theme</span>
                 <ThemeToggle />
@@ -286,8 +268,7 @@ export function Sidebar() {
         </SheetContent>
       </Sheet>
 
-      {/* Add padding to the bottom of the page on mobile to account for the navigation bar */}
-      <div className="sm:hidden h-16"></div>
+      <div className="h-16 sm:hidden" />
     </>
   );
 }
