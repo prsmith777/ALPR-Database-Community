@@ -221,6 +221,100 @@ test("transient publish failures are delegated to repository retry planning with
   assert.match(JSON.stringify(entries), /ECONNREFUSED/);
 });
 
+
+test("different camera deliveries publish without waiting for one another", async () => {
+  const first = makeDelivery({
+    id: 41,
+    cameraKey: "entry-lpr-1",
+    cameraName: "Entry LPR 1",
+    topic: "Blue Iris/ALPR/entry-lpr-1",
+  });
+  const second = makeDelivery({
+    id: 42,
+    eventId: "read-42-entry-lpr-2",
+    cameraKey: "entry-lpr-2",
+    cameraName: "Entry LPR 2",
+    topic: "Blue Iris/ALPR/entry-lpr-2",
+  });
+
+  let releaseFirstPublish;
+  const firstPublishGate = new Promise((resolve) => {
+    releaseFirstPublish = resolve;
+  });
+
+  let reportSecondPublish;
+  const secondPublishStarted = new Promise((resolve) => {
+    reportSecondPublish = resolve;
+  });
+
+  const completedDeliveryIds = [];
+  const startedTopics = [];
+
+  const repository = makeRepository({
+    async claimDueDeliveries() {
+      return [first, second];
+    },
+    async recordDeliverySuccess({ deliveryId }) {
+      completedDeliveryIds.push(deliveryId);
+      const source = deliveryId === first.id ? first : second;
+
+      return {
+        ...source,
+        status: "succeeded",
+        attemptCount: 1,
+      };
+    },
+  });
+
+  const clientManager = makeClientManager({
+    async publish(options) {
+      startedTopics.push(options.topic);
+
+      if (options.topic === first.topic) {
+        await firstPublishGate;
+      } else {
+        reportSecondPublish();
+      }
+
+      return {
+        topic: options.topic,
+        qos: options.qos,
+        retain: options.retain,
+        bytes: 100,
+      };
+    },
+  });
+
+  const worker = new MqttDeliveryWorker({
+    repository,
+    clientManager,
+    workerId: "worker-independent-cameras",
+  });
+
+  const batchPromise = worker.runOnce();
+
+  await secondPublishStarted;
+  await waitFor(() => completedDeliveryIds.includes(second.id));
+
+  assert.deepEqual(startedTopics, [first.topic, second.topic]);
+  assert.equal(completedDeliveryIds.includes(second.id), true);
+  assert.equal(completedDeliveryIds.includes(first.id), false);
+
+  releaseFirstPublish();
+
+  const summary = await batchPromise;
+
+  assert.equal(summary.claimed, 2);
+  assert.equal(summary.succeeded, 2);
+  assert.equal(summary.retry, 0);
+  assert.equal(summary.dead, 0);
+  assert.equal(summary.unrecorded, 0);
+  assert.deepEqual(
+    summary.results.map((result) => result.deliveryId),
+    [first.id, second.id]
+  );
+});
+
 test("a dead delivery does not block a later successful delivery in the same batch", async () => {
   const deadDelivery = makeDelivery({ id: 41 });
   const goodDelivery = makeDelivery({
