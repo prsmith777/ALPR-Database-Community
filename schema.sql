@@ -136,7 +136,8 @@ CREATE TABLE public.plate_reads (
     ocr_annotation jsonb,
     confidence decimal,
     bi_zone varchar(30),
-    validated boolean DEFAULT false
+    validated boolean DEFAULT false,
+    event_identity varchar(80)
 );
 
 
@@ -363,6 +364,13 @@ CREATE INDEX idx_plate_reads_plate_number ON public.plate_reads USING btree (pla
 --
 
 CREATE INDEX idx_plate_reads_timestamp ON public.plate_reads USING btree ("timestamp");
+
+
+--
+-- Name: uq_plate_reads_event_identity; Type: INDEX; Schema: public; Owner: postgres
+--
+
+CREATE UNIQUE INDEX uq_plate_reads_event_identity ON public.plate_reads USING btree (event_identity) WHERE (event_identity IS NOT NULL);
 
 
 --

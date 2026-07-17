@@ -251,6 +251,7 @@ test("generic any-plate routing yields to a stronger fuzzy known identity", () =
       match_type: "tag",
       match_value: "Family",
       fuzzy_enabled: true,
+      message: "Family vehicle detected",
     }),
   ];
 
@@ -311,6 +312,7 @@ test("generic any-plate routing yields to a stronger fuzzy known identity", () =
     payload.matched_rules,
     "All Plate Reads, Family Vehicles"
   );
+  assert.equal(payload.message, "Family vehicle detected");
 });
 
 test("different camera observations always plan independent camera topics", () => {

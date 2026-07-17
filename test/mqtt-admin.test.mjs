@@ -122,6 +122,15 @@ test("MQTT settings reject wildcards, unsupported fields, and invalid timezones"
       }),
     /Invalid IANA timezone/
   );
+
+  assert.throws(
+    () =>
+      mqttAdminRepositoryInternals.normalizeSettingsInput({
+        ...base,
+        enabled: "definitely",
+      }),
+    /boolean value must be true or false/
+  );
 });
 
 test("broker listings expose only password presence and never the credential", async () => {

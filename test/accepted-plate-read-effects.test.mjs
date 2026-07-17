@@ -167,7 +167,7 @@ test("unexpected MQTT failures are returned and cannot block Pushover", async ()
   assert.match(entries[0].message, /MQTT processing failed/);
 });
 
-test("the plate route notifies only after a camera-aware successful insert", async () => {
+test("the plate route commits each read and MQTT outbox handoff atomically", async () => {
   const [source, migrations] = await Promise.all([
     readFile(new URL("../app/api/plate-reads/route.js", import.meta.url), "utf8"),
     readFile(new URL("../migrations.sql", import.meta.url), "utf8"),
@@ -175,7 +175,18 @@ test("the plate route notifies only after a camera-aware successful insert", asy
 
   assert.equal(source.includes("checkPlateForMqttNotification"), false);
   assert.equal(source.includes("sendMqttNotificationByPlate"), false);
-  assert.equal(source.includes("processAcceptedMqttRead"), true);
+  assert.equal(source.includes("processAcceptedMqttRead"), false);
+  assert.match(source, /new MqttRepository\(\{\s*pool,\s*executor: dbClient/);
+  assert.match(source, /await dbClient\.query\("BEGIN"\)/);
+  assert.match(source, /await dbClient\.query\("COMMIT"\)/);
+  assert.match(source, /await dbClient\.query\("ROLLBACK"\)/);
+  assert.match(
+    source,
+    /const shouldDeleteTransactionImages = transactionOpen;[\s\S]*if \(shouldDeleteTransactionImages\)/
+  );
+  assert.match(source, /await mqttService\.processAcceptedRead\(acceptedRead\)/);
+  assert.match(source, /mqttResult\.status === "error"/);
+  assert.match(source, /mqttResult\.status === "partial"/);
   assert.equal(source.includes("processAcceptedPlateReadEffects"), true);
   assert.match(
     source,
@@ -185,16 +196,30 @@ test("the plate route notifies only after a camera-aware successful insert", asy
     migrations,
     /CREATE INDEX IF NOT EXISTS idx_plate_reads_event_identity\s+ON public\.plate_reads \(plate_number, timestamp, camera_name\);/
   );
+  assert.match(
+    migrations,
+    /CREATE UNIQUE INDEX IF NOT EXISTS uq_plate_reads_event_identity\s+ON public\.plate_reads \(event_identity\)\s+WHERE event_identity IS NOT NULL;/
+  );
+  assert.match(source, /event_identity/);
+  assert.match(source, /ON CONFLICT DO NOTHING\s+RETURNING id/);
 
   const ignoreCheck = source.indexOf("await isPlateIgnored");
   const insertRead = source.indexOf("INSERT INTO plate_reads");
   const duplicateBranch = source.indexOf("if (result.rows.length === 0)");
+  const begin = source.indexOf('await dbClient.query("BEGIN")');
+  const mqttHandoff = source.indexOf(
+    "await mqttService.processAcceptedRead(acceptedRead)"
+  );
+  const commit = source.indexOf('await dbClient.query("COMMIT")');
   const acceptedEffects = source.indexOf("await processAcceptedPlateReadEffects");
 
   assert.ok(ignoreCheck >= 0);
+  assert.ok(begin >= 0);
   assert.ok(insertRead > ignoreCheck);
   assert.ok(duplicateBranch > insertRead);
-  assert.ok(acceptedEffects > duplicateBranch);
+  assert.ok(mqttHandoff > duplicateBranch);
+  assert.ok(commit > mqttHandoff);
+  assert.ok(acceptedEffects > commit);
   assert.equal(source.includes("timestamp: data.timestamp || null"), true);
 
   assert.deepEqual(

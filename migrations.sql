@@ -16,12 +16,20 @@ ALTER TABLE IF EXISTS public.plate_reads
     ADD COLUMN IF NOT EXISTS ocr_annotation jsonb,
     ADD COLUMN IF NOT EXISTS confidence decimal,
     ADD COLUMN IF NOT EXISTS bi_zone varchar(30),
-    ADD COLUMN IF NOT EXISTS validated boolean DEFAULT false;
+    ADD COLUMN IF NOT EXISTS validated boolean DEFAULT false,
+    ADD COLUMN IF NOT EXISTS event_identity varchar(80);
 
 -- Exact Blue Iris resubmissions are identified by plate, event time, and
 -- camera. The camera column keeps simultaneous observations independent.
 CREATE INDEX IF NOT EXISTS idx_plate_reads_event_identity
     ON public.plate_reads (plate_number, timestamp, camera_name);
+
+-- New reads carry a stable event identity. The partial unique index lets
+-- historical rows remain nullable while atomically suppressing concurrent
+-- resubmissions of the same Blue Iris event.
+CREATE UNIQUE INDEX IF NOT EXISTS uq_plate_reads_event_identity
+    ON public.plate_reads (event_identity)
+    WHERE event_identity IS NOT NULL;
 
 
 -- Please for the love of god work...

@@ -6,7 +6,9 @@ import {
 } from "@/lib/db";
 import { sendPushoverNotification } from "@/lib/notifications";
 import { processAcceptedPlateReadEffects } from "@/lib/accepted-plate-read-effects.mjs";
-import { processAcceptedMqttRead } from "@/lib/mqtt/runtime.mjs";
+import { createPlateReadEventIdentity } from "@/lib/plate-read-event-identity.mjs";
+import { MqttAcceptedReadService } from "@/lib/mqtt/accepted-read-service.mjs";
+import { MqttRepository } from "@/lib/mqtt/repository.mjs";
 import { getConfig } from "@/lib/settings";
 import { revalidatePlatesPage } from "@/app/actions";
 import fileStorage from "@/lib/fileStorage";
@@ -152,6 +154,8 @@ function extractPlatesFromMemo(memo) {
 
 async function processPlateRead(data) {
   let dbClient = null;
+  let transactionOpen = false;
+  const transactionImages = [];
 
   try {
     // Preserve whether Blue Iris supplied a timestamp. The database still gets
@@ -229,11 +233,23 @@ async function processPlateRead(data) {
     // Get database connection
     const pool = await getPool();
     dbClient = await pool.connect();
+    await dbClient.query("BEGIN");
+    transactionOpen = true;
     console.log("Database connection established");
+
+    const mqttRepository = new MqttRepository({
+      pool,
+      executor: dbClient,
+    });
+    const mqttService = new MqttAcceptedReadService({
+      repository: mqttRepository,
+      logger: console,
+    });
 
     const processedPlates = [];
     const duplicatePlates = [];
     const ignoredPlates = [];
+    const pendingEffects = [];
 
     for (const plateData of plates) {
       // Ignored reads must not store images, create database rows, or notify.
@@ -267,6 +283,12 @@ async function processPlateRead(data) {
         }
       }
 
+      const eventIdentity = createPlateReadEventIdentity({
+        plateNumber: plateData.plate_number,
+        timestamp,
+        cameraName: camera,
+      });
+
       const result = await dbClient.query(
         `WITH new_plate AS (
           INSERT INTO plates (plate_number)
@@ -285,14 +307,16 @@ async function processPlateRead(data) {
             confidence,
             crop_coordinates,
             ocr_annotation,
-            plate_annotation
+            plate_annotation,
+            event_identity
           )
-          SELECT $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11
+          SELECT $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12
           WHERE NOT EXISTS (
             SELECT 1 FROM plate_reads
             WHERE plate_number = $1 AND timestamp = $5
               AND camera_name IS NOT DISTINCT FROM $6
           )
+          ON CONFLICT DO NOTHING
           RETURNING id
         )
         SELECT id FROM new_read`,
@@ -308,43 +332,67 @@ async function processPlateRead(data) {
           plateData.crop_coordinates || null,
           plateData.ocr_annotation || null,
           plateData.plate_annotation || null,
+          eventIdentity,
         ]
       );
 
       if (result.rows.length === 0) {
         duplicatePlates.push(plateData.plate_number);
+        await fileStorage
+          .deleteImage(imagePaths.imagePath, imagePaths.thumbnailPath)
+          .catch(() => console.error("Duplicate plate image cleanup failed"));
       } else {
         const readId = result.rows[0].id;
+        transactionImages.push(imagePaths);
         processedPlates.push({
           plate: plateData.plate_number,
           id: readId,
         });
 
-        // Notification side effects run only after the read has a durable ID.
-        // The orchestrator is best-effort, and this outer guard ensures an
-        // unexpected integration bug can never reverse the accepted read.
-        try {
-          await processAcceptedPlateReadEffects({
-            read: {
-              ...plateData,
-              id: readId,
-              plate_number: plateData.plate_number,
-              camera_name: camera,
-              timestamp: data.timestamp || null,
-              persisted_timestamp: timestamp,
-              image_path: imagePaths.imagePath,
-              thumbnail_path: imagePaths.thumbnailPath,
-              bi_path: biPath,
-            },
-            imageData: data.Image,
-            shouldSendPushover: checkPlateForNotification,
-            sendPushover: sendPushoverNotification,
-            processMqtt: processAcceptedMqttRead,
-            logger: console,
-          });
-        } catch {
-          console.error("Accepted plate notification processing failed");
+        const acceptedRead = {
+          ...plateData,
+          id: readId,
+          plate_number: plateData.plate_number,
+          camera_name: camera,
+          timestamp: data.timestamp || null,
+          persisted_timestamp: timestamp,
+          image_path: imagePaths.imagePath,
+          thumbnail_path: imagePaths.thumbnailPath,
+          bi_path: biPath,
+        };
+
+        const mqttResult = await mqttService.processAcceptedRead(acceptedRead);
+        if (mqttResult.status === "error" || mqttResult.status === "partial") {
+          throw new Error(
+            `MQTT outbox handoff failed for accepted read ${readId}`
+          );
         }
+
+        pendingEffects.push({
+          read: acceptedRead,
+          imageData: data.Image,
+          mqttResult,
+        });
+      }
+    }
+
+    await dbClient.query("COMMIT");
+    transactionOpen = false;
+
+    // The durable MQTT handoff committed with each read. Remote Pushover
+    // delivery remains best-effort and runs only after the transaction commits.
+    for (const effect of pendingEffects) {
+      try {
+        await processAcceptedPlateReadEffects({
+          read: effect.read,
+          imageData: effect.imageData,
+          shouldSendPushover: checkPlateForNotification,
+          sendPushover: sendPushoverNotification,
+          processMqtt: async () => effect.mqttResult,
+          logger: console,
+        });
+      } catch {
+        console.error("Accepted plate notification processing failed");
       }
     }
 
@@ -385,6 +433,26 @@ async function processPlateRead(data) {
       },
       { status: processedPlates.length > 0 ? 201 : 409 }
     );
+  } catch (error) {
+    const shouldDeleteTransactionImages = transactionOpen;
+
+    if (dbClient && transactionOpen) {
+      try {
+        await dbClient.query("ROLLBACK");
+      } catch {
+        console.error("Plate-read transaction rollback failed");
+      }
+    }
+
+    if (shouldDeleteTransactionImages) {
+      await Promise.allSettled(
+        transactionImages.map(({ imagePath, thumbnailPath }) =>
+          fileStorage.deleteImage(imagePath, thumbnailPath)
+        )
+      );
+    }
+
+    throw error;
   } finally {
     if (dbClient) {
       dbClient.release();

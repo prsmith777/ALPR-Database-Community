@@ -133,6 +133,17 @@ test("invalid rule types, values, fuzzy limits, cameras, and topics are rejected
       }),
     /wildcards/
   );
+
+  assert.throws(
+    () =>
+      mqttRuleAdminInternals.normalizeRuleInput({
+        name: "Bad Boolean",
+        matchType: "any_plate",
+        brokerId: 1,
+        enabled: "sometimes",
+      }),
+    /boolean value must be true or false/
+  );
 });
 
 test("rule mapping returns browser-safe broker and camera fields", () => {

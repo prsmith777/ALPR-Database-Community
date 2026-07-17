@@ -164,6 +164,19 @@ test("MQTT test input inherits QoS and retain defaults while allowing explicit o
 
   assert.equal(explicit.qos, 0);
   assert.equal(explicit.retain, false);
+
+  assert.throws(
+    () =>
+      mqttTestPublishInternals.normalizeTestInput(
+        {
+          brokerId: 3,
+          topic: "Blue Iris/ALPR/test",
+          retain: "later",
+        },
+        settings
+      ),
+    /boolean value must be true or false/
+  );
 });
 
 test("the MQTT test API uses the runtime outbox instead of direct best-effort publishing", async () => {

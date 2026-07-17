@@ -218,6 +218,61 @@ test("camera discovery updates the existing case-insensitive camera identity", a
   assert.equal(client.calls.at(-1).sql, "COMMIT");
 });
 
+test("a transaction-bound executor keeps camera discovery and outbox work in the caller transaction", async () => {
+  const seenAt = new Date("2026-07-17T03:03:37.800Z");
+  const executor = makeClient((sql, params) => {
+    if (sql.startsWith("SELECT * FROM public.mqtt_cameras")) {
+      return {
+        rows: [
+          {
+            id: 7,
+            camera_name: "Entry LPR 1",
+            camera_key: "entry-lpr-1",
+            enabled: true,
+          },
+        ],
+      };
+    }
+    if (sql.startsWith("UPDATE public.mqtt_cameras")) {
+      return {
+        rows: [
+          {
+            id: params[0],
+            camera_name: "Entry LPR 1",
+            camera_key: "entry-lpr-1",
+            enabled: true,
+            last_seen_at: params[1],
+          },
+        ],
+      };
+    }
+    throw new Error(`Unexpected SQL: ${sql}`);
+  });
+  const pool = makePool({
+    query: () => {
+      throw new Error("Pool query must not be used");
+    },
+    client: makeClient(() => {
+      throw new Error("Pool transaction must not be opened");
+    }),
+  });
+  const repository = new MqttRepository({ pool, executor });
+
+  const camera = await repository.discoverCamera({
+    cameraName: "Entry LPR 1",
+    seenAt,
+  });
+
+  assert.equal(camera.id, 7);
+  assert.equal(executor.released, false);
+  assert.equal(
+    executor.calls.some(({ sql }) =>
+      ["BEGIN", "COMMIT", "ROLLBACK"].includes(sql)
+    ),
+    false
+  );
+});
+
 test("camera discovery resolves stable-key collisions without changing display names", async () => {
   const seenAt = new Date("2026-07-17T03:03:37.800Z");
   let selectCount = 0;

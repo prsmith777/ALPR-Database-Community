@@ -237,6 +237,66 @@ test("failed initial connections are removed and closed so a later retry starts 
   assert.equal(harness.clients[0].endCalls[0].force, true);
 });
 
+test("an offline cached client is force-closed before publishing on a replacement", async () => {
+  const harness = createHarness();
+  const manager = new MqttClientManager({
+    mqttConnect: harness.mqttConnect,
+    logger: harness.logger,
+  });
+
+  const staleClient = await manager.getClient(baseBroker);
+  staleClient.connected = false;
+  staleClient.emit("offline");
+
+  await manager.publish({
+    broker: baseBroker,
+    topic: "Blue Iris/ALPR/entry-lpr-1",
+    payload: { plate_number: "DPOM90" },
+  });
+
+  assert.equal(harness.clients.length, 2);
+  assert.equal(staleClient.ended, true);
+  assert.equal(staleClient.endCalls[0].force, true);
+  assert.equal(staleClient.published.length, 0);
+  assert.equal(harness.clients[1].published.length, 1);
+
+  await manager.shutdown();
+});
+
+test("a publish timeout force-closes and evicts the client before outbox retry", async () => {
+  const clients = [];
+  const mqttConnect = () => {
+    const client = new FakeMqttClient();
+    client.publish = (topic, payload, options) => {
+      client.published.push({ topic, payload, options });
+    };
+    clients.push(client);
+    queueMicrotask(() => {
+      client.connected = true;
+      client.emit("connect");
+    });
+    return client;
+  };
+  const manager = new MqttClientManager({
+    mqttConnect,
+    logger: { info() {}, warn() {}, error() {} },
+    publishTimeoutMs: 5,
+  });
+
+  await assert.rejects(
+    manager.publish({
+      broker: baseBroker,
+      topic: "Blue Iris/ALPR/entry-lpr-1",
+      payload: { plate_number: "DPOM90" },
+    }),
+    /publish timeout/
+  );
+
+  assert.equal(clients[0].ended, true);
+  assert.equal(clients[0].endCalls[0].force, true);
+  assert.equal(manager.connectionCount, 0);
+});
+
 test("shutdown closes all cached clients and rejects new connection attempts", async () => {
   const harness = createHarness();
   const manager = new MqttClientManager({
