@@ -1,7 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { MqttRepository } from "../lib/mqtt/repository.mjs";
+import {
+  MqttRepository,
+  mqttRepositoryInternals,
+} from "../lib/mqtt/repository.mjs";
 
 function makeClient(handler) {
   const calls = [];
@@ -71,6 +74,17 @@ test("repository requires a PostgreSQL-compatible pool", () => {
     () => new MqttRepository({ pool: { query() {} } }),
     /PostgreSQL-compatible pool/
   );
+});
+
+test("delivery mapping keeps absent nullable database IDs as null", () => {
+  const delivery = mqttRepositoryInternals.mapDelivery({
+    ...deliveryRow,
+    read_id: undefined,
+    camera_id: undefined,
+  });
+
+  assert.equal(delivery.readId, null);
+  assert.equal(delivery.cameraId, null);
 });
 
 test("runtime context maps settings, known plates, rules, cameras, and broker fields", async () => {
@@ -348,6 +362,8 @@ test("successful deliveries atomically update state and add one attempt", async 
   const completedAt = new Date("2026-07-17T03:05:00.000Z");
   const client = makeClient((sql, params) => {
     assert.match(sql, /INSERT INTO public\.mqtt_delivery_attempts/);
+    assert.match(sql, /locked\.locked_at AS attempt_started_at/);
+    assert.match(sql, /COALESCE\(attempt_started_at, \$3\)/);
     assert.deepEqual(params, [41, "worker-one", completedAt]);
     return {
       rows: [
@@ -377,6 +393,7 @@ test("successful deliveries atomically update state and add one attempt", async 
 });
 
 test("transient delivery failures schedule retry state and record the failed attempt", async () => {
+  const lockedAt = new Date("2026-07-17T03:04:59.000Z");
   const completedAt = new Date("2026-07-17T03:05:00.000Z");
   let attemptParams;
   const client = makeClient((sql, params) => {
@@ -386,7 +403,7 @@ test("transient delivery failures schedule retry state and record the failed att
           {
             ...deliveryRow,
             status: "processing",
-            locked_at: "2026-07-17T03:04:59.000Z",
+            locked_at: lockedAt,
             locked_by: "worker-one",
           },
         ],
@@ -430,6 +447,8 @@ test("transient delivery failures schedule retry state and record the failed att
   assert.equal(delivery.attemptCount, 1);
   assert.equal(attemptParams[2], "retry");
   assert.equal(attemptParams[4], "ECONNREFUSED");
+  assert.equal(attemptParams[6].getTime(), lockedAt.getTime());
+  assert.equal(attemptParams[7].getTime(), completedAt.getTime());
   assert.equal(client.calls.at(-1).sql, "COMMIT");
 });
 
