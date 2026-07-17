@@ -141,4 +141,127 @@ CREATE TABLE IF NOT EXISTS mqttnotifications (
     includeKnownPlateInfo BOOLEAN DEFAULT TRUE
 );
 
+-- MQTT integration v2 -------------------------------------------------------
+-- Keep the legacy topic column and mqttnotifications table intact so this
+-- migration is non-destructive. The new application no longer uses them.
+ALTER TABLE IF EXISTS public.mqttbrokers
+    ADD COLUMN IF NOT EXISTS enabled BOOLEAN NOT NULL DEFAULT TRUE,
+    ADD COLUMN IF NOT EXISTS client_id VARCHAR(255),
+    ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP;
 
+CREATE TABLE IF NOT EXISTS public.mqtt_settings (
+    id SMALLINT PRIMARY KEY DEFAULT 1 CHECK (id = 1),
+    enabled BOOLEAN NOT NULL DEFAULT FALSE,
+    base_topic VARCHAR(512) NOT NULL DEFAULT 'Blue Iris/ALPR',
+    camera_topic_template VARCHAR(512) NOT NULL DEFAULT '{base_topic}/{camera_key}',
+    default_qos SMALLINT NOT NULL DEFAULT 1 CHECK (default_qos BETWEEN 0 AND 2),
+    retain_messages BOOLEAN NOT NULL DEFAULT FALSE,
+    payload_profile VARCHAR(50) NOT NULL DEFAULT 'generic_json'
+        CHECK (payload_profile IN ('generic_json', 'homeseer', 'home_assistant')),
+    local_timezone VARCHAR(100) NOT NULL DEFAULT 'UTC',
+    hour_format SMALLINT NOT NULL DEFAULT 12 CHECK (hour_format IN (12, 24)),
+    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+INSERT INTO public.mqtt_settings (id)
+VALUES (1)
+ON CONFLICT (id) DO NOTHING;
+
+CREATE TABLE IF NOT EXISTS public.mqtt_cameras (
+    id SERIAL PRIMARY KEY,
+    camera_name VARCHAR(255) NOT NULL,
+    camera_key VARCHAR(100) NOT NULL UNIQUE,
+    enabled BOOLEAN NOT NULL DEFAULT TRUE,
+    topic_override VARCHAR(65535),
+    first_seen_at TIMESTAMPTZ,
+    last_seen_at TIMESTAMPTZ,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT mqtt_cameras_camera_key_format
+        CHECK (camera_key ~ '^[a-z0-9]+(-[a-z0-9]+)*$')
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS mqtt_cameras_camera_name_lower_key
+    ON public.mqtt_cameras (LOWER(camera_name));
+
+CREATE TABLE IF NOT EXISTS public.mqtt_rules (
+    id SERIAL PRIMARY KEY,
+    name VARCHAR(255) NOT NULL,
+    enabled BOOLEAN NOT NULL DEFAULT TRUE,
+    match_type VARCHAR(50) NOT NULL
+        CHECK (match_type IN (
+            'any_plate',
+            'exact_plate',
+            'any_known_plate',
+            'known_name',
+            'tag'
+        )),
+    match_value TEXT,
+    fuzzy_enabled BOOLEAN NOT NULL DEFAULT FALSE,
+    fuzzy_max_distance SMALLINT NOT NULL DEFAULT 1
+        CHECK (fuzzy_max_distance BETWEEN 0 AND 2),
+    fuzzy_min_length SMALLINT NOT NULL DEFAULT 5
+        CHECK (fuzzy_min_length BETWEEN 1 AND 20),
+    fuzzy_require_unique BOOLEAN NOT NULL DEFAULT TRUE,
+    fuzzy_ocr_aware BOOLEAN NOT NULL DEFAULT TRUE,
+    broker_id INTEGER NOT NULL REFERENCES public.mqttbrokers(id) ON DELETE RESTRICT,
+    destination_mode VARCHAR(50) NOT NULL DEFAULT 'per_camera'
+        CHECK (destination_mode IN ('per_camera', 'fixed_topic')),
+    fixed_topic VARCHAR(65535),
+    message TEXT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT mqtt_rules_match_value_required CHECK (
+        match_type IN ('any_plate', 'any_known_plate')
+        OR NULLIF(BTRIM(match_value), '') IS NOT NULL
+    ),
+    CONSTRAINT mqtt_rules_fixed_topic_required CHECK (
+        destination_mode = 'per_camera'
+        OR NULLIF(BTRIM(fixed_topic), '') IS NOT NULL
+    )
+);
+
+CREATE TABLE IF NOT EXISTS public.mqtt_rule_cameras (
+    rule_id INTEGER NOT NULL REFERENCES public.mqtt_rules(id) ON DELETE CASCADE,
+    camera_id INTEGER NOT NULL REFERENCES public.mqtt_cameras(id) ON DELETE CASCADE,
+    PRIMARY KEY (rule_id, camera_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_mqtt_rules_enabled
+    ON public.mqtt_rules (enabled) WHERE enabled = TRUE;
+CREATE INDEX IF NOT EXISTS idx_mqtt_rules_broker_id
+    ON public.mqtt_rules (broker_id);
+CREATE INDEX IF NOT EXISTS idx_mqtt_rule_cameras_camera_id
+    ON public.mqtt_rule_cameras (camera_id);
+CREATE INDEX IF NOT EXISTS idx_mqtt_cameras_enabled
+    ON public.mqtt_cameras (enabled) WHERE enabled = TRUE;
+
+CREATE OR REPLACE FUNCTION public.mqtt_set_updated_at()
+RETURNS TRIGGER AS $$
+BEGIN
+    NEW.updated_at = CURRENT_TIMESTAMP;
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS mqttbrokers_set_updated_at ON public.mqttbrokers;
+CREATE TRIGGER mqttbrokers_set_updated_at
+BEFORE UPDATE ON public.mqttbrokers
+FOR EACH ROW EXECUTE FUNCTION public.mqtt_set_updated_at();
+
+DROP TRIGGER IF EXISTS mqtt_settings_set_updated_at ON public.mqtt_settings;
+CREATE TRIGGER mqtt_settings_set_updated_at
+BEFORE UPDATE ON public.mqtt_settings
+FOR EACH ROW EXECUTE FUNCTION public.mqtt_set_updated_at();
+
+DROP TRIGGER IF EXISTS mqtt_cameras_set_updated_at ON public.mqtt_cameras;
+CREATE TRIGGER mqtt_cameras_set_updated_at
+BEFORE UPDATE ON public.mqtt_cameras
+FOR EACH ROW EXECUTE FUNCTION public.mqtt_set_updated_at();
+
+DROP TRIGGER IF EXISTS mqtt_rules_set_updated_at ON public.mqtt_rules;
+CREATE TRIGGER mqtt_rules_set_updated_at
+BEFORE UPDATE ON public.mqtt_rules
+FOR EACH ROW EXECUTE FUNCTION public.mqtt_set_updated_at();
