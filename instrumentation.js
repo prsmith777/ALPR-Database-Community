@@ -50,21 +50,34 @@ async function registerForRuntime({
 }
 
 /**
- * Next.js invokes register() once for each server instance. Keep the literal
- * NEXT_RUNTIME guard around the Node-only import so the Edge compilation never
- * follows PostgreSQL or MQTT dependencies.
+ * Next.js invokes register() once for each server instance. The literal
+ * NEXT_RUNTIME condition must directly surround the dynamic import so the Edge
+ * compiler removes the Node-only PostgreSQL and MQTT dependency graph.
  */
 export async function register() {
-  const runtime = process.env.NEXT_RUNTIME;
-
-  if (runtime === "nodejs") {
-    return registerForRuntime({
-      runtime,
-      loadNodeInstrumentation: () => import("./instrumentation.node.js"),
-    });
+  if (process.env.NEXT_RUNTIME === "nodejs") {
+    try {
+      const nodeInstrumentation = await import("./instrumentation.node.js");
+      return await nodeInstrumentation.registerMqttNodeInstrumentation({
+        logger: console,
+      });
+    } catch (error) {
+      const normalized = safeError(error);
+      console.error("MQTT instrumentation registration failed", {
+        error: normalized,
+      });
+      return {
+        status: "error",
+        runtime: "nodejs",
+        error: normalized,
+      };
+    }
   }
 
-  return registerForRuntime({ runtime });
+  return {
+    status: "skipped",
+    runtime: String(process.env.NEXT_RUNTIME ?? ""),
+  };
 }
 
 export const mqttInstrumentationInternals = Object.freeze({
