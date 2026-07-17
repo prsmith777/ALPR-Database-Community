@@ -190,7 +190,11 @@ test("the plate route commits each read and MQTT outbox handoff atomically", asy
   assert.equal(source.includes("processAcceptedPlateReadEffects"), true);
   assert.match(
     source,
-    /plate_number = \$1 AND timestamp = \$5\s+AND camera_name IS NOT DISTINCT FROM \$6/
+    /SELECT \$1, \$2, \$3, \$4, \$5, \$6::varchar, \$7, \$8, \$9, \$10, \$11, \$12/
+  );
+  assert.match(
+    source,
+    /plate_number = \$1 AND timestamp = \$5\s+AND camera_name IS NOT DISTINCT FROM \$6::varchar/
   );
   assert.match(
     migrations,
@@ -206,6 +210,7 @@ test("the plate route commits each read and MQTT outbox handoff atomically", asy
   const ignoreCheck = source.indexOf("await isPlateIgnored");
   const insertRead = source.indexOf("INSERT INTO plate_reads");
   const duplicateBranch = source.indexOf("if (result.rows.length === 0)");
+  const trackImage = source.indexOf("transactionImages.push(imagePaths)");
   const begin = source.indexOf('await dbClient.query("BEGIN")');
   const mqttHandoff = source.indexOf(
     "await mqttService.processAcceptedRead(acceptedRead)"
@@ -215,8 +220,12 @@ test("the plate route commits each read and MQTT outbox handoff atomically", asy
 
   assert.ok(ignoreCheck >= 0);
   assert.ok(begin >= 0);
+  assert.ok(trackImage > ignoreCheck);
+  assert.ok(trackImage < insertRead);
   assert.ok(insertRead > ignoreCheck);
   assert.ok(duplicateBranch > insertRead);
+  assert.match(source, /transactionImages\.indexOf\(imagePaths\)/);
+  assert.match(source, /transactionImages\.splice\(trackedImageIndex, 1\)/);
   assert.ok(mqttHandoff > duplicateBranch);
   assert.ok(commit > mqttHandoff);
   assert.ok(acceptedEffects > commit);
