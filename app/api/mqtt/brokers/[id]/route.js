@@ -39,6 +39,12 @@ export async function GET(_request, { params }) {
 export async function PUT(request, { params }) {
   try {
     const data = await readJsonObject(request);
+
+    // The edit form intentionally displays no stored password. Submitting that
+    // blank field preserves the current credential; clearPassword explicitly
+    // removes it.
+    if (data.password === "") delete data.password;
+
     const repository = await getMqttAdminRepository();
     const broker = await repository.updateBroker(
       await getBrokerId(params),
@@ -87,7 +93,9 @@ export async function DELETE(_request, { params }) {
         success: false,
         error: mqttAdminErrorMessage(
           error,
-          "Failed to delete MQTT broker"
+          status === 409
+            ? "Broker is still used by an MQTT rule or delivery"
+            : "Failed to delete MQTT broker"
         ),
       },
       { status }
