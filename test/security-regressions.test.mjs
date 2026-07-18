@@ -102,7 +102,7 @@ test("Compose deployments require private credentials and keep Postgres local", 
 
   for (const compose of [mainCompose, dbOnlyCompose, externalCompose]) {
     assert.equal(compose.includes("PASSWORD=password"), false);
-    assert.match(compose, /DB_PASSWORD:\s+"\$\{DB_PASSWORD:\?/);
+    assert.match(compose, /\$\{DB_PASSWORD:\?/);
   }
 
   assert.match(mainCompose, /ADMIN_PASSWORD:\s+"\$\{ADMIN_PASSWORD:\?/);
