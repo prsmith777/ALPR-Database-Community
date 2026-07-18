@@ -5,6 +5,7 @@ import {
   getDatabaseConfig,
   getInitialEnvConfig,
   parseBooleanEnv,
+  removeRuntimeDatabaseSecret,
 } from "../lib/settings.js";
 
 test("parseBooleanEnv accepts explicit true values", () => {
@@ -30,6 +31,7 @@ test("new installations keep AI training disabled unless explicitly enabled", ()
   const config = getInitialEnvConfig({});
 
   assert.equal(config.training.enabled, false);
+  assert.equal(config.privacy.metrics, false);
   assert.equal(typeof config.training.enabled, "boolean");
 });
 
@@ -72,6 +74,24 @@ test("Blue Iris host initialization uses its own environment setting", () => {
 
   assert.equal(config.blueiris.host, "http://192.168.0.10:81");
   assert.equal(config.privacy.metrics, false);
+});
+
+test("runtime database passwords are not copied into persisted settings", () => {
+  const config = getInitialEnvConfig({ DB_PASSWORD: "runtime-secret" });
+  const persisted = removeRuntimeDatabaseSecret(config, {
+    DB_PASSWORD: "runtime-secret",
+  });
+
+  assert.equal(config.database.password, "runtime-secret");
+  assert.equal(Object.hasOwn(persisted.database, "password"), false);
+});
+
+test("stored database passwords remain available without a runtime override", () => {
+  const config = { database: { password: "stored-secret" } };
+  assert.equal(
+    removeRuntimeDatabaseSecret(config, {}).database.password,
+    "stored-secret"
+  );
 });
 
 test("database environment values override persisted credentials", () => {

@@ -127,4 +127,7 @@ test("database queries delegate sorting to the validated helper", async () => {
   assert.equal(source.includes("${sort.direction}"), false);
   assert.equal(source.includes('ORDER BY ${sortBy'), false);
   assert.equal(source.includes("`pd.${sortBy}`"), false);
+  assert.equal(source.includes("LIMIT ${pageSize}"), false);
+  assert.match(source, /LIMIT \$\$\{paramIndex\}/);
+  assert.match(source, /normalizePagination\(page, pageSize\)/);
 });

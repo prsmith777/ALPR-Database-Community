@@ -86,6 +86,21 @@ test("baseline browser security headers are configured", async () => {
   }
 });
 
+test("telemetry requires explicit consent before any external request", async () => {
+  const actions = await fs.readFile("app/actions.js", "utf8");
+  const handler = await fs.readFile("components/MetricsHandler.jsx", "utf8");
+  const settings = await fs.readFile("lib/settings.js", "utf8");
+
+  const metricsStart = actions.indexOf("export async function sendMetricsUpdate");
+  const metricsEnd = actions.indexOf("export async function checkUpdateRequired");
+  const metricsAction = actions.slice(metricsStart, metricsEnd);
+
+  assert.ok(metricsAction.indexOf("getConfig()") < metricsAction.indexOf("fetch("));
+  assert.match(metricsAction, /if \(!config\?\.privacy\?\.metrics\)/);
+  assert.match(handler, /if \(sent\)/);
+  assert.match(settings, /privacy:\s*\{\s*metrics: false/);
+});
+
 test("the production image uses a supported non-root deterministic runtime", async () => {
   const dockerfile = await fs.readFile("Dockerfile", "utf8");
   const packageJson = JSON.parse(await fs.readFile("package.json", "utf8"));
@@ -122,6 +137,8 @@ test("Compose deployments require private credentials and keep Postgres local", 
   }
 
   assert.match(mainCompose, /ADMIN_PASSWORD:\s+"\$\{ADMIN_PASSWORD:\?/);
+  assert.match(mainCompose, /SESSION_COOKIE_SECURE:\s+"\$\{SESSION_COOKIE_SECURE:-false\}"/);
+  assert.match(externalCompose, /SESSION_COOKIE_SECURE:\s+"\$\{SESSION_COOKIE_SECURE:-false\}"/);
   assert.match(mainCompose, /127\.0\.0\.1:\$\{DB_PORT:-5432\}:5432/);
   assert.match(dbOnlyCompose, /127\.0\.0\.1:\$\{DB_PORT:-5432\}:5432/);
   assert.equal(externalCompose.includes("depends_on:"), false);
@@ -129,6 +146,7 @@ test("Compose deployments require private credentials and keep Postgres local", 
 
   assert.match(envExample, /^ADMIN_PASSWORD=$/m);
   assert.match(envExample, /^DB_PASSWORD=$/m);
+  assert.match(envExample, /^SESSION_COOKIE_SECURE=false$/m);
   assert.match(gitignore, /^\.env\*$/m);
   assert.match(gitignore, /^!\.env\.example$/m);
 
@@ -138,6 +156,20 @@ test("Compose deployments require private credentials and keep Postgres local", 
     assert.equal(installer.includes("POSTGRES_PASSWORD=password"), false);
   }
   assert.match(installSh, /chmod 600 \.env/);
+  assert.match(installSh, /chmod 700 auth config storage/);
+  assert.match(updateSh, /chmod 700 auth config storage/);
+  assert.match(installSh, /chown 1000:1000 auth config storage/);
+  assert.match(updateSh, /chown 1000:1000 auth config storage/);
   assert.match(updateSh, /write_migrated_env/);
   assert.match(updatePs1, /Write-MigratedEnvironment/);
+});
+
+test("the health check uses the supported runtime and fails honestly", async () => {
+  const workflow = await fs.readFile(".github/workflows/health-check.yml", "utf8");
+
+  assert.match(workflow, /node-version: "24"/);
+  assert.match(workflow, /yarn install --frozen-lockfile/);
+  assert.match(workflow, /MQTT_STATUS/);
+  assert.match(workflow, /instead of 401/);
+  assert.equal(workflow.includes("if: always()"), false);
 });

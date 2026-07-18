@@ -12,8 +12,10 @@ export function MetricsHandler() {
 
       if (!lastSent || now - Number(lastSent) > 7 * 24 * 60 * 60 * 1000) {
         // More than a week since last send (or never sent)
-        await sendMetricsUpdate();
-        localStorage.setItem("metricsLastSent", now.toString());
+        const sent = await sendMetricsUpdate();
+        if (sent) {
+          localStorage.setItem("metricsLastSent", now.toString());
+        }
       }
     };
 

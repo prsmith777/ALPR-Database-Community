@@ -36,6 +36,18 @@ command_exists() {
     command -v "$1" >/dev/null 2>&1
 }
 
+secure_runtime_directories() {
+    mkdir -p auth config storage
+
+    # The application runs as the official Node image's `node` user (UID/GID
+    # 1000). Keep sudo-based updates writable by that non-root container user.
+    if [ "$(id -u)" -eq 0 ]; then
+        chown 1000:1000 auth config storage
+    fi
+
+    chmod 700 auth config storage
+}
+
 # Function to download a file with either curl or wget
 download_file() {
     local url=$1
@@ -115,6 +127,7 @@ write_migrated_env() {
     {
         printf "ADMIN_PASSWORD='%s'\n" "$admin_password"
         printf "DB_PASSWORD='%s'\n" "$db_password"
+        printf "SESSION_COOKIE_SECURE='false'\n"
         printf "TZ='%s'\n" "$timezone"
         printf "APP_PORT='%s'\n" "$app_port"
         printf "DB_PORT='%s'\n" "$db_port"
@@ -195,8 +208,7 @@ case $choice in
 
         # Verify required directories exist
         log_info "Checking required directories..."
-        mkdir -p auth config storage
-        chmod 755 auth config storage
+        secure_runtime_directories
         log_success "Directory structure verified!"
 
         # Check for compose file updates

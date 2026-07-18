@@ -4,6 +4,9 @@ on:
   push:
     branches: [main]
 
+permissions:
+  contents: read
+
 jobs:
   health-check:
     runs-on: ubuntu-latest
@@ -25,20 +28,21 @@ jobs:
 
     env:
       DATABASE_URL: postgresql://testuser:testpassword@localhost:5432/testdb
-      NODE_ENV: test
 
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+        with:
+          persist-credentials: false
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: "20"
+          node-version: "24"
           cache: "yarn"
 
       - name: Install dependencies
-        run: yarn install
+        run: yarn install --frozen-lockfile --network-timeout 100000
 
       - name: Install PostgreSQL Client and Setup Database
         run: |
@@ -91,33 +95,47 @@ jobs:
           echo "✅ Application built successfully"
 
       - name: Test Application Startup and API Endpoints
+        env:
+          ADMIN_PASSWORD: health-check-admin-password
+          DB_HOST: localhost:5432
+          DB_NAME: testdb
+          DB_USER: testuser
+          DB_PASSWORD: testpassword
+          ALPR_AUTH_FILE_PATH: ${{ runner.temp }}/alpr-health-auth.json
+          STORAGE_PATH: ${{ runner.temp }}/alpr-health-storage
         run: |
           echo "Testing application startup and critical API endpoints..."
 
           # Start the app in background
           yarn start &
           APP_PID=$!
+          trap 'kill "$APP_PID" 2>/dev/null || true' EXIT
 
-          # Wait for app to start
-          sleep 15
+          # Wait for the public health endpoint to report ready
+          for attempt in {1..30}; do
+            if curl -fsS http://localhost:3000/api/health-check >/dev/null; then
+              break
+            fi
+            sleep 1
+          done
 
           # Test if app responds
-          curl -f http://localhost:3000 || {
+          curl -fsS http://localhost:3000/api/health-check || {
             echo "❌ Application failed to start or respond"
-            kill $APP_PID 2>/dev/null
             exit 1
           }
           echo "✅ Application starts and responds successfully"
 
-          # Test MQTT brokers endpoint (no auth required)
-          curl -f http://localhost:3000/api/mqtt/brokers || {
-            echo "❌ MQTT brokers API endpoint failed"
-            kill $APP_PID 2>/dev/null
+          # Protected application APIs must reject missing browser sessions
+          MQTT_STATUS=$(curl -sS -o /dev/null -w "%{http_code}" \
+            http://localhost:3000/api/mqtt/brokers)
+          if [ "$MQTT_STATUS" -ne 401 ]; then
+            echo "❌ MQTT brokers endpoint returned $MQTT_STATUS instead of 401"
             exit 1
-          }
-          echo "✅ MQTT brokers API endpoint responds correctly"
+          fi
+          echo "✅ Protected application API rejects unauthenticated access"
 
-          # Test plate-reads endpoint with test payload (skip auth check for CI)
+          # Test plate-reads integration authentication
           echo "Testing plate-reads endpoint with test payload..."
           HTTP_STATUS=$(curl -w "%{http_code}" -X POST \
             -H "Content-Type: application/json" \
@@ -125,14 +143,10 @@ jobs:
             -s -o /dev/null \
             http://localhost:3000/api/plate-reads)
 
-          if [ "$HTTP_STATUS" -eq 200 ] || [ "$HTTP_STATUS" -eq 401 ]; then
-            echo "✅ Plate-reads endpoint is responding (status: $HTTP_STATUS)"
-            if [ "$HTTP_STATUS" -eq 401 ]; then
-              echo "ℹ️  401 expected in CI environment (no auth configured)"
-            fi
+          if [ "$HTTP_STATUS" -eq 401 ]; then
+            echo "✅ Plate-reads endpoint rejects a missing API key"
           else
-            echo "❌ Plate-reads API endpoint failed with status: $HTTP_STATUS"
-            kill $APP_PID 2>/dev/null
+            echo "❌ Plate-reads endpoint returned $HTTP_STATUS instead of 401"
             exit 1
           fi
 
@@ -141,8 +155,6 @@ jobs:
           PLATE_COUNT=$(psql $DATABASE_URL -t -c "SELECT COUNT(*) FROM plates;")
           echo "✅ Database accessible from app environment (plates table has $PLATE_COUNT records)"
 
-          # Cleanup
-          kill $APP_PID 2>/dev/null
           echo "✅ All application and API tests completed successfully"
 
       - name: Validate Configuration Files
@@ -206,7 +218,6 @@ jobs:
           "
 
       - name: Summary
-        if: always()
         run: |
           echo "🎉 Health check completed!"
           echo "All critical systems verified:"

@@ -1065,8 +1065,13 @@ export async function clearImageData() {
 
 export async function sendMetricsUpdate() {
   await requireAuthenticatedSession();
-  console.log("[Metrics] Reporting usage metrics...");
   try {
+    const config = await getConfig();
+    if (!config?.privacy?.metrics) {
+      return false;
+    }
+
+    console.log("[Metrics] Reporting usage metrics...");
     const [earliestPlate, totalPlates] = await Promise.all([
       getEarliestPlateData(),
       getTotalPlatesCount(),

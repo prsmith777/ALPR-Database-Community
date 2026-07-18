@@ -309,6 +309,7 @@ function Write-EnvironmentFile {
     $lines = @(
         "ADMIN_PASSWORD=$(ConvertTo-DotEnvValue $Config.AdminPassword)"
         "DB_PASSWORD=$(ConvertTo-DotEnvValue $Config.DbPassword)"
+        "SESSION_COOKIE_SECURE=false"
         "TZ=$(ConvertTo-DotEnvValue $Config.Timezone)"
         "APP_PORT=$(ConvertTo-DotEnvValue ([string]$Config.AppPort))"
         "DB_PORT=$(ConvertTo-DotEnvValue ([string]$Config.DbPort))"

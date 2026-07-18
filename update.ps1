@@ -159,6 +159,7 @@ function Write-MigratedEnvironment {
     $lines = @(
         "ADMIN_PASSWORD=$(ConvertTo-DotEnvValue $adminPassword)"
         "DB_PASSWORD=$(ConvertTo-DotEnvValue $dbPassword)"
+        "SESSION_COOKIE_SECURE=false"
         "TZ=$(ConvertTo-DotEnvValue $timezone)"
         "APP_PORT=$(ConvertTo-DotEnvValue $appPort)"
         "DB_PORT=$(ConvertTo-DotEnvValue $dbPort)"
