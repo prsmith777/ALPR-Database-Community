@@ -35,6 +35,12 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Alert, AlertDescription } from "@/components/ui/alert";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { Trash2, Bell, Search } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -159,7 +165,8 @@ export function NotificationsTable({ initialData }) {
   };
 
   return (
-    <div className="flex flex-col gap-4">
+    <TooltipProvider delayDuration={200}>
+      <div className="flex flex-col gap-4">
       <div className="py-2">
         {/* Responsive form layout */}
         {/* <form
@@ -279,25 +286,38 @@ export function NotificationsTable({ initialData }) {
                     </TableCell>
                     <TableCell className="text-right">
                       <div className="flex gap-2 justify-end">
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="text-blue-500 hover:text-blue-700"
-                          onClick={() =>
-                            handleTestNotification(plate.plate_number)
-                          }
-                          title="Send test notification"
-                        >
-                          <Bell className="h-4 w-4" />
-                        </Button>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="text-red-500 hover:text-red-700"
-                          onClick={() => handleDeleteClick(plate)}
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </Button>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="text-blue-500 hover:text-blue-700"
+                              aria-label={`Send test notification for ${plate.plate_number}`}
+                              onClick={() =>
+                                handleTestNotification(plate.plate_number)
+                              }
+                            >
+                              <Bell className="h-4 w-4" />
+                            </Button>
+                          </TooltipTrigger>
+                          <TooltipContent>Send test notification</TooltipContent>
+                        </Tooltip>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="text-red-500 hover:text-red-700"
+                              aria-label={`Remove ${plate.plate_number} from notifications`}
+                              onClick={() => handleDeleteClick(plate)}
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
+                          </TooltipTrigger>
+                          <TooltipContent>
+                            Remove from notifications
+                          </TooltipContent>
+                        </Tooltip>
                       </div>
                     </TableCell>
                   </TableRow>
@@ -489,6 +509,7 @@ export function NotificationsTable({ initialData }) {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </div>
+      </div>
+    </TooltipProvider>
   );
 }

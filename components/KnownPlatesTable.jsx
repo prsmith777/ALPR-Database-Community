@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import {
   Search,
   Tag,
@@ -11,6 +11,9 @@ import {
   Plus,
   MoreHorizontal,
   SlidersHorizontal,
+  ChevronUp,
+  ChevronDown,
+  ChevronsUpDown,
 } from "lucide-react";
 import {
   Table,
@@ -40,6 +43,9 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
+import { IconTooltip } from "@/components/ui/icon-tooltip";
+import { TooltipProvider } from "@/components/ui/tooltip";
+import { sortKnownPlates } from "@/lib/known-plate-sort.mjs";
 import {
   Sheet,
   SheetContent,
@@ -60,10 +66,52 @@ import {
   toggleIgnorePlate,
 } from "@/app/actions";
 
+function SortableTableHead({
+  label,
+  column,
+  sortConfig,
+  onSort,
+  className,
+}) {
+  const isActive = sortConfig.key === column;
+  const SortIcon = isActive
+    ? sortConfig.direction === "asc"
+      ? ChevronUp
+      : ChevronDown
+    : ChevronsUpDown;
+
+  return (
+    <TableHead
+      className={className}
+      aria-sort={
+        isActive
+          ? sortConfig.direction === "asc"
+            ? "ascending"
+            : "descending"
+          : undefined
+      }
+    >
+      <Button
+        type="button"
+        variant="ghost"
+        size="sm"
+        className="h-8 p-0 font-semibold hover:bg-transparent hover:text-primary"
+        onClick={() => onSort(column)}
+      >
+        {label}
+        <SortIcon className="ml-1 h-3 w-3" aria-hidden="true" />
+      </Button>
+    </TableHead>
+  );
+}
+
 export function KnownPlatesTable({ initialData }) {
   const [data, setData] = useState(initialData);
-  const [filteredData, setFilteredData] = useState(initialData);
   const [searchTerm, setSearchTerm] = useState("");
+  const [sortConfig, setSortConfig] = useState({
+    key: "created_at",
+    direction: "desc",
+  });
   const [isEditPlateOpen, setIsEditPlateOpen] = useState(false);
   const [isRemoveConfirmOpen, setIsRemoveConfirmOpen] = useState(false);
   const [activePlate, setActivePlate] = useState(null);
@@ -88,17 +136,27 @@ export function KnownPlatesTable({ initialData }) {
     loadTags();
   }, []);
 
-  useEffect(() => {
+  const filteredData = useMemo(() => {
+    const normalizedSearch = searchTerm.trim().toLowerCase();
     const filtered = data.filter(
       (plate) =>
-        plate.plate_number.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        plate.plate_number.toLowerCase().includes(normalizedSearch) ||
         (plate.name &&
-          plate.name.toLowerCase().includes(searchTerm.toLowerCase())) ||
+          plate.name.toLowerCase().includes(normalizedSearch)) ||
         (plate.notes &&
-          plate.notes.toLowerCase().includes(searchTerm.toLowerCase()))
+          plate.notes.toLowerCase().includes(normalizedSearch))
     );
-    setFilteredData(filtered);
-  }, [data, searchTerm]);
+
+    return sortKnownPlates(filtered, sortConfig);
+  }, [data, searchTerm, sortConfig]);
+
+  const requestSort = (key) => {
+    setSortConfig((current) => ({
+      key,
+      direction:
+        current.key === key && current.direction === "asc" ? "desc" : "asc",
+    }));
+  };
 
   const handleAddTag = async (plateNumber, tagName) => {
     try {
@@ -220,7 +278,7 @@ export function KnownPlatesTable({ initialData }) {
   };
 
   return (
-    <>
+    <TooltipProvider delayDuration={250}>
       <div className="py-8 sm:py-4">
         <div className="space-y-4">
           {/* Header with search and add button */}
@@ -252,11 +310,40 @@ export function KnownPlatesTable({ initialData }) {
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead className="w-[150px] pl-4">Plate Number</TableHead>
-                  <TableHead className="w-[150px]">Name</TableHead>
-                  <TableHead>Notes</TableHead>
-                  <TableHead className="w-[120px]">Added On</TableHead>
-                  <TableHead className="w-[150px]">Tags</TableHead>
+                  <SortableTableHead
+                    label="Plate Number"
+                    column="plate_number"
+                    sortConfig={sortConfig}
+                    onSort={requestSort}
+                    className="w-[150px] pl-4"
+                  />
+                  <SortableTableHead
+                    label="Name"
+                    column="name"
+                    sortConfig={sortConfig}
+                    onSort={requestSort}
+                    className="w-[150px]"
+                  />
+                  <SortableTableHead
+                    label="Notes"
+                    column="notes"
+                    sortConfig={sortConfig}
+                    onSort={requestSort}
+                  />
+                  <SortableTableHead
+                    label="Added On"
+                    column="created_at"
+                    sortConfig={sortConfig}
+                    onSort={requestSort}
+                    className="w-[120px]"
+                  />
+                  <SortableTableHead
+                    label="Tags"
+                    column="tags"
+                    sortConfig={sortConfig}
+                    onSort={requestSort}
+                    className="w-[150px]"
+                  />
                   <TableHead className="w-[120px] text-right">
                     Actions
                   </TableHead>
@@ -300,22 +387,24 @@ export function KnownPlatesTable({ initialData }) {
                                   }}
                                 >
                                   <span>{tagName}</span>
-                                  <Button
-                                    variant="ghost"
-                                    size="icon"
-                                    className="h-4 w-4 p-0 hover:bg-red-500 hover:text-white rounded-full"
-                                    onClick={() =>
-                                      handleRemoveTag(
-                                        plate.plate_number,
-                                        tagName
-                                      )
-                                    }
-                                  >
-                                    <X className="h-3 w-3" />
-                                    <span className="sr-only">
-                                      Remove {tagName} tag
-                                    </span>
-                                  </Button>
+                                  <IconTooltip label={`Remove ${tagName} tag`}>
+                                    <Button
+                                      variant="ghost"
+                                      size="icon"
+                                      className="h-4 w-4 p-0 hover:bg-red-500 hover:text-white rounded-full"
+                                      onClick={() =>
+                                        handleRemoveTag(
+                                          plate.plate_number,
+                                          tagName
+                                        )
+                                      }
+                                    >
+                                      <X className="h-3 w-3" />
+                                      <span className="sr-only">
+                                        Remove {tagName} tag
+                                      </span>
+                                    </Button>
+                                  </IconTooltip>
                                 </Badge>
                               );
                             })
@@ -329,12 +418,14 @@ export function KnownPlatesTable({ initialData }) {
                       <TableCell className="text-right">
                         <div className="flex justify-end space-x-2">
                           <DropdownMenu>
-                            <DropdownMenuTrigger asChild>
-                              <Button variant="ghost" size="icon">
-                                <Tag className="h-4 w-4" />
-                                <span className="sr-only">Add tag</span>
-                              </Button>
-                            </DropdownMenuTrigger>
+                            <IconTooltip label="Add tag">
+                              <DropdownMenuTrigger asChild>
+                                <Button variant="ghost" size="icon">
+                                  <Tag className="h-4 w-4" />
+                                  <span className="sr-only">Add tag</span>
+                                </Button>
+                              </DropdownMenuTrigger>
+                            </IconTooltip>
                             <DropdownMenuContent align="end">
                               {availableTags.map((tag) => (
                                 <DropdownMenuItem
@@ -354,57 +445,67 @@ export function KnownPlatesTable({ initialData }) {
                               ))}
                             </DropdownMenuContent>
                           </DropdownMenu>
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            onClick={() => {
-                              setActivePlate(plate);
-                              setEditPlateData({
-                                name: plate.name,
-                                notes: plate.notes,
-                              });
-                              setIsEditPlateOpen(true);
-                            }}
-                          >
-                            <Pencil className="h-4 w-4" />
-                            <span className="sr-only">Edit plate details</span>
-                          </Button>
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            className={
-                              plate.ignore
-                                ? "text-orange-500 hover:text-orange-700"
-                                : ""
+                          <IconTooltip label="Edit plate details">
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              onClick={() => {
+                                setActivePlate(plate);
+                                setEditPlateData({
+                                  name: plate.name,
+                                  notes: plate.notes,
+                                });
+                                setIsEditPlateOpen(true);
+                              }}
+                            >
+                              <Pencil className="h-4 w-4" />
+                              <span className="sr-only">Edit plate details</span>
+                            </Button>
+                          </IconTooltip>
+                          <IconTooltip
+                            label={
+                              plate.ignore ? "Stop ignoring plate" : "Ignore plate"
                             }
-                            onClick={() => {
-                              setActivePlate(plate);
-                              setIsIgnoreConfirmOpen(true);
-                            }}
                           >
-                            {plate.ignore ? (
-                              <EyeOff className="h-4 w-4" />
-                            ) : (
-                              <Eye className="h-4 w-4" />
-                            )}
-                            <span className="sr-only">
-                              {plate.ignore ? "Stop ignoring" : "Ignore plate"}
-                            </span>
-                          </Button>
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            className="text-red-500 hover:text-red-700"
-                            onClick={() => {
-                              setActivePlate(plate);
-                              setIsRemoveConfirmOpen(true);
-                            }}
-                          >
-                            <X className="h-4 w-4" />
-                            <span className="sr-only">
-                              Remove from known plates
-                            </span>
-                          </Button>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className={
+                                plate.ignore
+                                  ? "text-orange-500 hover:text-orange-700"
+                                  : ""
+                              }
+                              onClick={() => {
+                                setActivePlate(plate);
+                                setIsIgnoreConfirmOpen(true);
+                              }}
+                            >
+                              {plate.ignore ? (
+                                <EyeOff className="h-4 w-4" />
+                              ) : (
+                                <Eye className="h-4 w-4" />
+                              )}
+                              <span className="sr-only">
+                                {plate.ignore ? "Stop ignoring" : "Ignore plate"}
+                              </span>
+                            </Button>
+                          </IconTooltip>
+                          <IconTooltip label="Remove from known plates">
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="text-red-500 hover:text-red-700"
+                              onClick={() => {
+                                setActivePlate(plate);
+                                setIsRemoveConfirmOpen(true);
+                              }}
+                            >
+                              <X className="h-4 w-4" />
+                              <span className="sr-only">
+                                Remove from known plates
+                              </span>
+                            </Button>
+                          </IconTooltip>
                         </div>
                       </TableCell>
                     </TableRow>
@@ -443,32 +544,40 @@ export function KnownPlatesTable({ initialData }) {
                         </div>
 
                         <div className="flex gap-1">
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            className="h-8 w-8"
-                            onClick={() => {
-                              setActivePlate(plate);
-                              setEditPlateData({
-                                name: plate.name,
-                                notes: plate.notes,
-                              });
-                              setIsEditPlateOpen(true);
-                            }}
-                          >
-                            <Pencil className="h-4 w-4" />
-                          </Button>
+                          <IconTooltip label="Edit plate details">
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-8 w-8"
+                              onClick={() => {
+                                setActivePlate(plate);
+                                setEditPlateData({
+                                  name: plate.name,
+                                  notes: plate.notes,
+                                });
+                                setIsEditPlateOpen(true);
+                              }}
+                            >
+                              <Pencil className="h-4 w-4" />
+                              <span className="sr-only">Edit plate details</span>
+                            </Button>
+                          </IconTooltip>
 
                           <DropdownMenu>
-                            <DropdownMenuTrigger asChild>
-                              <Button
-                                variant="ghost"
-                                size="icon"
-                                className="h-8 w-8"
-                              >
-                                <MoreHorizontal className="h-4 w-4" />
-                              </Button>
-                            </DropdownMenuTrigger>
+                            <IconTooltip label="More plate actions">
+                              <DropdownMenuTrigger asChild>
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  className="h-8 w-8"
+                                >
+                                  <MoreHorizontal className="h-4 w-4" />
+                                  <span className="sr-only">
+                                    More plate actions
+                                  </span>
+                                </Button>
+                              </DropdownMenuTrigger>
+                            </IconTooltip>
                             <DropdownMenuContent align="end">
                               <DropdownMenuItem
                                 onClick={() => {
@@ -585,19 +694,24 @@ export function KnownPlatesTable({ initialData }) {
                                   }}
                                 >
                                   <span>{tagName}</span>
-                                  <Button
-                                    variant="ghost"
-                                    size="icon"
-                                    className="h-3 w-3 p-0 hover:bg-red-500 hover:text-white rounded-full"
-                                    onClick={() =>
-                                      handleRemoveTag(
-                                        plate.plate_number,
-                                        tagName
-                                      )
-                                    }
-                                  >
-                                    <X className="h-2 w-2" />
-                                  </Button>
+                                  <IconTooltip label={`Remove ${tagName} tag`}>
+                                    <Button
+                                      variant="ghost"
+                                      size="icon"
+                                      className="h-3 w-3 p-0 hover:bg-red-500 hover:text-white rounded-full"
+                                      onClick={() =>
+                                        handleRemoveTag(
+                                          plate.plate_number,
+                                          tagName
+                                        )
+                                      }
+                                    >
+                                      <X className="h-2 w-2" />
+                                      <span className="sr-only">
+                                        Remove {tagName} tag
+                                      </span>
+                                    </Button>
+                                  </IconTooltip>
                                 </Badge>
                               );
                             })
@@ -866,6 +980,6 @@ export function KnownPlatesTable({ initialData }) {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </>
+    </TooltipProvider>
   );
 }

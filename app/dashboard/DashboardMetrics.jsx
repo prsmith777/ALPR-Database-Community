@@ -26,6 +26,13 @@ import {
   HoverCardContent,
 } from "@/components/ui/hover-card";
 import { SiGoogledocs } from "react-icons/si";
+import { IconTooltip } from "@/components/ui/icon-tooltip";
+import { TooltipProvider } from "@/components/ui/tooltip";
+import {
+  PROJECT_DOCUMENTATION_URL,
+  PROJECT_REPOSITORY_URL,
+  PROJECT_ROADMAP_URL,
+} from "@/lib/project-info";
 
 import { ChartContainer, ChartTooltip } from "@/components/ui/chart";
 import {
@@ -51,7 +58,7 @@ import { TimeFrameSelector } from "./TimeSelect";
 import { TagDistributionChart } from "./TagDistribution";
 import { Separator } from "@/components/ui/separator";
 import Image from "next/image";
-import { FaRoad, FaGithub, FaDocker } from "react-icons/fa";
+import { FaRoad, FaGithub } from "react-icons/fa";
 import CameraReadsChart from "./CameraChart";
 import { CameraSelector } from "./CameraSelect";
 import { DashboardSkeleton } from "@/components/DashboardSkeleton";
@@ -312,73 +319,6 @@ export default function DashboardMetrics() {
         ).timeRange
       : "No data available";
 
-  // if (loading) {
-  //   return (
-  //     <div className="space-y-4">
-  //       {/* Header - Always shown */}
-  //       <div className="flex flex-col sm:flex-row justify-between items-center sm:items-start pt-4 gap-4">
-  //         <div className="flex flex-col sm:flex-row sm:gap-8 items-center sm:items-baseline mb-2 sm:mb-6">
-  //           <h1 className="text-2xl sm:text-3xl font-bold">
-  //             License Plate Dashboard
-  //           </h1>
-  //           <div className="flex gap-4 text-xl mt-2 sm:mt-0">
-  //             <Link
-  //               href="https://github.com/algertc/ALPR-Database"
-  //               target="_blank"
-  //               aria-label="GitHub"
-  //             >
-  //               <FaGithub className="hover:text-blue-500" />
-  //             </Link>
-  //             <Link
-  //               href="https://hub.docker.com/repository/docker/algertc/alpr-dashboard"
-  //               target="_blank"
-  //               aria-label="Docker"
-  //             >
-  //               <FaDocker className="hover:text-blue-500" />
-  //             </Link>
-  //             <Link
-  //               href="https://alprdatabase.featurebase.app/roadmap"
-  //               target="_blank"
-  //               aria-label="Roadmap"
-  //             >
-  //               <FaRoad className="hover:text-blue-500" />
-  //             </Link>
-  //           </div>
-  //         </div>
-  //         <div className="flex items-center gap-2">
-  //           <CameraSelector
-  //             value={selectedCamera}
-  //             onValueChange={setSelectedCamera}
-  //             cameras={cameras}
-  //             loading={camerasLoading}
-  //             disabled={true}
-  //           />
-  //           <TimeFrameSelector
-  //             value={timeFrame}
-  //             onValueChange={setTimeFrame}
-  //             disabled={true}
-  //           />
-  //         </div>
-  //       </div>
-
-  //       {/* Loading State Content */}
-  //       <div className="flex items-center justify-center min-h-[600px]">
-  //         <div className="text-center space-y-4">
-  //           <div className="w-8 h-8 border-2 border-primary/30 border-t-primary rounded-full animate-spin mx-auto"></div>
-  //           <div className="space-y-2">
-  //             <h3 className="text-lg font-medium text-foreground">
-  //               Computing metrics
-  //             </h3>
-  //             <p className="text-sm text-muted-foreground max-w-sm">
-  //               Analyzing license plate data and generating dashboard insights
-  //             </p>
-  //           </div>
-  //         </div>
-  //       </div>
-  //     </div>
-  //   );
-  // }
-
   return (
     <div className="relative space-y-4">
       {/* Header - Made responsive */}
@@ -387,36 +327,40 @@ export default function DashboardMetrics() {
           <h1 className="text-2xl font-semibold text-foreground">
             License Plate Dashboard
           </h1>
-          <div className="flex gap-4 text-xl mt-2 sm:mt-0">
-            <Link
-              href="https://www.alprdatabase.org/docs"
-              target="_blank"
-              aria-label="GitHub"
-            >
-              <SiGoogledocs className="hover:text-blue-500" />
-            </Link>
-            <Link
-              href="https://github.com/algertc/ALPR-Database"
-              target="_blank"
-              aria-label="GitHub"
-            >
-              <FaGithub className="hover:text-blue-500" />
-            </Link>
-            <Link
-              href="https://hub.docker.com/r/algertc/alpr-dashboard"
-              target="_blank"
-              aria-label="Docker"
-            >
-              <FaDocker className="hover:text-blue-500" />
-            </Link>
-            <Link
-              href="https://alprdatabase.featurebase.app/roadmap"
-              target="_blank"
-              aria-label="Roadmap"
-            >
-              <FaRoad className="hover:text-blue-500" />
-            </Link>
-          </div>
+          <TooltipProvider delayDuration={250}>
+            <div className="flex gap-4 text-xl mt-2 sm:mt-0">
+              <IconTooltip label="Community documentation">
+                <Link
+                  href={PROJECT_DOCUMENTATION_URL}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  aria-label="Community documentation"
+                >
+                  <SiGoogledocs className="hover:text-blue-500" />
+                </Link>
+              </IconTooltip>
+              <IconTooltip label="Fork source on GitHub">
+                <Link
+                  href={PROJECT_REPOSITORY_URL}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  aria-label="Fork source on GitHub"
+                >
+                  <FaGithub className="hover:text-blue-500" />
+                </Link>
+              </IconTooltip>
+              <IconTooltip label="Community product roadmap">
+                <Link
+                  href={PROJECT_ROADMAP_URL}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  aria-label="Community product roadmap"
+                >
+                  <FaRoad className="hover:text-blue-500" />
+                </Link>
+              </IconTooltip>
+            </div>
+          </TooltipProvider>
         </div>
         <div className="flex items-center gap-2">
           <CameraSelector

@@ -1,0 +1,54 @@
+import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
+import test from "node:test";
+
+async function source(path) {
+  return readFile(new URL(`../${path}`, import.meta.url), "utf8");
+}
+
+test("plate tables label icon-only row actions with accessible tooltips", async () => {
+  const [liveFeed, plateDatabase, knownPlates] = await Promise.all([
+    source("components/PlateTable.jsx"),
+    source("components/plateDbTable.jsx"),
+    source("components/KnownPlatesTable.jsx"),
+  ]);
+
+  for (const component of [liveFeed, plateDatabase]) {
+    assert.match(component, /TooltipProvider/);
+    assert.match(component, /<TooltipContent>Add tag<\/TooltipContent>/);
+    assert.match(component, /<TooltipContent>Remove tag<\/TooltipContent>/);
+    assert.match(component, /<TooltipContent>Delete record<\/TooltipContent>/);
+    assert.match(component, /aria-label=\{`More actions for \$\{plate\.plate_number\}`\}/);
+    assert.match(component, /aria-label="Open filters"/);
+    assert.match(component, /<TooltipContent>Open filters<\/TooltipContent>/);
+  }
+
+  assert.match(liveFeed, /<TooltipContent>Correct plate<\/TooltipContent>/);
+  assert.match(liveFeed, /Confirm AI label/);
+  assert.match(plateDatabase, /<TooltipContent>View insights<\/TooltipContent>/);
+  assert.match(plateDatabase, /Flag plate/);
+  assert.match(knownPlates, /<TooltipProvider delayDuration=\{250\}>/);
+  assert.match(knownPlates, /<IconTooltip label="Add tag">/);
+  assert.match(knownPlates, /<IconTooltip label="Edit plate details">/);
+  assert.match(knownPlates, /<IconTooltip label="More plate actions">/);
+});
+
+test("notification and MQTT action icons expose hover and focus labels", async () => {
+  const [notifications, brokers, rules] = await Promise.all([
+    source("components/NotificationsTable.jsx"),
+    source("components/mqtt/MqttBrokers.jsx"),
+    source("components/mqtt/MqttRules.jsx"),
+  ]);
+
+  assert.match(notifications, /Send test notification/);
+  assert.match(notifications, /Remove from notifications/);
+  assert.match(brokers, /<TooltipContent>Edit broker<\/TooltipContent>/);
+  assert.match(brokers, /<TooltipContent>Delete broker<\/TooltipContent>/);
+  assert.match(rules, /<TooltipContent>Edit rule<\/TooltipContent>/);
+  assert.match(rules, /<TooltipContent>Delete rule<\/TooltipContent>/);
+
+  for (const component of [notifications, brokers, rules]) {
+    assert.match(component, /TooltipTrigger asChild/);
+    assert.match(component, /aria-label=/);
+  }
+});

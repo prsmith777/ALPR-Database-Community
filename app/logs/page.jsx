@@ -4,7 +4,11 @@ import { getSystemLogs } from "@/app/actions";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import LogViewer from "./LogViewer";
 import DashboardLayout from "@/components/layout/MainLayout";
-import { getVersionInfo } from "@/lib/version";
+import { getLocalVersionInfo } from "@/lib/version";
+import {
+  PROJECT_NAME,
+  PROJECT_RELEASES_URL,
+} from "@/lib/project-info";
 
 async function LogsContent() {
   unstable_noStore();
@@ -22,7 +26,7 @@ async function LogsContent() {
 }
 
 export default async function LogsPage() {
-  const version = await getVersionInfo();
+  const version = await getLocalVersionInfo();
 
   return (
     <DashboardLayout>
@@ -31,9 +35,14 @@ export default async function LogsPage() {
         <div className="flex-shrink-0 border-b bg-background">
           <div className="flex h-16 items-center justify-between px-6">
             <h1 className="text-lg font-medium text-foreground">System Logs</h1>
-            <span className="text-sm text-muted-foreground">
-              Release: {version.current}
-            </span>
+            <a
+              href={PROJECT_RELEASES_URL}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-sm text-muted-foreground hover:text-foreground hover:underline"
+            >
+              {PROJECT_NAME} · Release {version}
+            </a>
           </div>
         </div>
 

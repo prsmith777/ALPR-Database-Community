@@ -1,24 +1,32 @@
 // app/login/page.js
 "use client";
 
-import { useState, useTransition } from "react";
+import { useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { loginAction } from "@/app/actions";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
+import { Label } from "@/components/ui/label";
 import { Shield, Loader2 } from "lucide-react";
 import Image from "next/image";
 
 export default function LoginPage() {
   const [error, setError] = useState("");
+  const [password, setPassword] = useState("");
   const [isPending, startTransition] = useTransition();
+  const passwordInputRef = useRef(null);
   const router = useRouter();
+
+  const clearFailedPassword = () => {
+    setPassword("");
+    requestAnimationFrame(() => passwordInputRef.current?.focus());
+  };
 
   async function handleSubmit(event) {
     event.preventDefault();
     setError(""); // Clear previous errors
 
-    const formData = new FormData(event.target);
+    const formData = new FormData(event.currentTarget);
 
     startTransition(async () => {
       try {
@@ -26,14 +34,19 @@ export default function LoginPage() {
 
         if (result && result.error) {
           setError(result.error);
+          clearFailedPassword();
         } else if (result && result.success) {
           // Login successful, navigate to dashboard
           router.push("/");
+        } else {
+          setError("Login failed. Please try again.");
+          clearFailedPassword();
         }
       } catch (e) {
         setError(
           "An unexpected error occurred during login. Please try again."
         );
+        clearFailedPassword();
         console.error("Login client-side error:", e);
       }
     });
@@ -84,20 +97,30 @@ export default function LoginPage() {
               />
 
               <div className="space-y-2">
+                <Label htmlFor="password">Password</Label>
                 <Input
                   id="password"
                   name="password"
                   type="password"
+                  ref={passwordInputRef}
+                  value={password}
+                  onChange={(event) => setPassword(event.target.value)}
                   required
                   autoComplete="current-password"
                   autoFocus
                   placeholder="Enter your password"
                   className="h-10 sm:h-12 px-4 bg-background/50"
+                  aria-invalid={Boolean(error)}
+                  aria-describedby={error ? "login-error" : undefined}
                 />
               </div>
 
               {error && (
-                <div className="p-3 sm:p-4 rounded-lg bg-destructive/10 text-destructive text-sm">
+                <div
+                  id="login-error"
+                  role="alert"
+                  className="p-3 sm:p-4 rounded-lg bg-destructive/10 text-destructive text-sm"
+                >
                   {error}
                 </div>
               )}
