@@ -105,6 +105,7 @@ import {
 } from "@/app/actions";
 import Image from "next/image";
 import Link from "next/link";
+import { formatPlateDateTime } from "@/lib/plate-date.mjs";
 
 const formatDaysAgo = (days) => {
   if (days === 0) return "Today";
@@ -224,10 +225,7 @@ export default function PlateTable() {
   }, []);
 
   const formatLastSeen = (timestamp) => {
-    if (timeFormat == 24) {
-      return new Date(timestamp).toLocaleString("en-GB");
-    }
-    return new Date(timestamp).toLocaleString("en-US");
+    return formatPlateDateTime(timestamp, timeFormat);
   };
 
   const formatFirstSeen = (timestamp) => {
