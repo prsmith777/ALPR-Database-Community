@@ -37,6 +37,14 @@ test("an empty Known Plates list still renders its management table", async () =
   assert.match(knownPlatesPage, /<Alert variant="destructive">/);
 });
 
+test("the mobile navigation sheet has an accessible dialog title", async () => {
+  const sidebar = await source("components/Sidebar.jsx");
+
+  assert.match(sidebar, /import \{ Sheet, SheetContent, SheetTitle \}/);
+  assert.match(sidebar, /<SheetTitle className="text-lg font-semibold">Menu<\/SheetTitle>/);
+  assert.equal(sidebar.includes('<h2 className="text-lg font-semibold">Menu</h2>'), false);
+});
+
 test("dashboard and system logs identify the community fork", async () => {
   const [dashboard, logs, projectInfo] = await Promise.all([
     source("app/dashboard/DashboardMetrics.jsx"),
