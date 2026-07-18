@@ -20,6 +20,22 @@ test("plate-read route delegates to the authentication-first wrapper", async () 
   assert.equal(source.includes("details: error.message"), false);
 });
 
+test("committed plate reads cannot fail because cache revalidation lacks a browser session", async () => {
+  const source = await fs.readFile("app/api/plate-reads/route.js", "utf8");
+
+  assert.equal(source.includes('from "@/app/actions"'), false);
+  assert.match(source, /import \{ revalidatePath \} from "next\/cache"/);
+  assert.match(source, /revalidatePath\("\/live_feed"\)/);
+
+  const start = source.indexOf('revalidatePath("/live_feed")');
+  const revalidationBlock = source.slice(
+    start,
+    source.indexOf("return Response.json", start)
+  );
+  assert.equal(revalidationBlock.includes("throw error"), false);
+  assert.match(revalidationBlock, /Plate page revalidation failed/);
+});
+
 test("every non-public server action verifies its own session", async () => {
   const source = await fs.readFile("app/actions.js", "utf8");
   const declaration =

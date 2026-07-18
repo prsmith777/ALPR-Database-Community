@@ -10,9 +10,9 @@ import { createPlateReadEventIdentity } from "@/lib/plate-read-event-identity.mj
 import { MqttAcceptedReadService } from "@/lib/mqtt/accepted-read-service.mjs";
 import { MqttRepository } from "@/lib/mqtt/repository.mjs";
 import { getConfig } from "@/lib/settings";
-import { revalidatePlatesPage } from "@/app/actions";
 import fileStorage from "@/lib/fileStorage";
 import { createIntegrationRouteHandler } from "@/lib/request-auth.mjs";
+import { revalidatePath } from "next/cache";
 
 // Revised to use a blacklist of all other possible AI labels if using the memo
 const EXCLUDED_LABELS = [
@@ -423,13 +423,12 @@ async function processPlateRead(data) {
     if (processedPlates.length > 0) {
       try {
         console.log("⭐ Plate Received");
-        await revalidatePlatesPage();
+        revalidatePath("/live_feed");
         // Ensure revalidation completes
         await new Promise((resolve) => setTimeout(resolve, 100));
         // console.log("⭐ Revalidation completed");
-      } catch (error) {
+      } catch {
         console.error("Plate page revalidation failed");
-        throw error;
       }
     }
 
