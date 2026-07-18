@@ -59,6 +59,10 @@ test("authentication tests require an isolated file and preserve production auth
     await updateAuthConfig(config);
     const written = JSON.parse(await fs.readFile(temporaryAuth, "utf8"));
     assert.ok(written.sessions["temporary-session"]);
+    if (process.platform !== "win32") {
+      assert.equal((await fs.stat(temporaryAuth)).mode & 0o777, 0o600);
+      assert.equal((await fs.stat(temporaryDirectory)).mode & 0o777, 0o700);
+    }
   } finally {
     resetAuthStateForTests();
     if (originalEnvironment.NODE_ENV === undefined) {

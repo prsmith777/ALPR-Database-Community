@@ -30,6 +30,18 @@ command_exists() {
     command -v "$1" >/dev/null 2>&1
 }
 
+secure_runtime_directories() {
+    mkdir -p auth config storage
+
+    # The application runs as the official Node image's `node` user (UID/GID
+    # 1000). Keep sudo-based installs writable by that non-root container user.
+    if [ "$(id -u)" -eq 0 ]; then
+        chown 1000:1000 auth config storage
+    fi
+
+    chmod 700 auth config storage
+}
+
 is_docker_running() {
     if docker info >/dev/null 2>&1; then
         return 0
@@ -99,7 +111,7 @@ log_success "All system requirements met!"
 
 #Create host mountpoints for the persistent docker volumes
 log_info "Creating required directories..."
-mkdir -p auth config storage
+secure_runtime_directories
 log_success "Directories created successfully!"
 
 log_info "Downloading required files..."
@@ -142,6 +154,7 @@ write_env_file() {
     {
         printf "ADMIN_PASSWORD='%s'\n" "$ADMIN_PASSWORD"
         printf "DB_PASSWORD='%s'\n" "$DB_PASSWORD"
+        printf "SESSION_COOKIE_SECURE='false'\n"
         printf "TZ='%s'\n" "$TZ"
         printf "APP_PORT='%s'\n" "$APP_PORT"
         printf "DB_PORT='%s'\n" "$DB_PORT"
