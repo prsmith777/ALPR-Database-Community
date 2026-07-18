@@ -102,6 +102,7 @@ test("telemetry requires explicit consent before any external request", async ()
 });
 
 test("the production image uses a supported non-root deterministic runtime", async () => {
+  const dockerignore = await fs.readFile(".dockerignore", "utf8");
   const dockerfile = await fs.readFile("Dockerfile", "utf8");
   const packageJson = JSON.parse(await fs.readFile("package.json", "utf8"));
 
@@ -115,6 +116,7 @@ test("the production image uses a supported non-root deterministic runtime", asy
     packageJson.scripts.test.includes("--experimental-default-type=module"),
     false
   );
+  assert.match(dockerignore.trimEnd(), /!install\.sh\r?\n!update\.sh$/);
 });
 
 test("Compose deployments require private credentials and keep Postgres local", async () => {
