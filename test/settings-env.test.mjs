@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+  getDatabaseConfig,
   getInitialEnvConfig,
   parseBooleanEnv,
 } from "../lib/settings.js";
@@ -71,4 +72,39 @@ test("Blue Iris host initialization uses its own environment setting", () => {
 
   assert.equal(config.blueiris.host, "http://192.168.0.10:81");
   assert.equal(config.privacy.metrics, false);
+});
+
+test("database environment values override persisted credentials", () => {
+  const config = getDatabaseConfig(
+    {
+      host: "stored-db:5432",
+      name: "stored-name",
+      user: "stored-user",
+      password: "stored-password",
+    },
+    {
+      DB_HOST: "runtime-db:5432",
+      DB_NAME: "runtime-name",
+      DB_USER: "runtime-user",
+      DB_PASSWORD: "runtime-password",
+    }
+  );
+
+  assert.deepEqual(config, {
+    host: "runtime-db:5432",
+    name: "runtime-name",
+    user: "runtime-user",
+    password: "runtime-password",
+  });
+});
+
+test("missing database environment values preserve persisted settings", () => {
+  const stored = {
+    host: "stored-db:5432",
+    name: "stored-name",
+    user: "stored-user",
+    password: "stored-password",
+  };
+
+  assert.deepEqual(getDatabaseConfig(stored, {}), stored);
 });
