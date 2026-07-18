@@ -114,6 +114,17 @@ Set-ExecutionPolicy RemoteSigned
 irm https://raw.githubusercontent.com/algertc/ALPR-Database/main/install.ps1 | iex
 ```
 
+The installer stores the administrator and database passwords in a local
+`.env` file instead of placing them in `docker-compose.yml`. Keep `.env`
+private and never commit it. On Linux and macOS the installer creates it with
+owner-only permissions. PostgreSQL is exposed only on `127.0.0.1` by default;
+other computers should connect through the application rather than directly
+to the database.
+
+For a manual Compose installation, copy `.env.example` to `.env`, fill in both
+passwords, and then run `docker compose up -d`. Compose will refuse to start
+while either required password is blank.
+
 <br>
 <br>
 

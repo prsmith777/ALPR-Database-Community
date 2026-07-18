@@ -226,9 +226,13 @@ function Read-UserInput {
         # Handle password input differently
         $userInput = if ($IsPassword) {
             $secureString = Read-Host -AsSecureString
-            [Runtime.InteropServices.Marshal]::PtrToStringAuto(
-                [Runtime.InteropServices.Marshal]::SecureStringToBSTR($secureString)
-            )
+            $bstr = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($secureString)
+            try {
+                [Runtime.InteropServices.Marshal]::PtrToStringBSTR($bstr)
+            }
+            finally {
+                [Runtime.InteropServices.Marshal]::ZeroFreeBSTR($bstr)
+            }
         }
         else {
             Read-Host
@@ -284,23 +288,34 @@ function Get-RequiredFile {
     }
 }
 
-function Update-ComposeFile {
+function ConvertTo-DotEnvValue {
     [CmdletBinding()]
     param(
         [Parameter(Mandatory)]
-        [string]$FilePath,
-        
-        [Parameter(Mandatory)]
-        [hashtable]$Replacements
+        [string]$Value
     )
-    
-    $content = Get-Content -Path $FilePath -Raw
-    
-    foreach ($key in $Replacements.Keys) {
-        $content = $content -replace $key, $Replacements[$key]
+
+    if ($Value.Contains("'") -or $Value.Contains("`r") -or $Value.Contains("`n")) {
+        throw "Passwords cannot contain a single quote or a line break."
     }
-    
-    Set-Content -Path $FilePath -Value $content
+
+    return "'$Value'"
+}
+
+function Write-EnvironmentFile {
+    [CmdletBinding()]
+    param([Parameter(Mandatory)][hashtable]$Config)
+
+    $lines = @(
+        "ADMIN_PASSWORD=$(ConvertTo-DotEnvValue $Config.AdminPassword)"
+        "DB_PASSWORD=$(ConvertTo-DotEnvValue $Config.DbPassword)"
+        "TZ=$(ConvertTo-DotEnvValue $Config.Timezone)"
+        "APP_PORT=$(ConvertTo-DotEnvValue ([string]$Config.AppPort))"
+        "DB_PORT=$(ConvertTo-DotEnvValue ([string]$Config.DbPort))"
+        ""
+    )
+    $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
+    [System.IO.File]::WriteAllText((Join-Path (Get-Location) ".env"), ($lines -join "`n"), $utf8NoBom)
 }
 
 # Main installation function
@@ -348,8 +363,12 @@ function Install-ALPRDatabase {
         Write-Host ""
 
         $config = @{
-            AdminPassword = Read-UserInput -Prompt "Create an admin password to log into the web app" -Required -IsPassword
-            DbPassword = Read-UserInput -Prompt "Create a secure password for your SQL database" -Required -IsPassword
+            AdminPassword = Read-UserInput -Prompt "Create an admin password to log into the web app" -Required -IsPassword `
+                -ValidationScript { param($value) $value.Length -ge 12 -and -not $value.Contains("'") } `
+                -ErrorMessage "Password must be at least 12 characters and cannot contain a single quote"
+            DbPassword = Read-UserInput -Prompt "Create a secure password for your SQL database" -Required -IsPassword `
+                -ValidationScript { param($value) $value.Length -ge 12 -and -not $value.Contains("'") } `
+                -ErrorMessage "Password must be at least 12 characters and cannot contain a single quote"
         }
 
         # Timezone selection
@@ -387,22 +406,8 @@ function Install-ALPRDatabase {
             } `
             -ErrorMessage "Invalid port, in use, or conflicts with app port"
 
-        # Update docker-compose.yml
-        Write-LogEntry -Level INFO -Message "Updating configuration..."
-        $replacements = @{
-            '"3000:3000"' = "`"$($config.AppPort):3000`""
-            "ADMIN_PASSWORD=password" = "ADMIN_PASSWORD=$($config.AdminPassword)"
-            "DB_PASSWORD=password" = "DB_PASSWORD=$($config.DbPassword)"
-            "POSTGRES_PASSWORD=password" = "POSTGRES_PASSWORD=$($config.DbPassword)"
-            "TZ=.*America/Los_Angeles" = "TZ=$($config.Timezone)"
-        }
-
-        if ($config.DbPort -ne $DEFAULT_DB_PORT) {
-            $replacements['"5432:5432"'] = "`"$($config.DbPort):5432`""
-            $replacements['DB_HOST=db'] = "DB_HOST=db:$($config.DbPort)"
-        }
-
-        Update-ComposeFile -FilePath "docker-compose.yml" -Replacements $replacements
+        Write-LogEntry -Level INFO -Message "Writing configuration to .env..."
+        Write-EnvironmentFile -Config $config
         Write-LogEntry -Level SUCCESS -Message "Configuration updated!"
 
         # Start application
@@ -429,9 +434,7 @@ function Install-ALPRDatabase {
             
             Write-Host "Your application is now running at: " -NoNewline
             Write-MessageWithColor "http://localhost:$($config.AppPort)" -ForegroundColor Cyan
-            Write-Host "`nAdmin password: " -NoNewline
-            Write-MessageWithColor $config.AdminPassword -ForegroundColor Yellow
-            Write-Host ""
+            Write-Host "`nCredentials were saved to the local .env file."
         }
         else {
             throw "Failed to start application. Check Docker logs for more details."

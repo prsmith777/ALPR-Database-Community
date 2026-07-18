@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # Script version
-SCRIPT_VERSION=1
+SCRIPT_VERSION=2
 
 # Set strict error handling
 set -euo pipefail
@@ -63,6 +63,72 @@ normalize_compose() {
         -e 's/"[0-9]+:([0-9]+)"/"__PORT__:\1"/' \
         -e 's/DB_HOST=.*/DB_HOST=__PLACEHOLDER__/' \
         "$file"
+}
+
+extract_compose_value() {
+    local key=$1
+    grep -m1 -E "${key}=" docker-compose.yml 2>/dev/null \
+        | sed -E 's/^[^=]*=//; s/[[:space:]]+#.*$//; s/^[[:space:]]+//; s/[[:space:]]+$//' \
+        || true
+}
+
+extract_compose_port() {
+    local container_port=$1
+    grep -oE "\"(127\\.0\\.0\\.1:)?[0-9]+:${container_port}\"" docker-compose.yml 2>/dev/null \
+        | head -n1 \
+        | sed -E "s/\"//g; s/^127\\.0\\.0\\.1://; s/:${container_port}$//" \
+        || true
+}
+
+write_migrated_env() {
+    if [ -f .env ]; then
+        log_info "Keeping existing .env configuration."
+        chmod 600 .env 2>/dev/null || true
+        return
+    fi
+
+    local admin_password db_password timezone app_port db_port
+    admin_password=$(extract_compose_value ADMIN_PASSWORD)
+    db_password=$(extract_compose_value DB_PASSWORD)
+    if [ -z "$db_password" ]; then
+        db_password=$(extract_compose_value POSTGRES_PASSWORD)
+    fi
+    timezone=$(extract_compose_value TZ)
+    app_port=$(extract_compose_port 3000)
+    db_port=$(extract_compose_port 5432)
+
+    if [ -z "$admin_password" ] || [ -z "$db_password" ]; then
+        log_error "Could not migrate existing passwords. Create .env from .env.example before updating."
+        return 1
+    fi
+    if [[ "$admin_password" == *"'"* ]] || [[ "$db_password" == *"'"* ]]; then
+        log_error "Automatic migration cannot encode a password containing a single quote."
+        log_error "Create .env manually from .env.example before updating."
+        return 1
+    fi
+
+    timezone=${timezone:-America/Los_Angeles}
+    app_port=${app_port:-3000}
+    db_port=${db_port:-5432}
+
+    umask 077
+    {
+        printf "ADMIN_PASSWORD='%s'\n" "$admin_password"
+        printf "DB_PASSWORD='%s'\n" "$db_password"
+        printf "TZ='%s'\n" "$timezone"
+        printf "APP_PORT='%s'\n" "$app_port"
+        printf "DB_PORT='%s'\n" "$db_port"
+    } > .env
+    chmod 600 .env
+    log_success "Existing configuration migrated to protected .env file."
+}
+
+validate_compose() {
+    if docker compose version >/dev/null 2>&1; then
+        docker compose config >/dev/null
+    else
+        docker-compose config >/dev/null
+    fi
 }
 
 # Function to run docker compose with proper syntax
@@ -157,33 +223,18 @@ case $choice in
                 if [[ "$update_compose" =~ ^[Yy]$ ]]; then
                     # Update image tag based on release type
                     sed -i.bak "s/:latest/:$IMAGE_TAG/" "docker-compose.remote.yml"
-                    
-                    # Preserve user's environment variables
-                    ADMIN_PASSWORD=$(grep "ADMIN_PASSWORD=" docker-compose.yml | cut -d'=' -f2)
-                    DB_PASSWORD=$(grep "DB_PASSWORD=" docker-compose.yml | cut -d'=' -f2)
-                    TZ=$(grep "TZ=" docker-compose.yml | head -n1 | cut -d'=' -f2)
-                    APP_PORT=$(grep -A1 "ports:" docker-compose.yml | grep -o '"[0-9]\+:' | cut -d'"' -f2 | cut -d':' -f1)
-                    
-                    # Check if user has custom DB_HOST
-                    if DB_HOST=$(grep "DB_HOST=" docker-compose.yml | cut -d'=' -f2-); then
-                        # Add DB_HOST to sed commands only if it exists in current file
-                        DB_HOST_SED="-e \"s/# DB_HOST=.*/DB_HOST=$DB_HOST/\""
-                    else
-                        DB_HOST_SED=""
-                    fi
-                    
-                    # Apply user's configuration to new compose file
-                    sed -i.bak \
-                        -e "s/ADMIN_PASSWORD=.*/ADMIN_PASSWORD=$ADMIN_PASSWORD/" \
-                        -e "s/DB_PASSWORD=.*/DB_PASSWORD=$DB_PASSWORD/" \
-                        -e "s/POSTGRES_PASSWORD=.*/POSTGRES_PASSWORD=$DB_PASSWORD/" \
-                        -e "s/TZ=.*/TZ=$TZ/" \
-                        -e "s/\"3000:/\"$APP_PORT:/" \
-                        $DB_HOST_SED \
-                        "docker-compose.remote.yml"
-                    
+
+                    write_migrated_env
+                    cp docker-compose.yml docker-compose.yml.pre-env-migration
                     mv docker-compose.remote.yml docker-compose.yml
-                    log_success "Compose file updated successfully!"
+                    if validate_compose; then
+                        rm -f docker-compose.yml.pre-env-migration docker-compose.remote.yml.bak
+                        log_success "Compose file updated successfully!"
+                    else
+                        mv docker-compose.yml.pre-env-migration docker-compose.yml
+                        log_error "The new Compose configuration was invalid; the original file was restored."
+                        exit 1
+                    fi
                 fi
             fi
             

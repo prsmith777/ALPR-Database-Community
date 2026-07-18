@@ -1,17 +1,14 @@
-version: "3.8"
 services:
   app:
     image: algertc/alpr-dashboard:latest
     restart: unless-stopped
     ports:
-      - "3000:3000" # Change the first port to the port you want to expose
+      - "${APP_PORT:-3000}:3000"
     environment:
-      - NODE_ENV=production
-      - ADMIN_PASSWORD=password # Change this to a secure password
-      - TZ= America/Los_Angeles # Change this to match your time zone. Time zones can be found here https://en.wikipedia.org/wiki/List_of_tz_database_time_zones
-      - DB_PASSWORD=password # Change this to your postgres password
-      - DB_HOST=db:5432 #host:port of your postgres database
-      - DB_NAME=postgres
-      - DB_USER=postgres
-    depends_on:
-      - db
+      NODE_ENV: production
+      ADMIN_PASSWORD: "${ADMIN_PASSWORD:?Set ADMIN_PASSWORD in .env}"
+      TZ: "${TZ:-America/Los_Angeles}"
+      DB_PASSWORD: "${DB_PASSWORD:?Set DB_PASSWORD in .env}"
+      DB_HOST: "${DB_HOST:?Set DB_HOST in .env}"
+      DB_NAME: "${DB_NAME:-postgres}"
+      DB_USER: "${DB_USER:-postgres}"

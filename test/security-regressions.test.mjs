@@ -85,3 +85,43 @@ test("the production image uses a supported non-root deterministic runtime", asy
     false
   );
 });
+
+test("Compose deployments require private credentials and keep Postgres local", async () => {
+  const mainCompose = await fs.readFile("docker-compose.yml", "utf8");
+  const dbOnlyCompose = await fs.readFile("docker-compose-dbonly.yml", "utf8");
+  const externalCompose = await fs.readFile(
+    "docker-compose.without-database.yml",
+    "utf8"
+  );
+  const envExample = await fs.readFile(".env.example", "utf8");
+  const gitignore = await fs.readFile(".gitignore", "utf8");
+  const installSh = await fs.readFile("install.sh", "utf8");
+  const installPs1 = await fs.readFile("install.ps1", "utf8");
+  const updateSh = await fs.readFile("update.sh", "utf8");
+  const updatePs1 = await fs.readFile("update.ps1", "utf8");
+
+  for (const compose of [mainCompose, dbOnlyCompose, externalCompose]) {
+    assert.equal(compose.includes("PASSWORD=password"), false);
+    assert.match(compose, /\$\{DB_PASSWORD:\?/);
+  }
+
+  assert.match(mainCompose, /ADMIN_PASSWORD:\s+"\$\{ADMIN_PASSWORD:\?/);
+  assert.match(mainCompose, /127\.0\.0\.1:\$\{DB_PORT:-5432\}:5432/);
+  assert.match(dbOnlyCompose, /127\.0\.0\.1:\$\{DB_PORT:-5432\}:5432/);
+  assert.equal(externalCompose.includes("depends_on:"), false);
+  assert.match(externalCompose, /DB_HOST:\s+"\$\{DB_HOST:\?/);
+
+  assert.match(envExample, /^ADMIN_PASSWORD=$/m);
+  assert.match(envExample, /^DB_PASSWORD=$/m);
+  assert.match(gitignore, /^\.env\*$/m);
+  assert.match(gitignore, /^!\.env\.example$/m);
+
+  for (const installer of [installSh, installPs1]) {
+    assert.match(installer, /\.env/);
+    assert.equal(installer.includes("ADMIN_PASSWORD=password"), false);
+    assert.equal(installer.includes("POSTGRES_PASSWORD=password"), false);
+  }
+  assert.match(installSh, /chmod 600 \.env/);
+  assert.match(updateSh, /write_migrated_env/);
+  assert.match(updatePs1, /Write-MigratedEnvironment/);
+});

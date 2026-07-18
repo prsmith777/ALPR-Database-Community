@@ -116,20 +116,46 @@ download_file "$UPDATE_URL" "update.sh"
 
 log_success "Files downloaded successfully!"
 
+read_secret() {
+    local target=$1
+    local prompt=$2
+    local value
+
+    while true; do
+        echo -en "${BOLD}${prompt}${NC} (minimum 12 characters): "
+        read -r -s value </dev/tty
+        echo
+
+        if [ "${#value}" -lt 12 ]; then
+            log_error "Password must contain at least 12 characters."
+        elif [[ "$value" == *"'"* ]]; then
+            log_error "Password cannot contain a single quote (')."
+        else
+            printf -v "$target" '%s' "$value"
+            return
+        fi
+    done
+}
+
+write_env_file() {
+    umask 077
+    {
+        printf "ADMIN_PASSWORD='%s'\n" "$ADMIN_PASSWORD"
+        printf "DB_PASSWORD='%s'\n" "$DB_PASSWORD"
+        printf "TZ='%s'\n" "$TZ"
+        printf "APP_PORT='%s'\n" "$APP_PORT"
+        printf "DB_PORT='%s'\n" "$DB_PORT"
+    } > .env
+    chmod 600 .env
+}
+
 echo -e "\n${BLUE}=========================================${NC}"
 log_info "Configure your installation (Leave blank and hit enter to use default):"
 echo ""
 
-echo -en "${BOLD}Create an admin password to log into the web app${NC} (You can change this later): "
-read -s ADMIN_PASSWORD </dev/tty
+read_secret ADMIN_PASSWORD "Create an admin password to log into the web app"
 echo
-echo
-
-echo ""
-
-echo -en "${BOLD}Create a secure password for your SQL database${NC} (You won't need to remember this): "
-read -s DB_PASSWORD </dev/tty
-echo
+read_secret DB_PASSWORD "Create a secure password for your SQL database"
 echo
 
 echo -e "\nSelect your timezone:\n"
@@ -250,26 +276,8 @@ done
 
 echo ""
 
-log_info "Configuring docker-compose.yml..."
-
-# write inputs to compose file
-sed -i.bak \
-    -e "s/\"3000:3000\"/\"$APP_PORT:3000\"/" \
-    -e "s/ADMIN_PASSWORD=password/ADMIN_PASSWORD=$ADMIN_PASSWORD/" \
-    -e "s/DB_PASSWORD=password/DB_PASSWORD=$DB_PASSWORD/" \
-    -e "s/POSTGRES_PASSWORD=password/POSTGRES_PASSWORD=$DB_PASSWORD/" \
-    -e "s|TZ=.*America/Los_Angeles|TZ=$TZ|g" \
-    docker-compose.yml
-
-# Only add DB_HOST if a non-default postgres port is provided
-if [ "$DB_PORT" != "5432" ]; then
-    # app section
-    sed -i.bak "/DB_PASSWORD=/a\\      - DB_HOST=db:$DB_PORT" docker-compose.yml
-    # db section
-    sed -i.bak "s/\"5432:5432\"/\"$DB_PORT:5432\"/" docker-compose.yml
-fi
-
-rm -f docker-compose.yml.bak
+log_info "Writing protected configuration to .env..."
+write_env_file
 log_success "Configuration completed successfully!"
 
 
@@ -284,7 +292,7 @@ if [ $? -eq 0 ]; then
     echo -e "${GREEN}Installation Complete!${NC}"
     echo -e "${GREEN}=========================================${NC}"
     echo -e "\nYour application is now running: ${BLUE}http://$(hostname):$APP_PORT${NC}"
-    echo -e "Admin password: ${YELLOW}$ADMIN_PASSWORD${NC}"
+    echo -e "Credentials were saved to the protected .env file."
 else
     log_error "Failed to start the application. Please check the error messages above."
     exit 1
