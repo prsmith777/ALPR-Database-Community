@@ -3,7 +3,7 @@
 
 import { useEffect, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { getLoginSetupState, loginAction } from "@/app/actions";
+import { loginAction } from "@/app/actions";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
@@ -21,9 +21,12 @@ export default function LoginPage() {
 
   useEffect(() => {
     let active = true;
-    getLoginSetupState()
+    fetch("/api/login-state", { method: "GET", cache: "no-store" })
+      .then((response) =>
+        response.ok ? response.json() : { bootstrapped: true }
+      )
       .then((state) => {
-        if (active) setShowCompatibilityHelp(!state?.bootstrapped);
+        if (active) setShowCompatibilityHelp(state?.bootstrapped === false);
       })
       .catch(() => {
         if (active) setShowCompatibilityHelp(false);

@@ -677,10 +677,6 @@ export async function updateNotificationPriority(formData) {
   }
 }
 
-export async function getLoginSetupState() {
-  const state = await getIdentityService().getBootstrapState();
-  return { bootstrapped: state.bootstrapped };
-}
 
 export async function loginAction(formData) {
   console.log("Attempting login...");

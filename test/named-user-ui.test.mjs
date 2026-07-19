@@ -5,10 +5,13 @@ import fs from "node:fs/promises";
 test("login supports named users while retaining guarded compatibility access", async () => {
   const page = await fs.readFile("app/login/page.jsx", "utf8");
   const actions = await fs.readFile("app/actions.js", "utf8");
+  const route = await fs.readFile("app/api/login-state/route.js", "utf8");
   assert.match(page, /name="username"/);
   assert.match(page, /showCompatibilityHelp/);
-  assert.match(page, /getLoginSetupState/);
-  assert.match(actions, /getLoginSetupState/);
+  assert.match(page, /\/api\/login-state/);
+  assert.match(route, /getBootstrapState/);
+  assert.match(route, /bootstrapped: true/);
+  assert.doesNotMatch(actions, /getLoginSetupState/);
   assert.match(actions, /if \(username\) \{/);
   assert.match(actions, /getIdentityService\(\)\.authenticate/);
 });
