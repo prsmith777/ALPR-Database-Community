@@ -30,7 +30,7 @@ import {
 } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 
-const navItems = [
+const allNavItems = [
   { icon: LayoutDashboard, label: "Dashboard", href: "/dashboard", permission: "plate.read" },
   { icon: Cctv, label: "Live Feed", href: "/live_feed", permission: "plate.read" },
   { icon: Database, label: "Database", href: "/database", permission: "plate.read" },
@@ -54,7 +54,7 @@ export function Sidebar({ permissions = [] }) {
   const [isSheetOpen, setIsSheetOpen] = useState(false);
   const canAccess = (permission) =>
     !permission || permissions.includes(permission);
-  const visibleNavItems = navItems.filter((item) => canAccess(item.permission));
+  const navItems = allNavItems.filter((item) => canAccess(item.permission));
   const visibleMobileNavItems = mobileNavItems.filter((item) =>
     canAccess(item.permission)
   );
@@ -81,7 +81,7 @@ export function Sidebar({ permissions = [] }) {
       <TooltipProvider>
         <aside className="hidden h-screen w-14 flex-col justify-between border-r bg-background sm:flex">
           <nav className="flex flex-col items-center space-y-2 pt-4">
-            {visibleNavItems.map((item) => (
+            {navItems.map((item) => (
               <Tooltip key={item.href} delayDuration={0}>
                 <TooltipTrigger asChild>
                   <Button
@@ -216,7 +216,7 @@ export function Sidebar({ permissions = [] }) {
           </div>
 
           <div className="max-h-[calc(80vh-60px)] space-y-1 overflow-y-auto px-2 py-4">
-            {visibleNavItems.map((item) => (
+            {navItems.map((item) => (
               <Button
                 key={item.href}
                 variant="ghost"
