@@ -86,6 +86,9 @@ test("matching settings are persisted and exposed in all three interfaces", asyn
   assert.match(actions, /formData\.get\("plateMatching"\)/);
   assert.match(settingsForm, /PlateMatchingSettings/);
   assert.match(liveFeed, /PlateMatchModeSelect/);
+  assert.match(liveFeed, /isSearchOptionsOpen.*useState\\(false\\)/s);
+  assert.match(liveFeed, /Plate search, matching, and filters/);
+  assert.match(liveFeed, /aria-expanded=\\{isSearchOptionsOpen\\}/);
   assert.match(database, /PlateMatchModeSelect/);
   assert.match(downloads, /PlateMatchModeSelect/);
 });
