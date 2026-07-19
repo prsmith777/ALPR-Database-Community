@@ -19,7 +19,11 @@ import {
 import { updatePassword, regenerateApiKey } from "@/app/actions";
 import { UserManagement } from "./UserManagement";
 
-export function SecuritySettings({ initialApiKey, initialIdentityState }) {
+export function SecuritySettings({
+  initialApiKey,
+  initialIdentityState,
+  canManageSettings,
+}) {
   const [apiKey, setApiKey] = useState(initialApiKey); // State to display dynamically updated API Key
   const [showApiKey, setShowApiKey] = useState(false);
   const [showDialog, setShowDialog] = useState(false); // Controls the regenerate API key dialog
@@ -128,13 +132,13 @@ export function SecuritySettings({ initialApiKey, initialIdentityState }) {
         </div>
       )}
 
-      {/* Display API Key specific error/success messages */}
-      {apiKeyError && (
+      {/* API-key feedback is restricted to system administrators. */}
+      {canManageSettings && apiKeyError && (
         <div className="p-4 text-red-600 bg-red-50 rounded-md">
           {apiKeyError}
         </div>
       )}
-      {apiKeySuccess && (
+      {canManageSettings && apiKeySuccess && (
         <div className="p-4 text-green-600 bg-green-50 rounded-md">
           {apiKeySuccess}
         </div>
@@ -202,6 +206,7 @@ export function SecuritySettings({ initialApiKey, initialIdentityState }) {
       </div>
 
       {/* API Key Section */}
+      {canManageSettings && (
       <div className="space-y-4">
         <h3 className="text-lg font-semibold">API Key Management</h3>
         <div className="space-y-4">
@@ -258,6 +263,7 @@ export function SecuritySettings({ initialApiKey, initialIdentityState }) {
           </Dialog>
         </div>
       </div>
+      )}
     </div>
   );
 }
