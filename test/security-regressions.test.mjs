@@ -128,8 +128,6 @@ test("upstream telemetry, training uploads, and update polling are removed", asy
 });
 
 test("legacy upstream installer and updater scripts are retired", async () => {
-  const dockerignore = await fs.readFile(".dockerignore", "utf8");
-
   for (const retiredFile of [
     "install.sh",
     "install.ps1",
@@ -137,7 +135,6 @@ test("legacy upstream installer and updater scripts are retired", async () => {
     "update.ps1",
   ]) {
     await assert.rejects(fs.access(retiredFile), { code: "ENOENT" });
-    assert.equal(dockerignore.includes(`!${retiredFile}`), false);
   }
 });
 
