@@ -149,6 +149,11 @@ test("the production image uses a supported non-root deterministic runtime", asy
   assert.match(dockerfile, /^FROM node:24-bookworm-slim$/m);
   assert.match(dockerfile, /yarn install --frozen-lockfile/);
   assert.equal(dockerfile.includes("yarn add"), false);
+  assert.equal(
+    dockerfile.match(/NEXT_TELEMETRY_DISABLED=1/g)?.length,
+    2,
+    "Next.js telemetry must be disabled in both image stages"
+  );
   assert.match(dockerfile, /^USER node$/m);
   assert.equal(packageJson.engines.node, ">=24.0.0 <25");
   assert.equal(

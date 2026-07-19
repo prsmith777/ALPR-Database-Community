@@ -1,7 +1,8 @@
 FROM node:24-bookworm AS builder
 WORKDIR /app
 
-ENV CXXFLAGS="-DSYZX_FEATURE_FLAG=1"
+ENV CXXFLAGS="-DSYZX_FEATURE_FLAG=1" \\
+    NEXT_TELEMETRY_DISABLED=1
 
 COPY package.json yarn.lock ./
 RUN yarn install --frozen-lockfile --network-timeout 100000
@@ -11,6 +12,8 @@ RUN yarn build
 
 FROM node:24-bookworm-slim
 WORKDIR /app
+
+ENV NEXT_TELEMETRY_DISABLED=1
 
 COPY --from=builder --chown=node:node /app /app
 
