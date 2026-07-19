@@ -156,6 +156,9 @@ export function UserManagement({ initialState }) {
                   {user.displayName}
                   {isCurrent && <Badge variant="secondary">You</Badge>}
                   <Badge variant={user.status === "active" ? "default" : "outline"}>{user.status}</Badge>
+                  {user.mustChangePassword && (
+                    <Badge variant="outline">Password change required</Badge>
+                  )}
                 </div>
                 <p className="text-sm text-muted-foreground">@{user.username}</p>
               </div>
@@ -345,13 +348,20 @@ export function UserManagement({ initialState }) {
         onSubmit={(event) => {
           event.preventDefault();
           const form = event.currentTarget;
-          run(createNamedUser, new FormData(form), "User created.", form);
+          const data = new FormData(form);
+          if (data.get("password") !== data.get("confirmPassword")) {
+            setSuccess("");
+            setError("Temporary password and confirmation do not match.");
+            return;
+          }
+          run(createNamedUser, data, "User created.", form);
         }}
       >
         <h4 className="flex items-center gap-2 font-semibold sm:col-span-2"><UserPlus className="h-4 w-4 text-primary" /> Add user</h4>
         <div className="space-y-2"><Label htmlFor="newUsername">Username</Label><Input id="newUsername" name="username" required minLength={3} /></div>
         <div className="space-y-2"><Label htmlFor="newDisplayName">Display name</Label><Input id="newDisplayName" name="displayName" required /></div>
         <div className="space-y-2"><Label htmlFor="newUserPassword">Temporary password</Label><Input id="newUserPassword" name="password" type="password" minLength={8} required autoComplete="new-password" /></div>
+        <div className="space-y-2"><Label htmlFor="newUserConfirmPassword">Confirm temporary password</Label><Input id="newUserConfirmPassword" name="confirmPassword" type="password" minLength={8} required autoComplete="new-password" /></div>
         <div className="space-y-2">
           <Label htmlFor="newUserRole">Role</Label>
           <Select name="role" defaultValue="viewer">

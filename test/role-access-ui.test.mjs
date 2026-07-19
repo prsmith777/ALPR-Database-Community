@@ -135,3 +135,15 @@ test("permanent account deletion requires username confirmation and administrato
   assert.match(repository, /account_deleted/);
   assert.match(repository, /deleted_at = CURRENT_TIMESTAMP/);
 });
+
+
+test("current access carries the persistent temporary-password reminder", async () => {
+  const [actions, repository, layout] = await Promise.all([
+    source("app/actions.js"),
+    source("lib/identity-repository.mjs"),
+    source("components/layout/MainLayout.jsx"),
+  ]);
+  assert.match(actions, /mustChangePassword: Boolean\(principal\.mustChangePassword\)/);
+  assert.match(repository, /mustChangePassword: Boolean\(row\.must_change_password\)/);
+  assert.match(layout, /<PasswordChangeReminder \/>/);
+});

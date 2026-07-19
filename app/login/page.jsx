@@ -1,7 +1,7 @@
 // app/login/page.js
 "use client";
 
-import { useRef, useState, useTransition } from "react";
+import { useEffect, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { loginAction } from "@/app/actions";
 import { Input } from "@/components/ui/input";
@@ -14,9 +14,27 @@ export default function LoginPage() {
   const [error, setError] = useState("");
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
+  const [showCompatibilityHelp, setShowCompatibilityHelp] = useState(false);
   const [isPending, startTransition] = useTransition();
   const passwordInputRef = useRef(null);
   const router = useRouter();
+
+  useEffect(() => {
+    let active = true;
+    fetch("/api/login-state", { method: "GET", cache: "no-store" })
+      .then((response) =>
+        response.ok ? response.json() : { bootstrapped: true }
+      )
+      .then((state) => {
+        if (active) setShowCompatibilityHelp(state?.bootstrapped === false);
+      })
+      .catch(() => {
+        if (active) setShowCompatibilityHelp(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
 
   const clearFailedPassword = () => {
     setPassword("");
@@ -99,10 +117,12 @@ export default function LoginPage() {
                   placeholder="Enter your username"
                   className="h-10 sm:h-12 px-4 bg-background/50"
                 />
-                <p className="text-xs text-muted-foreground">
-                  During setup, leave username blank to use the compatibility
-                  administrator password.
-                </p>
+                {showCompatibilityHelp && (
+                  <p className="text-xs text-muted-foreground">
+                    During setup, leave username blank to use the compatibility
+                    administrator password.
+                  </p>
+                )}
               </div>
 
               <div className="space-y-2">
