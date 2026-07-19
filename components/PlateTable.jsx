@@ -921,18 +921,14 @@ export default function PlateTable({
               </div>
 
               {/* Plate matching - Desktop only */}
-              <div className="hidden w-[230px] space-y-1 sm:block">
-                <Label
-                  htmlFor="match-mode"
-                  className="text-xs text-muted-foreground"
-                >
-                  Plate matching
-                </Label>
+              <div className="hidden w-[310px] sm:block">
                 <PlateMatchModeSelect
                   id="match-mode"
                   value={filters.matchMode}
                   onValueChange={handleMatchModeChange}
                   settings={matchingSettings}
+                  prefixLabel="Plate matching"
+                  ariaLabel="Plate matching"
                   className="h-9 dark:bg-[#161618]"
                 />
               </div>
