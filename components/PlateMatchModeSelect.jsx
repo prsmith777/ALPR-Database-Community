@@ -9,11 +9,11 @@ import {
 } from "@/components/ui/select";
 import { plateMatchModeLabel } from "@/lib/plate-matching.mjs";
 
-const MODES = ["default", "off", "strict", "balanced", "broad"];
+const MODES = ["off", "strict", "balanced", "broad"];
 
 export default function PlateMatchModeSelect({
   id,
-  value = "default",
+  value = "balanced",
   onValueChange,
   settings,
   className,
@@ -28,8 +28,8 @@ export default function PlateMatchModeSelect({
         className={className}
       >
         {prefixLabel ? (
-          <span className="flex min-w-0 items-center gap-1.5">
-            <span className="shrink-0 text-xs text-muted-foreground">
+          <span className="flex min-w-0 items-center gap-3">
+            <span className="mr-1 shrink-0 text-xs text-muted-foreground">
               {prefixLabel}:
             </span>
             <SelectValue />

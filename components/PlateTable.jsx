@@ -442,7 +442,6 @@ export default function PlateTable({
     setSearchInput("");
     onUpdateFilters({
       search: "",
-      matchMode: null,
       fuzzySearch: null,
       tag: null,
       dateFrom: null,

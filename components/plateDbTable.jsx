@@ -87,6 +87,10 @@ import Image from "next/image";
 import Link from "next/link";
 import { formatPlateDateTime } from "@/lib/plate-date.mjs";
 import PlateDatabaseFilters from "@/components/PlateDatabaseFilters";
+import {
+  readPlateMatchPreference,
+  writePlateMatchPreference,
+} from "@/lib/plate-match-preference.mjs";
 
 const formatDaysAgo = (days) => {
   if (days === 0) return "Today";
@@ -130,14 +134,14 @@ export default function PlateTable({ matchingSettings }) {
     key: "last_seen_at",
     direction: "desc",
   });
-  const [filters, setFilters] = useState({
+  const [filters, setFilters] = useState(() => ({
     search: "",
     tag: "all",
-    matchMode: "default",
+    matchMode: readPlateMatchPreference("plate-database"),
     cameraName: "",
     dateRange: { from: "", to: "" },
     hourRange: null,
-  });
+  }));
   const deferredSearch = useDeferredValue(filters.search);
   const filterDateFrom = filters.dateRange.from;
   const filterDateTo = filters.dateRange.to;
@@ -383,19 +387,22 @@ export default function PlateTable({ matchingSettings }) {
   };
 
   const handleFilterChange = (updates) => {
+    if (updates.matchMode) {
+      writePlateMatchPreference("plate-database", updates.matchMode);
+    }
     setFilters((current) => ({ ...current, ...updates }));
     setPage(1);
   };
 
   const clearFilters = () => {
-    setFilters({
+    setFilters((current) => ({
       search: "",
       tag: "all",
-      matchMode: "default",
+      matchMode: current.matchMode,
       cameraName: "",
       dateRange: { from: "", to: "" },
       hourRange: null,
-    });
+    }));
     setPage(1);
   };
 

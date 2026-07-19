@@ -9,6 +9,10 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import PlateMatchModeSelect from "@/components/PlateMatchModeSelect";
 import {
+  readPlateMatchPreference,
+  writePlateMatchPreference,
+} from "@/lib/plate-match-preference.mjs";
+import {
   Select,
   SelectContent,
   SelectItem,
@@ -33,7 +37,9 @@ export default function PlateExportForm({
   const [matchMode, setMatchMode] = useState(
     () =>
       searchParams.get("matchMode") ||
-      (searchParams.get("fuzzySearch") === "true" ? "balanced" : "default")
+      (searchParams.get("fuzzySearch") === "true"
+        ? "balanced"
+        : readPlateMatchPreference("downloads"))
   );
   const [tag, setTag] = useState(() => searchParams.get("tag") || "all");
   const [camera, setCamera] = useState(() => searchParams.get("camera") || "all");
@@ -45,7 +51,7 @@ export default function PlateExportForm({
   const query = useMemo(() => {
     const params = new URLSearchParams();
     if (search.trim()) params.set("search", search.trim());
-    if (matchMode !== "default") params.set("matchMode", matchMode);
+    if (matchMode) params.set("matchMode", matchMode);
     if (tag !== "all") params.set("tag", tag);
     if (camera !== "all") params.set("camera", camera);
     if (dateFrom) params.set("dateFrom", dateFrom);
@@ -67,9 +73,13 @@ export default function PlateExportForm({
     window.location.assign(`/api/exports/plates?${params.toString()}`);
   };
 
+  const handleMatchModeChange = (mode) => {
+    const persistedMode = writePlateMatchPreference("downloads", mode);
+    setMatchMode(persistedMode);
+  };
+
   const clearFilters = () => {
     setSearch("");
-    setMatchMode("default");
     setTag("all");
     setCamera("all");
     setDateFrom("");
@@ -109,7 +119,7 @@ export default function PlateExportForm({
                 <PlateMatchModeSelect
                   id="export-match-mode"
                   value={matchMode}
-                  onValueChange={setMatchMode}
+                  onValueChange={handleMatchModeChange}
                   settings={matchingSettings}
                 />
                 <p className="text-xs text-muted-foreground">

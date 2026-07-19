@@ -237,6 +237,7 @@ async function processPlateRead(data) {
     transactionOpen = true;
     console.log("Database connection established");
 
+    const config = await getConfig();
     const mqttRepository = new MqttRepository({
       pool,
       executor: dbClient,
@@ -244,6 +245,7 @@ async function processPlateRead(data) {
     const mqttService = new MqttAcceptedReadService({
       repository: mqttRepository,
       logger: console,
+      matchingSettings: config.plateMatching,
     });
 
     const processedPlates = [];
@@ -405,7 +407,6 @@ async function processPlateRead(data) {
       }
     }
 
-    const config = await getConfig();
     cleanupOldRecords(config.general.maxRecords).catch(() =>
       console.error("Database pruning failed")
     );

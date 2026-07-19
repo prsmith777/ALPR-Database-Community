@@ -83,6 +83,31 @@ test("exact-plate rules can optionally accept one-character OCR mistakes", () =>
   assert.equal(fuzzy.candidate.name, "Liz's Lexus");
 });
 
+test("MQTT rules use the shared plate-matching profiles", () => {
+  const off = evaluateMqttRule(
+    baseRule({ plate_match_mode: "off" }),
+    {
+      observedPlate: "DP0M90",
+      camera: entryCamera1,
+      knownPlates,
+    }
+  );
+  assert.equal(off.matched, false);
+  assert.equal(off.reason, "fuzzy-disabled");
+
+  const strict = evaluateMqttRule(
+    baseRule({ plate_match_mode: "strict" }),
+    {
+      observedPlate: "DP0M90",
+      camera: entryCamera1,
+      knownPlates,
+    }
+  );
+  assert.equal(strict.matched, true);
+  assert.equal(strict.matchMethod, "fuzzy");
+  assert.equal(strict.matchedPlateNumber, "DPOM90");
+});
+
 test("known-plate, known-name, and tag rules match the canonical identity", () => {
   const rules = [
     baseRule({ id: 1, match_type: "any_known_plate", match_value: "" }),

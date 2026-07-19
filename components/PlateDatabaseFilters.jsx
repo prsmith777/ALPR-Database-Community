@@ -25,7 +25,7 @@ function hourLabel(hour) {
 function exportHref(filters, sortConfig) {
   const params = new URLSearchParams();
   if (filters.search.trim()) params.set("search", filters.search.trim());
-  if (filters.matchMode !== "default") params.set("matchMode", filters.matchMode);
+  if (filters.matchMode) params.set("matchMode", filters.matchMode);
   if (filters.tag !== "all") params.set("tag", filters.tag);
   if (filters.cameraName) params.set("camera", filters.cameraName);
   if (filters.dateRange.from) params.set("dateFrom", filters.dateRange.from);
@@ -102,13 +102,14 @@ export default function PlateDatabaseFilters({
               className="pl-9"
             />
           </div>
-          <div className="space-y-2">
+          <div className="max-w-[300px] space-y-2">
             <Label htmlFor="plate-database-match-mode">Plate matching</Label>
             <PlateMatchModeSelect
               id="plate-database-match-mode"
               value={filters.matchMode}
               onValueChange={(matchMode) => onChange({ matchMode })}
               settings={matchingSettings}
+              className="w-full"
             />
             <p className="text-xs text-muted-foreground">
               Controls how closely plate characters must match this search.

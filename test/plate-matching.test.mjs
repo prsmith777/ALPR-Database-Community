@@ -3,7 +3,9 @@ import { readFile } from "node:fs/promises";
 import test from "node:test";
 import {
   DEFAULT_PLATE_MATCHING_SETTINGS,
+  PLATE_MATCH_MODES,
   buildFuzzyPlateSql,
+  evaluatePlateIdentityMatch,
   evaluatePlateMatch,
   normalizePlateMatchingSettings,
   resolvePlateMatchMode,
@@ -11,7 +13,6 @@ import {
 
 test("plate matching defaults are conservative and normalized", () => {
   const settings = normalizePlateMatchingSettings({
-    defaultMode: "unknown",
     minimumCharacters: 1,
     ocrGroups: ["0O", "OQ", "!!", "1I"],
     profiles: {
@@ -19,7 +20,8 @@ test("plate matching defaults are conservative and normalized", () => {
     },
   });
 
-  assert.equal(settings.defaultMode, "balanced");
+  assert.equal("defaultMode" in settings, false);
+  assert.deepEqual(PLATE_MATCH_MODES, ["off", "strict", "balanced", "broad"]);
   assert.equal(settings.minimumCharacters, 3);
   assert.equal(settings.profiles.broad.ordinaryDifferences, 2);
   assert.equal(settings.profiles.broad.ocrDifferences, 0);
@@ -48,6 +50,17 @@ test("off and minimum length retain standard substring matching only", () => {
   assert.equal(evaluatePlateMatch("ABC", "ABX", "broad").matched, false);
 });
 
+test("identity matching uses the same profiles without substring matches", () => {
+  assert.equal(
+    evaluatePlateIdentityMatch("ABC", "XXABCYY", "off").matched,
+    false
+  );
+  assert.equal(
+    evaluatePlateIdentityMatch("7MLG803", "7ML6803", "strict").matched,
+    true
+  );
+});
+
 test("fuzzy SQL is parameterized and bounded by the selected profile", () => {
   const values = [];
   const result = buildFuzzyPlateSql({
@@ -71,15 +84,25 @@ test("fuzzy SQL is parameterized and bounded by the selected profile", () => {
   assert.ok(values.includes(2));
 });
 
-test("matching settings are persisted and exposed in all three interfaces", async () => {
-  const [settingsSource, actions, settingsForm, liveFeed, database, downloads] =
-    await Promise.all([
+test("matching settings are persisted and exposed in all four interfaces", async () => {
+  const [
+    settingsSource,
+    actions,
+    settingsForm,
+    liveFeed,
+    database,
+    downloads,
+    mqttRules,
+    mqttRoute,
+  ] = await Promise.all([
       readFile(new URL("../lib/settings.js", import.meta.url), "utf8"),
       readFile(new URL("../app/actions.js", import.meta.url), "utf8"),
       readFile(new URL("../app/settings/SettingsForm.jsx", import.meta.url), "utf8"),
       readFile(new URL("../components/PlateTable.jsx", import.meta.url), "utf8"),
       readFile(new URL("../components/PlateDatabaseFilters.jsx", import.meta.url), "utf8"),
       readFile(new URL("../components/PlateExportForm.jsx", import.meta.url), "utf8"),
+      readFile(new URL("../components/mqtt/MqttRules.jsx", import.meta.url), "utf8"),
+      readFile(new URL("../app/api/mqtt/rules/route.js", import.meta.url), "utf8"),
     ]);
 
   assert.match(settingsSource, /normalizePlateMatchingSettings/);
@@ -92,4 +115,7 @@ test("matching settings are persisted and exposed in all three interfaces", asyn
   assert.equal(liveFeed.includes("aria-expanded={isSearchOptionsOpen}"), true);
   assert.match(database, /PlateMatchModeSelect/);
   assert.match(downloads, /PlateMatchModeSelect/);
+  assert.match(mqttRules, /mqtt-rule-plate-match-mode/);
+  assert.match(mqttRules, /plateMatchMode: "off"/);
+  assert.match(mqttRoute, /plateMatching: config\.plateMatching/);
 });
