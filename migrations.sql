@@ -385,3 +385,260 @@ DROP TRIGGER IF EXISTS mqtt_deliveries_set_updated_at ON public.mqtt_deliveries;
 CREATE TRIGGER mqtt_deliveries_set_updated_at
 BEFORE UPDATE ON public.mqtt_deliveries
 FOR EACH ROW EXECUTE FUNCTION public.mqtt_set_updated_at();
+
+-- Identity, roles, and audit foundation --------------------------------------
+-- This first slice is deliberately non-disruptive: it creates the durable
+-- identity model without changing the existing password-only login. A later
+-- migration will bootstrap the first named owner and cut sessions over only
+-- after the compatibility path has been tested.
+CREATE TABLE IF NOT EXISTS public.schema_migrations (
+    version VARCHAR(100) PRIMARY KEY,
+    description TEXT NOT NULL,
+    applied_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS public.users (
+    id BIGSERIAL PRIMARY KEY,
+    username VARCHAR(64) NOT NULL,
+    display_name VARCHAR(120) NOT NULL,
+    password_hash TEXT NOT NULL,
+    status VARCHAR(20) NOT NULL DEFAULT 'active'
+        CHECK (status IN ('active', 'disabled')),
+    password_changed_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    last_login_at TIMESTAMPTZ,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT users_username_normalized
+        CHECK (
+            username = LOWER(username)
+            AND username ~ '^[a-z0-9][a-z0-9._-]{1,62}[a-z0-9]$'
+        ),
+    CONSTRAINT users_display_name_present
+        CHECK (NULLIF(BTRIM(display_name), '') IS NOT NULL),
+    CONSTRAINT users_password_hash_present
+        CHECK (NULLIF(BTRIM(password_hash), '') IS NOT NULL)
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS users_username_lower_key
+    ON public.users (LOWER(username));
+
+CREATE TABLE IF NOT EXISTS public.roles (
+    id SMALLSERIAL PRIMARY KEY,
+    name VARCHAR(50) NOT NULL UNIQUE,
+    display_name VARCHAR(80) NOT NULL,
+    description TEXT NOT NULL,
+    system_role BOOLEAN NOT NULL DEFAULT TRUE,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT roles_name_format
+        CHECK (name ~ '^[a-z][a-z0-9_]{2,49}$')
+);
+
+CREATE TABLE IF NOT EXISTS public.permissions (
+    id SMALLSERIAL PRIMARY KEY,
+    permission_key VARCHAR(100) NOT NULL UNIQUE,
+    description TEXT NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT permissions_key_format
+        CHECK (permission_key ~ '^[a-z][a-z0-9_]*(\.[a-z][a-z0-9_]*)+$')
+);
+
+CREATE TABLE IF NOT EXISTS public.role_permissions (
+    role_id SMALLINT NOT NULL REFERENCES public.roles(id) ON DELETE CASCADE,
+    permission_id SMALLINT NOT NULL
+        REFERENCES public.permissions(id) ON DELETE CASCADE,
+    PRIMARY KEY (role_id, permission_id)
+);
+
+CREATE TABLE IF NOT EXISTS public.user_roles (
+    user_id BIGINT NOT NULL REFERENCES public.users(id) ON DELETE CASCADE,
+    role_id SMALLINT NOT NULL REFERENCES public.roles(id) ON DELETE RESTRICT,
+    granted_by_user_id BIGINT REFERENCES public.users(id) ON DELETE RESTRICT,
+    granted_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (user_id, role_id)
+);
+
+CREATE TABLE IF NOT EXISTS public.user_sessions (
+    id BIGSERIAL PRIMARY KEY,
+    user_id BIGINT NOT NULL REFERENCES public.users(id) ON DELETE CASCADE,
+    token_hash CHAR(64) NOT NULL UNIQUE,
+    user_agent VARCHAR(255) NOT NULL DEFAULT 'Unknown Device',
+    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    last_used_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    expires_at TIMESTAMPTZ NOT NULL,
+    revoked_at TIMESTAMPTZ,
+    revoke_reason VARCHAR(100),
+    CONSTRAINT user_sessions_token_hash_format
+        CHECK (token_hash ~ '^[0-9a-f]{64}$'),
+    CONSTRAINT user_sessions_expiration_order
+        CHECK (expires_at > created_at),
+    CONSTRAINT user_sessions_revocation_pair
+        CHECK (
+            (revoked_at IS NULL AND revoke_reason IS NULL)
+            OR
+            (revoked_at IS NOT NULL AND NULLIF(BTRIM(revoke_reason), '') IS NOT NULL)
+        )
+);
+
+CREATE INDEX IF NOT EXISTS idx_user_sessions_active
+    ON public.user_sessions (user_id, expires_at)
+    WHERE revoked_at IS NULL;
+
+CREATE TABLE IF NOT EXISTS public.api_credentials (
+    id BIGSERIAL PRIMARY KEY,
+    owner_user_id BIGINT REFERENCES public.users(id) ON DELETE RESTRICT,
+    name VARCHAR(120) NOT NULL,
+    key_prefix VARCHAR(16) NOT NULL UNIQUE,
+    secret_hash CHAR(64) NOT NULL UNIQUE,
+    scopes TEXT[] NOT NULL DEFAULT ARRAY[]::TEXT[],
+    status VARCHAR(20) NOT NULL DEFAULT 'active'
+        CHECK (status IN ('active', 'revoked')),
+    last_used_at TIMESTAMPTZ,
+    expires_at TIMESTAMPTZ,
+    revoked_at TIMESTAMPTZ,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT api_credentials_name_present
+        CHECK (NULLIF(BTRIM(name), '') IS NOT NULL),
+    CONSTRAINT api_credentials_prefix_format
+        CHECK (key_prefix ~ '^[0-9a-f]{8,16}$'),
+    CONSTRAINT api_credentials_secret_hash_format
+        CHECK (secret_hash ~ '^[0-9a-f]{64}$'),
+    CONSTRAINT api_credentials_scope_values_present
+        CHECK (array_position(scopes, NULL) IS NULL)
+);
+
+CREATE INDEX IF NOT EXISTS idx_api_credentials_owner
+    ON public.api_credentials (owner_user_id, status);
+
+CREATE TABLE IF NOT EXISTS public.audit_events (
+    id BIGSERIAL PRIMARY KEY,
+    actor_user_id BIGINT REFERENCES public.users(id) ON DELETE RESTRICT,
+    actor_api_credential_id BIGINT
+        REFERENCES public.api_credentials(id) ON DELETE RESTRICT,
+    source VARCHAR(20) NOT NULL
+        CHECK (source IN ('browser', 'api', 'system')),
+    event_type VARCHAR(100) NOT NULL,
+    resource_type VARCHAR(100),
+    resource_id VARCHAR(255),
+    outcome VARCHAR(20) NOT NULL
+        CHECK (outcome IN ('succeeded', 'denied', 'failed')),
+    reason TEXT,
+    request_id VARCHAR(100),
+    metadata JSONB NOT NULL DEFAULT '{}'::JSONB
+        CHECK (jsonb_typeof(metadata) = 'object'),
+    occurred_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT audit_events_single_actor
+        CHECK (num_nonnulls(actor_user_id, actor_api_credential_id) <= 1),
+    CONSTRAINT audit_events_type_present
+        CHECK (NULLIF(BTRIM(event_type), '') IS NOT NULL)
+);
+
+CREATE INDEX IF NOT EXISTS idx_audit_events_occurred_at
+    ON public.audit_events (occurred_at DESC, id DESC);
+CREATE INDEX IF NOT EXISTS idx_audit_events_actor_user
+    ON public.audit_events (actor_user_id, occurred_at DESC)
+    WHERE actor_user_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_audit_events_resource
+    ON public.audit_events (resource_type, resource_id, occurred_at DESC)
+    WHERE resource_type IS NOT NULL;
+
+CREATE OR REPLACE FUNCTION public.identity_set_updated_at()
+RETURNS TRIGGER AS $$
+BEGIN
+    NEW.updated_at = CURRENT_TIMESTAMP;
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS users_set_updated_at ON public.users;
+CREATE TRIGGER users_set_updated_at
+BEFORE UPDATE ON public.users
+FOR EACH ROW EXECUTE FUNCTION public.identity_set_updated_at();
+
+DROP TRIGGER IF EXISTS roles_set_updated_at ON public.roles;
+CREATE TRIGGER roles_set_updated_at
+BEFORE UPDATE ON public.roles
+FOR EACH ROW EXECUTE FUNCTION public.identity_set_updated_at();
+
+CREATE OR REPLACE FUNCTION public.prevent_audit_event_mutation()
+RETURNS TRIGGER AS $$
+BEGIN
+    RAISE EXCEPTION 'audit_events is append-only';
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS audit_events_append_only ON public.audit_events;
+CREATE TRIGGER audit_events_append_only
+BEFORE UPDATE OR DELETE ON public.audit_events
+FOR EACH ROW EXECUTE FUNCTION public.prevent_audit_event_mutation();
+
+INSERT INTO public.roles (name, display_name, description)
+VALUES
+    ('administrator', 'Administrator', 'Full application and security administration.'),
+    ('operator', 'Operator', 'Day-to-day plate review, automation, and data management.'),
+    ('viewer', 'Viewer', 'Read-only access to plate data and approved exports.'),
+    ('auditor', 'Auditor', 'Read-only investigations with audit-history access.')
+ON CONFLICT (name) DO UPDATE
+SET display_name = EXCLUDED.display_name,
+    description = EXCLUDED.description;
+
+INSERT INTO public.permissions (permission_key, description)
+VALUES
+    ('system.manage_users', 'Create, disable, and assign roles to users.'),
+    ('system.manage_settings', 'Change application and integration settings.'),
+    ('system.view_audit', 'View append-only audit history.'),
+    ('plate.read', 'View plate reads, images, and known-plate details.'),
+    ('plate.review', 'Confirm, correct, or reject plate reads.'),
+    ('plate.delete', 'Delete plate reads and plate records.'),
+    ('known_plate.manage', 'Manage known plates and their notes.'),
+    ('tag.manage', 'Create, edit, assign, and remove tags.'),
+    ('notification.manage', 'Manage notification rules and delivery state.'),
+    ('mqtt.manage', 'Manage MQTT brokers, cameras, rules, and activity.'),
+    ('export.create', 'Create and download approved exports.'),
+    ('maintenance.manage', 'Run approved storage and database maintenance.')
+ON CONFLICT (permission_key) DO UPDATE
+SET description = EXCLUDED.description;
+
+INSERT INTO public.role_permissions (role_id, permission_id)
+SELECT role.id, permission.id
+FROM public.roles AS role
+CROSS JOIN public.permissions AS permission
+WHERE
+    role.name = 'administrator'
+    OR (
+        role.name = 'operator'
+        AND permission.permission_key IN (
+            'plate.read',
+            'plate.review',
+            'plate.delete',
+            'known_plate.manage',
+            'tag.manage',
+            'notification.manage',
+            'mqtt.manage',
+            'export.create'
+        )
+    )
+    OR (
+        role.name = 'viewer'
+        AND permission.permission_key IN (
+            'plate.read',
+            'export.create'
+        )
+    )
+    OR (
+        role.name = 'auditor'
+        AND permission.permission_key IN (
+            'plate.read',
+            'system.view_audit',
+            'export.create'
+        )
+    )
+ON CONFLICT (role_id, permission_id) DO NOTHING;
+
+INSERT INTO public.schema_migrations (version, description)
+VALUES (
+    '2026071901_identity_audit_foundation',
+    'Create users, roles, permissions, database sessions, scoped credentials, and append-only audit events.'
+)
+ON CONFLICT (version) DO NOTHING;
+
