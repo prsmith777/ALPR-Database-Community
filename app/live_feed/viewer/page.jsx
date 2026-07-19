@@ -1,5 +1,5 @@
 import {
-  getSettings,
+  getPlateViewSettings,
   getLatestPlateReads,
   getTags,
   getCameraNames,
@@ -30,7 +30,7 @@ export default async function LiveViewerPage() {
       getTags(),
       getCameraNames(),
       getTimeFormat(),
-      getSettings(),
+      getPlateViewSettings(),
     ]);
   const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
 

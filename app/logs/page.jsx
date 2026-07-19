@@ -5,6 +5,9 @@ import { Alert, AlertDescription } from "@/components/ui/alert";
 import LogViewer from "./LogViewer";
 import DashboardLayout from "@/components/layout/MainLayout";
 import { getLocalVersionInfo } from "@/lib/version";
+import { requirePagePermission } from "@/lib/page-permission.mjs";
+export const dynamic = "force-dynamic";
+
 import {
   PROJECT_NAME,
   PROJECT_RELEASES_URL,
@@ -26,6 +29,7 @@ async function LogsContent() {
 }
 
 export default async function LogsPage() {
+  await requirePagePermission("system.view_audit");
   const version = await getLocalVersionInfo();
 
   return (

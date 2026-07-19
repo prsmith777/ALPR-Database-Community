@@ -103,6 +103,7 @@ async function requirePermission(permission) {
 function identityActionFailure(error, fallback) {
   const safeCodes = new Set([
     "CANNOT_DISABLE_SELF",
+    "CANNOT_RESET_SELF",
     "IDENTITY_ALREADY_BOOTSTRAPPED",
     "INVALID_IDENTITY_INPUT",
     "INVALID_PASSWORD",
@@ -747,7 +748,13 @@ export async function getIdentityAdminState() {
   const principal = await requireAuthenticatedSession();
   const identityService = getIdentityService();
   const state = await identityService.getBootstrapState();
-  const users = state.bootstrapped ? await identityService.listUsers() : [];
+  const canManageUsers =
+    principal.authMode === "named" &&
+    hasPermission(principal, "system.manage_users");
+  const users =
+    state.bootstrapped && canManageUsers
+      ? await identityService.listUsers()
+      : [];
   return {
     ...state,
     users,
@@ -758,9 +765,21 @@ export async function getIdentityAdminState() {
       roles: principal.roles,
       authMode: principal.authMode,
     },
-    canManageUsers:
-      principal.authMode === "named" &&
-      hasPermission(principal, "system.manage_users"),
+    canManageUsers,
+  };
+}
+
+export async function getCurrentAccess() {
+  const principal = await requireAuthenticatedSession();
+  return {
+    currentUser: {
+      id: principal.id,
+      username: principal.username,
+      displayName: principal.displayName,
+      roles: principal.roles,
+      authMode: principal.authMode,
+    },
+    permissions: [...(principal.permissions || [])],
   };
 }
 
@@ -851,6 +870,7 @@ export async function resetNamedUserPassword(formData) {
       actor: principal,
       userId: formData.get("userId"),
       password,
+      currentPassword: formData.get("currentPassword"),
     });
     return { success: true };
   } catch (error) {
@@ -877,6 +897,17 @@ export async function getSettings() {
   await requirePermission("system.manage_settings");
   const config = await getConfig();
   return config;
+}
+
+export async function getPlateViewSettings() {
+  await requirePermission("plate.read");
+  const config = await getConfig();
+  return {
+    plateMatching: normalizePlateMatchingSettings(config.plateMatching),
+    blueiris: {
+      host: config.blueiris?.host || "",
+    },
+  };
 }
 
 export async function updateSettings(formData) {

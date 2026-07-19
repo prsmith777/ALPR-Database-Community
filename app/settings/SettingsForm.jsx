@@ -55,7 +55,7 @@ import ToggleSwitch from "@/components/ui/toggle-switch";
 import { SecuritySettings } from "./SecuritySettings";
 import PlateMatchingSettings from "./PlateMatchingSettings";
 
-const navigationSections = [
+const administratorNavigationSections = [
   {
     title: "System",
     items: [
@@ -80,11 +80,22 @@ export default function SettingsForm({
   initialSettings,
   initialApiKey,
   initialIdentityState,
+  canManageSettings,
 }) {
+  const navigationSections = canManageSettings
+    ? administratorNavigationSections
+    : [
+        {
+          title: "Account",
+          items: [{ title: "Security", id: "security", icon: Lock }],
+        },
+      ];
   const [isPending, startTransition] = useTransition(); // For general settings
   const [error, setError] = useState(""); // General error for main form
   const [success, setSuccess] = useState(false); // General success for main form
-  const [activeSection, setActiveSection] = useState("general");
+  const [activeSection, setActiveSection] = useState(
+    canManageSettings ? "general" : "security"
+  );
   const [showApiKey, setShowApiKey] = useState(false); // This is local state for general form (will be managed by SecuritySettings itself now)
   const [showDialog, setShowDialog] = useState(false); // This is local state for general form (will be managed by SecuritySettings itself now)
 
@@ -534,6 +545,7 @@ export default function SettingsForm({
       <SecuritySettings
         initialApiKey={currentApiKeyInForm} // Pass the dynamically updated API key
         initialIdentityState={initialIdentityState}
+        canManageSettings={canManageSettings}
       />
     </div>
   );

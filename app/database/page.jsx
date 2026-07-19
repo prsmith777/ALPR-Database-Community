@@ -1,13 +1,13 @@
 import DashboardLayout from "@/components/layout/MainLayout";
 import TitleNavbar from "@/components/layout/TitleNav";
 import PlateDbTable from "@/components/plateDbTable";
-import { getPlates, getSettings } from "@/app/actions";
+import { getPlates, getPlateViewSettings } from "@/app/actions";
 
 export const dynamic = "force-dynamic";
 
 export default async function Database() {
   let plateReads = [];
-  const settings = await getSettings();
+  const settings = await getPlateViewSettings();
 
   if (typeof window !== "undefined") {
     // Stop this from trying to connect during build

@@ -1,11 +1,13 @@
 import { MqttAdmin } from "@/components/mqtt/MqttAdmin";
 import DashboardLayout from "@/components/layout/MainLayout";
 import BasicTitle from "@/components/layout/BasicTitle";
+import { requirePagePermission } from "@/lib/page-permission.mjs";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
-export default function MqttPage() {
+export default async function MqttPage() {
+  await requirePagePermission("mqtt.manage");
   return (
     <DashboardLayout>
       <BasicTitle

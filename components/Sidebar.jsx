@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import {
   Antenna,
@@ -30,21 +30,21 @@ import {
 } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 
-const navItems = [
-  { icon: LayoutDashboard, label: "Dashboard", href: "/dashboard" },
-  { icon: Cctv, label: "Live Feed", href: "/live_feed" },
-  { icon: Database, label: "Database", href: "/database" },
-  { icon: BookMarked, label: "Known Plates", href: "/known_plates" },
-  { icon: Flag, label: "Watchlist", href: "/flagged" },
-  { icon: BellPlus, label: "Notifications", href: "/notifications" },
-  { icon: Antenna, label: "MQTT", href: "/mqtt" },
+const allNavItems = [
+  { icon: LayoutDashboard, label: "Dashboard", href: "/dashboard", permission: "plate.read" },
+  { icon: Cctv, label: "Live Feed", href: "/live_feed", permission: "plate.read" },
+  { icon: Database, label: "Database", href: "/database", permission: "plate.read" },
+  { icon: BookMarked, label: "Known Plates", href: "/known_plates", permission: "plate.read" },
+  { icon: Flag, label: "Watchlist", href: "/flagged", permission: "plate.read" },
+  { icon: BellPlus, label: "Notifications", href: "/notifications", permission: "notification.manage" },
+  { icon: Antenna, label: "MQTT", href: "/mqtt", permission: "mqtt.manage" },
 ];
 
 const mobileNavItems = [
-  { icon: LayoutDashboard, label: "Dashboard", href: "/dashboard" },
-  { icon: Cctv, label: "Live Feed", href: "/live_feed" },
-  { icon: Database, label: "Database", href: "/database" },
-  { icon: BookMarked, label: "Plates", href: "/known_plates" },
+  { icon: LayoutDashboard, label: "Dashboard", href: "/dashboard", permission: "plate.read" },
+  { icon: Cctv, label: "Live Feed", href: "/live_feed", permission: "plate.read" },
+  { icon: Database, label: "Database", href: "/database", permission: "plate.read" },
+  { icon: BookMarked, label: "Plates", href: "/known_plates", permission: "plate.read" },
   { icon: Menu, label: "More", href: "#more" },
 ];
 
@@ -52,6 +52,36 @@ export function Sidebar() {
   const router = useRouter();
   const pathname = usePathname();
   const [isSheetOpen, setIsSheetOpen] = useState(false);
+  const [permissions, setPermissions] = useState(["plate.read"]);
+
+  useEffect(() => {
+    let active = true;
+    fetch("/api/current-access", {
+      method: "GET",
+      cache: "no-store",
+      credentials: "same-origin",
+    })
+      .then((response) => (response.ok ? response.json() : null))
+      .then((access) => {
+        if (active && Array.isArray(access?.permissions)) {
+          setPermissions(access.permissions);
+        }
+      })
+      .catch(() => {
+        // Keep the safe read-only navigation while access is unavailable.
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  const canAccess = (permission) =>
+    !permission || permissions.includes(permission);
+  const navItems = allNavItems.filter((item) => canAccess(item.permission));
+  const visibleMobileNavItems = mobileNavItems.filter((item) =>
+    canAccess(item.permission)
+  );
+  const canViewAudit = canAccess("system.view_audit");
 
   const navigateTo = (href) => {
     if (href === "#more") {
@@ -108,6 +138,7 @@ export function Sidebar() {
               </TooltipContent>
             </Tooltip>
             <ChatButton />
+            {canViewAudit && (
             <Tooltip delayDuration={0}>
               <TooltipTrigger asChild>
                 <Button
@@ -128,6 +159,7 @@ export function Sidebar() {
                 System Logs
               </TooltipContent>
             </Tooltip>
+            )}
 
             <Tooltip delayDuration={0}>
               <TooltipTrigger asChild>
@@ -172,7 +204,7 @@ export function Sidebar() {
       </TooltipProvider>
 
       <nav className="fixed bottom-0 left-0 right-0 z-50 flex h-24 items-center justify-around border-t bg-background pb-4 sm:hidden">
-        {mobileNavItems.map((item) => (
+        {visibleMobileNavItems.map((item) => (
           <Button
             key={item.href}
             variant="ghost"
@@ -226,6 +258,7 @@ export function Sidebar() {
 
             <div className="my-4 h-px bg-border" />
 
+            {canViewAudit && (
             <Button
               variant="ghost"
               className={cn(
@@ -239,6 +272,7 @@ export function Sidebar() {
               <TerminalSquare className="mr-3 h-5 w-5" />
               System Logs
             </Button>
+            )}
 
             <Button
               variant="ghost"

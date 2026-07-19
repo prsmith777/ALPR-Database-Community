@@ -15,6 +15,14 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import {
   Select,
   SelectContent,
   SelectItem,
@@ -45,8 +53,9 @@ export function UserManagement({ initialState }) {
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
+  const [resetUserId, setResetUserId] = useState(null);
 
-  function run(action, formData, message, form) {
+  function run(action, formData, message, form, onSuccess) {
     setError("");
     setSuccess("");
     startTransition(async () => {
@@ -57,6 +66,7 @@ export function UserManagement({ initialState }) {
       }
       form?.reset();
       setSuccess(message);
+      onSuccess?.();
       router.refresh();
     });
   }
@@ -177,25 +187,76 @@ export function UserManagement({ initialState }) {
                 >
                   {user.status === "active" ? "Disable" : "Enable"}
                 </Button>
-                <form
-                  className="flex gap-2"
-                  onSubmit={(event) => {
-                    event.preventDefault();
-                    const form = event.currentTarget;
-                    const data = new FormData(form);
-                    data.set("userId", String(user.id));
-                    data.set("confirmPassword", data.get("password"));
-                    run(resetNamedUserPassword, data, `${user.displayName}'s password reset. Their sessions were revoked.`, form);
-                  }}
-                >
-                  <Input name="password" type="password" minLength={8} required placeholder="New password" className="h-9 w-40" aria-label={`New password for ${user.displayName}`} autoComplete="new-password" />
-                  <Button type="submit" variant="outline" size="sm" disabled={isPending}>Reset</Button>
-                </form>
+                {!isCurrent && (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    disabled={isPending}
+                    onClick={() => setResetUserId(user.id)}
+                  >
+                    Reset password
+                  </Button>
+                )}
               </div>
             </div>
           );
         })}
       </div>
+
+      <Dialog
+        open={resetUserId !== null}
+        onOpenChange={(open) => {
+          if (!open) setResetUserId(null);
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Reset user password</DialogTitle>
+            <DialogDescription>
+              Enter a new password for this user and confirm the action with your
+              own administrator password. The user&apos;s active sessions will be revoked.
+            </DialogDescription>
+          </DialogHeader>
+          <form
+            className="space-y-4"
+            onSubmit={(event) => {
+              event.preventDefault();
+              const form = event.currentTarget;
+              const data = new FormData(form);
+              data.set("userId", String(resetUserId));
+              run(
+                resetNamedUserPassword,
+                data,
+                "Password reset. The user's sessions were revoked.",
+                form,
+                () => setResetUserId(null)
+              );
+            }}
+          >
+            <div className="space-y-2">
+              <Label htmlFor="resetPassword">New password</Label>
+              <Input id="resetPassword" name="password" type="password" minLength={8} required autoComplete="new-password" />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="resetConfirmPassword">Confirm new password</Label>
+              <Input id="resetConfirmPassword" name="confirmPassword" type="password" minLength={8} required autoComplete="new-password" />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="resetAdministratorPassword">Your administrator password</Label>
+              <Input id="resetAdministratorPassword" name="currentPassword" type="password" required autoComplete="current-password" />
+            </div>
+            <DialogFooter>
+              <Button type="button" variant="outline" onClick={() => setResetUserId(null)}>
+                Cancel
+              </Button>
+              <Button type="submit" disabled={isPending}>
+                {isPending ? "Resetting..." : "Reset password"}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
 
       <form
         className="grid gap-4 border-t border-border pt-6 sm:grid-cols-2"

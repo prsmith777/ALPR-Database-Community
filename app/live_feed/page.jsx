@@ -1,6 +1,6 @@
 // app/dashboard/plates/page.jsx
 import {
-  getSettings,
+  getPlateViewSettings,
   getLatestPlateReads,
   getTags,
   getCameraNames,
@@ -55,7 +55,7 @@ export default async function LivePlates(props) {
       getTags(),
       getCameraNames(),
       getTimeFormat(),
-      getSettings(),
+      getPlateViewSettings(),
     ]);
 
   return (

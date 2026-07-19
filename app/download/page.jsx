@@ -1,7 +1,7 @@
 import DashboardLayout from "@/components/layout/MainLayout";
 import TitleNavbar from "@/components/layout/TitleNav";
 import PlateExportForm from "@/components/PlateExportForm";
-import { getCameraNames, getSettings, getTags } from "@/app/actions";
+import { getCameraNames, getPlateViewSettings, getTags } from "@/app/actions";
 
 export const dynamic = "force-dynamic";
 
@@ -9,7 +9,7 @@ export default async function DownloadPage() {
   const [tagsResult, camerasResult, settings] = await Promise.all([
     getTags(),
     getCameraNames(),
-    getSettings(),
+    getPlateViewSettings(),
   ]);
 
   return (

@@ -121,3 +121,52 @@ test("legacy administrator retains all permissions during migration", () => {
   assert.equal(hasPermission(principal, "system.manage_users"), true);
   assert.equal(hasPermission(principal, "system.manage_settings"), true);
 });
+
+
+test("administrators cannot use reset to bypass their own current password", async () => {
+  const { service } = makeService();
+  await assert.rejects(
+    service.resetUserPassword({
+      actor: { id: 1 },
+      userId: 1,
+      password: "new password",
+      currentPassword: "",
+    }),
+    { code: "CANNOT_RESET_SELF" }
+  );
+});
+
+test("administrator password is required to reset another user", async () => {
+  const { service, calls } = makeService({
+    findUserById: async () => ({
+      id: 1,
+      password_hash: "hash:administrator password",
+    }),
+  });
+
+  await assert.rejects(
+    service.resetUserPassword({
+      actor: { id: 1 },
+      userId: 2,
+      password: "new password",
+      currentPassword: "wrong password",
+    }),
+    { code: "INVALID_PASSWORD" }
+  );
+
+  await service.resetUserPassword({
+    actor: { id: 1 },
+    userId: 2,
+    password: "new password",
+    currentPassword: "administrator password",
+  });
+  assert.deepEqual(calls.at(-1), [
+    "password",
+    {
+      actorUserId: 1,
+      targetUserId: 2,
+      passwordHash: "hash:new password",
+      eventType: "identity.user_password_reset",
+    },
+  ]);
+});
