@@ -6,6 +6,8 @@ import LogViewer from "./LogViewer";
 import DashboardLayout from "@/components/layout/MainLayout";
 import { getLocalVersionInfo } from "@/lib/version";
 import { requirePagePermission } from "@/lib/page-permission.mjs";
+export const dynamic = "force-dynamic";
+
 import {
   PROJECT_NAME,
   PROJECT_RELEASES_URL,
