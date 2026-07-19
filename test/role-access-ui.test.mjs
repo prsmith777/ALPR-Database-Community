@@ -70,6 +70,26 @@ test("navigation starts denied and exposes only links granted by current access"
   assert.match(filters, /can\("export\.create"\)/);
 });
 
+test("plate tables hide mutation and export controls from read-only roles", async () => {
+  const [feed, database, knownPlates] = await Promise.all([
+    source("components/PlateTable.jsx"),
+    source("components/plateDbTable.jsx"),
+    source("components/KnownPlatesTable.jsx"),
+  ]);
+
+  for (const component of [feed, database, knownPlates]) {
+    assert.match(component, /useAccess\(\)/);
+    assert.match(component, /can\("tag\.manage"\)/);
+    assert.match(component, /can\("known_plate\.manage"\)/);
+  }
+  assert.match(feed, /can\("plate\.review"\)/);
+  assert.match(feed, /can\("plate\.delete"\)/);
+  assert.match(feed, /can\("export\.create"\)/);
+  assert.match(database, /can\("plate\.review"\)/);
+  assert.match(database, /can\("plate\.delete"\)/);
+  assert.match(knownPlates, /can\("plate\.review"\)/);
+});
+
 test("personal settings do not load administrator configuration or user lists", async () => {
   const page = await source("app/settings/page.jsx");
   assert.match(page, /canManageSettings \? getSettings\(\) : Promise\.resolve\(null\)/);
