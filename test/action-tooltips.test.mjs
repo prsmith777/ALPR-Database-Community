@@ -64,5 +64,9 @@ test("the desktop theme toggle uses the same accessible tooltip contract", async
     /<TooltipTrigger asChild>\s*<ThemeToggle \/>\s*<\/TooltipTrigger>/
   );
   assert.match(sidebar, /<TooltipContent[^>]*>\s*Toggle theme\s*<\/TooltipContent>/);
+  assert.match(themeToggle, /forwardRef\(function ThemeToggle/);
+  assert.match(themeToggle, /\{ onClick, \.\.\.props \}/);
+  assert.match(themeToggle, /ref=\{ref\}/);
+  assert.match(themeToggle, /\{\.\.\.props\}/);
   assert.match(themeToggle, /<span className="sr-only">Toggle theme<\/span>/);
 });
