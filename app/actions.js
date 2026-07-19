@@ -392,7 +392,7 @@ export async function getPlates(
         dateRange: filters.dateRange,
         search: filters.search,
         matchMode:
-          filters.matchMode || (filters.fuzzySearch ? "balanced" : "default"),
+          filters.matchMode || "balanced",
         matchingSettings: config.plateMatching,
         hourRange: filters.hourRange,
         cameraName: filters.cameraName,
@@ -420,7 +420,7 @@ export async function getLatestPlateReads({
   pageSize = 25,
   search = "",
   fuzzySearch = false,
-  matchMode = "default",
+  matchMode = "balanced",
   tag = "all",
   dateRange = null,
   hourRange = null,
@@ -438,9 +438,7 @@ export async function getLatestPlateReads({
       filters: {
         plateNumber: search,
         matchMode:
-          fuzzySearch && (!matchMode || matchMode === "default")
-            ? "balanced"
-            : matchMode || "default",
+          fuzzySearch && !matchMode ? "balanced" : matchMode || "balanced",
         matchingSettings: config.plateMatching,
         tag: tag !== "all" ? tag : undefined,
         dateRange,

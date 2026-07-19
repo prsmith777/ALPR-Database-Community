@@ -19,7 +19,7 @@ export default async function LiveFeedTable(props) {
     search: searchParams?.search || "",
     matchMode:
       searchParams?.matchMode ||
-      (searchParams?.fuzzySearch === "true" ? "balanced" : "default"),
+      "balanced",
     tag: searchParams?.tag || "all",
     dateRange:
       searchParams?.dateFrom && searchParams?.dateTo

@@ -42,6 +42,7 @@ import {
 
 import { mqttRequest } from "./api";
 import { StatusMessage } from "./StatusMessage";
+import PlateMatchModeSelect from "@/components/PlateMatchModeSelect";
 
 const MATCH_LABELS = Object.freeze({
   any_plate: "Any plate",
@@ -57,6 +58,7 @@ function makeEmptyRule(brokerId = "") {
     enabled: true,
     matchType: "any_plate",
     matchValue: "",
+    plateMatchMode: "off",
     fuzzyEnabled: false,
     fuzzyMaxDistance: 1,
     fuzzyMinLength: 5,
@@ -91,6 +93,7 @@ export function MqttRules() {
     knownPlates: [],
     knownNames: [],
     tags: [],
+    plateMatching: null,
   });
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -109,6 +112,7 @@ export function MqttRules() {
         knownPlates: [],
         knownNames: [],
         tags: [],
+        plateMatching: null,
       };
       setRules(Array.isArray(data?.rules) ? data.rules : []);
       setOptions(loadedOptions);
@@ -150,6 +154,8 @@ export function MqttRules() {
       enabled: Boolean(rule.enabled),
       matchType: rule.matchType,
       matchValue: rule.matchValue || "",
+      plateMatchMode:
+        rule.plateMatchMode || (rule.fuzzyEnabled ? "balanced" : "off"),
       fuzzyEnabled: Boolean(rule.fuzzyEnabled),
       fuzzyMaxDistance: Number(rule.fuzzyMaxDistance || 1),
       fuzzyMinLength: Number(rule.fuzzyMinLength || 5),
@@ -226,7 +232,7 @@ export function MqttRules() {
     }
   };
 
-  const fuzzyAllowed = [
+  const plateMatchingAllowed = [
     "exact_plate",
     "any_known_plate",
     "known_name",
@@ -428,8 +434,8 @@ export function MqttRules() {
                       ...current,
                       matchType: value,
                       matchValue: "",
-                      fuzzyEnabled:
-                        value === "any_plate" ? false : current.fuzzyEnabled,
+                      plateMatchMode:
+                        value === "any_plate" ? "off" : current.plateMatchMode,
                     }))
                   }
                 >
@@ -553,79 +559,26 @@ export function MqttRules() {
               </div>
             </div>
 
-            {fuzzyAllowed ? (
-              <div className="space-y-4 rounded-lg border p-4">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <Label htmlFor="mqtt-rule-fuzzy">Fuzzy OCR matching</Label>
-                    <p className="text-xs text-muted-foreground">
-                      Preserves the observed plate while attaching a unique
-                      canonical identity when allowed.
-                    </p>
-                  </div>
-                  <Switch
-                    id="mqtt-rule-fuzzy"
-                    checked={form.fuzzyEnabled}
-                    onCheckedChange={(checked) =>
-                      updateForm("fuzzyEnabled", checked)
-                    }
-                  />
+            {plateMatchingAllowed ? (
+              <div className="space-y-3 rounded-lg border p-4">
+                <div>
+                  <Label htmlFor="mqtt-rule-plate-match-mode">
+                    Plate matching
+                  </Label>
+                  <p className="text-xs text-muted-foreground">
+                    Uses the shared profiles configured in Settings → Plate Matching.
+                    This selection is saved with this rule.
+                  </p>
                 </div>
-
-                {form.fuzzyEnabled ? (
-                  <div className="grid gap-4 md:grid-cols-2">
-                    <div className="space-y-2">
-                      <Label>Maximum edit distance</Label>
-                      <Select
-                        value={String(form.fuzzyMaxDistance)}
-                        onValueChange={(value) =>
-                          updateForm("fuzzyMaxDistance", Number(value))
-                        }
-                      >
-                        <SelectTrigger>
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="1">1 character</SelectItem>
-                          <SelectItem value="2">2 characters</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="mqtt-rule-min-length">
-                        Minimum plate length
-                      </Label>
-                      <Input
-                        id="mqtt-rule-min-length"
-                        type="number"
-                        min="1"
-                        max="20"
-                        value={form.fuzzyMinLength}
-                        onChange={(event) =>
-                          updateForm("fuzzyMinLength", Number(event.target.value))
-                        }
-                      />
-                    </div>
-                    <label className="flex items-center gap-2 rounded-lg border p-3">
-                      <Checkbox
-                        checked={form.fuzzyRequireUnique}
-                        onCheckedChange={(checked) =>
-                          updateForm("fuzzyRequireUnique", Boolean(checked))
-                        }
-                      />
-                      <span className="text-sm">Require a unique best match</span>
-                    </label>
-                    <label className="flex items-center gap-2 rounded-lg border p-3">
-                      <Checkbox
-                        checked={form.fuzzyOcrAware}
-                        onCheckedChange={(checked) =>
-                          updateForm("fuzzyOcrAware", Boolean(checked))
-                        }
-                      />
-                      <span className="text-sm">Prefer common OCR confusions</span>
-                    </label>
-                  </div>
-                ) : null}
+                <PlateMatchModeSelect
+                  id="mqtt-rule-plate-match-mode"
+                  value={form.plateMatchMode}
+                  onValueChange={(plateMatchMode) =>
+                    updateForm("plateMatchMode", plateMatchMode)
+                  }
+                  settings={options.plateMatching}
+                  className="w-full max-w-[240px]"
+                />
               </div>
             ) : null}
 

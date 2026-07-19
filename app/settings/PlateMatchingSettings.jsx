@@ -51,7 +51,7 @@ export default function PlateMatchingSettings({ initialSettings }) {
   );
   const [testSearch, setTestSearch] = useState("7MLG803");
   const [testCandidate, setTestCandidate] = useState("7ML6803");
-  const [testMode, setTestMode] = useState("default");
+  const [testMode, setTestMode] = useState("balanced");
 
   const updateProfile = (profile, changes) => {
     setSettings((current) => ({
@@ -94,8 +94,8 @@ export default function PlateMatchingSettings({ initialSettings }) {
           <h2 className="text-2xl font-semibold text-foreground mb-2">Plate Matching</h2>
           <p className="max-w-3xl text-muted-foreground">
             Configure the shared fuzzy-matching profiles used by Recognition Feed,
-            Plate Database, and Downloads. Standard exact and partial searches still
-            work when fuzzy matching is off.
+            Plate Database, Downloads, and MQTT rules. Each page and MQTT rule keeps
+            its own selected profile; this page controls what the profiles mean.
           </p>
         </div>
         <Button type="button" variant="outline" onClick={resetDefaults}>
@@ -104,26 +104,8 @@ export default function PlateMatchingSettings({ initialSettings }) {
       </div>
 
       <Card>
-        <CardHeader><CardTitle>Site defaults</CardTitle></CardHeader>
+        <CardHeader><CardTitle className="text-primary">Site defaults</CardTitle></CardHeader>
         <CardContent className="grid gap-5 md:grid-cols-2">
-          <div className="space-y-2">
-            <Label htmlFor="default-match-mode">Default search profile</Label>
-            <Select
-              value={settings.defaultMode}
-              onValueChange={(defaultMode) => setSettings((current) => ({ ...current, defaultMode }))}
-            >
-              <SelectTrigger id="default-match-mode"><SelectValue /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="off">Off</SelectItem>
-                <SelectItem value="strict">Strict</SelectItem>
-                <SelectItem value="balanced">Balanced (recommended)</SelectItem>
-                <SelectItem value="broad">Broad</SelectItem>
-              </SelectContent>
-            </Select>
-            <p className="text-xs text-muted-foreground">
-              Pages set to “Use default” follow this profile.
-            </p>
-          </div>
           <div className="space-y-2">
             <Label htmlFor="minimum-match-characters">Minimum characters for fuzzy matching</Label>
             <Select
@@ -143,7 +125,7 @@ export default function PlateMatchingSettings({ initialSettings }) {
               Shorter searches use standard matching only, which limits false positives.
             </p>
           </div>
-          <div className="space-y-2 md:col-span-2">
+          <div className="space-y-2">
             <Label htmlFor="ocr-groups">OCR-equivalent character groups</Label>
             <Input
               id="ocr-groups"
@@ -164,7 +146,7 @@ export default function PlateMatchingSettings({ initialSettings }) {
         {Object.entries(settings.profiles).map(([name, profile]) => (
           <Card key={name}>
             <CardHeader>
-              <CardTitle className="capitalize">{name}</CardTitle>
+              <CardTitle className="capitalize text-primary">{name}</CardTitle>
               <p className="text-sm text-muted-foreground">{PROFILE_DETAILS[name]}</p>
             </CardHeader>
             <CardContent className="space-y-5">
@@ -207,7 +189,7 @@ export default function PlateMatchingSettings({ initialSettings }) {
 
       <Card>
         <CardHeader>
-          <CardTitle>Test the profiles</CardTitle>
+          <CardTitle className="text-primary">Test the profiles</CardTitle>
           <p className="text-sm text-muted-foreground">
             Compare a search with a stored plate before saving these settings.
           </p>

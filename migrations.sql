@@ -212,6 +212,8 @@ CREATE TABLE IF NOT EXISTS public.mqtt_rules (
             'tag'
         )),
     match_value TEXT,
+    plate_match_mode VARCHAR(20) NOT NULL DEFAULT 'off'
+        CHECK (plate_match_mode IN ('off', 'strict', 'balanced', 'broad')),
     fuzzy_enabled BOOLEAN NOT NULL DEFAULT FALSE,
     fuzzy_max_distance SMALLINT NOT NULL DEFAULT 1
         CHECK (fuzzy_max_distance BETWEEN 0 AND 2),
@@ -235,6 +237,34 @@ CREATE TABLE IF NOT EXISTS public.mqtt_rules (
         OR NULLIF(BTRIM(fixed_topic), '') IS NOT NULL
     )
 );
+
+ALTER TABLE public.mqtt_rules
+    ADD COLUMN IF NOT EXISTS plate_match_mode VARCHAR(20);
+
+UPDATE public.mqtt_rules
+SET plate_match_mode = CASE
+    WHEN fuzzy_enabled THEN 'balanced'
+    ELSE 'off'
+END
+WHERE plate_match_mode IS NULL;
+
+ALTER TABLE public.mqtt_rules
+    ALTER COLUMN plate_match_mode SET DEFAULT 'off',
+    ALTER COLUMN plate_match_mode SET NOT NULL;
+
+DO $
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1
+        FROM pg_constraint
+        WHERE conname = 'mqtt_rules_plate_match_mode_check'
+          AND conrelid = 'public.mqtt_rules'::regclass
+    ) THEN
+        ALTER TABLE public.mqtt_rules
+            ADD CONSTRAINT mqtt_rules_plate_match_mode_check
+            CHECK (plate_match_mode IN ('off', 'strict', 'balanced', 'broad'));
+    END IF;
+END $;
 
 CREATE TABLE IF NOT EXISTS public.mqtt_rule_cameras (
     rule_id INTEGER NOT NULL REFERENCES public.mqtt_rules(id) ON DELETE CASCADE,
