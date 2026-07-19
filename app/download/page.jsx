@@ -1,14 +1,23 @@
 import DashboardLayout from "@/components/layout/MainLayout";
 import TitleNavbar from "@/components/layout/TitleNav";
+import PlateExportForm from "@/components/PlateExportForm";
+import { getCameraNames, getTags } from "@/app/actions";
 
-export default function DownloadPage() {
+export const dynamic = "force-dynamic";
+
+export default async function DownloadPage() {
+  const [tagsResult, camerasResult] = await Promise.all([
+    getTags(),
+    getCameraNames(),
+  ]);
+
   return (
     <DashboardLayout>
-      <TitleNavbar title="Plate Database">
-        <div className="flex flex-col items-center justify-center min-h-[60vh] text-center">
-          <h1 className="text-3xl font-bold mb-4">Download</h1>
-          <p className="text-muted-foreground">Coming soon...</p>
-        </div>
+      <TitleNavbar title="Downloads">
+        <PlateExportForm
+          tags={tagsResult.success ? tagsResult.data : []}
+          cameras={camerasResult.success ? camerasResult.data : []}
+        />
       </TitleNavbar>
     </DashboardLayout>
   );

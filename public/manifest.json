@@ -18,9 +18,9 @@
   "display": "standalone",
   "dir": "auto",
   "lang": "en-US",
-  "name": "ALPR Database",
-  "short_name": "ALPR",
+  "name": "ALPR Database Community",
+  "short_name": "ALPR Community",
   "start_url": "/",
   "scope": "/",
-  "description": "algertc/alpr-database"
+  "description": "A self-hosted ALPR database and automation dashboard for Blue Iris."
 }

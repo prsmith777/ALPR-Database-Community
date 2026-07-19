@@ -1,27 +1,21 @@
 <div align="center">
 
-[<img src="http://raw.githubusercontent.com/algertc/ALPR-Database/refs/heads/main/Images/app_icon.svg" width="350px" style="margin-left: 86em;">](https://alprdatabase.org/)
+<img src="Images/app_icon.svg" width="350px" alt="ALPR Database Community logo">
 
-# [ALPR Database](https://alprdatabase.org/)
+# [ALPR Database Community](https://github.com/prsmith777/ALPR-Database-Community)
 
-<h4 align="center">A Fully-Featured Automated License Plate Recognition Database for Blue Iris + CodeProject AI Server</h4>
+<h4 align="center">A self-hosted automated license plate recognition database for Blue Iris and CodeProject AI Server</h4>
 
-[![Feature Requests & Roadmap](https://img.shields.io/badge/Feature%20Requests%20&%20Roadmap-5e5ced?style=for-the-badge&logo=starship&logoColor=white&link=https://alprdatabase.featurebase.app/roadmap)](https://alprdatabase.featurebase.app/roadmap) ![Downloads](https://img.shields.io/docker/pulls/algertc/alpr-dashboard?label=downloads&style=for-the-badge&logo=CodeForces&logoColor=white&color=00A1E0) ![Plates Processed](https://img.shields.io/badge/Plates%20Processed-26M+-00A1E0?style=for-the-badge&logo=CodeForces&logoColor=white) ![Release](https://img.shields.io/github/v/release/algertc/ALPR-Database?style=for-the-badge&logoColor=white)
+[![Source](https://img.shields.io/badge/Source-GitHub-181717?style=for-the-badge&logo=github)](https://github.com/prsmith777/ALPR-Database-Community) [![Roadmap](https://img.shields.io/badge/Product-Roadmap-5e5ced?style=for-the-badge&logo=starship&logoColor=white)](docs/COMMUNITY_PRODUCT_ROADMAP.md) [![Deployment](https://img.shields.io/badge/Self--Hosted-Deployment-2496ED?style=for-the-badge&logo=docker&logoColor=white)](docs/personal-deployment.md)
 
 <h4 align="center">
 ⭐ Please star the repository if you find the project useful ⭐</h4>
-
-<!-- [![Docker Hub](https://img.shields.io/badge/Docker%20Hub-1D63ED?style=for-the-badge&logo=Docker&logoColor=white&link=https://hub.docker.com/r/algertc/alpr-dashboard)](https://hub.docker.com/r/algertc/alpr-dashboard) -->
-
-<!-- ![Docker Pulls](https://img.shields.io/docker/pulls/algertc/alpr-dashboard?style=for-the-badge&logo=docker&logoColor=white&label=Downloads&labelColor=1D63ED&color=1D63ED&link=https%3A%2F%2Fhub.docker.com%2Frepository%2Fdocker%2Falgertc%2Falpr-dashboard%2Fgeneral) -->
-
-<!-- ![Plates Processed](https://img.shields.io/badge/Plates%20Processed-1M+-gray?labelColor=00A1E0&style=for-the-badge&logo=CodeForces&logoColor=white) -->
 
 </div>
 
 <br>
 
-![App Screens](https://raw.githubusercontent.com/algertc/ALPR-Database/refs/heads/main/Images/hero2.png)
+![ALPR Database Community screens](Images/hero2.png)
 
 
 
@@ -34,7 +28,7 @@ This project serves as a complement to a CodeProject Blue Iris setup, giving you
 #### Features:
 
 - Searchable database & fuzzy search
-- Build labeled training sets from your traffic
+- Export filtered plate records as CSV or JSON
 - Live recognition feed
 - Traffic Analytics
 - Categorization and filtering
@@ -103,7 +97,7 @@ upgrade and rollback requirements, follow
 
 To start sending data, log in to the application and **navigate to settings -> security** in the bottom left hand corner. At the bottom of the page you should see an API key. Click the eye to reveal the key and copy it down for use in Blue Iris.
 
-![enter image description here](https://raw.githubusercontent.com/algertc/ALPR-Database/refs/heads/main/Images/apikey.png)
+![API key settings](Images/apikey.png)
 
 <br>
 
@@ -127,7 +121,7 @@ We can make use of the built-in macros to dynamically get the alert data and sen
     { "ai_dump":&JSON, "Image":"&ALERT_JPEG", "camera":"&CAM", "ALERT_PATH": "&ALERT_PATH", "ALERT_CLIP": "&ALERT_CLIP", "timestamp":"&ALERT_TIME" }
 
 **Set your API key with the `x-api-key` header as seen below.**
-![enter image description here](https://raw.githubusercontent.com/algertc/ALPR-Database/refs/heads/main/Images/alert.JPG)
+![Notification settings](Images/alert.JPG)
 
 Browser sessions use `HttpOnly`, `SameSite=Lax` cookies. Cookies are non-Secure
 by default so direct-LAN HTTP Docker deployments continue to work. Set
@@ -147,12 +141,12 @@ process in [docs/personal-deployment.md](docs/personal-deployment.md).
 
 ## :camera: Screenshots
 
-![Live Viewer](https://raw.githubusercontent.com/algertc/ALPR-Database/refs/heads/main/Images/viewer.jpg)
-![Live View](https://raw.githubusercontent.com/algertc/ALPR-Database/refs/heads/main/Images/liveview.jpg)
-![Dashboard](https://raw.githubusercontent.com/algertc/ALPR-Database/refs/heads/main/Images/dash.jpg)
-![TPMS](https://raw.githubusercontent.com/algertc/ALPR-Database/refs/heads/main/Images/tpms.jpg)
-![Plate Database](https://raw.githubusercontent.com/algertc/ALPR-Database/refs/heads/main/Images/db.jpg)
-![Insights](https://raw.githubusercontent.com/algertc/ALPR-Database/refs/heads/main/Images/insights.jpg)
+![Live Viewer](Images/viewer.jpg)
+![Live View](Images/liveview.jpg)
+![Dashboard](Images/dash.jpg)
+![TPMS](Images/tpms.jpg)
+![Plate Database](Images/db.jpg)
+![Insights](Images/insights.jpg)
 
 ## :warning: Disclaimer
 
