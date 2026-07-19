@@ -86,35 +86,56 @@ test("baseline browser security headers are configured", async () => {
   }
 });
 
-test("telemetry requires explicit consent before any external request", async () => {
-  const actions = await fs.readFile("app/actions.js", "utf8");
-  const handler = await fs.readFile("components/MetricsHandler.jsx", "utf8");
-  const settings = await fs.readFile("lib/settings.js", "utf8");
+test("upstream telemetry, training uploads, and update polling are removed", async () => {
+  const activeSources = await Promise.all(
+    [
+      "app/actions.js",
+      "app/dashboard/page.jsx",
+      "app/layout.jsx",
+      "app/settings/SettingsForm.jsx",
+      "lib/settings.js",
+      "lib/version.js",
+    ].map((file) => fs.readFile(file, "utf8"))
+  );
+  const source = activeSources.join("\n");
 
-  const metricsStart = actions.indexOf("export async function sendMetricsUpdate");
-  const metricsEnd = actions.indexOf("export async function checkUpdateRequired");
-  const metricsAction = actions.slice(metricsStart, metricsEnd);
-
-  assert.ok(metricsAction.indexOf("getConfig()") < metricsAction.indexOf("fetch("));
-  assert.match(metricsAction, /if \(!config\?\.privacy\?\.metrics\)/);
-  assert.match(handler, /if \(sent\)/);
-  assert.match(settings, /privacy:\s*\{\s*metrics: false/);
-});
-
-test("the Docker build context retains installer security inputs", async (t) => {
-  let dockerignore;
-
-  try {
-    dockerignore = await fs.readFile(".dockerignore", "utf8");
-  } catch (error) {
-    if (error?.code === "ENOENT") {
-      t.skip("Docker does not copy .dockerignore into the built image");
-      return;
-    }
-    throw error;
+  for (const retiredReference of [
+    "alpr-metrics.algertc.workers.dev",
+    "alpr-training.algertc.workers.dev",
+    "sendMetricsUpdate",
+    "TrainingDataHandler",
+    "generateTrainingData",
+    "processTrainingData",
+    "getVersionInfo",
+  ]) {
+    assert.equal(
+      source.includes(retiredReference),
+      false,
+      `retired external path remains: ${retiredReference}`
+    );
   }
 
-  assert.match(dockerignore.trimEnd(), /!install\.sh\r?\n!update\.sh$/);
+  for (const retiredFile of [
+    "components/MetricsHandler.jsx",
+    "components/TrainingHandler.jsx",
+    "components/UpdateAlert.jsx",
+    "app/training/TrainingControl.jsx",
+    "app/training/page.jsx",
+    "lib/training.js",
+  ]) {
+    await assert.rejects(fs.access(retiredFile), { code: "ENOENT" });
+  }
+});
+
+test("legacy upstream installer and updater scripts are retired", async () => {
+  for (const retiredFile of [
+    "install.sh",
+    "install.ps1",
+    "update.sh",
+    "update.ps1",
+  ]) {
+    await assert.rejects(fs.access(retiredFile), { code: "ENOENT" });
+  }
 });
 
 test("the production image uses a supported non-root deterministic runtime", async () => {
@@ -125,6 +146,11 @@ test("the production image uses a supported non-root deterministic runtime", asy
   assert.match(dockerfile, /^FROM node:24-bookworm-slim$/m);
   assert.match(dockerfile, /yarn install --frozen-lockfile/);
   assert.equal(dockerfile.includes("yarn add"), false);
+  assert.equal(
+    dockerfile.match(/NEXT_TELEMETRY_DISABLED=1/g)?.length,
+    2,
+    "Next.js telemetry must be disabled in both image stages"
+  );
   assert.match(dockerfile, /^USER node$/m);
   assert.equal(packageJson.engines.node, ">=24.0.0 <25");
   assert.equal(
@@ -142,10 +168,6 @@ test("Compose deployments require private credentials and keep Postgres local", 
   );
   const envExample = await fs.readFile(".env.example", "utf8");
   const gitignore = await fs.readFile(".gitignore", "utf8");
-  const installSh = await fs.readFile("install.sh", "utf8");
-  const installPs1 = await fs.readFile("install.ps1", "utf8");
-  const updateSh = await fs.readFile("update.sh", "utf8");
-  const updatePs1 = await fs.readFile("update.ps1", "utf8");
 
   for (const compose of [mainCompose, dbOnlyCompose, externalCompose]) {
     assert.equal(compose.includes("PASSWORD=password"), false);
@@ -157,6 +179,12 @@ test("Compose deployments require private credentials and keep Postgres local", 
   assert.match(externalCompose, /SESSION_COOKIE_SECURE:\s+"\$\{SESSION_COOKIE_SECURE:-false\}"/);
   assert.match(mainCompose, /127\.0\.0\.1:\$\{DB_PORT:-5432\}:5432/);
   assert.match(dbOnlyCompose, /127\.0\.0\.1:\$\{DB_PORT:-5432\}:5432/);
+  assert.match(mainCompose, /ALPR_APP_IMAGE:-alpr-dashboard:local/);
+  assert.match(externalCompose, /ALPR_APP_IMAGE:-alpr-dashboard:local/);
+  assert.match(mainCompose, /pull_policy:\s*never/);
+  assert.match(externalCompose, /pull_policy:\s*never/);
+  assert.equal(mainCompose.includes("algertc/alpr-dashboard"), false);
+  assert.equal(externalCompose.includes("algertc/alpr-dashboard"), false);
   assert.equal(externalCompose.includes("depends_on:"), false);
   assert.match(externalCompose, /DB_HOST:\s+"\$\{DB_HOST:\?/);
 
@@ -166,18 +194,6 @@ test("Compose deployments require private credentials and keep Postgres local", 
   assert.match(gitignore, /^\.env\*$/m);
   assert.match(gitignore, /^!\.env\.example$/m);
 
-  for (const installer of [installSh, installPs1]) {
-    assert.match(installer, /\.env/);
-    assert.equal(installer.includes("ADMIN_PASSWORD=password"), false);
-    assert.equal(installer.includes("POSTGRES_PASSWORD=password"), false);
-  }
-  assert.match(installSh, /chmod 600 \.env/);
-  assert.match(installSh, /chmod 700 auth config storage/);
-  assert.match(updateSh, /chmod 700 auth config storage/);
-  assert.match(installSh, /chown 1000:1000 auth config storage/);
-  assert.match(updateSh, /chown 1000:1000 auth config storage/);
-  assert.match(updateSh, /write_migrated_env/);
-  assert.match(updatePs1, /Write-MigratedEnvironment/);
 });
 
 test("the health check uses the supported runtime and fails honestly", async () => {

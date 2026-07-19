@@ -49,11 +49,12 @@ This project serves as a complement to a CodeProject Blue Iris setup, giving you
 
 <br>
 
-## 🔧 Installation
+## 🔧 Installation and updates
 
-![Setup Time](https://img.shields.io/badge/Setup%20Time-%E2%88%BC25%20minutes-0ec423?style=for-the-badge)
-
-The application is packaged as a Docker image. This is the fastest and most reliable way to deploy. Below is a done-for-you installation script that will create a Docker stack with both the application and a PostgreSQL database. The installation script is recommended and more carefully maintained, but manual installation instructions are also available [here](https://github.com/algertc/ALPR-Database/wiki/Manual-Installation).
+This community fork builds containers directly from a reviewed Git commit. It
+does not download or run installer/update scripts from the former upstream
+project, and its Compose files default to the local image
+`alpr-dashboard:local` with pulling disabled.
 
 <br>
 
@@ -74,56 +75,24 @@ You will also need the following installed on your system.
 
 <br>
 
-### Linux/MacOS
-
-Create a new directory wherever you would like to store your ALPR data. Enter the directory in your terminal and paste in the below command. After that, everything will be set up automatically!
+Clone the fork, check out the approved commit, and build the local image:
 
 ```bash
-curl -sSL https://raw.githubusercontent.com/algertc/ALPR-Database/main/install.sh | bash
+git clone https://github.com/prsmith777/ALPR-Database-Community.git
+cd ALPR-Database-Community
+git checkout <approved-commit>
+docker build --tag alpr-dashboard:local .
 ```
 
-Or, if you prefer:
+Copy `.env.example` to `.env`, fill in both passwords, and keep that file
+private. Then start the stack with `docker compose up -d`. Compose refuses to
+start while either required password is blank, never pulls the former
+upstream application image, and keeps PostgreSQL bound to `127.0.0.1` by
+default.
 
-```bash
-wget -qO- https://raw.githubusercontent.com/algertc/ALPR-Database/main/install.sh | bash
-```
-
-<br>
-
-#### :bangbang: Note for Linux:
-
-If your user is not in the Docker group, you will need to run with sudo using the command below:
-
-```bash
-curl -sSL https://raw.githubusercontent.com/algertc/ALPR-Database/main/install.sh | sudo bash
-```
-
-<br>
-
-### Windows
-
-Create a new directory wherever you would like to store your ALPR data. **Open PowerShell with administrator priveleges and cd into your new install directory.**
-
-Paste in the below commands. After that, everything will be set up automatically!
-
-```shell
-Set-ExecutionPolicy RemoteSigned
-```
-
-```shell
-irm https://raw.githubusercontent.com/algertc/ALPR-Database/main/install.ps1 | iex
-```
-
-The installer stores the administrator and database passwords in a local
-`.env` file instead of placing them in `docker-compose.yml`. Keep `.env`
-private and never commit it. On Linux and macOS the installer creates it with
-owner-only permissions. PostgreSQL is exposed only on `127.0.0.1` by default;
-other computers should connect through the application rather than directly
-to the database.
-
-For a manual Compose installation, copy `.env.example` to `.env`, fill in both
-passwords, and then run `docker compose up -d`. Compose will refuse to start
-while either required password is blank.
+For this owner's staging and production process, including PostgreSQL 17
+upgrade and rollback requirements, follow
+[`docs/personal-deployment.md`](docs/personal-deployment.md).
 
 <br>
 <br>
