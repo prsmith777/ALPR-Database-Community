@@ -27,6 +27,7 @@ test("container publishing has narrow permissions and attestable provenance", ()
   assert.match(workflow, /platforms: linux\/amd64/);
   assert.match(workflow, /subject-digest: \$\{\{ steps\.push\.outputs\.digest \}\}/);
   assert.match(workflow, /push-to-registry: true/);
+  assert.doesNotMatch(workflow, /cache-(?:from|to):\s*type=gha/);
 
   for (const action of [
     "docker/login-action",
