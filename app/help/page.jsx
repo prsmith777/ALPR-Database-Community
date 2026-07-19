@@ -1,9 +1,11 @@
 import DashboardLayout from "@/components/layout/MainLayout";
 import Link from "next/link";
+import { requirePagePermission } from "@/lib/page-permission.mjs";
 
 export const dynamic = "force-dynamic";
 
-export default function Page() {
+export default async function Page() {
+  await requirePagePermission("maintenance.manage");
   return (
     <DashboardLayout>
       <div className="w-full h-screen py-48 flex justify-center font-mono ">

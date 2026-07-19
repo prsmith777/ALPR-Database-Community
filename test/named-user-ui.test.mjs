@@ -19,6 +19,7 @@ test("security settings expose guarded bootstrap and user administration", async
   assert.match(source, /setNamedUserStatus/);
   assert.match(source, /setNamedUserRole/);
   assert.match(source, /resetNamedUserPassword/);
+  assert.match(source, /deleteNamedUser/);
 });
 
 test("role permissions guard server actions and privileged API routes", async () => {

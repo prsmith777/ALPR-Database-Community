@@ -32,6 +32,13 @@ test("navigation and direct management pages enforce role permissions", async ()
   assert.match(sidebar, /canViewAudit/);
 
   const expectedGuards = new Map([
+    ["app/dashboard/page.jsx", "plate.read"],
+    ["app/live_feed/page.jsx", "plate.read"],
+    ["app/live_feed/viewer/page.jsx", "plate.read"],
+    ["app/database/page.jsx", "plate.read"],
+    ["app/known_plates/page.jsx", "plate.read"],
+    ["app/flagged/page.jsx", "plate.read"],
+    ["app/download/page.jsx", "export.create"],
     ["app/logs/page.jsx", "system.view_audit"],
     ["app/mqtt/page.jsx", "mqtt.manage"],
     ["app/notifications/page.jsx", "notification.manage"],
@@ -39,11 +46,28 @@ test("navigation and direct management pages enforce role permissions", async ()
     ["app/jpeg_migration/layout.jsx", "maintenance.manage"],
     ["app/update/layout.jsx", "maintenance.manage"],
     ["app/database/tags/layout.jsx", "tag.manage"],
+    ["app/help/page.jsx", "maintenance.manage"],
+    ["app/tpms/layout.jsx", "maintenance.manage"],
   ]);
   for (const [path, permission] of expectedGuards) {
     const page = await source(path);
     assert.match(page, new RegExp(`requirePagePermission\\("${permission.replace(".", "\\.")}"\\)`));
   }
+});
+
+test("navigation starts denied and exposes only links granted by current access", async () => {
+  const [provider, sidebar, titleNav, filters] = await Promise.all([
+    source("components/auth/AccessProvider.jsx"),
+    source("components/Sidebar.jsx"),
+    source("components/layout/TitleNav.jsx"),
+    source("components/PlateDatabaseFilters.jsx"),
+  ]);
+  assert.match(provider, /permissions: \[\]/);
+  assert.doesNotMatch(sidebar, /useState\(\["plate\.read"\]\)/);
+  assert.match(sidebar, /useAccess\(\)/);
+  assert.match(titleNav, /permission: "tag\.manage"/);
+  assert.match(titleNav, /permission: "export\.create"/);
+  assert.match(filters, /can\("export\.create"\)/);
 });
 
 test("personal settings do not load administrator configuration or user lists", async () => {
@@ -72,4 +96,22 @@ test("password reset UI and server action require administrator reauthentication
     actions,
     /resetUserPassword\([\s\S]*currentPassword: formData\.get\("currentPassword"\)/
   );
+});
+
+test("permanent account deletion requires username confirmation and administrator reauthentication", async () => {
+  const [users, actions, service, repository] = await Promise.all([
+    source("app/settings/UserManagement.jsx"),
+    source("app/actions.js"),
+    source("lib/identity-service.mjs"),
+    source("lib/identity-repository.mjs"),
+  ]);
+  assert.match(users, /deleteNamedUser/);
+  assert.match(users, /name="confirmUsername"/);
+  assert.match(users, /Delete account/);
+  assert.match(actions, /deleteNamedUser[\s\S]*requirePermission\("system\.manage_users"\)/);
+  assert.match(service, /CANNOT_DELETE_SELF/);
+  assert.match(service, /Incorrect administrator password/);
+  assert.match(repository, /identity\.user_deleted/);
+  assert.match(repository, /account_deleted/);
+  assert.match(repository, /deleted_at = CURRENT_TIMESTAMP/);
 });

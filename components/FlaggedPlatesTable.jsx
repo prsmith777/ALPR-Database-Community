@@ -25,8 +25,10 @@ import {
 } from "@/components/ui/table";
 import { Plus } from "lucide-react";
 import { addDBPlate } from "@/app/actions";
+import { useAccess } from "@/components/auth/AccessProvider";
 
 export function FlaggedPlatesTable({ initialData }) {
+  const { can } = useAccess();
   const [data, setData] = useState(initialData);
   const [open, setOpen] = useState(false);
   const [plateNumber, setPlateNumber] = useState("");
@@ -123,6 +125,7 @@ export function FlaggedPlatesTable({ initialData }) {
         </CardContent>
       </Card>
 
+      {can("plate.review") && (
       <div className="flex justify-end items-center mt-4">
         <Dialog open={open} onOpenChange={setOpen}>
           <DialogTrigger asChild>
@@ -175,6 +178,7 @@ export function FlaggedPlatesTable({ initialData }) {
           </DialogContent>
         </Dialog>
       </div>
+      )}
     </>
   );
 }

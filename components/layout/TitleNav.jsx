@@ -1,26 +1,34 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import { ChevronDown } from "lucide-react";
 import { useRouter, usePathname } from "next/navigation";
+import { useAccess } from "@/components/auth/AccessProvider";
+
+const defaultNavigation = [
+    { title: "Database", href: "/database", permission: "plate.read" },
+    { title: "Tags", href: "/database/tags", permission: "tag.manage" },
+    { title: "Download", href: "/download", permission: "export.create" },
+];
 
 export default function Component({
   title = "Plate Database",
-  navigation = [
-    { title: "Database", href: "/database" },
-    { title: "Tags", href: "/database/tags" },
-    { title: "Download", href: "/download" },
-  ],
+  navigation = defaultNavigation,
   children,
 }) {
   const router = useRouter();
   const pathname = usePathname();
+  const { can } = useAccess();
+  const visibleNavigation = useMemo(
+    () => navigation.filter((item) => !item.permission || can(item.permission)),
+    [can, navigation]
+  );
   const [activeIndex, setActiveIndex] = useState(0);
 
   useEffect(() => {
-    const index = navigation.findIndex((item) => item.href === pathname);
+    const index = visibleNavigation.findIndex((item) => item.href === pathname);
     setActiveIndex(index !== -1 ? index : 0);
-  }, [pathname, navigation]);
+  }, [pathname, visibleNavigation]);
 
   const handleNavClick = (href, index) => {
     setActiveIndex(index);
@@ -37,7 +45,7 @@ export default function Component({
         </div>
         <nav className="container">
           <div className="flex space-x-6">
-            {navigation.map((item, index) => (
+            {visibleNavigation.map((item, index) => (
               <div key={item.href} className="relative">
                 <a
                   onClick={() => handleNavClick(item.href, index)}
