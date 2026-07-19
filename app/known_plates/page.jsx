@@ -3,10 +3,12 @@ import { KnownPlatesTable } from "@/components/KnownPlatesTable";
 import DashboardLayout from "@/components/layout/MainLayout";
 import BasicTitle from "@/components/layout/BasicTitle";
 import { Alert, AlertDescription } from "@/components/ui/alert";
+import { requirePagePermission } from "@/lib/page-permission.mjs";
 
 export const dynamic = "force-dynamic";
 
 export default async function KnownPlatesPage() {
+  await requirePagePermission("plate.read");
   const response = await getKnownPlatesList();
   const knownPlates = response.success ? response.data : [];
   const loadError = response.success

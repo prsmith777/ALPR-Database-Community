@@ -2,10 +2,11 @@
 
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { UserPlus, Users } from "lucide-react";
+import { Trash2, UserPlus, Users } from "lucide-react";
 import {
   bootstrapNamedAdministrator,
   createNamedUser,
+  deleteNamedUser,
   resetNamedUserPassword,
   setNamedUserRole,
   setNamedUserStatus,
@@ -54,6 +55,7 @@ export function UserManagement({ initialState }) {
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
   const [resetUserId, setResetUserId] = useState(null);
+  const [deleteUserId, setDeleteUserId] = useState(null);
 
   function run(action, formData, message, form, onSuccess) {
     setError("");
@@ -198,6 +200,17 @@ export function UserManagement({ initialState }) {
                     Reset password
                   </Button>
                 )}
+                {!isCurrent && (
+                  <Button
+                    type="button"
+                    variant="destructive"
+                    size="sm"
+                    disabled={isPending}
+                    onClick={() => setDeleteUserId(user.id)}
+                  >
+                    <Trash2 className="mr-1 h-4 w-4" /> Delete
+                  </Button>
+                )}
               </div>
             </div>
           );
@@ -252,6 +265,75 @@ export function UserManagement({ initialState }) {
               </Button>
               <Button type="submit" disabled={isPending}>
                 {isPending ? "Resetting..." : "Reset password"}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={deleteUserId !== null}
+        onOpenChange={(open) => {
+          if (!open) setDeleteUserId(null);
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Delete user account</DialogTitle>
+            <DialogDescription>
+              This permanently removes the login, role, sessions, and credentials.
+              Append-only audit history is retained under a deleted-user record.
+            </DialogDescription>
+          </DialogHeader>
+          <form
+            className="space-y-4"
+            onSubmit={(event) => {
+              event.preventDefault();
+              const form = event.currentTarget;
+              const data = new FormData(form);
+              data.set("userId", String(deleteUserId));
+              run(
+                deleteNamedUser,
+                data,
+                "User account deleted.",
+                form,
+                () => setDeleteUserId(null)
+              );
+            }}
+          >
+            <div className="space-y-2">
+              <Label htmlFor="deleteConfirmUsername">
+                Type the username to confirm
+              </Label>
+              <Input
+                id="deleteConfirmUsername"
+                name="confirmUsername"
+                required
+                autoComplete="off"
+                placeholder={
+                  initialState.users.find((user) => user.id === deleteUserId)
+                    ?.username || "username"
+                }
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="deleteAdministratorPassword">
+                Your administrator password
+              </Label>
+              <Input
+                id="deleteAdministratorPassword"
+                name="currentPassword"
+                type="password"
+                required
+                autoComplete="current-password"
+              />
+            </div>
+            <DialogFooter>
+              <Button type="button" variant="outline" onClick={() => setDeleteUserId(null)}>
+                Cancel
+              </Button>
+              <Button type="submit" variant="destructive" disabled={isPending}>
+                {isPending ? "Deleting..." : "Delete account"}
               </Button>
             </DialogFooter>
           </form>

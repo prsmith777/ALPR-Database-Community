@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import {
   Antenna,
@@ -19,6 +19,7 @@ import {
 
 import { logoutAction } from "@/app/actions";
 import { ChatButton } from "@/components/chat/ChatButton";
+import { useAccess } from "@/components/auth/AccessProvider";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet";
@@ -52,31 +53,8 @@ export function Sidebar() {
   const router = useRouter();
   const pathname = usePathname();
   const [isSheetOpen, setIsSheetOpen] = useState(false);
-  const [permissions, setPermissions] = useState(["plate.read"]);
+  const { can: canAccess } = useAccess();
 
-  useEffect(() => {
-    let active = true;
-    fetch("/api/current-access", {
-      method: "GET",
-      cache: "no-store",
-      credentials: "same-origin",
-    })
-      .then((response) => (response.ok ? response.json() : null))
-      .then((access) => {
-        if (active && Array.isArray(access?.permissions)) {
-          setPermissions(access.permissions);
-        }
-      })
-      .catch(() => {
-        // Keep the safe read-only navigation while access is unavailable.
-      });
-    return () => {
-      active = false;
-    };
-  }, []);
-
-  const canAccess = (permission) =>
-    !permission || permissions.includes(permission);
   const navItems = allNavItems.filter((item) => canAccess(item.permission));
   const visibleMobileNavItems = mobileNavItems.filter((item) =>
     canAccess(item.permission)

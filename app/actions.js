@@ -103,9 +103,11 @@ async function requirePermission(permission) {
 function identityActionFailure(error, fallback) {
   const safeCodes = new Set([
     "CANNOT_DISABLE_SELF",
+    "CANNOT_DELETE_SELF",
     "CANNOT_RESET_SELF",
     "IDENTITY_ALREADY_BOOTSTRAPPED",
     "INVALID_IDENTITY_INPUT",
+    "INVALID_DELETE_CONFIRMATION",
     "INVALID_PASSWORD",
     "LAST_ADMINISTRATOR",
     "UNKNOWN_ROLE",
@@ -875,6 +877,22 @@ export async function resetNamedUserPassword(formData) {
     return { success: true };
   } catch (error) {
     return identityActionFailure(error, "Unable to reset the user password.");
+  }
+}
+
+export async function deleteNamedUser(formData) {
+  const principal = await requirePermission("system.manage_users");
+  try {
+    await getIdentityService().deleteUser({
+      actor: principal,
+      userId: formData.get("userId"),
+      confirmUsername: formData.get("confirmUsername"),
+      currentPassword: formData.get("currentPassword"),
+    });
+    revalidatePath("/settings");
+    return { success: true };
+  } catch (error) {
+    return identityActionFailure(error, "Unable to delete the user.");
   }
 }
 

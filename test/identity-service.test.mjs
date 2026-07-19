@@ -28,6 +28,7 @@ function makeService(overrides = {}) {
     setUserStatus: async (input) => calls.push(["status", input]),
     setUserRole: async (input) => calls.push(["role", input]),
     updateUserPassword: async (input) => calls.push(["password", input]),
+    deleteUser: async (input) => calls.push(["delete", input]),
     findUserById: async () => null,
     ...overrides,
   };
@@ -169,4 +170,43 @@ test("administrator password is required to reset another user", async () => {
       eventType: "identity.user_password_reset",
     },
   ]);
+});
+
+test("account deletion forbids self-delete and requires administrator password", async () => {
+  const { service, calls } = makeService({
+    findUserById: async () => ({
+      id: 1,
+      password_hash: "hash:administrator password",
+    }),
+  });
+
+  await assert.rejects(
+    service.deleteUser({
+      actor: { id: 1 },
+      userId: 1,
+      confirmUsername: "admin",
+      currentPassword: "administrator password",
+    }),
+    { code: "CANNOT_DELETE_SELF" }
+  );
+  await assert.rejects(
+    service.deleteUser({
+      actor: { id: 1 },
+      userId: 2,
+      confirmUsername: "operator",
+      currentPassword: "wrong",
+    }),
+    { code: "INVALID_PASSWORD" }
+  );
+
+  await service.deleteUser({
+    actor: { id: 1 },
+    userId: 2,
+    confirmUsername: "Operator",
+    currentPassword: "administrator password",
+  });
+  assert.equal(calls.at(-1)[0], "delete");
+  assert.equal(calls.at(-1)[1].targetUserId, 2);
+  assert.equal(calls.at(-1)[1].confirmUsername, "operator");
+  assert.match(calls.at(-1)[1].deletedPasswordHash, /^hash:/);
 });
