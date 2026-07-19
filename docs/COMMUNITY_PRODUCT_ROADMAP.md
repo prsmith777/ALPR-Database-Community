@@ -85,12 +85,11 @@ Operational behavior:
   prune dates.
 - Add safe reconcile, prune, `VACUUM ANALYZE`, backup, restore-preflight, and
   backup-verification jobs. Do not expose an arbitrary SQL or shell console.
-- Display current version, git SHA, image digest, release channel, and release
-  notes.
-- Keep updates externally orchestrated: backup, pull an immutable image,
-  preview/apply migrations, health-check, and roll back. The app should approve
-  and observe this process rather than controlling unrestricted Docker/host
-  commands.
+- Display current version, git SHA, release channel, and release notes.
+- Keep updates externally orchestrated: back up the database, sync an approved
+  commit, build the application, preview/apply migrations, health-check, and
+  roll back. The app should observe this process rather than controlling
+  unrestricted Docker/host commands.
 
 ### Phase 5 — Vehicle intelligence and visual search
 
