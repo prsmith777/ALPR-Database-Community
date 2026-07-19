@@ -168,6 +168,7 @@ test("administrator password is required to reset another user", async () => {
       targetUserId: 2,
       passwordHash: "hash:new password",
       eventType: "identity.user_password_reset",
+      mustChangePassword: true,
     },
   ]);
 });
@@ -209,4 +210,46 @@ test("account deletion forbids self-delete and requires administrator password",
   assert.equal(calls.at(-1)[1].targetUserId, 2);
   assert.equal(calls.at(-1)[1].confirmUsername, "operator");
   assert.match(calls.at(-1)[1].deletedPasswordHash, /^hash:/);
+});
+
+
+test("new non-administrators must change temporary passwords", async () => {
+  const { service } = makeService({ createUser: async (input) => input });
+  const viewer = await service.createUser({
+    actor: { id: 1 },
+    username: "new.viewer",
+    displayName: "New Viewer",
+    password: "temporary password",
+    role: "viewer",
+  });
+  assert.equal(viewer.mustChangePassword, true);
+  const administrator = await service.createUser({
+    actor: { id: 1 },
+    username: "new.admin",
+    displayName: "New Admin",
+    password: "temporary password",
+    role: "administrator",
+  });
+  assert.equal(administrator.mustChangePassword, false);
+});
+
+test("changing the user's own password clears the reminder", async () => {
+  const { service, calls } = makeService({
+    findUserById: async () => ({ id: 2, password_hash: "hash:temporary password" }),
+  });
+  await service.changeOwnPassword({
+    actor: { id: 2 },
+    currentPassword: "temporary password",
+    newPassword: "permanent password",
+  });
+  assert.deepEqual(calls.at(-1), [
+    "password",
+    {
+      actorUserId: 2,
+      targetUserId: 2,
+      passwordHash: "hash:permanent password",
+      eventType: "identity.password_changed",
+      mustChangePassword: false,
+    },
+  ]);
 });

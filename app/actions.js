@@ -677,6 +677,11 @@ export async function updateNotificationPriority(formData) {
   }
 }
 
+export async function getLoginSetupState() {
+  const state = await getIdentityService().getBootstrapState();
+  return { bootstrapped: state.bootstrapped };
+}
+
 export async function loginAction(formData) {
   console.log("Attempting login...");
   const username = String(formData.get("username") || "").trim();
@@ -766,6 +771,7 @@ export async function getIdentityAdminState() {
       displayName: principal.displayName,
       roles: principal.roles,
       authMode: principal.authMode,
+      mustChangePassword: Boolean(principal.mustChangePassword),
     },
     canManageUsers,
   };
@@ -780,6 +786,7 @@ export async function getCurrentAccess() {
       displayName: principal.displayName,
       roles: principal.roles,
       authMode: principal.authMode,
+      mustChangePassword: Boolean(principal.mustChangePassword),
     },
     permissions: [...(principal.permissions || [])],
   };
@@ -816,12 +823,19 @@ export async function bootstrapNamedAdministrator(formData) {
 
 export async function createNamedUser(formData) {
   const principal = await requirePermission("system.manage_users");
+  const password = formData.get("password");
+  if (password !== formData.get("confirmPassword")) {
+    return {
+      success: false,
+      error: "Temporary password and confirmation do not match.",
+    };
+  }
   try {
     const user = await getIdentityService().createUser({
       actor: principal,
       username: formData.get("username"),
       displayName: formData.get("displayName"),
-      password: formData.get("password"),
+      password,
       role: formData.get("role"),
     });
     revalidatePath("/settings");

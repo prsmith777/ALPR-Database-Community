@@ -70,6 +70,7 @@ test("identity migration creates durable normalized security records", async () 
 
   assert.match(migration, /users_username_lower_key/);
   assert.match(migration, /ADD COLUMN IF NOT EXISTS deleted_at/);
+  assert.match(migration, /ADD COLUMN IF NOT EXISTS must_change_password/);
   assert.match(migration, /DELETE FROM public\.role_permissions/);
   assert.match(migration, /user_sessions_token_hash_format/);
   assert.match(migration, /api_credentials_secret_hash_format/);
