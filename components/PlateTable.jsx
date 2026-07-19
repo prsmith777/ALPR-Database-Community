@@ -1147,8 +1147,22 @@ export default function PlateTable({
               <TableHeader className="dark:bg-[#161618]">
                 <TableRow>
                   <TableHead className="w-24">Image</TableHead>
-                  <TableHead className="w-28 sm:w-16">Plate Number</TableHead>
-                  <TableHead className="w-28 hidden sm:table-cell">%</TableHead>
+                  <TableHead className="w-28 sm:w-16">
+                    <SortButton
+                      label="Plate Number"
+                      field="plate_number"
+                      sort={sort}
+                      onSort={onSort}
+                    />
+                  </TableHead>
+                  <TableHead className="w-28 hidden sm:table-cell">
+                    <SortButton
+                      label="%"
+                      field="confidence"
+                      sort={sort}
+                      onSort={onSort}
+                    />
+                  </TableHead>
                   <TableHead className="w-24 hidden sm:table-cell">
                     <SortButton
                       label="Occurrences"
@@ -1159,7 +1173,12 @@ export default function PlateTable({
                   </TableHead>
                   <TableHead className="w-18 sm:w-40">Tags</TableHead>
                   <TableHead className="w-32 hidden sm:table-cell">
-                    Camera
+                    <SortButton
+                      label="Camera"
+                      field="camera_name"
+                      sort={sort}
+                      onSort={onSort}
+                    />
                   </TableHead>
                   <TableHead className="w-24 sm:w-40">
                     <SortButton

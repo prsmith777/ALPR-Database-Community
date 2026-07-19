@@ -690,8 +690,26 @@ export default function PlateTable() {
                     {getSortIcon("occurrence_count")}
                   </Button>
                 </TableHead>
-                <TableHead className="w-56 2xl:w-96">Name</TableHead>
-                <TableHead>Notes</TableHead>
+                <TableHead className="w-56 2xl:w-96">
+                  <Button
+                    variant="ghost"
+                    onClick={() => requestSort("name")}
+                    className="h-8 flex items-center font-semibold p-0"
+                  >
+                    Name
+                    {getSortIcon("name")}
+                  </Button>
+                </TableHead>
+                <TableHead>
+                  <Button
+                    variant="ghost"
+                    onClick={() => requestSort("notes")}
+                    className="h-8 flex items-center font-semibold p-0"
+                  >
+                    Notes
+                    {getSortIcon("notes")}
+                  </Button>
+                </TableHead>
                 <TableHead className="w-[180px]">
                   <Button
                     variant="ghost"
@@ -712,7 +730,16 @@ export default function PlateTable() {
                     {getSortIcon("last_seen_at")}
                   </Button>
                 </TableHead>
-                <TableHead className="w-[150px]">Tags</TableHead>
+                <TableHead className="w-[150px]">
+                  <Button
+                    variant="ghost"
+                    onClick={() => requestSort("tags")}
+                    className="h-8 flex items-center font-semibold p-0"
+                  >
+                    Tags
+                    {getSortIcon("tags")}
+                  </Button>
+                </TableHead>
                 <TableHead className="w-[120px] text-right">Actions</TableHead>
               </TableRow>
             </TableHeader>

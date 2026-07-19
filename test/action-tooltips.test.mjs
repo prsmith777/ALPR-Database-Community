@@ -52,3 +52,17 @@ test("notification and MQTT action icons expose hover and focus labels", async (
     assert.match(component, /aria-label=/);
   }
 });
+
+test("the desktop theme toggle uses the same accessible tooltip contract", async () => {
+  const [sidebar, themeToggle] = await Promise.all([
+    source("components/Sidebar.jsx"),
+    source("components/ThemeToggle.jsx"),
+  ]);
+
+  assert.match(
+    sidebar,
+    /<TooltipTrigger asChild>\s*<ThemeToggle \/>\s*<\/TooltipTrigger>/
+  );
+  assert.match(sidebar, /<TooltipContent[^>]*>\s*Toggle theme\s*<\/TooltipContent>/);
+  assert.match(themeToggle, /<span className="sr-only">Toggle theme<\/span>/);
+});

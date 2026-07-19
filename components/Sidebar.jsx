@@ -99,7 +99,14 @@ export function Sidebar() {
           </nav>
 
           <div className="flex flex-col items-center space-y-2 pb-4">
-            <ThemeToggle />
+            <Tooltip delayDuration={0}>
+              <TooltipTrigger asChild>
+                <ThemeToggle />
+              </TooltipTrigger>
+              <TooltipContent side="right" className="border-0 bg-muted">
+                Toggle theme
+              </TooltipContent>
+            </Tooltip>
             <ChatButton />
             <Tooltip delayDuration={0}>
               <TooltipTrigger asChild>

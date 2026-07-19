@@ -18,6 +18,16 @@ test("plate database sorting maps each allowed field to fixed SQL", () => {
     outerOrderBy: "ORDER BY pd.occurrence_count DESC NULLS LAST",
   });
 
+  assert.deepEqual(getPlateDatabaseOrderBy("name", false), {
+    innerOrderBy: "ORDER BY LOWER(kp.name) ASC NULLS LAST",
+    outerOrderBy: "ORDER BY LOWER(pd.name) ASC NULLS LAST",
+  });
+
+  assert.deepEqual(getPlateDatabaseOrderBy("notes", true), {
+    innerOrderBy: "ORDER BY LOWER(kp.notes) DESC NULLS LAST",
+    outerOrderBy: "ORDER BY LOWER(pd.notes) DESC NULLS LAST",
+  });
+
   assert.deepEqual(getPlateDatabaseOrderBy("first_seen_at", true), {
     innerOrderBy: "ORDER BY p.first_seen_at DESC NULLS LAST",
     outerOrderBy: "ORDER BY pd.first_seen_at DESC NULLS LAST",
@@ -26,6 +36,11 @@ test("plate database sorting maps each allowed field to fixed SQL", () => {
   assert.deepEqual(getPlateDatabaseOrderBy("last_seen_at", false), {
     innerOrderBy: "ORDER BY MAX(pr.timestamp) ASC NULLS LAST",
     outerOrderBy: "ORDER BY pd.last_seen_at ASC NULLS LAST",
+  });
+
+  assert.deepEqual(getPlateDatabaseOrderBy("tags", false), {
+    innerOrderBy: "ORDER BY tags_sort_key ASC NULLS LAST",
+    outerOrderBy: "ORDER BY pd.tags_sort_key ASC NULLS LAST",
   });
 });
 
@@ -59,37 +74,27 @@ test("plate database sort direction accepts only the boolean false for ascending
 });
 
 test("plate-read sorting accepts only fixed fields and directions", () => {
-  assert.equal(
-    getPlateReadsOrderBy({
-      field: "occurrence_count",
-      direction: "asc",
-    }),
-    "ORDER BY p.occurrence_count ASC, pr.timestamp DESC"
-  );
+  const fields = {
+    plate_number: "LOWER(pr.plate_number)",
+    confidence: "pr.confidence",
+    occurrence_count: "p.occurrence_count",
+    camera_name: "LOWER(pr.camera_name)",
+    timestamp: "pr.timestamp",
+  };
 
-  assert.equal(
-    getPlateReadsOrderBy({
-      field: "occurrence_count",
-      direction: "desc",
-    }),
-    "ORDER BY p.occurrence_count DESC, pr.timestamp DESC"
-  );
-
-  assert.equal(
-    getPlateReadsOrderBy({
-      field: "timestamp",
-      direction: "asc",
-    }),
-    "ORDER BY pr.timestamp ASC"
-  );
-
-  assert.equal(
-    getPlateReadsOrderBy({
-      field: "timestamp",
-      direction: "desc",
-    }),
-    "ORDER BY pr.timestamp DESC"
-  );
+  for (const [field, expression] of Object.entries(fields)) {
+    for (const [direction, sqlDirection] of [
+      ["asc", "ASC"],
+      ["desc", "DESC"],
+    ]) {
+      assert.equal(
+        getPlateReadsOrderBy({ field, direction }),
+        field === "timestamp"
+          ? `ORDER BY ${expression} ${sqlDirection} NULLS LAST, pr.id DESC`
+          : `ORDER BY ${expression} ${sqlDirection} NULLS LAST, pr.timestamp DESC, pr.id DESC`
+      );
+    }
+  }
 });
 
 test("malicious plate-read sort values cannot enter SQL", () => {
@@ -108,9 +113,12 @@ test("malicious plate-read sort values cannot enter SQL", () => {
 
   assert.equal(
     directionResult,
-    "ORDER BY p.occurrence_count DESC, pr.timestamp DESC"
+    "ORDER BY p.occurrence_count DESC NULLS LAST, pr.timestamp DESC, pr.id DESC"
   );
-  assert.equal(fieldResult, "ORDER BY pr.timestamp DESC");
+  assert.equal(
+    fieldResult,
+    "ORDER BY pr.timestamp DESC NULLS LAST, pr.id DESC"
+  );
   assert.equal(directionResult.includes(directionAttack), false);
   assert.equal(fieldResult.includes(fieldAttack), false);
 });
@@ -123,6 +131,9 @@ test("database queries delegate sorting to the validated helper", async () => {
     source,
     /getPlateDatabaseOrderBy\(\s*sortBy,\s*sortDesc\s*\)/
   );
+  assert.match(source, /ARRAY_AGG\(\s*LOWER\(t_sort\.name\)/);
+  assert.match(source, /as tags_sort_key/);
+  assert.match(source, /pd\.tags_sort_key/);
 
   assert.equal(source.includes("${sort.direction}"), false);
   assert.equal(source.includes('ORDER BY ${sortBy'), false);
