@@ -12,6 +12,19 @@ release identifier. Containers are built from that source on each server.
 Staging and production use separate credentials and tooling. A staging command
 must never be redirected to production.
 
+## Database version
+
+The supported database image for this fork is `postgres:17.10`. PostgreSQL
+major versions use different on-disk formats, so an existing PostgreSQL 13
+volume must not be started with the PostgreSQL 17 image. Upgrade an existing
+installation by creating a verified logical backup, restoring it into a fresh
+PostgreSQL 17 volume, comparing database counts, and retaining the PostgreSQL
+13 volume until the new database has passed acceptance testing.
+
+Treat a database major-version upgrade as separate maintenance from an
+ordinary application deployment. Test the complete backup, restore, health,
+and rollback procedure on staging before production.
+
 ## Update flow
 
 ### 1. Prepare the update
