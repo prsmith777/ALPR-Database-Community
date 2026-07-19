@@ -38,13 +38,10 @@ import {
   clearImageDataBatch,
   updateImagePathsBatch,
   getTotalRecordsToMigrate,
-  getTotalPlatesCount,
-  getEarliestPlateData,
   verifyImageMigration,
   checkUpdateStatus,
   markUpdateComplete,
   updateTagName,
-  getTrainingRecordCount,
   confirmPlateRecord,
   addUnseenPlate,
 } from "@/lib/db";
@@ -59,8 +56,6 @@ import { revalidatePath, revalidateTag, unstable_noStore } from "next/cache";
 import { cookies, headers } from "next/headers";
 import { redirect } from "next/navigation";
 import crypto from "crypto";
-import { createHash } from "crypto";
-import { execSync } from "child_process";
 import { getConfig, saveConfig } from "@/lib/settings";
 import {
   createSession,
@@ -80,12 +75,9 @@ import { createServerActionAuthenticator } from "@/lib/server-action-auth.mjs";
 import { createUpdateActions } from "@/lib/update-actions.mjs";
 import { formatTimeRange } from "@/lib/utils";
 import path from "path";
-import os from "os";
 import fs from "fs/promises";
 import split2 from "split2";
 import fileStorage from "@/lib/fileStorage";
-import { getLocalVersionInfo } from "@/lib/version";
-import TrainingDataGenerator from "@/lib/training";
 
 async function readServerActionSessionId() {
   const cookieStore = await cookies();
@@ -802,23 +794,10 @@ export async function updateSettings(formData) {
           : currentConfig.homeassistant?.whitelist || [],
       };
     }
-    if (updateIfExists("metricsEnabled")) {
-      newConfig.privacy = {
-        ...currentConfig.privacy,
-        metrics: formData.get("metricsEnabled") === "true",
-      };
-    }
     if (updateIfExists("bihost")) {
       newConfig.blueiris = {
         ...currentConfig.blueiris,
         host: formData.get("bihost"),
-      };
-    }
-    if (updateIfExists("trainingEnabled") || updateIfExists("trainingName")) {
-      newConfig.training = {
-        ...currentConfig.training,
-        enabled: formData.get("trainingEnabled") === "true",
-        name: formData.get("trainingName"),
       };
     }
     const result = await saveConfig(newConfig);
@@ -1063,65 +1042,6 @@ export async function clearImageData() {
   return await updateActions.clearImageData();
 }
 
-export async function sendMetricsUpdate() {
-  await requireAuthenticatedSession();
-  try {
-    const config = await getConfig();
-    if (!config?.privacy?.metrics) {
-      return false;
-    }
-
-    console.log("[Metrics] Reporting usage metrics...");
-    const [earliestPlate, totalPlates] = await Promise.all([
-      getEarliestPlateData(),
-      getTotalPlatesCount(),
-    ]);
-
-    if (!earliestPlate) return null;
-
-    // Get system identifier that should be stable
-    let systemId;
-    try {
-      systemId = execSync("cat /etc/machine-id").toString().trim();
-    } catch {
-      try {
-        systemId = execSync("cat /etc/hostname").toString().trim();
-      } catch {
-        systemId = execSync("uname -a").toString().trim();
-      }
-    }
-
-    const fingerprint = createHash("sha256")
-      .update(
-        `${earliestPlate.plate_number}:${earliestPlate.first_seen_at}:${systemId}`
-      )
-      .digest("hex");
-
-    const payload = {
-      fingerprint,
-      totalPlates,
-      version: await getLocalVersionInfo(),
-    };
-
-    const response = await fetch("https://alpr-metrics.algertc.workers.dev/", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify(payload),
-    });
-
-    if (!response.ok) {
-      throw new Error(`HTTP error! status: ${response.status}`);
-    }
-
-    return true;
-  } catch (error) {
-    console.error("Error sending metrics:", error);
-    return false;
-  }
-}
-
 export async function checkUpdateRequired() {
   await requireAuthenticatedSession();
   try {
@@ -1141,57 +1061,6 @@ export async function completeUpdate() {
 export async function skipImageMigration() {
   await requireAuthenticatedSession();
   return await updateActions.skipImageMigration();
-}
-
-export async function generateTrainingData() {
-  await requireAuthenticatedSession();
-  try {
-    const config = await getConfig();
-
-    console.log("Starting training data generation and upload process");
-    const tmpDir = path.join(os.tmpdir(), "alpr-training-" + Date.now());
-    const generator = new TrainingDataGenerator(tmpDir);
-    await generator.generateAndUpload();
-
-    return {
-      success: true,
-      ocrCount: generator.stats.ocr.totalCount,
-      licensePlateCount: generator.stats.licensePlate.totalCount,
-      message: "Training data generated and uploaded successfully",
-    };
-  } catch (error) {
-    console.error("Error generating training data:", error);
-    throw new Error(error.message || "Failed to generate training data");
-  }
-}
-
-export async function processTrainingData() {
-  await requireAuthenticatedSession();
-  try {
-    // Check if training is enabled in settings
-    const config = await getConfig();
-    if (!config?.training?.enabled) {
-      return { success: false, message: "Training not enabled" };
-    }
-
-    // Check if we have enough records
-    const { newRecordsCount } = await getTrainingRecordCount();
-    if (newRecordsCount < 500) {
-      return { success: false, message: "Not enough new records" };
-    }
-
-    // Create temp directory
-    const tempDir = path.join(os.tmpdir(), `alpr-training-${Date.now()}`);
-
-    // Start the generator
-    const generator = new TrainingDataGenerator(tempDir);
-    await generator.generateAndUpload();
-
-    return { success: true };
-  } catch (error) {
-    console.error("Error processing training data:", error);
-    return { success: false, error: error.message };
-  }
 }
 
 export async function validatePlateRecord(readId, value) {

@@ -27,15 +27,14 @@ test("parseBooleanEnv uses the fallback for missing or invalid values", () => {
   assert.equal(parseBooleanEnv("unexpected", true), true);
 });
 
-test("new installations keep AI training disabled unless explicitly enabled", () => {
+test("new installations omit retired upstream sharing settings", () => {
   const config = getInitialEnvConfig({});
 
-  assert.equal(config.training.enabled, false);
-  assert.equal(config.privacy.metrics, false);
-  assert.equal(typeof config.training.enabled, "boolean");
+  assert.equal(Object.hasOwn(config, "training"), false);
+  assert.equal(Object.hasOwn(config, "privacy"), false);
 });
 
-test("false environment values remain booleans and disable privacy features", () => {
+test("retired sharing environment values are ignored", () => {
   const config = getInitialEnvConfig({
     AI_TRAINING: "false",
     METRICS: "false",
@@ -43,13 +42,10 @@ test("false environment values remain booleans and disable privacy features", ()
     IGNORE_NON_PLATE: "false",
   });
 
-  assert.equal(config.training.enabled, false);
-  assert.equal(config.privacy.metrics, false);
+  assert.equal(Object.hasOwn(config, "training"), false);
+  assert.equal(Object.hasOwn(config, "privacy"), false);
   assert.equal(config.notifications.pushover.enabled, false);
   assert.equal(config.general.ignoreNonPlate, false);
-
-  assert.equal(typeof config.training.enabled, "boolean");
-  assert.equal(typeof config.privacy.metrics, "boolean");
 });
 
 test("explicit true environment values enable configured features", () => {
@@ -60,8 +56,8 @@ test("explicit true environment values enable configured features", () => {
     IGNORE_NON_PLATE: "true",
   });
 
-  assert.equal(config.training.enabled, true);
-  assert.equal(config.privacy.metrics, true);
+  assert.equal(Object.hasOwn(config, "training"), false);
+  assert.equal(Object.hasOwn(config, "privacy"), false);
   assert.equal(config.notifications.pushover.enabled, true);
   assert.equal(config.general.ignoreNonPlate, true);
 });
@@ -69,11 +65,9 @@ test("explicit true environment values enable configured features", () => {
 test("Blue Iris host initialization uses its own environment setting", () => {
   const config = getInitialEnvConfig({
     BLUEIRIS_HOST: "http://192.168.0.10:81",
-    METRICS: "false",
   });
 
   assert.equal(config.blueiris.host, "http://192.168.0.10:81");
-  assert.equal(config.privacy.metrics, false);
 });
 
 test("runtime database passwords are not copied into persisted settings", () => {

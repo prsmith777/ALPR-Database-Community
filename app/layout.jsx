@@ -3,7 +3,6 @@ import "./globals.css";
 import { ThemeProvider } from "next-themes";
 import { initializeAuth } from "@/lib/auth";
 import { Suspense } from "react";
-import VersionAlert from "@/components/UpdateAlert";
 import { DashboardSkeleton } from "@/components/DashboardSkeleton";
 import { ChatProvider } from "@/components/chat/ChatContext";
 import { ChatInterface } from "@/components/chat/ChatInterface";
@@ -117,7 +116,6 @@ export default async function RootLayout({ children }) {
         <Suspense fallback={<DashboardSkeleton />}>
           <ThemeProvider attribute="class" defaultTheme="dark" enableSystem>
             <ChatProvider>
-              <VersionAlert />
               {children}
               <ChatInterface />
             </ChatProvider>
