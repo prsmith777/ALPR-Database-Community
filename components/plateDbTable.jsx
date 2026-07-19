@@ -116,7 +116,7 @@ const formatTimestamp = (timestamp, timeFormat) => {
   });
 };
 
-export default function PlateTable() {
+export default function PlateTable({ matchingSettings }) {
   const [data, setData] = useState([]);
   const [isAddKnownPlateOpen, setIsAddKnownPlateOpen] = useState(false);
   const [isDeleteConfirmOpen, setIsDeleteConfirmOpen] = useState(false);
@@ -133,7 +133,7 @@ export default function PlateTable() {
   const [filters, setFilters] = useState({
     search: "",
     tag: "all",
-    fuzzySearch: false,
+    matchMode: "default",
     cameraName: "",
     dateRange: { from: "", to: "" },
     hourRange: null,
@@ -154,7 +154,7 @@ export default function PlateTable() {
       const result = await getPlates(page, pageSize, sortConfig, {
         search: deferredSearch,
         tag: filters.tag,
-        fuzzySearch: filters.fuzzySearch,
+        matchMode: filters.matchMode,
         cameraName: filters.cameraName,
         dateRange: {
           from: filterDateFrom,
@@ -178,7 +178,7 @@ export default function PlateTable() {
     sortConfig,
     deferredSearch,
     filters.tag,
-    filters.fuzzySearch,
+    filters.matchMode,
     filters.cameraName,
     filterDateFrom,
     filterDateTo,
@@ -391,7 +391,7 @@ export default function PlateTable() {
     setFilters({
       search: "",
       tag: "all",
-      fuzzySearch: false,
+      matchMode: "default",
       cameraName: "",
       dateRange: { from: "", to: "" },
       hourRange: null,
@@ -419,6 +419,7 @@ export default function PlateTable() {
           pageSize={pageSize}
           onPageSizeChange={handlePageSizeChange}
           sortConfig={sortConfig}
+          matchingSettings={matchingSettings}
         />
 
       {/* Desktop Table View */}

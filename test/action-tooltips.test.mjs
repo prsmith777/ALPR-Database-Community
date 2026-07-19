@@ -33,7 +33,7 @@ test("plate tables label icon-only row actions with accessible tooltips", async 
   assert.match(knownPlates, /<IconTooltip label="Edit plate details">/);
   assert.match(knownPlates, /<IconTooltip label="More plate actions">/);
   assert.match(databaseFilters, /htmlFor="plate-database-search"/);
-  assert.match(databaseFilters, /htmlFor="plate-database-fuzzy"/);
+  assert.match(databaseFilters, /htmlFor="plate-database-match-mode"/);
   assert.match(databaseFilters, /htmlFor="plate-database-camera"/);
   assert.match(databaseFilters, /htmlFor="plate-database-page-size"/);
 });

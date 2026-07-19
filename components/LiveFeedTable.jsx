@@ -5,6 +5,7 @@ import PlateTableClient from "./PlateTableClient";
 import {
   getCameraNames,
   getLatestPlateReads,
+  getSettings,
   getTags,
   getTimeFormat,
 } from "@/app/actions";
@@ -16,7 +17,9 @@ export default async function LiveFeedTable(props) {
     page: parseInt(searchParams?.page || "1"),
     pageSize: parseInt(searchParams?.pageSize || "25"),
     search: searchParams?.search || "",
-    fuzzySearch: searchParams?.fuzzySearch === "true",
+    matchMode:
+      searchParams?.matchMode ||
+      (searchParams?.fuzzySearch === "true" ? "balanced" : "default"),
     tag: searchParams?.tag || "all",
     dateRange:
       searchParams?.dateFrom && searchParams?.dateTo
@@ -32,11 +35,12 @@ export default async function LiveFeedTable(props) {
     cameraName: searchParams?.camera,
   };
 
-  const [platesRes, tagsRes, camerasRes, timeFormat] = await Promise.all([
+  const [platesRes, tagsRes, camerasRes, timeFormat, settings] = await Promise.all([
     getLatestPlateReads(params),
     getTags(),
     getCameraNames(),
     getTimeFormat(),
+    getSettings(),
   ]);
 
   return (
@@ -47,6 +51,7 @@ export default async function LiveFeedTable(props) {
         tags={tagsRes.success ? tagsRes.data : []}
         cameras={camerasRes.success ? camerasRes.data : []}
         timeFormat={timeFormat}
+        matchingSettings={settings.plateMatching}
       />
     </Suspense>
   );

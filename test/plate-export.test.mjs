@@ -77,6 +77,6 @@ test("Downloads page and API expose authenticated filter-respecting exports", as
   assert.match(route, /Content-Disposition/);
   assert.match(route, /X-Export-Truncated/);
   assert.match(table, /PlateDatabaseFilters/);
-  assert.match(filters, /Include close plate matches/);
+  assert.match(filters, /PlateMatchModeSelect/);
   assert.match(filters, /Export these results/);
 });

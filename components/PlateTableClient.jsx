@@ -19,6 +19,7 @@ export default function PlateTableClient({
   tags,
   cameras,
   timeFormat,
+  matchingSettings,
 }) {
   const router = useRouter();
   const pathname = usePathname();
@@ -125,7 +126,9 @@ export default function PlateTableClient({
       }}
       filters={{
         search: params.get("search") || "",
-        fuzzySearch: params.get("fuzzySearch") === "true",
+        matchMode:
+          params.get("matchMode") ||
+          (params.get("fuzzySearch") === "true" ? "balanced" : "default"),
         tag: params.get("tag") || "all",
         dateRange: {
           from: params.get("dateFrom")
@@ -148,6 +151,7 @@ export default function PlateTableClient({
       onAddKnownPlate={handleAddKnownPlate}
       onDeleteRecord={handleDeleteRecord}
       onCorrectPlate={handleCorrectPlate}
+      matchingSettings={matchingSettings}
     />
   );
 }

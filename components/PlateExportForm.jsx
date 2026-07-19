@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Switch } from "@/components/ui/switch";
+import PlateMatchModeSelect from "@/components/PlateMatchModeSelect";
 import {
   Select,
   SelectContent,
@@ -23,11 +23,17 @@ function hourLabel(hour) {
   return `${hour % 12 || 12}:00 ${suffix}`;
 }
 
-export default function PlateExportForm({ tags = [], cameras = [] }) {
+export default function PlateExportForm({
+  tags = [],
+  cameras = [],
+  matchingSettings,
+}) {
   const searchParams = useSearchParams();
   const [search, setSearch] = useState(() => searchParams.get("search") || "");
-  const [fuzzySearch, setFuzzySearch] = useState(
-    () => searchParams.get("fuzzySearch") === "true"
+  const [matchMode, setMatchMode] = useState(
+    () =>
+      searchParams.get("matchMode") ||
+      (searchParams.get("fuzzySearch") === "true" ? "balanced" : "default")
   );
   const [tag, setTag] = useState(() => searchParams.get("tag") || "all");
   const [camera, setCamera] = useState(() => searchParams.get("camera") || "all");
@@ -39,7 +45,7 @@ export default function PlateExportForm({ tags = [], cameras = [] }) {
   const query = useMemo(() => {
     const params = new URLSearchParams();
     if (search.trim()) params.set("search", search.trim());
-    if (fuzzySearch) params.set("fuzzySearch", "true");
+    if (matchMode !== "default") params.set("matchMode", matchMode);
     if (tag !== "all") params.set("tag", tag);
     if (camera !== "all") params.set("camera", camera);
     if (dateFrom) params.set("dateFrom", dateFrom);
@@ -53,7 +59,7 @@ export default function PlateExportForm({ tags = [], cameras = [] }) {
       params.set("sortDirection", searchParams.get("sortDirection") || "desc");
     }
     return params;
-  }, [camera, dateFrom, dateTo, fuzzySearch, hourFrom, hourTo, search, searchParams, tag]);
+  }, [camera, dateFrom, dateTo, hourFrom, hourTo, matchMode, search, searchParams, tag]);
 
   const startDownload = (format) => {
     const params = new URLSearchParams(query);
@@ -63,7 +69,7 @@ export default function PlateExportForm({ tags = [], cameras = [] }) {
 
   const clearFilters = () => {
     setSearch("");
-    setFuzzySearch(false);
+    setMatchMode("default");
     setTag("all");
     setCamera("all");
     setDateFrom("");
@@ -98,13 +104,17 @@ export default function PlateExportForm({ tags = [], cameras = [] }) {
                   className="pl-9"
                 />
               </div>
-              <div className="flex items-center gap-2">
-                <Switch
-                  id="export-fuzzy"
-                  checked={fuzzySearch}
-                  onCheckedChange={setFuzzySearch}
+              <div className="space-y-2">
+                <Label htmlFor="export-match-mode">Plate matching</Label>
+                <PlateMatchModeSelect
+                  id="export-match-mode"
+                  value={matchMode}
+                  onValueChange={setMatchMode}
+                  settings={matchingSettings}
                 />
-                <Label htmlFor="export-fuzzy">Include close plate matches</Label>
+                <p className="text-xs text-muted-foreground">
+                  Uses the same matching profiles as Recognition Feed and Plate Database.
+                </p>
               </div>
             </div>
 

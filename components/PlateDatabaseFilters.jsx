@@ -5,7 +5,7 @@ import { Download, Search, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Switch } from "@/components/ui/switch";
+import PlateMatchModeSelect from "@/components/PlateMatchModeSelect";
 import {
   Select,
   SelectContent,
@@ -24,7 +24,7 @@ function hourLabel(hour) {
 function exportHref(filters, sortConfig) {
   const params = new URLSearchParams();
   if (filters.search.trim()) params.set("search", filters.search.trim());
-  if (filters.fuzzySearch) params.set("fuzzySearch", "true");
+  if (filters.matchMode !== "default") params.set("matchMode", filters.matchMode);
   if (filters.tag !== "all") params.set("tag", filters.tag);
   if (filters.cameraName) params.set("camera", filters.cameraName);
   if (filters.dateRange.from) params.set("dateFrom", filters.dateRange.from);
@@ -47,6 +47,7 @@ export default function PlateDatabaseFilters({
   pageSize,
   onPageSizeChange,
   sortConfig,
+  matchingSettings,
 }) {
   const hourFrom = filters.hourRange ? String(filters.hourRange.from) : "all";
   const hourTo = filters.hourRange ? String(filters.hourRange.to) : "all";
@@ -74,15 +75,17 @@ export default function PlateDatabaseFilters({
               className="pl-9"
             />
           </div>
-          <div className="flex items-center gap-2">
-            <Switch
-              id="plate-database-fuzzy"
-              checked={filters.fuzzySearch}
-              onCheckedChange={(checked) => onChange({ fuzzySearch: checked })}
+          <div className="space-y-2">
+            <Label htmlFor="plate-database-match-mode">Plate matching</Label>
+            <PlateMatchModeSelect
+              id="plate-database-match-mode"
+              value={filters.matchMode}
+              onValueChange={(matchMode) => onChange({ matchMode })}
+              settings={matchingSettings}
             />
-            <Label htmlFor="plate-database-fuzzy" className="text-sm font-normal">
-              Include close plate matches
-            </Label>
+            <p className="text-xs text-muted-foreground">
+              Controls how closely plate characters must match this search.
+            </p>
           </div>
         </div>
 
