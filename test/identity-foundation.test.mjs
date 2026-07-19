@@ -75,7 +75,7 @@ test("foundation migration preserves the existing login until cutover", async ()
   ]);
 
   assert.equal(/INSERT INTO public\.users\s*\(/.test(migration), false);
-  assert.match(auth, /auth[\\/]", "auth.json"/);
+  assert.match(auth, /path\.join\(process\.cwd\(\), "auth", "auth\.json"\)/);
   assert.match(auth, /export async function verifyPassword/);
   assert.match(login, /name="password"/);
 });
