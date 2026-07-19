@@ -45,6 +45,7 @@ import {
   confirmPlateRecord,
   addUnseenPlate,
 } from "@/lib/db";
+import { normalizePlateMatchingSettings } from "@/lib/plate-matching.mjs";
 import {
   getNotificationPlates as getNotificationPlatesDB,
   addNotificationPlate as addNotificationPlateDB,
@@ -380,6 +381,7 @@ export async function getPlates(
   await requireAuthenticatedSession();
   console.log("Querying plate database");
   try {
+    const config = await getConfig();
     const result = await getAllPlates({
       page,
       pageSize,
@@ -389,7 +391,9 @@ export async function getPlates(
         tag: filters.tag !== "all" ? filters.tag : undefined,
         dateRange: filters.dateRange,
         search: filters.search,
-        fuzzySearch: filters.fuzzySearch,
+        matchMode:
+          filters.matchMode || (filters.fuzzySearch ? "balanced" : "default"),
+        matchingSettings: config.plateMatching,
         hourRange: filters.hourRange,
         cameraName: filters.cameraName,
       },
@@ -416,6 +420,7 @@ export async function getLatestPlateReads({
   pageSize = 25,
   search = "",
   fuzzySearch = false,
+  matchMode = "default",
   tag = "all",
   dateRange = null,
   hourRange = null,
@@ -426,12 +431,17 @@ export async function getLatestPlateReads({
   await requireAuthenticatedSession();
   console.log("Fetching latest plate reads");
   try {
+    const config = await getConfig();
     const result = await getPlateReads({
       page,
       pageSize,
       filters: {
         plateNumber: search,
-        fuzzySearch,
+        matchMode:
+          fuzzySearch && (!matchMode || matchMode === "default")
+            ? "balanced"
+            : matchMode || "default",
+        matchingSettings: config.plateMatching,
         tag: tag !== "all" ? tag : undefined,
         dateRange,
         hourRange,
@@ -801,6 +811,11 @@ export async function updateSettings(formData) {
         ...currentConfig.blueiris,
         host: formData.get("bihost"),
       };
+    }
+    if (updateIfExists("plateMatching")) {
+      newConfig.plateMatching = normalizePlateMatchingSettings(
+        JSON.parse(formData.get("plateMatching"))
+      );
     }
     const result = await saveConfig(newConfig);
     if (!result.success) {

@@ -22,14 +22,15 @@ test("combined plate filters stay grouped and parameterized", () => {
 
   assert.match(result.whereClause, /^WHERE \(p\.plate_number ILIKE \$1 OR/);
   assert.match(result.whereClause, /LEVENSHTEIN/);
+  assert.match(result.whereClause, /TRANSLATE/);
   assert.match(result.whereClause, /AND EXISTS \(/);
-  assert.match(result.whereClause, /LOWER\(pr_filter\.camera_name\) = LOWER\(\$4\)/);
-  assert.match(result.whereClause, /timestamp::date >= \$5/);
-  assert.match(result.whereClause, /timestamp::date <= \$6/);
-  assert.match(result.whereClause, /BETWEEN \$7 AND \$8/);
-  assert.deepEqual(result.values, [
-    "%ABC-123%",
-    "ABC123",
+  assert.match(result.whereClause, /LOWER\(pr_filter\.camera_name\) = LOWER\(\$10\)/);
+  assert.match(result.whereClause, /timestamp::date >= \$11/);
+  assert.match(result.whereClause, /timestamp::date <= \$12/);
+  assert.match(result.whereClause, /BETWEEN \$13 AND \$14/);
+  assert.equal(result.values[0], "%ABC-123%");
+  assert.equal(result.values[1], "ABC123");
+  assert.deepEqual(result.values.slice(8), [
     "Watchlist",
     "Driveway",
     "2026-07-01",
@@ -52,7 +53,7 @@ test("overnight hour filters use one read-scoped OR group", () => {
 test("short fuzzy searches remain contains-only", () => {
   const result = buildPlateDatabaseFilterClause({
     search: "A1",
-    fuzzySearch: true,
+    matchMode: "broad",
   });
 
   assert.equal(result.whereClause.includes("LEVENSHTEIN"), false);

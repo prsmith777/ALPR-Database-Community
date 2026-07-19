@@ -3,6 +3,7 @@ import {
   serializePlateExportCsv,
   serializePlateExportJson,
 } from "@/lib/plate-export.mjs";
+import { getConfig } from "@/lib/settings";
 
 export const dynamic = "force-dynamic";
 
@@ -27,10 +28,15 @@ export async function GET(request) {
 
     const hourFrom = parseHour(url.searchParams.get("hourFrom"));
     const hourTo = parseHour(url.searchParams.get("hourTo"));
+    const config = await getConfig();
+    const legacyFuzzy = url.searchParams.get("fuzzySearch") === "true";
     const result = await getPlateDatabaseExport({
       filters: {
         search: url.searchParams.get("search") || "",
-        fuzzySearch: url.searchParams.get("fuzzySearch") === "true",
+        matchMode:
+          url.searchParams.get("matchMode") ||
+          (legacyFuzzy ? "balanced" : "default"),
+        matchingSettings: config.plateMatching,
         tag: url.searchParams.get("tag") || "all",
         cameraName: url.searchParams.get("camera") || "",
         dateRange: {

@@ -78,6 +78,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { format } from "date-fns";
 import { Switch } from "@/components/ui/switch";
 import { useRouter } from "next/navigation";
+import PlateMatchModeSelect from "@/components/PlateMatchModeSelect";
 import PlateImage from "@/components/PlateImage";
 import { getSettings } from "@/app/actions";
 import ImageViewer from "./ImageViewer";
@@ -129,6 +130,7 @@ export default function PlateTable({
   timeFormat = 12,
   sort = { field: "", direction: "" },
   onSort = () => {},
+  matchingSettings,
 }) {
   console.log("PlateTable rendering with data:", data.length);
 
@@ -375,8 +377,8 @@ export default function PlateTable({
     }, 300);
   };
 
-  const handleFuzzySearchToggle = (checked) => {
-    onUpdateFilters({ fuzzySearch: checked });
+  const handleMatchModeChange = (matchMode) => {
+    onUpdateFilters({ matchMode, fuzzySearch: null });
   };
 
   const handleTagChange = (value) => {
@@ -439,6 +441,7 @@ export default function PlateTable({
     setSearchInput("");
     onUpdateFilters({
       search: "",
+      matchMode: null,
       fuzzySearch: null,
       tag: null,
       dateFrom: null,
@@ -767,27 +770,17 @@ export default function PlateTable({
 
       <div className="space-y-2">
         <h4 className="text-sm font-medium">Other Options</h4>
-        <div className="flex items-center space-x-2 border rounded-md p-3">
-          <Switch
-            checked={filters.fuzzySearch}
-            onCheckedChange={handleFuzzySearchToggle}
-            id="mobile-fuzzy-search"
+        <div className="space-y-2 border rounded-md p-3">
+          <Label htmlFor="mobile-match-mode">Plate matching</Label>
+          <PlateMatchModeSelect
+            id="mobile-match-mode"
+            value={filters.matchMode}
+            onValueChange={handleMatchModeChange}
+            settings={matchingSettings}
           />
-          <label htmlFor="mobile-fuzzy-search" className="text-sm">
-            Fuzzy Search
-          </label>
-          <TooltipProvider>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <HelpCircle className="h-4 w-4 text-muted-foreground cursor-help" />
-              </TooltipTrigger>
-              <TooltipContent>
-                <p className="max-w-xs">
-                  Fuzzy search helps find plates with potential OCR misreads.
-                </p>
-              </TooltipContent>
-            </Tooltip>
-          </TooltipProvider>
+          <p className="text-xs text-muted-foreground">
+            Choose how closely plate characters must match.
+          </p>
         </div>
 
         <div className="flex items-center space-x-2 border rounded-md p-3">
@@ -891,36 +884,15 @@ export default function PlateTable({
                 </Sheet>
               </div>
 
-              {/* Fuzzy Search - Desktop only */}
-              <div className="hidden sm:flex items-center border rounded-md px-3 h-9 dark:bg-[#161618]">
-                <div className="flex items-center space-x-2 ">
-                  <Switch
-                    checked={filters.fuzzySearch}
-                    onCheckedChange={handleFuzzySearchToggle}
-                    id="fuzzy-search"
-                  />
-                  <label
-                    htmlFor="fuzzy-search"
-                    className="text-sm cursor-pointer text-nowrap"
-                  >
-                    Fuzzy Search
-                  </label>
-                  <TooltipProvider>
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <HelpCircle className="h-4 w-4 text-muted-foreground cursor-help" />
-                      </TooltipTrigger>
-                      <TooltipContent>
-                        <p className="max-w-xs">
-                          Fuzzy search helps find plates with potential OCR
-                          misreads. For example, searching for
-                          &ldquo;7MLG803&rdquo; will also find similar plates
-                          like &ldquo;7NLG803&rdquo; or &ldquo;7ML6803&rdquo;.
-                        </p>
-                      </TooltipContent>
-                    </Tooltip>
-                  </TooltipProvider>
-                </div>
+              {/* Plate matching - Desktop only */}
+              <div className="hidden sm:block w-[230px]">
+                <PlateMatchModeSelect
+                  id="match-mode"
+                  value={filters.matchMode}
+                  onValueChange={handleMatchModeChange}
+                  settings={matchingSettings}
+                  className="h-9 dark:bg-[#161618]"
+                />
               </div>
             </div>
 

@@ -19,6 +19,7 @@ export default function PlateTableWrapper({
   cameras,
   timeFormat,
   biHost,
+  matchingSettings,
 }) {
   const router = useRouter();
   const pathname = usePathname();
@@ -312,7 +313,9 @@ export default function PlateTableWrapper({
       }}
       filters={{
         search: params.get("search") || "",
-        fuzzySearch: params.get("fuzzySearch") === "true",
+        matchMode:
+          params.get("matchMode") ||
+          (params.get("fuzzySearch") === "true" ? "balanced" : "default"),
         tag: params.get("tag") || "all",
         dateRange: {
           from: params.get("dateFrom")
@@ -333,6 +336,7 @@ export default function PlateTableWrapper({
         field: params.get("sortField") || "timestamp",
         direction: params.get("sortDirection") || "desc",
       }}
+      matchingSettings={matchingSettings}
       onSort={handleSort}
       onUpdateFilters={handleUpdateFilters}
       onAddTag={handleAddTag}
