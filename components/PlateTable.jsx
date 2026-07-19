@@ -82,6 +82,7 @@ import PlateMatchModeSelect from "@/components/PlateMatchModeSelect";
 import PlateImage from "@/components/PlateImage";
 import { getSettings } from "@/app/actions";
 import ImageViewer from "./ImageViewer";
+import { useAccess } from "@/components/auth/AccessProvider";
 import {
   Sheet,
   SheetContent,
@@ -133,6 +134,13 @@ export default function PlateTable({
   matchingSettings,
 }) {
   console.log("PlateTable rendering with data:", data.length);
+
+  const { can } = useAccess();
+  const canReview = can("plate.review");
+  const canDelete = can("plate.delete");
+  const canManageKnownPlates = can("known_plate.manage");
+  const canManageTags = can("tag.manage");
+  const canExport = can("export.create");
 
   // Only keep state for modals and temporary form data
   const [isAddKnownPlateOpen, setIsAddKnownPlateOpen] = useState(false);
@@ -1244,7 +1252,7 @@ export default function PlateTable({
                                 }}
                               >
                                 <span>{tag.name}</span>
-                                <Tooltip>
+                                {canManageTags && <Tooltip>
                                   <TooltipTrigger asChild>
                                     <Button
                                       variant="ghost"
@@ -1262,7 +1270,7 @@ export default function PlateTable({
                                     </Button>
                                   </TooltipTrigger>
                                   <TooltipContent>Remove tag</TooltipContent>
-                                </Tooltip>
+                                </Tooltip>}
                               </Badge>
                             ))
                           ) : (
@@ -1287,7 +1295,7 @@ export default function PlateTable({
 
                       <TableCell className="hidden sm:table-cell">
                         <div className="flex space-x-2 justify-end">
-                          <DropdownMenu>
+                          {canManageTags && <DropdownMenu>
                             <Tooltip>
                               <TooltipTrigger asChild>
                                 <DropdownMenuTrigger asChild>
@@ -1320,8 +1328,8 @@ export default function PlateTable({
                                 </DropdownMenuItem>
                               ))}
                             </DropdownMenuContent>
-                          </DropdownMenu>
-                          <Tooltip>
+                          </DropdownMenu>}
+                          {canManageKnownPlates && <Tooltip>
                             <TooltipTrigger asChild>
                               <Button
                                 variant="ghost"
@@ -1336,8 +1344,8 @@ export default function PlateTable({
                               </Button>
                             </TooltipTrigger>
                             <TooltipContent>Add to known plates</TooltipContent>
-                          </Tooltip>
-                          <Tooltip>
+                          </Tooltip>}
+                          {canReview && <Tooltip>
                             <TooltipTrigger asChild>
                               <Button
                                 variant="ghost"
@@ -1358,7 +1366,7 @@ export default function PlateTable({
                               </Button>
                             </TooltipTrigger>
                             <TooltipContent>Correct plate</TooltipContent>
-                          </Tooltip>
+                          </Tooltip>}
                           {biHost && plate.bi_path ? (
                             <Tooltip>
                               <TooltipTrigger asChild>
@@ -1403,7 +1411,7 @@ export default function PlateTable({
                               </TooltipContent>
                             </Tooltip>
                           )}
-                          <Tooltip>
+                          {canReview && <Tooltip>
                             <TooltipTrigger asChild>
                               <Button
                                 variant="ghost"
@@ -1432,9 +1440,9 @@ export default function PlateTable({
                                 ? "Unconfirm AI label"
                                 : "Confirm AI label"}
                             </TooltipContent>
-                          </Tooltip>
+                          </Tooltip>}
 
-                          <Tooltip>
+                          {canDelete && <Tooltip>
                             <TooltipTrigger asChild>
                               <Button
                                 variant="ghost"
@@ -1450,7 +1458,7 @@ export default function PlateTable({
                               </Button>
                             </TooltipTrigger>
                             <TooltipContent>Delete record</TooltipContent>
-                          </Tooltip>
+                          </Tooltip>}
                         </div>
                       </TableCell>
                     </TableRow>
@@ -1498,7 +1506,7 @@ export default function PlateTable({
                           </div>
 
                           {/* Mobile actions dropdown */}
-                          <DropdownMenu>
+                          {(canManageKnownPlates || canReview || canDelete || (biHost && plate.bi_path)) && <DropdownMenu>
                             <Tooltip>
                               <TooltipTrigger asChild>
                                 <DropdownMenuTrigger asChild>
@@ -1515,7 +1523,7 @@ export default function PlateTable({
                               <TooltipContent>More actions</TooltipContent>
                             </Tooltip>
                             <DropdownMenuContent align="end">
-                              <DropdownMenuItem
+                              {canManageKnownPlates && <DropdownMenuItem
                                 onClick={() => {
                                   setActivePlate(plate);
                                   setIsAddKnownPlateOpen(true);
@@ -1523,8 +1531,8 @@ export default function PlateTable({
                               >
                                 <Plus className="h-4 w-4 mr-2" />
                                 Add to Known Plates
-                              </DropdownMenuItem>
-                              <DropdownMenuItem
+                              </DropdownMenuItem>}
+                              {canReview && <DropdownMenuItem
                                 onClick={() => {
                                   setCorrection({
                                     id: plate.id,
@@ -1538,7 +1546,7 @@ export default function PlateTable({
                               >
                                 <Pencil className="h-4 w-4 mr-2" />
                                 Correct Plate
-                              </DropdownMenuItem>
+                              </DropdownMenuItem>}
                               {biHost && plate.bi_path ? (
                                 <DropdownMenuItem
                                   onClick={() =>
@@ -1552,7 +1560,7 @@ export default function PlateTable({
                                   Open in Blue Iris
                                 </DropdownMenuItem>
                               ) : null}
-                              <DropdownMenuItem
+                              {canDelete && <DropdownMenuItem
                                 className="text-red-500"
                                 onClick={() => {
                                   setActivePlate(plate);
@@ -1561,9 +1569,9 @@ export default function PlateTable({
                               >
                                 <Trash2 className="h-4 w-4 mr-2" />
                                 Delete Record
-                              </DropdownMenuItem>
+                              </DropdownMenuItem>}
                             </DropdownMenuContent>
-                          </DropdownMenu>
+                          </DropdownMenu>}
                         </div>
 
                         {/* Middle row - Tags */}
@@ -1581,7 +1589,7 @@ export default function PlateTable({
                                   }}
                                 >
                                   <span>{tag.name}</span>
-                                  <Tooltip>
+                                  {canManageTags && <Tooltip>
                                     <TooltipTrigger asChild>
                                       <Button
                                         variant="ghost"
@@ -1599,12 +1607,12 @@ export default function PlateTable({
                                       </Button>
                                     </TooltipTrigger>
                                     <TooltipContent>Remove tag</TooltipContent>
-                                  </Tooltip>
+                                  </Tooltip>}
                                 </Badge>
                               ))}
 
                               {/* Add tag button */}
-                              <DropdownMenu>
+                              {canManageTags && <DropdownMenu>
                                 <DropdownMenuTrigger asChild>
                                   <Button
                                     variant="outline"
@@ -1633,14 +1641,14 @@ export default function PlateTable({
                                     </DropdownMenuItem>
                                   ))}
                                 </DropdownMenuContent>
-                              </DropdownMenu>
+                              </DropdownMenu>}
                             </div>
                           ) : (
                             <div className="flex items-center gap-2">
                               <span className="text-xs text-muted-foreground">
                                 No tags
                               </span>
-                              <DropdownMenu>
+                              {canManageTags && <DropdownMenu>
                                 <DropdownMenuTrigger asChild>
                                   <Button
                                     variant="outline"
@@ -1669,7 +1677,7 @@ export default function PlateTable({
                                     </DropdownMenuItem>
                                   ))}
                                 </DropdownMenuContent>
-                              </DropdownMenu>
+                              </DropdownMenu>}
                             </div>
                           )}
                         </div>
@@ -1779,7 +1787,7 @@ export default function PlateTable({
             <DialogFooter>
               <div className="flex flex-col sm:flex-row justify-between w-full gap-4 sm:gap-2">
                 <div className="flex flex-wrap gap-2">
-                  <Button
+                  {canReview && <Button
                     variant="outline"
                     size="sm"
                     className="text-xs sm:text-sm"
@@ -1796,8 +1804,8 @@ export default function PlateTable({
                   >
                     <Edit className="h-3 w-3 sm:h-4 sm:w-4 mr-1 sm:mr-2" />
                     <span className="whitespace-nowrap">Correct Plate</span>
-                  </Button>
-                  <Button
+                  </Button>}
+                  {canManageKnownPlates && <Button
                     variant="outline"
                     size="sm"
                     className="text-xs sm:text-sm"
@@ -1811,8 +1819,8 @@ export default function PlateTable({
                   >
                     <Plus className="h-3 w-3 sm:h-4 sm:w-4 mr-1 sm:mr-2" />
                     <span className="whitespace-nowrap">Add to Known</span>
-                  </Button>
-                  <DropdownMenu>
+                  </Button>}
+                  {canManageTags && <DropdownMenu>
                     <DropdownMenuTrigger asChild>
                       <Button
                         variant="outline"
@@ -1841,8 +1849,8 @@ export default function PlateTable({
                         </DropdownMenuItem>
                       ))}
                     </DropdownMenuContent>
-                  </DropdownMenu>
-                  <Button
+                  </DropdownMenu>}
+                  {canReview && <Button
                     variant="outline"
                     size="sm"
                     className={
@@ -1856,7 +1864,7 @@ export default function PlateTable({
                   >
                     <Check className="h-3 w-3 sm:h-4 sm:w-4 mr-1 sm:mr-2" />
                     <span className="whitespace-nowrap">Confirm AI Label</span>
-                  </Button>
+                  </Button>}
                 </div>
                 <div className="flex justify-end space-x-2">
                   {biHost && selectedImage?.bi_path && (
@@ -1875,7 +1883,7 @@ export default function PlateTable({
                       <span className="whitespace-nowrap">Blue Iris</span>
                     </Button>
                   )}
-                  <Button
+                  {canExport && <Button
                     variant="outline"
                     size="sm"
                     className="text-xs sm:text-sm"
@@ -1883,7 +1891,7 @@ export default function PlateTable({
                   >
                     <Download className="h-3 w-3 sm:h-4 sm:w-4 mr-1 sm:mr-2" />
                     <span className="whitespace-nowrap">Download</span>
-                  </Button>
+                  </Button>}
                 </div>
               </div>
             </DialogFooter>
