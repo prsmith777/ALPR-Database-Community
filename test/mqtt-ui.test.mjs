@@ -56,3 +56,12 @@ test("Test & Activity queues through the durable test API and reads outbox histo
   assert.match(testRoute, /queueMqttTestPublish/);
   assert.equal(testRoute.includes("clientManager.publish"), false);
 });
+
+test("MQTT broker dialog remains reachable on short browser viewports", async () => {
+  const brokers = await source("components/mqtt/MqttBrokers.jsx");
+
+  assert.match(
+    brokers,
+    /max-h-\[calc\(100dvh-2rem\)\] max-w-lg overflow-y-auto/
+  );
+});
