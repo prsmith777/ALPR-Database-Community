@@ -148,6 +148,7 @@ export default function PlateTable({
   const [prefetchedImages, setPrefetchedImages] = useState(new Set());
   const [biHost, setBiHost] = useState(null);
   const [isFilterSheetOpen, setIsFilterSheetOpen] = useState(false);
+  const [isSearchOptionsOpen, setIsSearchOptionsOpen] = useState(false);
 
   //zoom/crop stuff
   const [zoom, setZoom] = useState(1);
@@ -783,16 +784,6 @@ export default function PlateTable({
           </p>
         </div>
 
-        <div className="flex items-center space-x-2 border rounded-md p-3">
-          <Switch
-            checked={isLive}
-            onCheckedChange={setIsLive}
-            id="mobile-live-updates"
-          />
-          <label htmlFor="mobile-live-updates" className="text-sm">
-            Live Updates
-          </label>
-        </div>
       </div>
 
       <div className="space-y-2">
@@ -836,8 +827,53 @@ export default function PlateTable({
     <TooltipProvider delayDuration={200}>
       <div className="">
         <div className="py-4">
-        {/* Search and Filters section - Desktop and Mobile */}
-        <div className="flex flex-col sm:flex-row sm:justify-between sm:items-start gap-4 mb-4">
+          <div className="mb-4 rounded-lg border bg-card p-4 shadow-sm">
+            <div className="flex items-center gap-4">
+              <button
+                type="button"
+                className="flex flex-1 items-center justify-between gap-3 rounded-md text-left"
+                aria-expanded={isSearchOptionsOpen}
+                aria-controls="recognition-feed-search-options"
+                onClick={() =>
+                  setIsSearchOptionsOpen((current) => !current)
+                }
+              >
+                <span>
+                  <span className="block font-semibold">Search options</span>
+                  <span className="block text-sm text-muted-foreground">
+                    Plate search, matching, and filters
+                  </span>
+                </span>
+                <ChevronDown
+                  className={`h-5 w-5 shrink-0 text-muted-foreground transition-transform ${
+                    isSearchOptionsOpen ? "rotate-180" : ""
+                  }`}
+                  aria-hidden="true"
+                />
+              </button>
+
+              <div className="flex shrink-0 items-center gap-2 rounded-md border px-3 py-2 dark:bg-[#161618]">
+                <Switch
+                  checked={isLive}
+                  onCheckedChange={setIsLive}
+                  id="live-updates"
+                />
+                <Label
+                  htmlFor="live-updates"
+                  className="cursor-pointer text-sm"
+                >
+                  Live updates
+                </Label>
+              </div>
+            </div>
+
+            {isSearchOptionsOpen && (
+              <div
+                id="recognition-feed-search-options"
+                className="mt-4 border-t pt-4"
+              >
+                {/* Search and Filters section - Desktop and Mobile */}
+                <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
           <div className="flex w-full flex-wrap items-start sm:items-center gap-2">
             {/* Search bar - Full Width on Mobile */}
             <div className="flex flex-col sm:flex-row sm:items-center gap-2 w-full sm:w-auto">
@@ -885,7 +921,13 @@ export default function PlateTable({
               </div>
 
               {/* Plate matching - Desktop only */}
-              <div className="hidden sm:block w-[230px]">
+              <div className="hidden w-[230px] space-y-1 sm:block">
+                <Label
+                  htmlFor="match-mode"
+                  className="text-xs text-muted-foreground"
+                >
+                  Plate matching
+                </Label>
                 <PlateMatchModeSelect
                   id="match-mode"
                   value={filters.matchMode}
@@ -991,22 +1033,6 @@ export default function PlateTable({
                   })
                 }
               />
-              <div className="flex items-center border rounded-md px-3 h-9 dark:bg-[#161618]">
-                <div className="flex items-center space-x-2 ">
-                  <Switch
-                    checked={isLive}
-                    onCheckedChange={setIsLive}
-                    id="live-updates"
-                  />
-                  <label
-                    htmlFor="live-updates"
-                    className="text-sm cursor-pointer"
-                  >
-                    Live Updates
-                  </label>
-                </div>
-              </div>
-
               {(filters.search ||
                 filters.tag !== "all" ||
                 filters.dateRange.from ||
@@ -1047,7 +1073,10 @@ export default function PlateTable({
               per page
             </span>
           </div>
-        </div>
+                </div>
+              </div>
+            )}
+          </div>
 
         {/* Active filters display on mobile */}
         {(filters.search ||

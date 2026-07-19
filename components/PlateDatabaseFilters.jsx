@@ -1,7 +1,8 @@
 "use client";
 
+import { useState } from "react";
 import Link from "next/link";
-import { Download, Search, X } from "lucide-react";
+import { ChevronDown, Download, Search, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -49,6 +50,7 @@ export default function PlateDatabaseFilters({
   sortConfig,
   matchingSettings,
 }) {
+  const [isOpen, setIsOpen] = useState(false);
   const hourFrom = filters.hourRange ? String(filters.hourRange.from) : "all";
   const hourTo = filters.hourRange ? String(filters.hourRange.to) : "all";
   const updateHour = (side, value) => {
@@ -62,7 +64,32 @@ export default function PlateDatabaseFilters({
 
   return (
     <div className="rounded-lg border bg-card p-4 shadow-sm">
-      <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+      <button
+        type="button"
+        className="flex w-full items-center justify-between gap-3 rounded-md text-left"
+        aria-expanded={isOpen}
+        aria-controls="plate-database-search-options"
+        onClick={() => setIsOpen((current) => !current)}
+      >
+        <span>
+          <span className="block font-semibold">Search options</span>
+          <span className="block text-sm text-muted-foreground">
+            Search and filter the plate database
+          </span>
+        </span>
+        <ChevronDown
+          className={`h-5 w-5 shrink-0 text-muted-foreground transition-transform ${
+            isOpen ? "rotate-180" : ""
+          }`}
+          aria-hidden="true"
+        />
+      </button>
+
+      {isOpen && (
+        <div
+          id="plate-database-search-options"
+          className="mt-4 grid gap-3 border-t pt-4 md:grid-cols-2 xl:grid-cols-4"
+        >
         <div className="space-y-2 md:col-span-2">
           <Label htmlFor="plate-database-search">Plate, known name, or notes</Label>
           <div className="relative">
@@ -158,7 +185,8 @@ export default function PlateDatabaseFilters({
             </SelectContent>
           </Select>
         </div>
-      </div>
+        </div>
+      )}
 
       <div className="mt-4 flex flex-col gap-3 border-t pt-4 sm:flex-row sm:items-center">
         <Button variant="outline" onClick={onClear}>
