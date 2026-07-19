@@ -23,7 +23,7 @@ services:
         max-file: "3"
 
   db:
-    image: postgres:13
+    image: postgres:17.10
     restart: unless-stopped
     environment:
       POSTGRES_DB: postgres
