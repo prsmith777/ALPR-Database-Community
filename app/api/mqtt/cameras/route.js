@@ -1,6 +1,9 @@
 import { getMqttAdminRepository } from "@/lib/mqtt/admin-runtime.mjs";
+import { denyUnlessRoutePermission } from "@/lib/route-permission.mjs";
 
 export async function GET() {
+  const denied = await denyUnlessRoutePermission("mqtt.manage");
+  if (denied) return denied;
   try {
     const repository = await getMqttAdminRepository();
     const cameras = await repository.listCameras();

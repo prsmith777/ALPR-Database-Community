@@ -17,8 +17,9 @@ import {
 } from "@/components/ui/dialog";
 // Correctly import server actions. Note: UpdatePassword was named updatePassword in actions.js
 import { updatePassword, regenerateApiKey } from "@/app/actions";
+import { UserManagement } from "./UserManagement";
 
-export function SecuritySettings({ initialApiKey }) {
+export function SecuritySettings({ initialApiKey, initialIdentityState }) {
   const [apiKey, setApiKey] = useState(initialApiKey); // State to display dynamically updated API Key
   const [showApiKey, setShowApiKey] = useState(false);
   const [showDialog, setShowDialog] = useState(false); // Controls the regenerate API key dialog
@@ -114,6 +115,7 @@ export function SecuritySettings({ initialApiKey }) {
 
   return (
     <div className="space-y-8">
+      <UserManagement initialState={initialIdentityState} />
       {/* Display password specific error/success messages */}
       {passwordError && (
         <div className="p-4 text-red-600 bg-red-50 rounded-md">

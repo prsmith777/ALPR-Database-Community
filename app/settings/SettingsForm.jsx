@@ -76,7 +76,11 @@ const navigationSections = [
   },
 ];
 
-export default function SettingsForm({ initialSettings, initialApiKey }) {
+export default function SettingsForm({
+  initialSettings,
+  initialApiKey,
+  initialIdentityState,
+}) {
   const [isPending, startTransition] = useTransition(); // For general settings
   const [error, setError] = useState(""); // General error for main form
   const [success, setSuccess] = useState(false); // General success for main form
@@ -529,6 +533,7 @@ export default function SettingsForm({ initialSettings, initialApiKey }) {
       </div>
       <SecuritySettings
         initialApiKey={currentApiKeyInForm} // Pass the dynamically updated API key
+        initialIdentityState={initialIdentityState}
       />
     </div>
   );

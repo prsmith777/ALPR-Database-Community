@@ -51,7 +51,7 @@ test("every non-public server action verifies its own session", async () => {
     const bodyPrefix = source.slice(bodyStart, bodyStart + 120);
     assert.match(
       bodyPrefix,
-      /^\s*await requireAuthenticatedSession\(\);/,
+      /^\s*(?:await require(?:AuthenticatedSession|Permission)\([^;]*\);|const principal = await require(?:AuthenticatedSession|Permission)\([^;]*\);)/,
       `${name} must authenticate before doing any work`
     );
     checked.push(name);
@@ -60,7 +60,7 @@ test("every non-public server action verifies its own session", async () => {
   assert.ok(checked.length >= 40, "expected to inspect the complete action set");
   assert.match(
     source,
-    /authenticate:\s*requireAuthenticatedSession/,
+    /authenticate:\s*\(\) => requirePermission\("maintenance\.manage"\)/,
     "update and migration actions must retain their internal authentication"
   );
 });
