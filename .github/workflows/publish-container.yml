@@ -1,0 +1,83 @@
+name: Publish Immutable Container
+
+on:
+  push:
+    branches:
+      - main
+      - feature/ux-foundation
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+  attestations: write
+  id-token: write
+
+concurrency:
+  group: publish-container-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: prsmith777/alpr-database-community
+
+jobs:
+  publish:
+    name: Build, publish, and attest
+    if: github.repository == 'prsmith777/ALPR-Database-Community'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@65b78e6e13532edd9afa3aa52ac7964289d1a9c1
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Generate immutable image metadata
+        id: meta
+        uses: docker/metadata-action@9ec57ed1fcdbf14dcef7dfbe97b2010124a938b7
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          flavor: latest=false
+          tags: |
+            type=sha,format=long,prefix=sha-
+            type=ref,event=tag
+          labels: |
+            org.opencontainers.image.title=ALPR Database Community
+            org.opencontainers.image.description=Community ALPR database and recognition dashboard
+
+      - name: Build and publish image
+        id: push
+        uses: docker/build-push-action@f2a1d5e99d037542a71f64918e516c093c6f3fc4
+        with:
+          context: .
+          file: ./Dockerfile
+          platforms: linux/amd64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Generate build provenance attestation
+        uses: actions/attest@v4
+        with:
+          subject-name: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          subject-digest: ${{ steps.push.outputs.digest }}
+          push-to-registry: true
+
+      - name: Record immutable image reference
+        env:
+          PUBLISHED_IMAGE: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          PUBLISHED_DIGEST: ${{ steps.push.outputs.digest }}
+        run: |
+          echo "### Published container" >> "$GITHUB_STEP_SUMMARY"
+          echo "\`${PUBLISHED_IMAGE}@${PUBLISHED_DIGEST}\`" >> "$GITHUB_STEP_SUMMARY"
