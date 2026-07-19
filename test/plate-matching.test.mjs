@@ -88,6 +88,7 @@ test("matching settings are persisted and exposed in all three interfaces", asyn
   assert.match(liveFeed, /PlateMatchModeSelect/);
   assert.equal(liveFeed.includes("const [isSearchOptionsOpen, setIsSearchOptionsOpen] = useState(false);"), true);
   assert.match(liveFeed, /Plate search, matching, and filters/);
+  assert.equal(liveFeed.includes('prefixLabel="Plate matching"'), true);
   assert.equal(liveFeed.includes("aria-expanded={isSearchOptionsOpen}"), true);
   assert.match(database, /PlateMatchModeSelect/);
   assert.match(downloads, /PlateMatchModeSelect/);

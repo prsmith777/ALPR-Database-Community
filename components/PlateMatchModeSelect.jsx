@@ -17,11 +17,26 @@ export default function PlateMatchModeSelect({
   onValueChange,
   settings,
   className,
+  prefixLabel,
+  ariaLabel,
 }) {
   return (
     <Select value={value} onValueChange={onValueChange}>
-      <SelectTrigger id={id} className={className}>
-        <SelectValue />
+      <SelectTrigger
+        id={id}
+        aria-label={ariaLabel || prefixLabel}
+        className={className}
+      >
+        {prefixLabel ? (
+          <span className="flex min-w-0 items-center gap-1.5">
+            <span className="shrink-0 text-xs text-muted-foreground">
+              {prefixLabel}:
+            </span>
+            <SelectValue />
+          </span>
+        ) : (
+          <SelectValue />
+        )}
       </SelectTrigger>
       <SelectContent>
         {MODES.map((mode) => (
