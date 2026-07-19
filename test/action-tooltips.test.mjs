@@ -7,10 +7,11 @@ async function source(path) {
 }
 
 test("plate tables label icon-only row actions with accessible tooltips", async () => {
-  const [liveFeed, plateDatabase, knownPlates] = await Promise.all([
+  const [liveFeed, plateDatabase, knownPlates, databaseFilters] = await Promise.all([
     source("components/PlateTable.jsx"),
     source("components/plateDbTable.jsx"),
     source("components/KnownPlatesTable.jsx"),
+    source("components/PlateDatabaseFilters.jsx"),
   ]);
 
   for (const component of [liveFeed, plateDatabase]) {
@@ -19,10 +20,10 @@ test("plate tables label icon-only row actions with accessible tooltips", async 
     assert.match(component, /<TooltipContent>Remove tag<\/TooltipContent>/);
     assert.match(component, /<TooltipContent>Delete record<\/TooltipContent>/);
     assert.match(component, /aria-label=\{`More actions for \$\{plate\.plate_number\}`\}/);
-    assert.match(component, /aria-label="Open filters"/);
-    assert.match(component, /<TooltipContent>Open filters<\/TooltipContent>/);
   }
 
+  assert.match(liveFeed, /aria-label="Open filters"/);
+  assert.match(liveFeed, /<TooltipContent>Open filters<\/TooltipContent>/);
   assert.match(liveFeed, /<TooltipContent>Correct plate<\/TooltipContent>/);
   assert.match(liveFeed, /Confirm AI label/);
   assert.match(plateDatabase, /<TooltipContent>View insights<\/TooltipContent>/);
@@ -31,6 +32,10 @@ test("plate tables label icon-only row actions with accessible tooltips", async 
   assert.match(knownPlates, /<IconTooltip label="Add tag">/);
   assert.match(knownPlates, /<IconTooltip label="Edit plate details">/);
   assert.match(knownPlates, /<IconTooltip label="More plate actions">/);
+  assert.match(databaseFilters, /htmlFor="plate-database-search"/);
+  assert.match(databaseFilters, /htmlFor="plate-database-fuzzy"/);
+  assert.match(databaseFilters, /htmlFor="plate-database-camera"/);
+  assert.match(databaseFilters, /htmlFor="plate-database-page-size"/);
 });
 
 test("notification and MQTT action icons expose hover and focus labels", async () => {

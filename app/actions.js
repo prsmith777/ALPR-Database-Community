@@ -390,6 +390,8 @@ export async function getPlates(
         dateRange: filters.dateRange,
         search: filters.search,
         fuzzySearch: filters.fuzzySearch,
+        hourRange: filters.hourRange,
+        cameraName: filters.cameraName,
       },
     });
     return { success: true, ...result };

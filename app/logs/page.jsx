@@ -41,7 +41,7 @@ export default async function LogsPage() {
               rel="noopener noreferrer"
               className="text-sm text-muted-foreground hover:text-foreground hover:underline"
             >
-              {PROJECT_NAME} · Release {version}
+              {PROJECT_NAME} · v{version}
             </a>
           </div>
         </div>
