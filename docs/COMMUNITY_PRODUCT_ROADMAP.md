@@ -32,9 +32,9 @@ reliable background processing.
   grouping defect before exposing dormant fuzzy controls.
 - Replace the Download placeholder with filter-respecting CSV and JSON export;
   add background ZIP export for images after export authorization exists.
-- Disable upstream telemetry/training by default and remove its automatic
-  dashboard trigger. Retain a local **Data & Privacy** page for retention,
-  export, telemetry status, audit, and deletion controls.
+- Remove upstream telemetry, training uploads, automatic dashboard triggers,
+  and network update checks. Retain a local **Data & Privacy** page for
+  retention, export, integration status, audit, and deletion controls.
 
 ### Phase 2 — Identity, roles, and evidence review
 

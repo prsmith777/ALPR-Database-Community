@@ -1,6 +1,7 @@
 services:
   app:
-    image: algertc/alpr-dashboard:latest
+    image: "${ALPR_APP_IMAGE:-alpr-dashboard:local}"
+    pull_policy: never
     restart: unless-stopped
     ports:
       - "${APP_PORT:-3000}:3000"

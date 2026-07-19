@@ -12,8 +12,6 @@ import {
   Home,
   Shield,
   Lock,
-  Share,
-  Cpu,
   Server,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -62,14 +60,13 @@ const navigationSections = [
       { title: "General", id: "general", icon: Settings2 },
       { title: "Database", id: "database", icon: Database },
       { title: "Security", id: "security", icon: Lock },
-      { title: "Sharing & Privacy", id: "privacy", icon: Share },
+      { title: "Data & Privacy", id: "privacy", icon: Shield },
     ],
   },
   {
     title: "Integrations",
     items: [
       { title: "Push Notifications", id: "push", icon: Bell },
-      { title: "AI Training", id: "training", icon: Cpu },
       { title: "Blue Iris", id: "blueiris", icon: Server },
       { title: "HomeAssistant", id: "homeassistant", icon: Home },
     ],
@@ -135,21 +132,6 @@ export default function SettingsForm({ initialSettings, initialApiKey }) {
         break;
       case "blueiris":
         newFormData.append("bihost", formData.get("bihost"));
-        break;
-      case "privacy":
-        newFormData.append(
-          "metricsEnabled",
-          formData.get("metricsEnabled") === "on"
-        );
-        break;
-      case "training":
-        newFormData.append(
-          "trainingEnabled",
-          formData.get("trainingEnabled") === "on"
-        );
-        if (formData.get("trainingName")) {
-          newFormData.append("trainingName", formData.get("trainingName"));
-        }
         break;
     }
 
@@ -549,107 +531,29 @@ export default function SettingsForm({ initialSettings, initialApiKey }) {
     <div key="privacy-section" className="space-y-6">
       <div>
         <h2 className="text-2xl font-semibold text-foreground mb-2">
-          Sharing &amp; Privacy
+          Data &amp; Privacy
         </h2>
         <p className="text-muted-foreground">
-          Control what data is shared and how your privacy is protected.
+          Review how this community build handles information leaving the app.
         </p>
       </div>
-      <div className="space-y-6">
-        <div className="max-w-3xl border rounded-lg p-4">
-          <div className="flex items-center justify-between py-4  space-x-12">
-            <div className="space-y-1">
-              <Label htmlFor="metricsEnabled" className="text-sm font-medium">
-                Participate in Anonymous System Reporting
-              </Label>
-              <p className="text-sm text-muted-foreground">
-                Reporting is 100% optional, but greatly encouraged. This helps
-                me understand how people use the app and improve the code.
-              </p>
-            </div>
-            <Switch
-              id="metricsEnabled"
-              name="metricsEnabled"
-              defaultChecked={initialSettings.privacy?.metrics}
-            />
-          </div>
+      <div className="max-w-3xl space-y-4">
+        <div className="rounded-lg border p-5">
+          <h3 className="font-semibold">External reporting is disabled</h3>
+          <p className="mt-2 text-sm text-muted-foreground">
+            This build does not send usage telemetry or upload plate images and
+            annotations for model training. It also does not contact the former
+            upstream project to check for application updates.
+          </p>
         </div>
-        <div className="space-y-4 ml-2">
-          <h4 className="text-lg font-semibold">Data sent in reports:</h4>
-          <ul className="space-y-2 text-sm text-muted-foreground">
-            <li className="flex items-center gap-2">
-              <div className="w-1.5 h-1.5 rounded-full bg-primary"></div>
-              Release version
-            </li>
-            <li className="flex items-center gap-2">
-              <div className="w-1.5 h-1.5 rounded-full bg-primary"></div>
-              Earliest date recorded in database
-            </li>
-            <li className="flex items-center gap-2">
-              <div className="w-1.5 h-1.5 rounded-full bg-primary"></div>
-              Total records in database
-            </li>
-            <li className="flex items-center gap-2">
-              <div className="w-1.5 h-1.5 rounded-full bg-primary"></div>A
-              hashed unique identifier for your installation
-            </li>
-          </ul>
-        </div>
-      </div>
-    </div>
-  );
-
-  const renderTrainingSection = () => (
-    <div key="training-section" className="space-y-6">
-      <div>
-        <h2 className="text-2xl font-semibold text-foreground mb-2">
-          AI Training
-        </h2>
-        <p className="text-muted-foreground">
-          Help improve the ALPR model by sharing training data.
-        </p>
-      </div>
-      <div className="space-y-6">
-        <div className="max-w-2xl">
-          <div className="flex items-center justify-between py-4 border-b">
-            <div className="space-y-1">
-              <Label htmlFor="trainingEnabled" className="text-sm font-medium">
-                Generate and Share Training Data to Improve the ALPR Model
-              </Label>
-              <p className="text-sm text-muted-foreground">
-                Enabling this setting will generate annotated training image
-                sets from your recognitions. This data is collected from
-                deployments to create a more diverse and comprehensive dataset
-                which will improve the accuracy of the ALPR model. Your
-                recognitions do not become public.
-              </p>
-            </div>
-            <Switch
-              id="trainingEnabled"
-              name="trainingEnabled"
-              defaultChecked={initialSettings.training?.enabled}
-            />
-          </div>
-        </div>
-        <div className="space-y-4">
-          <div className="space-y-2">
-            <Label htmlFor="trainingName" className="text-sm font-medium">
-              Optional Name / Username
-            </Label>
-            <p className="text-sm text-muted-foreground mb-3">
-              By default, your training data will be shared anonymously. If you
-              would like to be recognized for your contribution, you can provide
-              a name or username.
-            </p>
-            <Input
-              id="trainingName"
-              name="trainingName"
-              defaultValue={initialSettings.training.name}
-              placeholder="@username"
-              autoComplete="off"
-              className="max-w-xs"
-            />
-          </div>
+        <div className="rounded-lg border p-5">
+          <h3 className="font-semibold">Configured integrations remain explicit</h3>
+          <p className="mt-2 text-sm text-muted-foreground">
+            Pushover, MQTT, Blue Iris, Home Assistant, and AI-agent connections
+            communicate only when you configure and use those integrations.
+            Local retention, export, audit, and deletion controls will be added
+            here in the operations phase.
+          </p>
         </div>
       </div>
     </div>
@@ -702,8 +606,6 @@ export default function SettingsForm({ initialSettings, initialApiKey }) {
         return renderPrivacySection();
       case "blueiris":
         return renderBlueirisSection();
-      case "training":
-        return renderTrainingSection();
       default:
         return null;
     }
@@ -788,7 +690,7 @@ export default function SettingsForm({ initialSettings, initialApiKey }) {
               )}
 
               {/* Form Content */}
-              {activeSection !== "security" ? (
+              {activeSection !== "security" && activeSection !== "privacy" ? (
                 <form action={handleSettingsSubmit}>
                   <div className="space-y-8">
                     {renderSection()}
