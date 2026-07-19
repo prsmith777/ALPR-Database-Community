@@ -1,3 +1,5 @@
+import { PROJECT_DESCRIPTION, PROJECT_NAME } from "@/lib/project-info";
+
 export default function manifest() {
   return {
     theme_color: "#000000",
@@ -17,10 +19,10 @@ export default function manifest() {
     display: "standalone",
     dir: "auto",
     lang: "en-US",
-    name: "ALPR Database",
-    short_name: "ALPR",
+    name: PROJECT_NAME,
+    short_name: "ALPR Community",
     start_url: "/",
     scope: "/",
-    description: "algertc/alpr-database",
+    description: PROJECT_DESCRIPTION,
   };
 }

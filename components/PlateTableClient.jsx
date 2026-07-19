@@ -4,6 +4,10 @@
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useMemo } from "react";
 import debounce from "lodash/debounce";
+import {
+  readPlateMatchPreference,
+  writePlateMatchPreference,
+} from "@/lib/plate-match-preference.mjs";
 import PlateTable from "./PlateTable";
 import {
   addKnownPlate,
@@ -19,10 +23,15 @@ export default function PlateTableClient({
   tags,
   cameras,
   timeFormat,
+  matchingSettings,
 }) {
   const router = useRouter();
   const pathname = usePathname();
   const params = useSearchParams();
+  const preferredMatchMode =
+    params.get("fuzzySearch") === "true"
+      ? "balanced"
+      : readPlateMatchPreference("recognition-feed");
 
   const createQueryString = (updates) => {
     const current = new URLSearchParams(params);
@@ -37,6 +46,9 @@ export default function PlateTableClient({
   };
 
   const updateFilters = (newParams) => {
+    if (newParams.matchMode) {
+      writePlateMatchPreference("recognition-feed", newParams.matchMode);
+    }
     const queryString = createQueryString({ ...newParams, page: "1" });
     router.push(`${pathname}?${queryString}`);
   };
@@ -125,7 +137,7 @@ export default function PlateTableClient({
       }}
       filters={{
         search: params.get("search") || "",
-        fuzzySearch: params.get("fuzzySearch") === "true",
+        matchMode: params.get("matchMode") || preferredMatchMode,
         tag: params.get("tag") || "all",
         dateRange: {
           from: params.get("dateFrom")
@@ -148,6 +160,7 @@ export default function PlateTableClient({
       onAddKnownPlate={handleAddKnownPlate}
       onDeleteRecord={handleDeleteRecord}
       onCorrectPlate={handleCorrectPlate}
+      matchingSettings={matchingSettings}
     />
   );
 }

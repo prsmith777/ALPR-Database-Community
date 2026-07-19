@@ -45,11 +45,15 @@ test("the mobile navigation sheet has an accessible dialog title", async () => {
   assert.equal(sidebar.includes('<h2 className="text-lg font-semibold">Menu</h2>'), false);
 });
 
-test("dashboard and system logs identify the community fork", async () => {
-  const [dashboard, logs, projectInfo] = await Promise.all([
+test("dashboard, manifests, README, and system logs identify the community fork", async () => {
+  const [dashboard, logs, projectInfo, layout, manifest, publicManifest, readme] = await Promise.all([
     source("app/dashboard/DashboardMetrics.jsx"),
     source("app/logs/page.jsx"),
     source("lib/project-info.js"),
+    source("app/layout.jsx"),
+    source("app/manifest.js"),
+    source("public/manifest.json"),
+    source("README.md"),
   ]);
 
   assert.match(dashboard, /PROJECT_DOCUMENTATION_URL/);
@@ -68,6 +72,13 @@ test("dashboard and system logs identify the community fork", async () => {
     /\/blob\/main\/docs\/COMMUNITY_PRODUCT_ROADMAP\.md/
   );
   assert.match(projectInfo, /\/releases/);
+  assert.match(layout, /PROJECT_DESCRIPTION/);
+  assert.match(manifest, /PROJECT_NAME/);
+  assert.match(publicManifest, /ALPR Database Community/);
+  assert.match(readme, /ALPR Database Community/);
+  for (const currentIdentity of [layout, manifest, publicManifest, readme]) {
+    assert.equal(currentIdentity.includes("algertc"), false);
+  }
   assert.equal(
     PROJECT_REPOSITORY_URL,
     "https://github.com/prsmith777/ALPR-Database-Community"

@@ -78,6 +78,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { format } from "date-fns";
 import { Switch } from "@/components/ui/switch";
 import { useRouter } from "next/navigation";
+import PlateMatchModeSelect from "@/components/PlateMatchModeSelect";
 import PlateImage from "@/components/PlateImage";
 import { getSettings } from "@/app/actions";
 import ImageViewer from "./ImageViewer";
@@ -129,6 +130,7 @@ export default function PlateTable({
   timeFormat = 12,
   sort = { field: "", direction: "" },
   onSort = () => {},
+  matchingSettings,
 }) {
   console.log("PlateTable rendering with data:", data.length);
 
@@ -146,6 +148,7 @@ export default function PlateTable({
   const [prefetchedImages, setPrefetchedImages] = useState(new Set());
   const [biHost, setBiHost] = useState(null);
   const [isFilterSheetOpen, setIsFilterSheetOpen] = useState(false);
+  const [isSearchOptionsOpen, setIsSearchOptionsOpen] = useState(false);
 
   //zoom/crop stuff
   const [zoom, setZoom] = useState(1);
@@ -375,8 +378,8 @@ export default function PlateTable({
     }, 300);
   };
 
-  const handleFuzzySearchToggle = (checked) => {
-    onUpdateFilters({ fuzzySearch: checked });
+  const handleMatchModeChange = (matchMode) => {
+    onUpdateFilters({ matchMode, fuzzySearch: null });
   };
 
   const handleTagChange = (value) => {
@@ -767,39 +770,19 @@ export default function PlateTable({
 
       <div className="space-y-2">
         <h4 className="text-sm font-medium">Other Options</h4>
-        <div className="flex items-center space-x-2 border rounded-md p-3">
-          <Switch
-            checked={filters.fuzzySearch}
-            onCheckedChange={handleFuzzySearchToggle}
-            id="mobile-fuzzy-search"
+        <div className="space-y-2 border rounded-md p-3">
+          <Label htmlFor="mobile-match-mode">Plate matching</Label>
+          <PlateMatchModeSelect
+            id="mobile-match-mode"
+            value={filters.matchMode}
+            onValueChange={handleMatchModeChange}
+            settings={matchingSettings}
           />
-          <label htmlFor="mobile-fuzzy-search" className="text-sm">
-            Fuzzy Search
-          </label>
-          <TooltipProvider>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <HelpCircle className="h-4 w-4 text-muted-foreground cursor-help" />
-              </TooltipTrigger>
-              <TooltipContent>
-                <p className="max-w-xs">
-                  Fuzzy search helps find plates with potential OCR misreads.
-                </p>
-              </TooltipContent>
-            </Tooltip>
-          </TooltipProvider>
+          <p className="text-xs text-muted-foreground">
+            Choose how closely plate characters must match.
+          </p>
         </div>
 
-        <div className="flex items-center space-x-2 border rounded-md p-3">
-          <Switch
-            checked={isLive}
-            onCheckedChange={setIsLive}
-            id="mobile-live-updates"
-          />
-          <label htmlFor="mobile-live-updates" className="text-sm">
-            Live Updates
-          </label>
-        </div>
       </div>
 
       <div className="space-y-2">
@@ -843,8 +826,53 @@ export default function PlateTable({
     <TooltipProvider delayDuration={200}>
       <div className="">
         <div className="py-4">
-        {/* Search and Filters section - Desktop and Mobile */}
-        <div className="flex flex-col sm:flex-row sm:justify-between sm:items-start gap-4 mb-4">
+          <div className="mb-4 rounded-lg border bg-card p-4 shadow-sm">
+            <div className="flex items-center gap-4">
+              <button
+                type="button"
+                className="flex flex-1 items-center justify-between gap-3 rounded-md text-left"
+                aria-expanded={isSearchOptionsOpen}
+                aria-controls="recognition-feed-search-options"
+                onClick={() =>
+                  setIsSearchOptionsOpen((current) => !current)
+                }
+              >
+                <span>
+                  <span className="block font-semibold">Search options</span>
+                  <span className="block text-sm text-muted-foreground">
+                    Plate search, matching, and filters
+                  </span>
+                </span>
+                <ChevronDown
+                  className={`h-5 w-5 shrink-0 text-muted-foreground transition-transform ${
+                    isSearchOptionsOpen ? "rotate-180" : ""
+                  }`}
+                  aria-hidden="true"
+                />
+              </button>
+
+              <div className="flex shrink-0 items-center gap-2 rounded-md border px-3 py-2 dark:bg-[#161618]">
+                <Switch
+                  checked={isLive}
+                  onCheckedChange={setIsLive}
+                  id="live-updates"
+                />
+                <Label
+                  htmlFor="live-updates"
+                  className="cursor-pointer text-sm"
+                >
+                  Live updates
+                </Label>
+              </div>
+            </div>
+
+            {isSearchOptionsOpen && (
+              <div
+                id="recognition-feed-search-options"
+                className="mt-4 border-t pt-4"
+              >
+                {/* Search and Filters section - Desktop and Mobile */}
+                <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
           <div className="flex w-full flex-wrap items-start sm:items-center gap-2">
             {/* Search bar - Full Width on Mobile */}
             <div className="flex flex-col sm:flex-row sm:items-center gap-2 w-full sm:w-auto">
@@ -891,36 +919,17 @@ export default function PlateTable({
                 </Sheet>
               </div>
 
-              {/* Fuzzy Search - Desktop only */}
-              <div className="hidden sm:flex items-center border rounded-md px-3 h-9 dark:bg-[#161618]">
-                <div className="flex items-center space-x-2 ">
-                  <Switch
-                    checked={filters.fuzzySearch}
-                    onCheckedChange={handleFuzzySearchToggle}
-                    id="fuzzy-search"
-                  />
-                  <label
-                    htmlFor="fuzzy-search"
-                    className="text-sm cursor-pointer text-nowrap"
-                  >
-                    Fuzzy Search
-                  </label>
-                  <TooltipProvider>
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <HelpCircle className="h-4 w-4 text-muted-foreground cursor-help" />
-                      </TooltipTrigger>
-                      <TooltipContent>
-                        <p className="max-w-xs">
-                          Fuzzy search helps find plates with potential OCR
-                          misreads. For example, searching for
-                          &ldquo;7MLG803&rdquo; will also find similar plates
-                          like &ldquo;7NLG803&rdquo; or &ldquo;7ML6803&rdquo;.
-                        </p>
-                      </TooltipContent>
-                    </Tooltip>
-                  </TooltipProvider>
-                </div>
+              {/* Plate matching - Desktop only */}
+              <div className="hidden w-[310px] sm:block">
+                <PlateMatchModeSelect
+                  id="match-mode"
+                  value={filters.matchMode}
+                  onValueChange={handleMatchModeChange}
+                  settings={matchingSettings}
+                  prefixLabel="Plate matching"
+                  ariaLabel="Plate matching"
+                  className="h-9 dark:bg-[#161618]"
+                />
               </div>
             </div>
 
@@ -1019,22 +1028,6 @@ export default function PlateTable({
                   })
                 }
               />
-              <div className="flex items-center border rounded-md px-3 h-9 dark:bg-[#161618]">
-                <div className="flex items-center space-x-2 ">
-                  <Switch
-                    checked={isLive}
-                    onCheckedChange={setIsLive}
-                    id="live-updates"
-                  />
-                  <label
-                    htmlFor="live-updates"
-                    className="text-sm cursor-pointer"
-                  >
-                    Live Updates
-                  </label>
-                </div>
-              </div>
-
               {(filters.search ||
                 filters.tag !== "all" ||
                 filters.dateRange.from ||
@@ -1075,7 +1068,10 @@ export default function PlateTable({
               per page
             </span>
           </div>
-        </div>
+                </div>
+              </div>
+            )}
+          </div>
 
         {/* Active filters display on mobile */}
         {(filters.search ||

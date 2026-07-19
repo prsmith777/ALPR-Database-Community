@@ -4,6 +4,10 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import PlateTable from "./PlateTable";
 import { useEffect, useRef, useState, useCallback } from "react";
 import {
+  readPlateMatchPreference,
+  writePlateMatchPreference,
+} from "@/lib/plate-match-preference.mjs";
+import {
   addKnownPlate,
   correctPlateRead,
   deletePlateRead,
@@ -19,10 +23,15 @@ export default function PlateTableWrapper({
   cameras,
   timeFormat,
   biHost,
+  matchingSettings,
 }) {
   const router = useRouter();
   const pathname = usePathname();
   const params = useSearchParams();
+  const preferredMatchMode =
+    params.get("fuzzySearch") === "true"
+      ? "balanced"
+      : readPlateMatchPreference("recognition-feed");
 
   // State for live data, initially populated with server-rendered data
   // This will be updated by SSE.
@@ -175,10 +184,29 @@ export default function PlateTableWrapper({
     [params]
   );
 
+  useEffect(() => {
+    if (!params.get("matchMode")) {
+      const queryString = createQueryString({
+        matchMode: preferredMatchMode,
+        fuzzySearch: null,
+      });
+      router.replace(`${pathname}?${queryString}`, { scroll: false });
+    }
+  }, [
+    createQueryString,
+    params,
+    pathname,
+    preferredMatchMode,
+    router,
+  ]);
+
   const handleUpdateFilters = useCallback(
     (newParams) => {
-      // When filters are updated, automatically disable live mode
+      // When filters are updated, automatically disable live mode.
       setIsLiveModeActive(false);
+      if (newParams.matchMode) {
+        writePlateMatchPreference("recognition-feed", newParams.matchMode);
+      }
       const queryString = createQueryString({ ...newParams, page: "1" });
       router.push(`${pathname}?${queryString}`);
     },
@@ -312,7 +340,7 @@ export default function PlateTableWrapper({
       }}
       filters={{
         search: params.get("search") || "",
-        fuzzySearch: params.get("fuzzySearch") === "true",
+        matchMode: params.get("matchMode") || preferredMatchMode,
         tag: params.get("tag") || "all",
         dateRange: {
           from: params.get("dateFrom")
@@ -333,6 +361,7 @@ export default function PlateTableWrapper({
         field: params.get("sortField") || "timestamp",
         direction: params.get("sortDirection") || "desc",
       }}
+      matchingSettings={matchingSettings}
       onSort={handleSort}
       onUpdateFilters={handleUpdateFilters}
       onAddTag={handleAddTag}

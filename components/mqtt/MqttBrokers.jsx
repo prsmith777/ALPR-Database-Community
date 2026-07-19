@@ -295,7 +295,7 @@ export function MqttBrokers() {
           }
         }}
       >
-        <DialogContent className="max-w-lg">
+        <DialogContent className="max-h-[calc(100dvh-2rem)] max-w-lg overflow-y-auto">
           <form onSubmit={saveBroker} className="space-y-5">
             <DialogHeader>
               <DialogTitle>

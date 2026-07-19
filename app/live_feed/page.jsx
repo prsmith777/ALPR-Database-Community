@@ -29,7 +29,9 @@ export default async function LivePlates(props) {
     page: parseInt(searchParams?.page || "1"),
     pageSize: parseInt(searchParams?.pageSize || "25"),
     search: searchParams?.search || "",
-    fuzzySearch: searchParams?.fuzzySearch === "true",
+    matchMode:
+      searchParams?.matchMode ||
+      "balanced",
     tag: searchParams?.tag || "all",
     dateRange:
       searchParams?.dateFrom && searchParams?.dateTo
@@ -67,6 +69,7 @@ export default async function LivePlates(props) {
             cameras={camerasRes.success ? camerasRes.data : []}
             timeFormat={timeFormat}
             biHost={config?.blueiris?.host}
+            matchingSettings={config?.plateMatching}
           />
         </Suspense>
       </TitleNavbar>

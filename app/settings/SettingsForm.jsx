@@ -13,6 +13,7 @@ import {
   Shield,
   Lock,
   Server,
+  ScanSearch,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -52,6 +53,7 @@ import {
 } from "@/components/ui/select";
 import ToggleSwitch from "@/components/ui/toggle-switch";
 import { SecuritySettings } from "./SecuritySettings";
+import PlateMatchingSettings from "./PlateMatchingSettings";
 
 const navigationSections = [
   {
@@ -59,6 +61,7 @@ const navigationSections = [
     items: [
       { title: "General", id: "general", icon: Settings2 },
       { title: "Database", id: "database", icon: Database },
+      { title: "Plate Matching", id: "plateMatching", icon: ScanSearch },
       { title: "Security", id: "security", icon: Lock },
       { title: "Data & Privacy", id: "privacy", icon: Shield },
     ],
@@ -106,6 +109,9 @@ export default function SettingsForm({ initialSettings, initialApiKey }) {
         newFormData.append("dbName", formData.get("dbName"));
         newFormData.append("dbUser", formData.get("dbUser"));
         newFormData.append("dbPassword", formData.get("dbPassword"));
+        break;
+      case "plateMatching":
+        newFormData.append("plateMatching", formData.get("plateMatching"));
         break;
       case "push":
         newFormData.append(
@@ -596,6 +602,12 @@ export default function SettingsForm({ initialSettings, initialApiKey }) {
         return renderGeneralSection();
       case "database":
         return renderDatabaseSection();
+      case "plateMatching":
+        return (
+          <PlateMatchingSettings
+            initialSettings={initialSettings.plateMatching}
+          />
+        );
       case "push":
         return renderPushSection();
       case "homeassistant":

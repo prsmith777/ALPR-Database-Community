@@ -7,6 +7,7 @@ import { DashboardSkeleton } from "@/components/DashboardSkeleton";
 import { ChatProvider } from "@/components/chat/ChatContext";
 import { ChatInterface } from "@/components/chat/ChatInterface";
 import "@/logging/logger";
+import { PROJECT_DESCRIPTION, PROJECT_NAME } from "@/lib/project-info";
 
 const geistSans = localFont({
   src: "./fonts/GeistVF.woff",
@@ -20,8 +21,8 @@ const geistMono = localFont({
 });
 
 export const metadata = {
-  title: "ALPR Database",
-  description: "algertc/alpr-database",
+  title: PROJECT_NAME,
+  description: PROJECT_DESCRIPTION,
   icons: {
     icon: [
       {

@@ -4,15 +4,23 @@ import {
   readJsonObject,
 } from "@/lib/mqtt/admin-api.mjs";
 import { getMqttRuleAdminRepository } from "@/lib/mqtt/admin-runtime.mjs";
+import { getConfig } from "@/lib/settings";
 
 export async function GET() {
   try {
     const repository = await getMqttRuleAdminRepository();
-    const [rules, options] = await Promise.all([
+    const [rules, options, config] = await Promise.all([
       repository.listRules(),
       repository.listOptions(),
+      getConfig(),
     ]);
-    return Response.json({ success: true, data: { rules, options } });
+    return Response.json({
+      success: true,
+      data: {
+        rules,
+        options: { ...options, plateMatching: config.plateMatching },
+      },
+    });
   } catch (error) {
     const status = mqttAdminErrorStatus(error);
     console.error("Error fetching MQTT rules:", error);

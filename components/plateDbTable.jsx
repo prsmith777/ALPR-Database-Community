@@ -1,8 +1,6 @@
 "use client";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useDeferredValue } from "react";
 import {
-  Search,
-  Filter,
   Tag,
   Plus,
   Trash2,
@@ -11,26 +9,15 @@ import {
   TrendingUp,
   Flag,
   ArrowUpRightIcon,
-  ArrowUp,
-  ArrowDown,
   ChevronUp,
   ChevronDown,
   ChevronsUpDown,
   Eye,
-  EyeOff,
   MoreHorizontal,
-  SlidersHorizontal,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import {
   Table,
   TableBody,
@@ -56,19 +43,11 @@ import {
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from "@/components/ui/popover";
-import { Calendar as CalendarComponent } from "@/components/ui/calendar";
-import {
   Sheet,
   SheetContent,
   SheetHeader,
   SheetTitle,
   SheetDescription,
-  SheetFooter,
-  SheetTrigger,
 } from "@/components/ui/sheet";
 import {
   Card,
@@ -102,10 +81,16 @@ import {
   alterPlateFlag,
   deletePlateFromDB,
   getTimeFormat,
+  getCameraNames,
 } from "@/app/actions";
 import Image from "next/image";
 import Link from "next/link";
 import { formatPlateDateTime } from "@/lib/plate-date.mjs";
+import PlateDatabaseFilters from "@/components/PlateDatabaseFilters";
+import {
+  readPlateMatchPreference,
+  writePlateMatchPreference,
+} from "@/lib/plate-match-preference.mjs";
 
 const formatDaysAgo = (days) => {
   if (days === 0) return "Today";
@@ -135,51 +120,33 @@ const formatTimestamp = (timestamp, timeFormat) => {
   });
 };
 
-const isWithinDateRange = (firstSeenDate, selectedDateRange) => {
-  if (
-    !selectedDateRange ||
-    !Array.isArray(selectedDateRange) ||
-    selectedDateRange.length !== 2
-  ) {
-    return true; // No range filter applied
-  }
-
-  const [startDate, endDate] = selectedDateRange.map((date) =>
-    formatTimestamp(new Date(date))
-  );
-  const formattedFirstSeenDate = formatTimestamp(firstSeenDate);
-
-  return (
-    formattedFirstSeenDate >= startDate && formattedFirstSeenDate <= endDate
-  );
-};
-
-export default function PlateTable() {
+export default function PlateTable({ matchingSettings }) {
   const [data, setData] = useState([]);
-  const [filteredData, setFilteredData] = useState([]);
-  const [searchTerm, setSearchTerm] = useState("");
-  const [selectedTag, setSelectedTag] = useState("all");
-  const [selectedDateRange, setSelectedDateRange] = useState(null);
   const [isAddKnownPlateOpen, setIsAddKnownPlateOpen] = useState(false);
   const [isDeleteConfirmOpen, setIsDeleteConfirmOpen] = useState(false);
   const [activePlate, setActivePlate] = useState(null);
   const [newKnownPlate, setNewKnownPlate] = useState({ name: "", notes: "" });
   const [availableTags, setAvailableTags] = useState([]);
+  const [availableCameras, setAvailableCameras] = useState([]);
   const [isInsightsOpen, setIsInsightsOpen] = useState(false);
   const [plateInsights, setPlateInsights] = useState(null);
-  const [date, setDate] = useState({ from: undefined, to: undefined });
-  const [isFilterSheetOpen, setIsFilterSheetOpen] = useState(false);
-
   const [sortConfig, setSortConfig] = useState({
     key: "last_seen_at",
     direction: "desc",
   });
-  const [filters, setFilters] = useState({
+  const [filters, setFilters] = useState(() => ({
     search: "",
     tag: "all",
-    fuzzySearch: false,
-    dateRange: { from: null, to: null },
-  });
+    matchMode: readPlateMatchPreference("plate-database"),
+    cameraName: "",
+    dateRange: { from: "", to: "" },
+    hourRange: null,
+  }));
+  const deferredSearch = useDeferredValue(filters.search);
+  const filterDateFrom = filters.dateRange.from;
+  const filterDateTo = filters.dateRange.to;
+  const filterHourFrom = filters.hourRange?.from;
+  const filterHourTo = filters.hourRange?.to;
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(25);
   const [totalCount, setTotalCount] = useState(0);
@@ -189,9 +156,18 @@ export default function PlateTable() {
   useEffect(() => {
     const loadData = async () => {
       const result = await getPlates(page, pageSize, sortConfig, {
-        search: searchTerm,
-        tag: selectedTag,
-        dateRange: date,
+        search: deferredSearch,
+        tag: filters.tag,
+        matchMode: filters.matchMode,
+        cameraName: filters.cameraName,
+        dateRange: {
+          from: filterDateFrom,
+          to: filterDateTo,
+        },
+        hourRange:
+          filterHourFrom !== undefined && filterHourTo !== undefined
+          ? { from: filterHourFrom, to: filterHourTo }
+          : null,
       });
       if (result.success) {
         setData(result.data);
@@ -200,16 +176,30 @@ export default function PlateTable() {
       }
     };
     loadData();
-  }, [page, pageSize, sortConfig, searchTerm, selectedTag, date]);
+  }, [
+    page,
+    pageSize,
+    sortConfig,
+    deferredSearch,
+    filters.tag,
+    filters.matchMode,
+    filters.cameraName,
+    filterDateFrom,
+    filterDateTo,
+    filterHourFrom,
+    filterHourTo,
+  ]);
 
   useEffect(() => {
-    const loadTags = async () => {
-      const result = await getTags();
-      if (result.success) {
-        setAvailableTags(result.data);
-      }
+    const loadFilterOptions = async () => {
+      const [tagsResult, camerasResult] = await Promise.all([
+        getTags(),
+        getCameraNames(),
+      ]);
+      if (tagsResult.success) setAvailableTags(tagsResult.data);
+      if (camerasResult.success) setAvailableCameras(camerasResult.data);
     };
-    loadTags();
+    loadFilterOptions();
   }, []);
 
   useEffect(() => {
@@ -393,6 +383,27 @@ export default function PlateTable() {
 
   const handlePageSizeChange = (value) => {
     setPageSize(Number(value));
+    setPage(1);
+  };
+
+  const handleFilterChange = (updates) => {
+    if (updates.matchMode) {
+      writePlateMatchPreference("plate-database", updates.matchMode);
+    }
+    setFilters((current) => ({ ...current, ...updates }));
+    setPage(1);
+  };
+
+  const clearFilters = () => {
+    setFilters((current) => ({
+      search: "",
+      tag: "all",
+      matchMode: current.matchMode,
+      cameraName: "",
+      dateRange: { from: "", to: "" },
+      hourRange: null,
+    }));
+    setPage(1);
   };
 
   const handlePreviousPage = () => {
@@ -403,266 +414,20 @@ export default function PlateTable() {
     setPage((prev) => Math.min(pageCount, prev + 1));
   };
 
-  // Mobile filter sheet content
-  const MobileFilters = () => (
-    <div className="space-y-6 py-4">
-      <div className="space-y-2">
-        <h4 className="text-sm font-medium">Filter by Tag</h4>
-        <Select value={selectedTag} onValueChange={setSelectedTag}>
-          <SelectTrigger className="w-full">
-            <SelectValue placeholder="Select tag" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">
-              <div className="flex gap-3 items-center">
-                <Filter className="w-4 h-4" />
-                All tags
-              </div>
-            </SelectItem>
-            {availableTags.map((tag) => (
-              <SelectItem key={tag.name} value={tag.name}>
-                <div className="flex items-center">
-                  <div
-                    className="w-3 h-3 rounded-full mr-2"
-                    style={{ backgroundColor: tag.color }}
-                  />
-                  {tag.name}
-                </div>
-              </SelectItem>
-            ))}
-            <SelectItem value="untagged">
-              <div className="flex gap-3 items-center">
-                <div
-                  className="w-3 h-3 rounded-full mr-2"
-                  style={{ backgroundColor: "#6B7280" }}
-                />
-                Untagged
-              </div>
-            </SelectItem>
-          </SelectContent>
-        </Select>
-      </div>
-
-      <div className="space-y-3">
-        <h4 className="text-sm font-medium">Date Range</h4>
-        <CalendarComponent
-          mode="range"
-          defaultMonth={date?.from}
-          selected={date}
-          onSelect={(range) => {
-            if (range && range.from) {
-              setDate({ from: range.from, to: range.to || undefined });
-            }
-          }}
-          className="rounded-md border"
-        />
-      </div>
-
-      <div className="space-y-2">
-        <h4 className="text-sm font-medium">Results Per Page</h4>
-        <Select
-          value={pageSize.toString()}
-          onValueChange={handlePageSizeChange}
-        >
-          <SelectTrigger>
-            <SelectValue>{pageSize}</SelectValue>
-          </SelectTrigger>
-          <SelectContent>
-            {[10, 25, 50, 100].map((size) => (
-              <SelectItem key={size} value={size.toString()}>
-                {size} results per page
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      </div>
-
-      <div className="pt-4 flex space-x-2">
-        <Button
-          variant="outline"
-          className="flex-1"
-          onClick={() => {
-            setSearchTerm("");
-            setSelectedTag("all");
-            setDate({ from: undefined, to: undefined });
-            setIsFilterSheetOpen(false);
-          }}
-        >
-          Clear Filters
-        </Button>
-        <Button className="flex-1" onClick={() => setIsFilterSheetOpen(false)}>
-          Apply Filters
-        </Button>
-      </div>
-    </div>
-  );
-
   return (
     <TooltipProvider delayDuration={200}>
       <div className="space-y-4">
-      {/* Search and Filters - Desktop & Mobile */}
-      <div className="flex justify-between items-center space-x-2">
-        <div className="flex items-center space-x-2 w-full sm:w-auto">
-          <div className="flex w-full sm:w-auto">
-            <Input
-              placeholder="Search plates..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-full sm:w-64 dark:bg-[#161618]"
-              icon={
-                <Search
-                  size={16}
-                  className="text-gray-400 dark:text-gray-500"
-                />
-              }
-            />
-            {/* Mobile Filter Button */}
-            <Sheet open={isFilterSheetOpen} onOpenChange={setIsFilterSheetOpen}>
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <SheetTrigger asChild>
-                    <Button
-                      variant="outline"
-                      size="icon"
-                      aria-label="Open filters"
-                      className="ml-2 sm:hidden h-9 w-9 dark:bg-[#161618]"
-                    >
-                      <SlidersHorizontal className="h-4 w-4" />
-                    </Button>
-                  </SheetTrigger>
-                </TooltipTrigger>
-                <TooltipContent>Open filters</TooltipContent>
-              </Tooltip>
-              <SheetContent
-                side="bottom"
-                className="h-[80vh] px-4 pt-0 pb-8 overflow-y-auto"
-              >
-                <SheetHeader className="sticky top-0 bg-background pt-4 pb-2 z-10">
-                  <SheetTitle>Filter Results</SheetTitle>
-                </SheetHeader>
-                <MobileFilters />
-              </SheetContent>
-            </Sheet>
-          </div>
-
-          {/* Desktop Filters */}
-          <div className="hidden sm:flex space-x-2">
-            <Select value={selectedTag} onValueChange={setSelectedTag}>
-              <SelectTrigger className="dark:bg-[#161618]">
-                <SelectValue placeholder="Filter by tag" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">
-                  <div className="flex gap-3 items-center">
-                    <Filter className="w-4 h-4" />
-                    All tags
-                  </div>
-                </SelectItem>
-                {availableTags.map((tag) => (
-                  <SelectItem key={tag.name} value={tag.name}>
-                    <div className="flex items-center">
-                      <div
-                        className="w-3 h-3 rounded-full mr-2"
-                        style={{ backgroundColor: tag.color }}
-                      />
-                      {tag.name}
-                    </div>
-                  </SelectItem>
-                ))}
-                <SelectItem value="untagged">
-                  <div className="flex gap-3 items-center">
-                    <div
-                      className="w-3 h-3 rounded-full mr-2"
-                      style={{ backgroundColor: "#6B7280" }}
-                    />
-                    Untagged
-                  </div>
-                </SelectItem>
-              </SelectContent>
-            </Select>
-            <Popover>
-              <PopoverTrigger asChild>
-                <Button
-                  variant="outline"
-                  className="w-[240px] justify-start text-left font-normal dark:bg-[#161618]"
-                >
-                  <Calendar className="mr-2 h-4 w-4" />
-                  {selectedDateRange &&
-                  selectedDateRange[0] &&
-                  selectedDateRange[1] ? (
-                    `${selectedDateRange[0].toDateString()} - ${selectedDateRange[1].toDateString()}`
-                  ) : (
-                    <span>Filter by date range</span>
-                  )}
-                </Button>
-              </PopoverTrigger>
-              <PopoverContent className="w-auto p-0" align="start">
-                <CalendarComponent
-                  initialFocus
-                  mode="range"
-                  defaultMonth={date?.from}
-                  selected={date}
-                  onSelect={(range) => {
-                    if (range && range.from) {
-                      setDate({ from: range.from, to: range.to || undefined });
-                    }
-                  }}
-                  numberOfMonths={2}
-                />
-              </PopoverContent>
-            </Popover>
-          </div>
-        </div>
-
-        {/* Results per page - Desktop only */}
-        <div className="hidden sm:flex items-center gap-2">
-          <span className="text-sm text-muted-foreground">Show</span>
-          <Select
-            value={pageSize.toString()}
-            onValueChange={handlePageSizeChange}
-          >
-            <SelectTrigger className="w-[80px] dark:bg-[#161618]">
-              <SelectValue>{pageSize}</SelectValue>
-            </SelectTrigger>
-            <SelectContent>
-              {[10, 25, 50, 100].map((size) => (
-                <SelectItem key={size} value={size.toString()}>
-                  {size}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          <span className="text-sm text-muted-foreground">per page</span>
-        </div>
-      </div>
-
-      {/* Active filters display on mobile */}
-      {(searchTerm || selectedTag !== "all" || date.from) && (
-        <div className="flex sm:hidden items-center gap-2 mb-4 overflow-x-auto pb-2">
-          <span className="text-xs text-muted-foreground whitespace-nowrap">
-            Active filters:
-          </span>
-
-          {searchTerm && (
-            <Badge variant="outline" className="text-xs h-6 whitespace-nowrap">
-              Search: {searchTerm}
-            </Badge>
-          )}
-
-          {selectedTag !== "all" && (
-            <Badge variant="outline" className="text-xs h-6 whitespace-nowrap">
-              Tag: {selectedTag}
-            </Badge>
-          )}
-
-          {date.from && (
-            <Badge variant="outline" className="text-xs h-6 whitespace-nowrap">
-              Date: {date.from.toLocaleDateString()}
-              {date.to && ` - ${date.to.toLocaleDateString()}`}
-            </Badge>
-          )}
-        </div>
-      )}
+        <PlateDatabaseFilters
+          filters={filters}
+          onChange={handleFilterChange}
+          onClear={clearFilters}
+          availableTags={availableTags}
+          availableCameras={availableCameras}
+          pageSize={pageSize}
+          onPageSizeChange={handlePageSizeChange}
+          sortConfig={sortConfig}
+          matchingSettings={matchingSettings}
+        />
 
       {/* Desktop Table View */}
       <div className="rounded-md border dark:bg-[#0e0e10]">
