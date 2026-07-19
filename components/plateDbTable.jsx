@@ -86,6 +86,12 @@ import {
 } from "@/components/ui/chart";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
+import {
   getPlates,
   getTags,
   addKnownPlate,
@@ -99,6 +105,7 @@ import {
 } from "@/app/actions";
 import Image from "next/image";
 import Link from "next/link";
+import { formatPlateDateTime } from "@/lib/plate-date.mjs";
 
 const formatDaysAgo = (days) => {
   if (days === 0) return "Today";
@@ -218,10 +225,7 @@ export default function PlateTable() {
   }, []);
 
   const formatLastSeen = (timestamp) => {
-    if (timeFormat == 24) {
-      return new Date(timestamp).toLocaleString("en-GB");
-    }
-    return new Date(timestamp).toLocaleString("en-US");
+    return formatPlateDateTime(timestamp, timeFormat);
   };
 
   const formatFirstSeen = (timestamp) => {
@@ -494,7 +498,8 @@ export default function PlateTable() {
   );
 
   return (
-    <div className="space-y-4">
+    <TooltipProvider delayDuration={200}>
+      <div className="space-y-4">
       {/* Search and Filters - Desktop & Mobile */}
       <div className="flex justify-between items-center space-x-2">
         <div className="flex items-center space-x-2 w-full sm:w-auto">
@@ -513,15 +518,21 @@ export default function PlateTable() {
             />
             {/* Mobile Filter Button */}
             <Sheet open={isFilterSheetOpen} onOpenChange={setIsFilterSheetOpen}>
-              <SheetTrigger asChild>
-                <Button
-                  variant="outline"
-                  size="icon"
-                  className="ml-2 sm:hidden h-9 w-9 dark:bg-[#161618]"
-                >
-                  <SlidersHorizontal className="h-4 w-4" />
-                </Button>
-              </SheetTrigger>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <SheetTrigger asChild>
+                    <Button
+                      variant="outline"
+                      size="icon"
+                      aria-label="Open filters"
+                      className="ml-2 sm:hidden h-9 w-9 dark:bg-[#161618]"
+                    >
+                      <SlidersHorizontal className="h-4 w-4" />
+                    </Button>
+                  </SheetTrigger>
+                </TooltipTrigger>
+                <TooltipContent>Open filters</TooltipContent>
+              </Tooltip>
               <SheetContent
                 side="bottom"
                 className="h-[80vh] px-4 pt-0 pb-8 overflow-y-auto"
@@ -679,8 +690,26 @@ export default function PlateTable() {
                     {getSortIcon("occurrence_count")}
                   </Button>
                 </TableHead>
-                <TableHead className="w-56 2xl:w-96">Name</TableHead>
-                <TableHead>Notes</TableHead>
+                <TableHead className="w-56 2xl:w-96">
+                  <Button
+                    variant="ghost"
+                    onClick={() => requestSort("name")}
+                    className="h-8 flex items-center font-semibold p-0"
+                  >
+                    Name
+                    {getSortIcon("name")}
+                  </Button>
+                </TableHead>
+                <TableHead>
+                  <Button
+                    variant="ghost"
+                    onClick={() => requestSort("notes")}
+                    className="h-8 flex items-center font-semibold p-0"
+                  >
+                    Notes
+                    {getSortIcon("notes")}
+                  </Button>
+                </TableHead>
                 <TableHead className="w-[180px]">
                   <Button
                     variant="ghost"
@@ -701,7 +730,16 @@ export default function PlateTable() {
                     {getSortIcon("last_seen_at")}
                   </Button>
                 </TableHead>
-                <TableHead className="w-[150px]">Tags</TableHead>
+                <TableHead className="w-[150px]">
+                  <Button
+                    variant="ghost"
+                    onClick={() => requestSort("tags")}
+                    className="h-8 flex items-center font-semibold p-0"
+                  >
+                    Tags
+                    {getSortIcon("tags")}
+                  </Button>
+                </TableHead>
                 <TableHead className="w-[120px] text-right">Actions</TableHead>
               </TableRow>
             </TableHeader>
@@ -746,19 +784,28 @@ export default function PlateTable() {
                               }}
                             >
                               <span>{tag.name}</span>
-                              <Button
-                                variant="ghost"
-                                size="icon"
-                                className="h-4 w-4 p-0 hover:bg-red-500 hover:text-white rounded-full"
-                                onClick={() =>
-                                  handleRemoveTag(plate.plate_number, tag.name)
-                                }
-                              >
-                                <X className="h-3 w-3" />
-                                <span className="sr-only">
-                                  Remove {tag.name} tag
-                                </span>
-                              </Button>
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    className="h-4 w-4 p-0 hover:bg-red-500 hover:text-white rounded-full"
+                                    aria-label={`Remove ${tag.name} tag from ${plate.plate_number}`}
+                                    onClick={() =>
+                                      handleRemoveTag(
+                                        plate.plate_number,
+                                        tag.name
+                                      )
+                                    }
+                                  >
+                                    <X className="h-3 w-3" />
+                                    <span className="sr-only">
+                                      Remove {tag.name} tag
+                                    </span>
+                                  </Button>
+                                </TooltipTrigger>
+                                <TooltipContent>Remove tag</TooltipContent>
+                              </Tooltip>
                             </Badge>
                           ))
                         ) : (
@@ -771,12 +818,21 @@ export default function PlateTable() {
                     <TableCell className="text-right">
                       <div className="flex justify-end space-x-2">
                         <DropdownMenu>
-                          <DropdownMenuTrigger asChild>
-                            <Button variant="ghost" size="icon">
-                              <Tag className="h-4 w-4" />
-                              <span className="sr-only">Add tag</span>
-                            </Button>
-                          </DropdownMenuTrigger>
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <DropdownMenuTrigger asChild>
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  aria-label={`Add tag to ${plate.plate_number}`}
+                                >
+                                  <Tag className="h-4 w-4" />
+                                  <span className="sr-only">Add tag</span>
+                                </Button>
+                              </DropdownMenuTrigger>
+                            </TooltipTrigger>
+                            <TooltipContent>Add tag</TooltipContent>
+                          </Tooltip>
                           <DropdownMenuContent align="end">
                             {availableTags.map((tag) => (
                               <DropdownMenuItem
@@ -796,51 +852,78 @@ export default function PlateTable() {
                             ))}
                           </DropdownMenuContent>
                         </DropdownMenu>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          onClick={() => {
-                            setActivePlate(plate);
-                            setIsAddKnownPlateOpen(true);
-                          }}
-                        >
-                          <Plus className="h-4 w-4" />
-                          <span className="sr-only">Add to known plates</span>
-                        </Button>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className={
-                            plate.flagged
-                              ? "text-red-500 hover:text-red-700"
-                              : ""
-                          }
-                          onClick={() =>
-                            handleToggleFlag(plate.plate_number, !plate.flagged)
-                          }
-                        >
-                          <Flag
-                            className={`h-4 w-4 ${
-                              plate.flagged ? "fill-current" : ""
-                            }`}
-                          />
-                          <span className="sr-only">
-                            {plate.flagged ? "Remove flag" : "Add flag"}
-                          </span>
-                        </Button>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              aria-label={`Add ${plate.plate_number} to known plates`}
+                              onClick={() => {
+                                setActivePlate(plate);
+                                setIsAddKnownPlateOpen(true);
+                              }}
+                            >
+                              <Plus className="h-4 w-4" />
+                              <span className="sr-only">
+                                Add to known plates
+                              </span>
+                            </Button>
+                          </TooltipTrigger>
+                          <TooltipContent>Add to known plates</TooltipContent>
+                        </Tooltip>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              aria-label={`${
+                                plate.flagged ? "Remove flag from" : "Flag"
+                              } ${plate.plate_number}`}
+                              className={
+                                plate.flagged
+                                  ? "text-red-500 hover:text-red-700"
+                                  : ""
+                              }
+                              onClick={() =>
+                                handleToggleFlag(
+                                  plate.plate_number,
+                                  !plate.flagged
+                                )
+                              }
+                            >
+                              <Flag
+                                className={`h-4 w-4 ${
+                                  plate.flagged ? "fill-current" : ""
+                                }`}
+                              />
+                              <span className="sr-only">
+                                {plate.flagged ? "Remove flag" : "Add flag"}
+                              </span>
+                            </Button>
+                          </TooltipTrigger>
+                          <TooltipContent>
+                            {plate.flagged ? "Remove flag" : "Flag plate"}
+                          </TooltipContent>
+                        </Tooltip>
 
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="text-red-500 hover:text-red-700"
-                          onClick={() => {
-                            setActivePlate(plate);
-                            setIsDeleteConfirmOpen(true);
-                          }}
-                        >
-                          <Trash2 className="h-4 w-4" />
-                          <span className="sr-only">Delete record</span>
-                        </Button>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="text-red-500 hover:text-red-700"
+                              aria-label={`Delete record for ${plate.plate_number}`}
+                              onClick={() => {
+                                setActivePlate(plate);
+                                setIsDeleteConfirmOpen(true);
+                              }}
+                            >
+                              <Trash2 className="h-4 w-4" />
+                              <span className="sr-only">Delete record</span>
+                            </Button>
+                          </TooltipTrigger>
+                          <TooltipContent>Delete record</TooltipContent>
+                        </Tooltip>
                       </div>
                     </TableCell>
                   </TableRow>
@@ -877,25 +960,39 @@ export default function PlateTable() {
                     </div>
 
                     <div className="flex gap-1">
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        onClick={() => handleOpenInsights(plate.plate_number)}
-                        className="h-8 w-8"
-                      >
-                        <Eye className="h-4 w-4" />
-                      </Button>
-
-                      <DropdownMenu>
-                        <DropdownMenuTrigger asChild>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
                           <Button
                             variant="ghost"
                             size="icon"
+                            aria-label={`View insights for ${plate.plate_number}`}
+                            onClick={() =>
+                              handleOpenInsights(plate.plate_number)
+                            }
                             className="h-8 w-8"
                           >
-                            <MoreHorizontal className="h-4 w-4" />
+                            <Eye className="h-4 w-4" />
                           </Button>
-                        </DropdownMenuTrigger>
+                        </TooltipTrigger>
+                        <TooltipContent>View insights</TooltipContent>
+                      </Tooltip>
+
+                      <DropdownMenu>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <DropdownMenuTrigger asChild>
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-8 w-8"
+                                aria-label={`More actions for ${plate.plate_number}`}
+                              >
+                                <MoreHorizontal className="h-4 w-4" />
+                              </Button>
+                            </DropdownMenuTrigger>
+                          </TooltipTrigger>
+                          <TooltipContent>More actions</TooltipContent>
+                        </Tooltip>
                         <DropdownMenuContent align="end">
                           <DropdownMenuItem
                             onClick={() => {
@@ -1006,16 +1103,25 @@ export default function PlateTable() {
                             }}
                           >
                             <span>{tag.name}</span>
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              className="h-3 w-3 p-0 hover:bg-red-500 hover:text-white rounded-full"
-                              onClick={() =>
-                                handleRemoveTag(plate.plate_number, tag.name)
-                              }
-                            >
-                              <X className="h-2 w-2" />
-                            </Button>
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  className="h-3 w-3 p-0 hover:bg-red-500 hover:text-white rounded-full"
+                                  aria-label={`Remove ${tag.name} tag from ${plate.plate_number}`}
+                                  onClick={() =>
+                                    handleRemoveTag(
+                                      plate.plate_number,
+                                      tag.name
+                                    )
+                                  }
+                                >
+                                  <X className="h-2 w-2" />
+                                </Button>
+                              </TooltipTrigger>
+                              <TooltipContent>Remove tag</TooltipContent>
+                            </Tooltip>
                           </Badge>
                         ))}
                       </>
@@ -1425,6 +1531,7 @@ export default function PlateTable() {
           )}
         </SheetContent>
       </Sheet>
-    </div>
+      </div>
+    </TooltipProvider>
   );
 }

@@ -168,6 +168,9 @@ security is never inferred from `X-Forwarded-Proto` or other request headers.
 See [docs/security-baseline.md](docs/security-baseline.md) for the complete
 authentication and failure-handling policy.
 
+Maintainers of this fork should follow the streamlined staging-to-production
+process in [docs/personal-deployment.md](docs/personal-deployment.md).
+
 
 #### Thats it! You're now collecting and storing your ALPR data.
 

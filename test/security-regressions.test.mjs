@@ -101,6 +101,22 @@ test("telemetry requires explicit consent before any external request", async ()
   assert.match(settings, /privacy:\s*\{\s*metrics: false/);
 });
 
+test("the Docker build context retains installer security inputs", async (t) => {
+  let dockerignore;
+
+  try {
+    dockerignore = await fs.readFile(".dockerignore", "utf8");
+  } catch (error) {
+    if (error?.code === "ENOENT") {
+      t.skip("Docker does not copy .dockerignore into the built image");
+      return;
+    }
+    throw error;
+  }
+
+  assert.match(dockerignore.trimEnd(), /!install\.sh\r?\n!update\.sh$/);
+});
+
 test("the production image uses a supported non-root deterministic runtime", async () => {
   const dockerfile = await fs.readFile("Dockerfile", "utf8");
   const packageJson = JSON.parse(await fs.readFile("package.json", "utf8"));

@@ -21,7 +21,7 @@ import { logoutAction } from "@/app/actions";
 import { ChatButton } from "@/components/chat/ChatButton";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { Button } from "@/components/ui/button";
-import { Sheet, SheetContent } from "@/components/ui/sheet";
+import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet";
 import {
   Tooltip,
   TooltipContent,
@@ -99,7 +99,14 @@ export function Sidebar() {
           </nav>
 
           <div className="flex flex-col items-center space-y-2 pb-4">
-            <ThemeToggle />
+            <Tooltip delayDuration={0}>
+              <TooltipTrigger asChild>
+                <ThemeToggle />
+              </TooltipTrigger>
+              <TooltipContent side="right" className="border-0 bg-muted">
+                Toggle theme
+              </TooltipContent>
+            </Tooltip>
             <ChatButton />
             <Tooltip delayDuration={0}>
               <TooltipTrigger asChild>
@@ -187,7 +194,7 @@ export function Sidebar() {
       <Sheet open={isSheetOpen} onOpenChange={setIsSheetOpen}>
         <SheetContent side="bottom" className="h-[80vh] px-0 pt-0">
           <div className="sticky top-0 z-10 flex items-center justify-between border-b bg-background px-4 py-3">
-            <h2 className="text-lg font-semibold">Menu</h2>
+            <SheetTitle className="text-lg font-semibold">Menu</SheetTitle>
             <Button
               variant="ghost"
               size="icon"

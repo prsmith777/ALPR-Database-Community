@@ -11,10 +11,13 @@ yarn-debug.log*
 yarn-error.log*
 .next
 .git
-install.sh
-update.sh
 
 config/*
 logs/*
 auth/*
 storage/*
+
+# Staging verifies installer and updater security from the built image. Keep
+# these as the final rules so a broader shell-script pattern cannot hide them.
+!install.sh
+!update.sh

@@ -14,6 +14,128 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  staging-fixtures:
+    name: Verify reversible staging fixtures
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    services:
+      postgres:
+        image: postgres:13
+        env:
+          POSTGRES_PASSWORD: fixture-test-password
+          POSTGRES_USER: postgres
+          POSTGRES_DB: fixture_test
+        options: >-
+          --health-cmd "pg_isready -U postgres -d fixture_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+        ports:
+          - 5432:5432
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Exercise load, no-op, guarded clear, and refusal paths
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          psql_fixture() {
+            docker run --rm --network host \
+              --volume "$PWD:/workspace:ro" \
+              --env PGPASSWORD=fixture-test-password \
+              postgres:13 psql \
+              --host 127.0.0.1 \
+              --username postgres \
+              --dbname fixture_test \
+              --set ON_ERROR_STOP=1 \
+              "$@"
+          }
+
+          fixture() {
+            local operation="$1"
+            local load=false
+            local status=false
+            local clear=false
+            case "$operation" in
+              load) load=true ;;
+              status) status=true ;;
+              clear) clear=true ;;
+              *) return 2 ;;
+            esac
+            psql_fixture \
+              --set fixture_database=fixture_test \
+              --set fixture_load="$load" \
+              --set fixture_status="$status" \
+              --set fixture_clear="$clear" \
+              --file /workspace/scripts/staging-fixtures.sql
+          }
+
+          psql_fixture --file /workspace/schema.sql
+          psql_fixture --file /workspace/migrations.sql
+
+          fixture status | grep -F 'fixture_state=absent'
+          fixture load | grep -F 'fixture_state=loaded'
+
+          counts="$(psql_fixture --tuples-only --no-align --command "
+            SELECT
+              (SELECT count(*) FROM plates),
+              (SELECT count(*) FROM plate_reads),
+              (SELECT count(*) FROM known_plates),
+              (SELECT count(*) FROM tags),
+              (SELECT count(*) FROM plate_tags),
+              (SELECT count(*) FROM plate_notifications);
+          ")"
+          test "$counts" = '10|31|7|4|10|3'
+          psql_fixture --tuples-only --no-align --command "
+            SELECT count(*)
+            FROM plates p
+            WHERE p.occurrence_count <> (
+              SELECT count(*) FROM plate_reads r WHERE r.plate_number = p.plate_number
+            );
+          " | grep -Fx '0'
+
+          fixture load | grep -F 'fixture_state=already_loaded'
+
+          psql_fixture --command "
+            INSERT INTO tags (name, color) VALUES ('USER TEST TAG', '#000000');
+            INSERT INTO plate_tags (plate_number, tag_id)
+            SELECT 'TST000104', id FROM tags WHERE name = 'USER TEST TAG';
+          "
+          if fixture clear; then
+            echo 'fixture clear unexpectedly removed unowned dependent data' >&2
+            exit 1
+          fi
+          psql_fixture --tuples-only --no-align --command "
+            SELECT state FROM codex_staging_fixture_sets
+            WHERE fixture_set_id = '5d5d95b7-5df0-4b10-8e20-7edb4d7d3b26';
+          " | grep -Fx 'active'
+          psql_fixture --command "
+            DELETE FROM plate_tags
+            WHERE plate_number = 'TST000104'
+              AND tag_id = (SELECT id FROM tags WHERE name = 'USER TEST TAG');
+            DELETE FROM tags WHERE name = 'USER TEST TAG';
+          "
+
+          fixture clear | grep -F 'fixture_state=cleared'
+          fixture clear | grep -F 'fixture_state=already_clear'
+
+          psql_fixture --command "INSERT INTO plates (plate_number) VALUES ('REAL001');"
+          if fixture load; then
+            echo 'fixture load unexpectedly accepted unowned data' >&2
+            exit 1
+          fi
+          psql_fixture --tuples-only --no-align --command "
+            SELECT count(*) FROM plates WHERE plate_number = 'REAL001';
+          " | grep -Fx '1'
+          psql_fixture --command "DELETE FROM plates WHERE plate_number = 'REAL001';"
+          fixture status | grep -F 'fixture_state=clear'
+
   verify:
     name: Test, typecheck, lint, and build
     runs-on: ubuntu-latest
