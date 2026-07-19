@@ -5,8 +5,11 @@ import {
 } from "@/lib/mqtt/admin-api.mjs";
 import { getMqttRuleAdminRepository } from "@/lib/mqtt/admin-runtime.mjs";
 import { getConfig } from "@/lib/settings";
+import { denyUnlessRoutePermission } from "@/lib/route-permission.mjs";
 
 export async function GET() {
+  const denied = await denyUnlessRoutePermission("mqtt.manage");
+  if (denied) return denied;
   try {
     const repository = await getMqttRuleAdminRepository();
     const [rules, options, config] = await Promise.all([
@@ -35,6 +38,8 @@ export async function GET() {
 }
 
 export async function POST(request) {
+  const denied = await denyUnlessRoutePermission("mqtt.manage");
+  if (denied) return denied;
   try {
     const data = await readJsonObject(request);
     const repository = await getMqttRuleAdminRepository();

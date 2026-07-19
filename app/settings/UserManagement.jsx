@@ -1,0 +1,223 @@
+"use client";
+
+import { useState, useTransition } from "react";
+import { useRouter } from "next/navigation";
+import { UserPlus, Users } from "lucide-react";
+import {
+  bootstrapNamedAdministrator,
+  createNamedUser,
+  resetNamedUserPassword,
+  setNamedUserRole,
+  setNamedUserStatus,
+} from "@/app/actions";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+
+const roles = ["administrator", "operator", "viewer", "auditor"];
+
+function ActionMessage({ error, success }) {
+  if (!error && !success) return null;
+  return (
+    <div
+      role="status"
+      className={`rounded-md p-3 text-sm ${
+        error
+          ? "bg-destructive/10 text-destructive"
+          : "bg-emerald-500/10 text-emerald-500"
+      }`}
+    >
+      {error || success}
+    </div>
+  );
+}
+
+export function UserManagement({ initialState }) {
+  const router = useRouter();
+  const [isPending, startTransition] = useTransition();
+  const [error, setError] = useState("");
+  const [success, setSuccess] = useState("");
+
+  function run(action, formData, message, form) {
+    setError("");
+    setSuccess("");
+    startTransition(async () => {
+      const result = await action(formData);
+      if (!result?.success) {
+        setError(result?.error || "The user-management action failed.");
+        return;
+      }
+      form?.reset();
+      setSuccess(message);
+      router.refresh();
+    });
+  }
+
+  if (!initialState.bootstrapped) {
+    return (
+      <section className="space-y-4 rounded-lg border border-border p-4 sm:p-6">
+        <div className="space-y-1">
+          <h3 className="flex items-center gap-2 text-lg font-semibold">
+            <Users className="h-5 w-5 text-primary" />
+            Create your named administrator
+          </h3>
+          <p className="text-sm text-muted-foreground">
+            This one-time step creates the first database-backed account. Your
+            current administrator password is required and remains available as
+            a compatibility login.
+          </p>
+        </div>
+        <ActionMessage error={error} success={success} />
+        <form
+          className="grid gap-4 sm:grid-cols-2"
+          onSubmit={(event) => {
+            event.preventDefault();
+            run(
+              bootstrapNamedAdministrator,
+              new FormData(event.currentTarget),
+              "Named administrator created."
+            );
+          }}
+        >
+          <div className="space-y-2">
+            <Label htmlFor="ownerUsername">Username</Label>
+            <Input id="ownerUsername" name="username" minLength={3} maxLength={64} required autoComplete="username" placeholder="prsmith777" />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="ownerDisplayName">Display name</Label>
+            <Input id="ownerDisplayName" name="displayName" maxLength={120} required autoComplete="name" placeholder="Paul Smith" />
+          </div>
+          <div className="space-y-2 sm:col-span-2">
+            <Label htmlFor="ownerCurrentPassword">Current administrator password</Label>
+            <Input id="ownerCurrentPassword" name="currentPassword" type="password" required autoComplete="current-password" />
+          </div>
+          <div className="sm:col-span-2">
+            <Button type="submit" disabled={isPending}>
+              {isPending ? "Creating..." : "Create named administrator"}
+            </Button>
+          </div>
+        </form>
+      </section>
+    );
+  }
+
+  if (!initialState.canManageUsers) {
+    return (
+      <section className="space-y-2 rounded-lg border border-border p-4 sm:p-6">
+        <h3 className="text-lg font-semibold">User management</h3>
+        <p className="text-sm text-muted-foreground">
+          Signed in as {initialState.currentUser.displayName}. An administrator
+          account is required to manage users.
+        </p>
+      </section>
+    );
+  }
+
+  return (
+    <section className="space-y-6 rounded-lg border border-border p-4 sm:p-6">
+      <div className="space-y-1">
+        <h3 className="flex items-center gap-2 text-lg font-semibold">
+          <Users className="h-5 w-5 text-primary" /> User management
+        </h3>
+        <p className="text-sm text-muted-foreground">
+          Signed in as {initialState.currentUser.displayName} (@{initialState.currentUser.username}).
+          Role and status changes take effect on the user&apos;s next request.
+        </p>
+      </div>
+      <ActionMessage error={error} success={success} />
+
+      <div className="space-y-3">
+        {initialState.users.map((user) => {
+          const isCurrent = user.id === initialState.currentUser.id;
+          return (
+            <div key={user.id} className="grid gap-3 rounded-md border border-border p-4 lg:grid-cols-[minmax(12rem,1fr)_10rem_auto] lg:items-center">
+              <div>
+                <div className="flex flex-wrap items-center gap-2 font-medium">
+                  {user.displayName}
+                  {isCurrent && <Badge variant="secondary">You</Badge>}
+                  <Badge variant={user.status === "active" ? "default" : "outline"}>{user.status}</Badge>
+                </div>
+                <p className="text-sm text-muted-foreground">@{user.username}</p>
+              </div>
+              <Select
+                value={user.roles[0] || "viewer"}
+                disabled={isPending}
+                onValueChange={(role) => {
+                  const data = new FormData();
+                  data.set("userId", String(user.id));
+                  data.set("role", role);
+                  run(setNamedUserRole, data, `${user.displayName}'s role updated.`);
+                }}
+              >
+                <SelectTrigger aria-label={`Role for ${user.displayName}`}><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  {roles.map((role) => <SelectItem key={role} value={role}>{role[0].toUpperCase() + role.slice(1)}</SelectItem>)}
+                </SelectContent>
+              </Select>
+              <div className="flex flex-wrap gap-2 lg:justify-end">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  disabled={isPending || isCurrent}
+                  onClick={() => {
+                    const data = new FormData();
+                    data.set("userId", String(user.id));
+                    data.set("status", user.status === "active" ? "disabled" : "active");
+                    run(setNamedUserStatus, data, `${user.displayName}'s status updated.`);
+                  }}
+                >
+                  {user.status === "active" ? "Disable" : "Enable"}
+                </Button>
+                <form
+                  className="flex gap-2"
+                  onSubmit={(event) => {
+                    event.preventDefault();
+                    const form = event.currentTarget;
+                    const data = new FormData(form);
+                    data.set("userId", String(user.id));
+                    data.set("confirmPassword", data.get("password"));
+                    run(resetNamedUserPassword, data, `${user.displayName}'s password reset. Their sessions were revoked.`, form);
+                  }}
+                >
+                  <Input name="password" type="password" minLength={8} required placeholder="New password" className="h-9 w-40" aria-label={`New password for ${user.displayName}`} autoComplete="new-password" />
+                  <Button type="submit" variant="outline" size="sm" disabled={isPending}>Reset</Button>
+                </form>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      <form
+        className="grid gap-4 border-t border-border pt-6 sm:grid-cols-2"
+        onSubmit={(event) => {
+          event.preventDefault();
+          const form = event.currentTarget;
+          run(createNamedUser, new FormData(form), "User created.", form);
+        }}
+      >
+        <h4 className="flex items-center gap-2 font-semibold sm:col-span-2"><UserPlus className="h-4 w-4 text-primary" /> Add user</h4>
+        <div className="space-y-2"><Label htmlFor="newUsername">Username</Label><Input id="newUsername" name="username" required minLength={3} /></div>
+        <div className="space-y-2"><Label htmlFor="newDisplayName">Display name</Label><Input id="newDisplayName" name="displayName" required /></div>
+        <div className="space-y-2"><Label htmlFor="newUserPassword">Temporary password</Label><Input id="newUserPassword" name="password" type="password" minLength={8} required autoComplete="new-password" /></div>
+        <div className="space-y-2">
+          <Label htmlFor="newUserRole">Role</Label>
+          <Select name="role" defaultValue="viewer">
+            <SelectTrigger id="newUserRole"><SelectValue /></SelectTrigger>
+            <SelectContent>{roles.map((role) => <SelectItem key={role} value={role}>{role[0].toUpperCase() + role.slice(1)}</SelectItem>)}</SelectContent>
+          </Select>
+        </div>
+        <div className="sm:col-span-2"><Button type="submit" disabled={isPending}>{isPending ? "Saving..." : "Add user"}</Button></div>
+      </form>
+    </section>
+  );
+}

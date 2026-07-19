@@ -4,6 +4,7 @@ import {
   readJsonObject,
 } from "@/lib/mqtt/admin-api.mjs";
 import { getMqttAdminRepository } from "@/lib/mqtt/admin-runtime.mjs";
+import { denyUnlessRoutePermission } from "@/lib/route-permission.mjs";
 
 async function getBrokerId(params) {
   const resolved = await params;
@@ -11,6 +12,8 @@ async function getBrokerId(params) {
 }
 
 export async function GET(_request, { params }) {
+  const denied = await denyUnlessRoutePermission("mqtt.manage");
+  if (denied) return denied;
   try {
     const repository = await getMqttAdminRepository();
     const broker = await repository.getBroker(await getBrokerId(params));
@@ -37,6 +40,8 @@ export async function GET(_request, { params }) {
 }
 
 export async function PUT(request, { params }) {
+  const denied = await denyUnlessRoutePermission("mqtt.manage");
+  if (denied) return denied;
   try {
     const data = await readJsonObject(request);
 
@@ -73,6 +78,8 @@ export async function PUT(request, { params }) {
 }
 
 export async function DELETE(_request, { params }) {
+  const denied = await denyUnlessRoutePermission("mqtt.manage");
+  if (denied) return denied;
   try {
     const repository = await getMqttAdminRepository();
     const deleted = await repository.deleteBroker(await getBrokerId(params));

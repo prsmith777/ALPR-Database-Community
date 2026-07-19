@@ -63,10 +63,12 @@ import {
   invalidateSession,
   verifyPassword, // The function that handles both old/new hashes
   hashPasswordBcrypt, // New export to create a bcrypt hash
-  verifySession,
+  getSessionPrincipal,
   getAuthConfig, // Need this to update config
   updateAuthConfig, // Need this to save updated config
 } from "@/lib/auth";
+import { getIdentityService } from "@/lib/identity-runtime.mjs";
+import { hasPermission } from "@/lib/identity-service.mjs";
 import {
   clearSessionCookie,
   SESSION_COOKIE_NAME,
@@ -87,11 +89,37 @@ async function readServerActionSessionId() {
 
 const requireAuthenticatedSession = createServerActionAuthenticator({
   readSessionId: readServerActionSessionId,
-  verifySession,
+  verifySession: getSessionPrincipal,
 });
 
+async function requirePermission(permission) {
+  const principal = await requireAuthenticatedSession();
+  if (!hasPermission(principal, permission)) {
+    throw new Error("Permission denied");
+  }
+  return principal;
+}
+
+function identityActionFailure(error, fallback) {
+  const safeCodes = new Set([
+    "CANNOT_DISABLE_SELF",
+    "IDENTITY_ALREADY_BOOTSTRAPPED",
+    "INVALID_IDENTITY_INPUT",
+    "INVALID_PASSWORD",
+    "LAST_ADMINISTRATOR",
+    "UNKNOWN_ROLE",
+    "USER_NOT_FOUND",
+  ]);
+  if (safeCodes.has(error?.code)) return { success: false, error: error.message };
+  if (error?.code === "23505") {
+    return { success: false, error: "That username is already in use." };
+  }
+  console.error(fallback);
+  return { success: false, error: fallback };
+}
+
 const updateActions = createUpdateActions({
-  authenticate: requireAuthenticatedSession,
+  authenticate: () => requirePermission("maintenance.manage"),
   backfillOccurrenceCounts,
   getTotalRecordsToMigrate,
   getRecordsToMigrate,
@@ -103,17 +131,17 @@ const updateActions = createUpdateActions({
 });
 
 export async function handleGetTags() {
-  await requireAuthenticatedSession();
+  await requirePermission("plate.read");
   return await dbGetTags();
 }
 
 export async function handleCreateTag(tagName, color) {
-  await requireAuthenticatedSession();
+  await requirePermission("tag.manage");
   return await dbCreateTag(tagName, color);
 }
 
 export async function handleDeleteTag(tagName) {
-  await requireAuthenticatedSession();
+  await requirePermission("tag.manage");
   return await dbDeleteTag(tagName);
 }
 
@@ -123,7 +151,7 @@ export async function getDashboardMetrics(
   endDate,
   cameraName
 ) {
-  await requireAuthenticatedSession();
+  await requirePermission("plate.read");
   console.log("Fetching dashboard metrics");
   try {
     const metrics = await getMetrics(startDate, endDate, cameraName);
@@ -182,7 +210,7 @@ export async function getDashboardMetrics(
 }
 
 export async function deleteTagFromPlate(formData) {
-  await requireAuthenticatedSession();
+  await requirePermission("tag.manage");
   console.log("Deleting tag from plate");
   try {
     const plateNumber = formData.get("plateNumber");
@@ -196,7 +224,7 @@ export async function deleteTagFromPlate(formData) {
 }
 
 export async function deletePlate(formData) {
-  await requireAuthenticatedSession();
+  await requirePermission("known_plate.manage");
   console.log("Deleting known plate");
   try {
     const plateNumber = formData.get("plateNumber");
@@ -209,7 +237,7 @@ export async function deletePlate(formData) {
 }
 
 export async function deletePlateFromDB(formData) {
-  await requireAuthenticatedSession();
+  await requirePermission("plate.delete");
   console.log("Deleting plate from database");
   try {
     const plateNumber = formData.get("plateNumber");
@@ -222,7 +250,7 @@ export async function deletePlateFromDB(formData) {
 }
 
 export async function deletePlateRead(formData) {
-  await requireAuthenticatedSession();
+  await requirePermission("plate.delete");
   console.log("Deleting plate recognition");
   try {
     const id = formData.get("id"); // use ID
@@ -235,7 +263,7 @@ export async function deletePlateRead(formData) {
 }
 
 export async function getKnownPlatesList() {
-  await requireAuthenticatedSession();
+  await requirePermission("plate.read");
   console.log("Fetching known plates");
   try {
     console.log("known plates action run");
@@ -247,7 +275,7 @@ export async function getKnownPlatesList() {
 }
 
 export async function getTags() {
-  await requireAuthenticatedSession();
+  await requirePermission("plate.read");
   console.log("Fetching tags");
   try {
     return { success: true, data: await getAvailableTags() };
@@ -258,7 +286,7 @@ export async function getTags() {
 }
 
 export async function addTag(formData) {
-  await requireAuthenticatedSession();
+  await requirePermission("tag.manage");
   console.log("Adding tag");
   try {
     const name = formData.get("name");
@@ -272,7 +300,7 @@ export async function addTag(formData) {
 }
 
 export async function updateTag(formData) {
-  await requireAuthenticatedSession();
+  await requirePermission("tag.manage");
   console.log("Updating tag");
   try {
     const newName = formData.get("name");
@@ -295,7 +323,7 @@ export async function updateTag(formData) {
 }
 
 export async function removeTag(formData) {
-  await requireAuthenticatedSession();
+  await requirePermission("tag.manage");
   console.log("Deleting tag");
   try {
     const name = formData.get("name");
@@ -308,7 +336,7 @@ export async function removeTag(formData) {
 }
 
 export async function addKnownPlate(formData) {
-  await requireAuthenticatedSession();
+  await requirePermission("known_plate.manage");
   console.log("Adding known plate");
   try {
     const plateNumber = formData.get("plateNumber");
@@ -324,7 +352,7 @@ export async function addKnownPlate(formData) {
 }
 
 export async function tagPlate(formData) {
-  await requireAuthenticatedSession();
+  await requirePermission("tag.manage");
   console.log("Adding tag to plate");
   try {
     const plateNumber = formData.get("plateNumber");
@@ -348,7 +376,7 @@ export async function tagPlate(formData) {
 }
 
 export async function untagPlate(formData) {
-  await requireAuthenticatedSession();
+  await requirePermission("tag.manage");
   console.log("Removing tag from plate");
   try {
     const plateNumber = formData.get("plateNumber");
@@ -362,7 +390,7 @@ export async function untagPlate(formData) {
 }
 
 export async function getPlateHistoryData(plateNumber) {
-  await requireAuthenticatedSession();
+  await requirePermission("plate.read");
   console.log("Fetching plate history");
   try {
     return { success: true, data: await getPlateHistory(plateNumber) };
@@ -378,7 +406,7 @@ export async function getPlates(
   sortConfig = { key: "last_seen_at", direction: "desc" },
   filters = {}
 ) {
-  await requireAuthenticatedSession();
+  await requirePermission("plate.read");
   console.log("Querying plate database");
   try {
     const config = await getConfig();
@@ -428,7 +456,7 @@ export async function getLatestPlateReads({
   sortField = "",
   sortDirection = "",
 } = {}) {
-  await requireAuthenticatedSession();
+  await requirePermission("plate.read");
   console.log("Fetching latest plate reads");
   try {
     const config = await getConfig();
@@ -475,7 +503,7 @@ export async function getLatestPlateReads({
 }
 
 export async function fetchPlateInsights(formDataOrPlateNumber, timeZone) {
-  await requireAuthenticatedSession();
+  await requirePermission("plate.read");
   console.log("Fetching plate insights");
   const config = await getConfig();
   try {
@@ -543,7 +571,7 @@ export async function fetchPlateInsights(formDataOrPlateNumber, timeZone) {
 }
 
 export async function alterPlateFlag(formData) {
-  await requireAuthenticatedSession();
+  await requirePermission("plate.review");
   console.log("Toggling plate flag");
   try {
     const plateNumber = formData.get("plateNumber");
@@ -565,7 +593,7 @@ export async function alterPlateFlag(formData) {
 }
 
 export async function getFlagged() {
-  await requireAuthenticatedSession();
+  await requirePermission("plate.read");
   console.log("Fetching flagged plates");
   try {
     const plates = await getFlaggedPlates();
@@ -577,7 +605,7 @@ export async function getFlagged() {
 }
 
 export async function getNotificationPlates() {
-  await requireAuthenticatedSession();
+  await requirePermission("plate.read");
   console.log("Checking notification plates");
   try {
     const plates = await getNotificationPlatesDB();
@@ -589,7 +617,7 @@ export async function getNotificationPlates() {
 }
 
 export async function addNotificationPlate(formData) {
-  await requireAuthenticatedSession();
+  await requirePermission("notification.manage");
   console.log("Adding notification plate");
   const plateNumber = formData.get("plateNumber");
   const result = await addNotificationPlateDB(plateNumber);
@@ -598,7 +626,7 @@ export async function addNotificationPlate(formData) {
 }
 
 export async function toggleNotification(formData) {
-  await requireAuthenticatedSession();
+  await requirePermission("notification.manage");
   console.log("Toggling notification");
   const plateNumber = formData.get("plateNumber");
   const enabled = formData.get("enabled") === "true";
@@ -608,7 +636,7 @@ export async function toggleNotification(formData) {
 }
 
 export async function deleteNotification(formData) {
-  await requireAuthenticatedSession();
+  await requirePermission("notification.manage");
   console.log("Deleting notification");
   try {
     const plateNumber = formData.get("plateNumber");
@@ -623,7 +651,7 @@ export async function deleteNotification(formData) {
 }
 
 export async function updateNotificationPriority(formData) {
-  await requireAuthenticatedSession();
+  await requirePermission("notification.manage");
   console.log("Updating notification priority");
   try {
     // When using Select component, the values come directly as arguments
@@ -648,6 +676,7 @@ export async function updateNotificationPriority(formData) {
 
 export async function loginAction(formData) {
   console.log("Attempting login...");
+  const username = String(formData.get("username") || "").trim();
   const password = formData.get("password");
 
   if (!password) {
@@ -655,6 +684,22 @@ export async function loginAction(formData) {
   }
 
   try {
+    const headersList = await headers();
+    const userAgent = headersList.get("user-agent") || "Unknown Device";
+
+    if (username) {
+      const namedLogin = await getIdentityService().authenticate({
+        username,
+        password,
+        userAgent,
+      });
+      if (!namedLogin) return { error: "Invalid username or password" };
+
+      const cookieStore = await cookies();
+      setSessionCookie(cookieStore, namedLogin.sessionToken);
+      return { success: true };
+    }
+
     const config = await getAuthConfig(); // Get current config to check hash type
     const storedHash = config.password;
 
@@ -662,7 +707,7 @@ export async function loginAction(formData) {
 
     if (!isPasswordValid) {
       console.log("Invalid password attempt");
-      return { error: "Invalid password" };
+      return { error: "Invalid username or password" };
     }
 
     // --- Password Migration Logic ---
@@ -676,9 +721,6 @@ export async function loginAction(formData) {
       console.log("Password successfully migrated to bcrypt.");
     }
     // --- End Password Migration Logic ---
-
-    const headersList = await headers();
-    const userAgent = headersList.get("user-agent") || "Unknown Device";
 
     const sessionId = await createSession(userAgent);
 
@@ -701,6 +743,121 @@ export async function loginAction(formData) {
   }
 }
 
+export async function getIdentityAdminState() {
+  const principal = await requireAuthenticatedSession();
+  const identityService = getIdentityService();
+  const state = await identityService.getBootstrapState();
+  const users = state.bootstrapped ? await identityService.listUsers() : [];
+  return {
+    ...state,
+    users,
+    currentUser: {
+      id: principal.id,
+      username: principal.username,
+      displayName: principal.displayName,
+      roles: principal.roles,
+      authMode: principal.authMode,
+    },
+    canManageUsers:
+      principal.authMode === "named" &&
+      hasPermission(principal, "system.manage_users"),
+  };
+}
+
+export async function bootstrapNamedAdministrator(formData) {
+  const principal = await requireAuthenticatedSession();
+  if (principal.authMode !== "legacy") {
+    return { success: false, error: "Named accounts are already active." };
+  }
+  const currentPassword = formData.get("currentPassword");
+  if (!(await verifyPassword(currentPassword))) {
+    return { success: false, error: "Incorrect current password." };
+  }
+
+  try {
+    const headersList = await headers();
+    const result = await getIdentityService().bootstrapOwner({
+      username: formData.get("username"),
+      displayName: formData.get("displayName"),
+      password: currentPassword,
+      userAgent: headersList.get("user-agent") || "Unknown Device",
+    });
+    const cookieStore = await cookies();
+    const legacySessionId = cookieStore.get(SESSION_COOKIE_NAME)?.value;
+    if (legacySessionId) await invalidateSession(legacySessionId);
+    setSessionCookie(cookieStore, result.sessionToken);
+    revalidatePath("/settings");
+    return { success: true, user: result.user };
+  } catch (error) {
+    return identityActionFailure(error, "Unable to create the named administrator.");
+  }
+}
+
+export async function createNamedUser(formData) {
+  const principal = await requirePermission("system.manage_users");
+  try {
+    const user = await getIdentityService().createUser({
+      actor: principal,
+      username: formData.get("username"),
+      displayName: formData.get("displayName"),
+      password: formData.get("password"),
+      role: formData.get("role"),
+    });
+    revalidatePath("/settings");
+    return { success: true, user };
+  } catch (error) {
+    return identityActionFailure(error, "Unable to create the user.");
+  }
+}
+
+export async function setNamedUserStatus(formData) {
+  const principal = await requirePermission("system.manage_users");
+  try {
+    await getIdentityService().setUserStatus({
+      actor: principal,
+      userId: formData.get("userId"),
+      status: formData.get("status"),
+    });
+    revalidatePath("/settings");
+    return { success: true };
+  } catch (error) {
+    return identityActionFailure(error, "Unable to change the account status.");
+  }
+}
+
+export async function setNamedUserRole(formData) {
+  const principal = await requirePermission("system.manage_users");
+  try {
+    await getIdentityService().setUserRole({
+      actor: principal,
+      userId: formData.get("userId"),
+      role: formData.get("role"),
+    });
+    revalidatePath("/settings");
+    return { success: true };
+  } catch (error) {
+    return identityActionFailure(error, "Unable to change the user role.");
+  }
+}
+
+export async function resetNamedUserPassword(formData) {
+  const principal = await requirePermission("system.manage_users");
+  const password = formData.get("password");
+  if (password !== formData.get("confirmPassword")) {
+    return { success: false, error: "Password confirmation does not match." };
+  }
+  try {
+    await getIdentityService().resetUserPassword({
+      actor: principal,
+      userId: formData.get("userId"),
+      password,
+    });
+    return { success: true };
+  } catch (error) {
+    return identityActionFailure(error, "Unable to reset the user password.");
+  }
+}
+
 export async function logoutAction() {
   "use server";
 
@@ -717,13 +874,13 @@ export async function logoutAction() {
 }
 
 export async function getSettings() {
-  await requireAuthenticatedSession();
+  await requirePermission("system.manage_settings");
   const config = await getConfig();
   return config;
 }
 
 export async function updateSettings(formData) {
-  await requireAuthenticatedSession();
+  await requirePermission("system.manage_settings");
   try {
     const currentConfig = await getConfig();
 
@@ -829,7 +986,7 @@ export async function updateSettings(formData) {
 }
 
 export async function updatePassword(formData) {
-  await requireAuthenticatedSession();
+  const principal = await requireAuthenticatedSession();
   const currentPassword = formData.get("currentPassword");
   const newPassword = formData.get("newPassword");
   const confirmPassword = formData.get("confirmPassword");
@@ -848,6 +1005,20 @@ export async function updatePassword(formData) {
   }
 
   try {
+    if (principal.authMode === "named") {
+      await getIdentityService().changeOwnPassword({
+        actor: principal,
+        currentPassword,
+        newPassword,
+      });
+      const cookieStore = await cookies();
+      clearSessionCookie(cookieStore);
+      return {
+        success: true,
+        message: "Password updated. Sign in again with your new password.",
+      };
+    }
+
     // 1. Verify the current password using the dedicated function
     const isCurrentPasswordValid = await verifyPassword(currentPassword);
     if (!isCurrentPasswordValid) {
@@ -885,7 +1056,7 @@ export async function updatePassword(formData) {
 }
 
 export async function regenerateApiKey() {
-  await requireAuthenticatedSession();
+  await requirePermission("system.manage_settings");
   try {
     const config = await getAuthConfig();
     const newApiKey = crypto.randomBytes(32).toString("hex");
@@ -904,7 +1075,7 @@ export async function regenerateApiKey() {
 }
 
 export async function getCameraNames() {
-  await requireAuthenticatedSession();
+  await requirePermission("plate.read");
   try {
     const cameraNames = await getDistinctCameraNames();
     return {
@@ -921,7 +1092,7 @@ export async function getCameraNames() {
 }
 
 export async function correctPlateRead(formData) {
-  await requireAuthenticatedSession();
+  await requirePermission("plate.review");
   try {
     const readId = formData.get("readId");
     const oldPlateNumber = formData.get("oldPlateNumber");
@@ -947,13 +1118,13 @@ export async function correctPlateRead(formData) {
 }
 
 export async function getTimeFormat() {
-  await requireAuthenticatedSession();
+  await requirePermission("plate.read");
   const config = await getConfig();
   return config.general.timeFormat;
 }
 
 export async function toggleIgnorePlate(formData) {
-  await requireAuthenticatedSession();
+  await requirePermission("plate.review");
   try {
     const plateNumber = formData.get("plateNumber");
     const ignore = formData.get("ignore") === "true";
@@ -967,7 +1138,7 @@ export async function toggleIgnorePlate(formData) {
 }
 
 export async function revalidatePlatesPage() {
-  await requireAuthenticatedSession();
+  await requirePermission("plate.read");
   try {
     console.log("🔴 Starting revalidation");
     revalidatePath("/live_feed");
@@ -979,7 +1150,7 @@ export async function revalidatePlatesPage() {
 }
 
 export async function fetchPlateImagePreviews(plateNumber, timeFrame) {
-  await requireAuthenticatedSession();
+  await requirePermission("plate.read");
   const endDate = new Date();
   const startDate = new Date();
 
@@ -1004,7 +1175,7 @@ export async function fetchPlateImagePreviews(plateNumber, timeFrame) {
 }
 
 export async function getSystemLogs() {
-  await requireAuthenticatedSession();
+  await requirePermission("system.view_audit");
   try {
     const logFile = path.join(process.cwd(), "logs", "app.log");
     const content = await fs.readFile(logFile, "utf8");
@@ -1043,22 +1214,22 @@ export async function getSystemLogs() {
 }
 
 export async function dbBackfill() {
-  await requireAuthenticatedSession();
+  await requirePermission("maintenance.manage");
   return await updateActions.dbBackfill();
 }
 
 export async function migrateImageDataToFiles() {
-  await requireAuthenticatedSession();
+  await requirePermission("maintenance.manage");
   return await updateActions.migrateImageDataToFiles();
 }
 
 export async function clearImageData() {
-  await requireAuthenticatedSession();
+  await requirePermission("maintenance.manage");
   return await updateActions.clearImageData();
 }
 
 export async function checkUpdateRequired() {
-  await requireAuthenticatedSession();
+  await requirePermission("maintenance.manage");
   try {
     const updateStatus = await checkUpdateStatus();
     return !updateStatus;
@@ -1069,17 +1240,17 @@ export async function checkUpdateRequired() {
 }
 
 export async function completeUpdate() {
-  await requireAuthenticatedSession();
+  await requirePermission("maintenance.manage");
   return await updateActions.completeUpdate();
 }
 
 export async function skipImageMigration() {
-  await requireAuthenticatedSession();
+  await requirePermission("maintenance.manage");
   return await updateActions.skipImageMigration();
 }
 
 export async function validatePlateRecord(readId, value) {
-  await requireAuthenticatedSession();
+  await requirePermission("plate.review");
   try {
     await confirmPlateRecord(readId, value);
 
@@ -1091,7 +1262,7 @@ export async function validatePlateRecord(readId, value) {
 }
 
 export async function addDBPlate(plate_number, flagged = false) {
-  await requireAuthenticatedSession();
+  await requirePermission("plate.review");
   try {
     await addUnseenPlate(plate_number, flagged);
     revalidatePath("/flagged");

@@ -4,6 +4,7 @@ import {
   serializePlateExportJson,
 } from "@/lib/plate-export.mjs";
 import { getConfig } from "@/lib/settings";
+import { denyUnlessRoutePermission } from "@/lib/route-permission.mjs";
 
 export const dynamic = "force-dynamic";
 
@@ -16,6 +17,8 @@ function parseHour(value) {
 }
 
 export async function GET(request) {
+  const denied = await denyUnlessRoutePermission("export.create");
+  if (denied) return denied;
   try {
     const url = new URL(request.url);
     const format = (url.searchParams.get("format") || "csv").toLowerCase();
