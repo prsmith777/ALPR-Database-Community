@@ -18,7 +18,6 @@ import {
 } from "lucide-react";
 
 import { logoutAction } from "@/app/actions";
-import { ChatButton } from "@/components/chat/ChatButton";
 import { useAccess } from "@/components/auth/AccessProvider";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { Button } from "@/components/ui/button";
@@ -115,7 +114,6 @@ export function Sidebar() {
                 Toggle theme
               </TooltipContent>
             </Tooltip>
-            <ChatButton />
             {canViewAudit && (
             <Tooltip delayDuration={0}>
               <TooltipTrigger asChild>

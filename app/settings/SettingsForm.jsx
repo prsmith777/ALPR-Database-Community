@@ -3,8 +3,6 @@
 import { useState } from "react";
 import { useTransition, useOptimistic } from "react";
 import {
-  Eye,
-  EyeOff,
   Settings2,
   X,
   Database,
@@ -17,6 +15,7 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { PasswordInput } from "@/components/ui/password-input";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
@@ -355,10 +354,10 @@ export default function SettingsForm({
           <Label htmlFor="dbPassword" className="text-sm font-medium">
             Database Password
           </Label>
-          <Input
+          <PasswordInput
             id="dbPassword"
             name="dbPassword"
-            type="password"
+            visibilityLabel="database password"
             defaultValue={initialSettings.database.password}
             placeholder="••••••••"
             autoComplete="new-password"

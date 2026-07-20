@@ -38,6 +38,11 @@ test("identity roles expose the agreed least-privilege permission matrix", () =>
   ]);
   assert.equal(isSystemRole("Operator"), true);
   assert.equal(isPermissionKey("mqtt.manage"), true);
+  assert.equal(isPermissionKey("assistant.use"), true);
+  assert.equal(ROLE_PERMISSIONS.administrator.includes("assistant.use"), true);
+  assert.equal(ROLE_PERMISSIONS.operator.includes("assistant.use"), false);
+  assert.equal(ROLE_PERMISSIONS.viewer.includes("assistant.use"), false);
+  assert.equal(ROLE_PERMISSIONS.auditor.includes("assistant.use"), false);
   assert.equal(isPermissionKey("shell.execute"), false);
 });
 
@@ -77,6 +82,8 @@ test("identity migration creates durable normalized security records", async () 
   assert.match(migration, /audit_events_append_only/);
   assert.match(migration, /prevent_audit_event_mutation/);
   assert.match(migration, /2026071901_identity_audit_foundation/);
+  assert.match(migration, /assistant\.use/);
+  assert.match(migration, /2026071902_assistant_authorization/);
 });
 
 test("foundation migration preserves the existing login until cutover", async () => {

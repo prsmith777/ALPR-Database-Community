@@ -593,6 +593,7 @@ VALUES
     ('system.manage_users', 'Create, disable, delete, and assign roles to users.'),
     ('system.manage_settings', 'Change application and integration settings.'),
     ('system.view_audit', 'View append-only audit history.'),
+    ('assistant.use', 'Use configured AI assistants for ALPR queries.'),
     ('plate.read', 'View plate reads, images, and known-plate details.'),
     ('plate.review', 'Confirm, correct, or reject plate reads.'),
     ('plate.delete', 'Delete plate reads and plate records.'),
@@ -647,5 +648,12 @@ INSERT INTO public.schema_migrations (version, description)
 VALUES (
     '2026071901_identity_audit_foundation',
     'Create users, roles, permissions, database sessions, scoped credentials, and append-only audit events.'
+)
+ON CONFLICT (version) DO NOTHING;
+
+INSERT INTO public.schema_migrations (version, description)
+VALUES (
+    '2026071902_assistant_authorization',
+    'Restrict AI Assistant access to explicitly authorized administrators.'
 )
 ON CONFLICT (version) DO NOTHING;
