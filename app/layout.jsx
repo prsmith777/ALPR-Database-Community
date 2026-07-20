@@ -4,8 +4,6 @@ import { ThemeProvider } from "next-themes";
 import { initializeAuth } from "@/lib/auth";
 import { Suspense } from "react";
 import { DashboardSkeleton } from "@/components/DashboardSkeleton";
-import { ChatProvider } from "@/components/chat/ChatContext";
-import { ChatInterface } from "@/components/chat/ChatInterface";
 import "@/logging/logger";
 import { PROJECT_DESCRIPTION, PROJECT_NAME } from "@/lib/project-info";
 
@@ -116,10 +114,7 @@ export default async function RootLayout({ children }) {
       >
         <Suspense fallback={<DashboardSkeleton />}>
           <ThemeProvider attribute="class" defaultTheme="dark" enableSystem>
-            <ChatProvider>
-              {children}
-              <ChatInterface />
-            </ChatProvider>
+            {children}
           </ThemeProvider>
         </Suspense>
       </body>
