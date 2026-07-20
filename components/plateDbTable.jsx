@@ -1,5 +1,6 @@
 "use client";
 import { useState, useEffect, useDeferredValue } from "react";
+import Link from "next/link";
 import {
   Tag,
   Plus,
@@ -14,6 +15,7 @@ import {
   ChevronsUpDown,
   Eye,
   MoreHorizontal,
+  History,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -84,7 +86,6 @@ import {
   getCameraNames,
 } from "@/app/actions";
 import Image from "next/image";
-import Link from "next/link";
 import { formatPlateDateTime } from "@/lib/plate-date.mjs";
 import PlateDatabaseFilters from "@/components/PlateDatabaseFilters";
 import { useAccess } from "@/components/auth/AccessProvider";
@@ -643,6 +644,19 @@ export default function PlateTable({ matchingSettings }) {
                           </TooltipTrigger>
                           <TooltipContent>Add to known plates</TooltipContent>
                         </Tooltip>}
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <Button variant="ghost" size="icon" asChild>
+                              <Link
+                                href={`/live_feed?search=${encodeURIComponent(plate.plate_number)}`}
+                                aria-label={`Review individual reads for ${plate.plate_number}`}
+                              >
+                                <History className="h-4 w-4" />
+                              </Link>
+                            </Button>
+                          </TooltipTrigger>
+                          <TooltipContent>Review individual reads</TooltipContent>
+                        </Tooltip>
                         {canReview && <Tooltip>
                           <TooltipTrigger asChild>
                             <Button

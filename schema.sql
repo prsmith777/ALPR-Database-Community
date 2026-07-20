@@ -70,6 +70,9 @@ SET default_table_access_method = heap;
 
 CREATE TABLE public.known_plates (
     plate_number character varying(10) NOT NULL,
+    observed_plate character varying(10),
+    review_status character varying(24) DEFAULT 'unreviewed' NOT NULL,
+    review_revision integer DEFAULT 0 NOT NULL,
     name character varying(255),
     notes text,
     created_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP NOT NULL,

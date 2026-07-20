@@ -7,6 +7,10 @@ import {
 import { sendPushoverNotification } from "@/lib/notifications";
 import { processAcceptedPlateReadEffects } from "@/lib/accepted-plate-read-effects.mjs";
 import { createPlateReadEventIdentity } from "@/lib/plate-read-event-identity.mjs";
+import {
+  recordAliasApplicationWithClient,
+  resolvePlateAliasWithClient,
+} from "@/lib/plate-review-repository.mjs";
 import { MqttAcceptedReadService } from "@/lib/mqtt/accepted-read-service.mjs";
 import { MqttRepository } from "@/lib/mqtt/repository.mjs";
 import { getConfig } from "@/lib/settings";
@@ -254,10 +258,23 @@ async function processPlateRead(data) {
     const pendingEffects = [];
 
     for (const plateData of plates) {
-      // Ignored reads must not store images, create database rows, or notify.
-      const isIgnored = await isPlateIgnored(plateData.plate_number);
+      const observedPlate = plateData.plate_number;
+      const alias = await resolvePlateAliasWithClient(dbClient, {
+        observedPlate,
+        cameraName: camera,
+      });
+      const effectivePlate = alias?.target_plate || observedPlate;
+      const effectivePlateData = {
+        ...plateData,
+        observed_plate: observedPlate,
+        plate_number: effectivePlate,
+      };
+
+      // Ignore decisions use the effective identity so a reviewed alias inherits
+      // the known plate's behavior without altering the immutable observation.
+      const isIgnored = await isPlateIgnored(effectivePlate);
       if (isIgnored) {
-        ignoredPlates.push(plateData.plate_number);
+        ignoredPlates.push(observedPlate);
         continue;
       }
 
@@ -292,7 +309,7 @@ async function processPlateRead(data) {
       }
 
       const eventIdentity = createPlateReadEventIdentity({
-        plateNumber: plateData.plate_number,
+        plateNumber: observedPlate,
         timestamp,
         cameraName: camera,
       });
@@ -306,6 +323,11 @@ async function processPlateRead(data) {
         new_read AS (
           INSERT INTO plate_reads (
             plate_number,
+            observed_plate,
+            applied_alias_id,
+            review_status,
+            review_revision,
+            validated,
             image_data,
             image_path,
             thumbnail_path,
@@ -318,34 +340,40 @@ async function processPlateRead(data) {
             plate_annotation,
             event_identity
           )
-          SELECT $1, $2, $3, $4, $5, $6::varchar, $7, $8, $9, $10, $11, $12
+          SELECT $1, $2, $3,
+                 CASE WHEN $3::bigint IS NULL THEN 'unreviewed' ELSE 'alias_resolved' END,
+                 CASE WHEN $3::bigint IS NULL THEN 0 ELSE 1 END,
+                 ($3::bigint IS NOT NULL),
+                 $4, $5, $6, $7, $8::varchar, $9, $10, $11, $12, $13, $14
           WHERE NOT EXISTS (
             SELECT 1 FROM plate_reads
-            WHERE plate_number = $1 AND timestamp = $5
-              AND camera_name IS NOT DISTINCT FROM $6::varchar
+            WHERE observed_plate = $2 AND timestamp = $7
+              AND camera_name IS NOT DISTINCT FROM $8::varchar
           )
           ON CONFLICT DO NOTHING
           RETURNING id
         )
         SELECT id FROM new_read`,
         [
-          plateData.plate_number,
+          effectivePlate,
+          observedPlate,
+          alias?.id || null,
           null,
           imagePaths.imagePath,
           imagePaths.thumbnailPath,
           timestamp,
           camera,
           biPath,
-          plateData.confidence || null,
-          plateData.crop_coordinates || null,
-          plateData.ocr_annotation || null,
-          plateData.plate_annotation || null,
+          effectivePlateData.confidence || null,
+          effectivePlateData.crop_coordinates || null,
+          effectivePlateData.ocr_annotation || null,
+          effectivePlateData.plate_annotation || null,
           eventIdentity,
         ]
       );
 
       if (result.rows.length === 0) {
-        duplicatePlates.push(plateData.plate_number);
+        duplicatePlates.push(observedPlate);
         await fileStorage
           .deleteImage(imagePaths.imagePath, imagePaths.thumbnailPath)
           .catch(() => console.error("Duplicate plate image cleanup failed"));
@@ -355,15 +383,23 @@ async function processPlateRead(data) {
         }
       } else {
         const readId = result.rows[0].id;
+        await recordAliasApplicationWithClient(dbClient, {
+          readId,
+          eventIdentity,
+          alias,
+          observedPlate,
+        });
         processedPlates.push({
-          plate: plateData.plate_number,
+          plate: effectivePlate,
+          observedPlate,
           id: readId,
+          aliasApplied: Boolean(alias),
         });
 
         const acceptedRead = {
-          ...plateData,
+          ...effectivePlateData,
           id: readId,
-          plate_number: plateData.plate_number,
+          plate_number: effectivePlate,
           camera_name: camera,
           timestamp: data.timestamp || null,
           persisted_timestamp: timestamp,

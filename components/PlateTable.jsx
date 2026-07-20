@@ -25,6 +25,8 @@ import {
   SlidersHorizontal,
   CircleCheck,
   Check,
+  History,
+  RotateCcw,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -114,6 +116,52 @@ const SortButton = ({ label, field, sort, onSort }) => {
   );
 };
 
+const REVIEW_STATUS_LABELS = {
+  unreviewed: "Unreviewed",
+  confirmed: "Confirmed",
+  corrected: "Corrected",
+  rejected: "Rejected",
+  alias_resolved: "Alias resolved",
+};
+
+const REVIEW_STATUS_CLASSES = {
+  unreviewed: "border-amber-500/40 text-amber-500",
+  confirmed: "border-green-500/40 text-green-500",
+  corrected: "border-blue-500/40 text-blue-500",
+  rejected: "border-red-500/40 text-red-500",
+  alias_resolved: "border-violet-500/40 text-violet-400",
+};
+
+function PlateIdentity({ plate, compact = false }) {
+  const status = plate.review_status || (plate.validated ? "confirmed" : "unreviewed");
+  const observed = plate.observed_plate || plate.plate_number;
+  const wasResolved = observed !== plate.plate_number;
+
+  return (
+    <div className={compact ? "space-y-1" : "space-y-1.5"}>
+      <div className="flex flex-wrap items-center gap-2">
+        <span>{plate.plate_number}</span>
+        <Badge
+          variant="outline"
+          className={`px-1.5 py-0 text-[10px] font-sans ${REVIEW_STATUS_CLASSES[status] || ""}`}
+        >
+          {REVIEW_STATUS_LABELS[status] || status}
+        </Badge>
+      </div>
+      {wasResolved && (
+        <div className="text-[11px] font-sans text-muted-foreground">
+          Camera read {observed}
+        </div>
+      )}
+      {plate.known_name && (
+        <div className="text-gray-500 dark:text-gray-400 font-sans">
+          {plate.known_name}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function PlateTable({
   data,
   loading,
@@ -128,6 +176,9 @@ export default function PlateTable({
   onValidate,
   availableCameras,
   onCorrectPlate,
+  onPreviewCorrection,
+  onReviewHistory,
+  onReverseReview,
   timeFormat = 12,
   sort = { field: "", direction: "" },
   onSort = () => {},
@@ -136,7 +187,10 @@ export default function PlateTable({
   console.log("PlateTable rendering with data:", data.length);
 
   const { can } = useAccess();
+  const canRead = can("plate.read");
   const canReview = can("plate.review");
+  const canBatchReview = can("plate.review.batch");
+  const canManageAliases = can("plate.alias.manage");
   const canDelete = can("plate.delete");
   const canManageKnownPlates = can("known_plate.manage");
   const canManageTags = can("tag.manage");
@@ -149,6 +203,15 @@ export default function PlateTable({
   const [newKnownPlate, setNewKnownPlate] = useState({ name: "", notes: "" });
   const [correction, setCorrection] = useState(null);
   const [isCorrectPlateOpen, setIsCorrectPlateOpen] = useState(false);
+  const [correctionError, setCorrectionError] = useState("");
+  const [correctionPreview, setCorrectionPreview] = useState(null);
+  const [historyState, setHistoryState] = useState({
+    open: false,
+    read: null,
+    loading: false,
+    entries: [],
+    error: "",
+  });
   const [selectedImage, setSelectedImage] = useState(null);
   const [selectedIndex, setSelectedIndex] = useState(-1);
   const [searchInput, setSearchInput] = useState(filters.search || "");
@@ -260,6 +323,11 @@ export default function PlateTable({
       url: imageUrl,
       thumbnail: thumbnailUrl,
       plateNumber: plate.plate_number,
+      observedPlate: plate.observed_plate || plate.plate_number,
+      reviewStatus: plate.review_status || (plate.validated ? "confirmed" : "unreviewed"),
+      reviewRevision: plate.review_revision || 0,
+      appliedAliasId: plate.applied_alias_id || null,
+      cameraName: plate.camera_name || "",
       id: plate.id,
       validated: plate.validated,
       bi_path: bi_url,
@@ -275,10 +343,22 @@ export default function PlateTable({
     if (selectedImage && data && data.length > 0) {
       const currentPlate = data.find((plate) => plate.id === selectedImage.id);
 
-      if (currentPlate && currentPlate.validated !== selectedImage.validated) {
-        setSelectedImage((prev) => ({
-          ...prev,
+      if (
+        currentPlate &&
+        (currentPlate.validated !== selectedImage.validated ||
+          currentPlate.plate_number !== selectedImage.plateNumber ||
+          currentPlate.review_status !== selectedImage.reviewStatus ||
+          currentPlate.review_revision !== selectedImage.reviewRevision)
+      ) {
+        setSelectedImage((previous) => ({
+          ...previous,
           validated: currentPlate.validated,
+          plateNumber: currentPlate.plate_number,
+          observedPlate: currentPlate.observed_plate || currentPlate.plate_number,
+          reviewStatus:
+            currentPlate.review_status ||
+            (currentPlate.validated ? "confirmed" : "unreviewed"),
+          reviewRevision: currentPlate.review_revision || 0,
         }));
       }
     }
@@ -426,24 +506,78 @@ export default function PlateTable({
     setIsDeleteConfirmOpen(false);
   };
 
-  const handleCorrectSubmit = async () => {
-    if (!correction) return;
-
+  const correctionFormData = () => {
     const formData = new FormData();
     formData.append("readId", correction.id);
     formData.append("oldPlateNumber", correction.plateNumber);
+    formData.append("aliasSourcePlate", correction.observedPlate);
     formData.append("newPlateNumber", correction.newPlateNumber);
+    formData.append("cameraName", correction.cameraName || "");
     formData.append("correctAll", correction.correctAll.toString());
-    formData.append("removePrevious", correction.removePlate.toString());
+    formData.append("unreviewedOnly", correction.unreviewedOnly.toString());
+    formData.append("batchCameraOnly", correction.batchCameraOnly.toString());
+    formData.append("rememberAlias", correction.rememberAlias.toString());
+    formData.append("aliasScope", correction.aliasScope);
+    formData.append("reason", correction.reason);
+    formData.append("notes", correction.notes);
+    return formData;
+  };
 
-    await onCorrectPlate(formData);
-    selectedImage &&
+  const handleCorrectSubmit = async () => {
+    if (!correction) return;
+    setCorrectionError("");
+    const result = await onCorrectPlate(correctionFormData());
+    if (!result?.success) {
+      setCorrectionError(result?.error || "Unable to correct this plate read.");
+      return;
+    }
+    if (result.warning) window.alert(result.warning);
+    if (selectedImage) {
       setSelectedImage((prev) => ({
         ...prev,
         plateNumber: correction.newPlateNumber,
+        reviewStatus: "corrected",
+        validated: true,
       }));
+    }
     setCorrection(null);
+    setCorrectionPreview(null);
     setIsCorrectPlateOpen(false);
+  };
+
+  const handleCorrectionPreview = async () => {
+    if (!correction?.correctAll) return;
+    setCorrectionError("");
+    const result = await onPreviewCorrection(correctionFormData());
+    if (!result?.success) {
+      setCorrectionError(result?.error || "Unable to preview matching reads.");
+      return;
+    }
+    setCorrectionPreview(result.data);
+  };
+
+  const openReviewHistory = async (read) => {
+    setHistoryState({ open: true, read, loading: true, entries: [], error: "" });
+    const result = await onReviewHistory(read.id);
+    setHistoryState((current) => ({
+      ...current,
+      loading: false,
+      entries: result?.success ? result.data : [],
+      error: result?.success ? "" : result?.error || "Unable to load review history.",
+    }));
+  };
+
+  const handleReverseReview = async () => {
+    if (!historyState.read) return;
+    const formData = new FormData();
+    formData.append("readId", historyState.read.id);
+    formData.append("reason", "administrator_reversal");
+    const result = await onReverseReview(formData);
+    if (!result?.success) {
+      setHistoryState((current) => ({ ...current, error: result?.error || "Unable to reverse review." }));
+      return;
+    }
+    await openReviewHistory(historyState.read);
   };
 
   const clearFilters = () => {
@@ -1225,12 +1359,7 @@ export default function PlateTable({
                           plate.flagged && "text-[#F31260]"
                         }`}
                       >
-                        {plate.plate_number}
-                        {plate.known_name && (
-                          <div className="text-gray-500 dark:text-gray-400 font-sans">
-                            {plate.known_name}
-                          </div>
-                        )}
+                        <PlateIdentity plate={plate} />
                       </TableCell>
                       <TableCell className="hidden sm:table-cell">
                         {formatConfidence(plate.confidence)}
@@ -1355,9 +1484,16 @@ export default function PlateTable({
                                   setCorrection({
                                     id: plate.id,
                                     plateNumber: plate.plate_number,
+                                    observedPlate: plate.observed_plate || plate.plate_number,
+                                    cameraName: plate.camera_name || "",
                                     newPlateNumber: plate.plate_number,
                                     correctAll: false,
-                                    removePlate: false,
+                                    unreviewedOnly: true,
+                                    batchCameraOnly: false,
+                                    rememberAlias: false,
+                                    aliasScope: "camera",
+                                    reason: "ocr_character_error",
+                                    notes: "",
                                   });
                                   setIsCorrectPlateOpen(true);
                                 }}
@@ -1366,6 +1502,19 @@ export default function PlateTable({
                               </Button>
                             </TooltipTrigger>
                             <TooltipContent>Correct plate</TooltipContent>
+                          </Tooltip>}
+                          {canRead && <Tooltip>
+                            <TooltipTrigger asChild>
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                aria-label={`Review history for ${plate.plate_number}`}
+                                onClick={() => openReviewHistory(plate)}
+                              >
+                                <History className="h-4 w-4" />
+                              </Button>
+                            </TooltipTrigger>
+                            <TooltipContent>Review history</TooltipContent>
                           </Tooltip>}
                           {biHost && plate.bi_path ? (
                             <Tooltip>
@@ -1417,8 +1566,8 @@ export default function PlateTable({
                                 variant="ghost"
                                 size="icon"
                                 aria-label={`${
-                                  plate?.validated ? "Unconfirm" : "Confirm"
-                                } AI label for ${plate.plate_number}`}
+                                  plate?.validated ? "Reopen review for" : "Confirm detected plate"
+                                } ${plate.plate_number}`}
                                 className={
                                   plate?.validated
                                     ? "text-green-500 hover:text-green-700"
@@ -1437,8 +1586,8 @@ export default function PlateTable({
                             </TooltipTrigger>
                             <TooltipContent>
                               {plate?.validated
-                                ? "Unconfirm AI label"
-                                : "Confirm AI label"}
+                                ? "Reopen review"
+                                : "Confirm detected plate"}
                             </TooltipContent>
                           </Tooltip>}
 
@@ -1496,17 +1645,12 @@ export default function PlateTable({
                                 plate.flagged && "text-[#F31260]"
                               }`}
                             >
-                              {plate.plate_number}
+                              <PlateIdentity plate={plate} compact />
                             </div>
-                            {plate.known_name && (
-                              <div className="text-xs text-muted-foreground">
-                                {plate.known_name}
-                              </div>
-                            )}
                           </div>
 
                           {/* Mobile actions dropdown */}
-                          {(canManageKnownPlates || canReview || canDelete || (biHost && plate.bi_path)) && <DropdownMenu>
+                          {(canRead || canManageKnownPlates || canReview || canDelete || (biHost && plate.bi_path)) && <DropdownMenu>
                             <Tooltip>
                               <TooltipTrigger asChild>
                                 <DropdownMenuTrigger asChild>
@@ -1537,15 +1681,26 @@ export default function PlateTable({
                                   setCorrection({
                                     id: plate.id,
                                     plateNumber: plate.plate_number,
+                                    observedPlate: plate.observed_plate || plate.plate_number,
+                                    cameraName: plate.camera_name || "",
                                     newPlateNumber: plate.plate_number,
                                     correctAll: false,
-                                    removePlate: false,
+                                    unreviewedOnly: true,
+                                    batchCameraOnly: false,
+                                    rememberAlias: false,
+                                    aliasScope: "camera",
+                                    reason: "ocr_character_error",
+                                    notes: "",
                                   });
                                   setIsCorrectPlateOpen(true);
                                 }}
                               >
                                 <Pencil className="h-4 w-4 mr-2" />
                                 Correct Plate
+                              </DropdownMenuItem>}
+                              {canRead && <DropdownMenuItem onClick={() => openReviewHistory(plate)}>
+                                <History className="h-4 w-4 mr-2" />
+                                Review History
                               </DropdownMenuItem>}
                               {biHost && plate.bi_path ? (
                                 <DropdownMenuItem
@@ -1776,6 +1931,22 @@ export default function PlateTable({
                 License Plate Image - {selectedImage?.plateNumber}
               </DialogTitle>
             </DialogHeader>
+            {selectedImage && (
+              <div className="grid gap-3 rounded-lg border p-3 text-sm sm:grid-cols-3">
+                <div>
+                  <div className="text-xs uppercase text-muted-foreground">Observed</div>
+                  <div className="font-mono">{selectedImage.observedPlate}</div>
+                </div>
+                <div>
+                  <div className="text-xs uppercase text-muted-foreground">Effective</div>
+                  <div className="font-mono">{selectedImage.plateNumber}</div>
+                </div>
+                <div>
+                  <div className="text-xs uppercase text-muted-foreground">Review status</div>
+                  <div>{REVIEW_STATUS_LABELS[selectedImage.reviewStatus] || selectedImage.reviewStatus}</div>
+                </div>
+              </div>
+            )}
             <div className="relative w-full h-[40vh] sm:h-[60vh]">
               {selectedImage && (
                 <ImageViewer
@@ -1795,15 +1966,35 @@ export default function PlateTable({
                       setCorrection({
                         id: selectedImage.id,
                         plateNumber: selectedImage.plateNumber,
+                        observedPlate: selectedImage.observedPlate || selectedImage.plateNumber,
+                        cameraName: selectedImage.cameraName || "",
                         newPlateNumber: selectedImage.plateNumber,
                         correctAll: false,
-                        removePlate: false,
+                        unreviewedOnly: true,
+                        batchCameraOnly: false,
+                        rememberAlias: false,
+                        aliasScope: "camera",
+                        reason: "ocr_character_error",
+                        notes: "",
                       });
                       setIsCorrectPlateOpen(true);
                     }}
                   >
                     <Edit className="h-3 w-3 sm:h-4 sm:w-4 mr-1 sm:mr-2" />
                     <span className="whitespace-nowrap">Correct Plate</span>
+                  </Button>}
+                  {canRead && <Button
+                    variant="outline"
+                    size="sm"
+                    className="text-xs sm:text-sm"
+                    onClick={() => openReviewHistory({
+                      id: selectedImage.id,
+                      plate_number: selectedImage.plateNumber,
+                      observed_plate: selectedImage.observedPlate,
+                    })}
+                  >
+                    <History className="h-3 w-3 sm:h-4 sm:w-4 mr-1 sm:mr-2" />
+                    <span className="whitespace-nowrap">Review History</span>
                   </Button>}
                   {canManageKnownPlates && <Button
                     variant="outline"
@@ -1863,7 +2054,7 @@ export default function PlateTable({
                     }}
                   >
                     <Check className="h-3 w-3 sm:h-4 sm:w-4 mr-1 sm:mr-2" />
-                    <span className="whitespace-nowrap">Confirm AI Label</span>
+                    <span className="whitespace-nowrap">{selectedImage?.validated ? "Reopen review" : "Confirm detected plate"}</span>
                   </Button>}
                 </div>
                 <div className="flex justify-end space-x-2">
@@ -1982,96 +2173,209 @@ export default function PlateTable({
 
         <Dialog
           open={correction !== null}
-          onOpenChange={(open) => !open && setCorrection(null)}
+          onOpenChange={(open) => {
+            if (!open) {
+              setCorrection(null);
+              setCorrectionError("");
+              setCorrectionPreview(null);
+            }
+          }}
         >
-          <DialogContent className="sm:max-w-lg">
+          <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-2xl">
             <DialogHeader>
-              <DialogTitle>Correct Plate Number</DialogTitle>
+              <DialogTitle>Correct this plate read</DialogTitle>
               <DialogDescription>
-                Update the incorrect plate number recognition.
+                The camera observation is preserved. Searches, known-plate details,
+                tags, rules, and notifications use the effective plate.
               </DialogDescription>
             </DialogHeader>
-            <div className="grid gap-4 py-4">
-              {/* Current Plate Input */}
-              <div className="grid w-full items-center gap-2">
-                {" "}
-                {/* Added w-full and changed gap-4 to gap-2 for tighter label/input spacing */}
-                <Label htmlFor="current-plate">Current</Label>
-                <Input
-                  id="current-plate"
-                  value={correction?.plateNumber || ""}
-                  disabled
-                  className="font-mono text-base p-2 h-10 w-full" // Increased text size, padding, height, and added w-full
-                />
+
+            <div className="grid gap-5 py-2">
+              <div className="grid gap-3 rounded-lg border p-4 sm:grid-cols-2">
+                <div>
+                  <div className="text-xs uppercase tracking-wide text-muted-foreground">
+                    Camera observed
+                  </div>
+                  <div className="font-mono text-lg">{correction?.observedPlate}</div>
+                </div>
+                <div>
+                  <div className="text-xs uppercase tracking-wide text-muted-foreground">
+                    Current effective plate
+                  </div>
+                  <div className="font-mono text-lg">{correction?.plateNumber}</div>
+                </div>
               </div>
-              {/* New Plate Input */}
-              <div className="grid w-full items-center gap-2 mb-4">
-                {" "}
-                {/* Added w-full and changed gap-4 to gap-2 */}
-                <Label htmlFor="new-plate">New</Label>
+
+              <div className="grid gap-2">
+                <Label htmlFor="new-plate">Corrected effective plate</Label>
                 <Input
                   id="new-plate"
                   value={correction?.newPlateNumber || ""}
-                  onChange={(e) => {
-                    setCorrection((curr) => ({
-                      ...curr,
-                      newPlateNumber: e.target.value,
-                    }));
-                  }}
-                  onBlur={(e) => {
-                    setCorrection((curr) => ({
-                      ...curr,
-                      newPlateNumber: e.target.value.toUpperCase(),
-                    }));
-                  }}
-                  className="font-mono text-base p-2 h-10 w-full uppercase" // Increased text size, padding, height, and added w-full
-                  placeholder="ENTER NEW PLATE NUMBER"
-                />
-              </div>
-              {/* Switches */}
-              <div className="flex items-center space-x-2">
-                <Switch
-                  id="correct-all"
-                  checked={correction?.correctAll || false}
-                  onCheckedChange={(checked) =>
-                    setCorrection((curr) => ({
-                      ...curr,
-                      correctAll: checked,
+                  onChange={(event) =>
+                    setCorrection((current) => ({
+                      ...current,
+                      newPlateNumber: event.target.value.toUpperCase(),
                     }))
                   }
+                  className="h-10 font-mono text-base uppercase"
+                  placeholder="ENTER CORRECT PLATE"
                 />
-                <Label htmlFor="correct-all">
-                  Correct all occurrences of this plate number
-                </Label>
               </div>
-              <div className="flex items-center space-x-2">
-                <Switch
-                  id="remove-plate"
-                  checked={correction?.removePlate || false}
-                  onCheckedChange={(checked) =>
-                    setCorrection((curr) => ({
-                      ...curr,
-                      removePlate: checked,
-                    }))
+
+              <div className="grid gap-2">
+                <Label htmlFor="correction-reason">Reason</Label>
+                <Select
+                  value={correction?.reason || "ocr_character_error"}
+                  onValueChange={(value) =>
+                    setCorrection((current) => ({ ...current, reason: value }))
                   }
-                />
-                <Label htmlFor="remove-plate">
-                  Remove previous plate number from database
-                </Label>
+                >
+                  <SelectTrigger id="correction-reason">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="ocr_character_error">OCR character error</SelectItem>
+                    <SelectItem value="obscured_or_blurred">Obscured or blurred plate</SelectItem>
+                    <SelectItem value="partial_plate">Partial plate capture</SelectItem>
+                    <SelectItem value="wrong_region_format">Wrong region or format</SelectItem>
+                    <SelectItem value="manual_visual_review">Manual visual review</SelectItem>
+                    <SelectItem value="other">Other</SelectItem>
+                  </SelectContent>
+                </Select>
               </div>
-              {correction?.removePlate && (
-                <div className="text-sm text-amber-500 dark:text-amber-400">
-                  Warning: This is a destructive action. Ensure the previous
-                  plate number does not belong to any real vehicles to avoid
-                  loss of data.
+
+              <div className="grid gap-2">
+                <Label htmlFor="correction-notes">Review notes (optional)</Label>
+                <Textarea
+                  id="correction-notes"
+                  value={correction?.notes || ""}
+                  onChange={(event) =>
+                    setCorrection((current) => ({ ...current, notes: event.target.value }))
+                  }
+                  maxLength={2000}
+                  placeholder="Add context for the audit history"
+                />
+              </div>
+
+              {canBatchReview && (
+                <div className="space-y-3 rounded-lg border p-4">
+                  <div className="flex items-center gap-2">
+                    <Switch
+                      id="correct-all"
+                      checked={correction?.correctAll || false}
+                      onCheckedChange={(checked) => {
+                        setCorrection((current) => ({ ...current, correctAll: checked }));
+                        setCorrectionPreview(null);
+                      }}
+                    />
+                    <Label htmlFor="correct-all">Batch-correct matching effective plates</Label>
+                  </div>
+                  {correction?.correctAll && (
+                    <div className="space-y-3 pl-1">
+                      <div className="flex items-center gap-2">
+                        <Switch
+                          id="unreviewed-only"
+                          checked={correction.unreviewedOnly}
+                          onCheckedChange={(checked) => {
+                            setCorrection((current) => ({ ...current, unreviewedOnly: checked }));
+                            setCorrectionPreview(null);
+                          }}
+                        />
+                        <Label htmlFor="unreviewed-only">Only currently unreviewed reads</Label>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <Switch
+                          id="batch-camera-only"
+                          checked={correction.batchCameraOnly}
+                          onCheckedChange={(checked) => {
+                            setCorrection((current) => ({ ...current, batchCameraOnly: checked }));
+                            setCorrectionPreview(null);
+                          }}
+                        />
+                        <Label htmlFor="batch-camera-only">
+                          Only camera {correction.cameraName || "for this read"}
+                        </Label>
+                      </div>
+                      <Button type="button" variant="outline" onClick={handleCorrectionPreview}>
+                        Preview affected reads
+                      </Button>
+                      {correctionPreview && (
+                        <div className="rounded-md bg-muted p-3 text-sm">
+                          <div className="font-medium">
+                            {correctionPreview.read_count} reads across{" "}
+                            {correctionPreview.camera_count} cameras
+                          </div>
+                          <div className="text-muted-foreground">
+                            {correctionPreview.already_reviewed} already reviewed
+                            {correctionPreview.first_seen && correctionPreview.last_seen
+                              ? ` · ${new Date(correctionPreview.first_seen).toLocaleString()} through ${new Date(correctionPreview.last_seen).toLocaleString()}`
+                              : ""}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {canManageAliases && (
+                <div className="space-y-3 rounded-lg border border-violet-500/30 p-4">
+                  <div className="flex items-center gap-2">
+                    <Switch
+                      id="remember-alias"
+                      checked={correction?.rememberAlias || false}
+                      onCheckedChange={(checked) =>
+                        setCorrection((current) => ({ ...current, rememberAlias: checked }))
+                      }
+                    />
+                    <Label htmlFor="remember-alias">
+                      Remember {correction?.observedPlate} as a recurring misread
+                    </Label>
+                  </div>
+                  {correction?.rememberAlias && (
+                    <div className="grid gap-2">
+                      <Label htmlFor="alias-scope">Apply the reviewed alias to</Label>
+                      <Select
+                        value={correction.aliasScope}
+                        onValueChange={(value) =>
+                          setCorrection((current) => ({ ...current, aliasScope: value }))
+                        }
+                      >
+                        <SelectTrigger id="alias-scope" className="w-full sm:w-72">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="camera">
+                            This camera only ({correction.cameraName || "unknown"})
+                          </SelectItem>
+                          <SelectItem value="all">All cameras</SelectItem>
+                        </SelectContent>
+                      </Select>
+                      <p className="text-xs text-muted-foreground">
+                        Future exact reads of {correction.observedPlate} will resolve to{" "}
+                        {correction.newPlateNumber || "the corrected plate"} and inherit its
+                        known name, tags, watchlist state, and notification rules.
+                      </p>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {correctionError && (
+                <div role="alert" className="rounded-md bg-destructive/10 p-3 text-sm text-destructive">
+                  {correctionError}
                 </div>
               )}
             </div>
-            <DialogFooter className="flex-col sm:flex-row gap-2 sm:gap-0">
+
+            <DialogFooter className="flex-col gap-2 sm:flex-row">
               <Button
                 variant="outline"
-                onClick={() => setCorrection(null)}
-                className="w-full sm:w-auto"
+                onClick={() => {
+                  setCorrection(null);
+                  setCorrectionError("");
+                  setCorrectionPreview(null);
+                }}
               >
                 Cancel
               </Button>
@@ -2079,11 +2383,77 @@ export default function PlateTable({
                 onClick={handleCorrectSubmit}
                 disabled={
                   !correction?.newPlateNumber ||
-                  correction.newPlateNumber === correction.plateNumber
+                  correction.newPlateNumber === correction.plateNumber ||
+                  (correction.correctAll && !correctionPreview)
                 }
-                className="w-full sm:w-auto"
               >
-                Update Plate Number
+                {correction?.correctAll ? "Apply previewed batch" : "Correct this read"}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        <Dialog
+          open={historyState.open}
+          onOpenChange={(open) =>
+            setHistoryState((current) => ({ ...current, open }))
+          }
+        >
+          <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-2xl">
+            <DialogHeader>
+              <DialogTitle>Plate review history</DialogTitle>
+              <DialogDescription>
+                Original observations and review events are retained permanently.
+              </DialogDescription>
+            </DialogHeader>
+            {historyState.loading ? (
+              <div className="py-8 text-center text-muted-foreground">Loading review history…</div>
+            ) : historyState.entries.length === 0 ? (
+              <div className="rounded-lg border p-4 text-sm text-muted-foreground">
+                This read has not been reviewed. The camera observation remains unchanged.
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {historyState.entries.map((entry) => (
+                  <div key={entry.id} className="rounded-lg border p-4">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <Badge variant="outline">{entry.action.replaceAll("_", " ")}</Badge>
+                      <span className="text-xs text-muted-foreground">
+                        {new Date(entry.created_at).toLocaleString()}
+                      </span>
+                    </div>
+                    <div className="mt-2 font-mono">
+                      {entry.previous_plate} → {entry.new_plate}
+                    </div>
+                    <div className="mt-1 text-sm text-muted-foreground">
+                      {entry.actor_display_name} ({entry.actor_username})
+                      {entry.reason ? ` · ${entry.reason.replaceAll("_", " ")}` : ""}
+                    </div>
+                    {entry.notes && <div className="mt-2 text-sm">{entry.notes}</div>}
+                  </div>
+                ))}
+              </div>
+            )}
+            {historyState.error && (
+              <div role="alert" className="rounded-md bg-destructive/10 p-3 text-sm text-destructive">
+                {historyState.error}
+              </div>
+            )}
+            <DialogFooter>
+              {canBatchReview && historyState.entries.some((entry) =>
+                ["confirm", "correct", "reject", "reopen"].includes(entry.action)
+              ) && (
+                <Button variant="outline" onClick={handleReverseReview}>
+                  <RotateCcw className="mr-2 h-4 w-4" />
+                  Reverse latest review
+                </Button>
+              )}
+              <Button
+                onClick={() =>
+                  setHistoryState((current) => ({ ...current, open: false }))
+                }
+              >
+                Close
               </Button>
             </DialogFooter>
           </DialogContent>

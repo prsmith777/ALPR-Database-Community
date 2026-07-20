@@ -12,6 +12,7 @@ import {
   Lock,
   Server,
   ScanSearch,
+  ShieldCheck,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -53,6 +54,7 @@ import {
 import ToggleSwitch from "@/components/ui/toggle-switch";
 import { SecuritySettings } from "./SecuritySettings";
 import PlateMatchingSettings from "./PlateMatchingSettings";
+import PlateReviewSettings from "./PlateReviewSettings";
 
 const administratorNavigationSections = [
   {
@@ -61,6 +63,7 @@ const administratorNavigationSections = [
       { title: "General", id: "general", icon: Settings2 },
       { title: "Database", id: "database", icon: Database },
       { title: "Plate Matching", id: "plateMatching", icon: ScanSearch },
+      { title: "Review & Corrections", id: "plateReview", icon: ShieldCheck },
       { title: "Security", id: "security", icon: Lock },
       { title: "Data & Privacy", id: "privacy", icon: Shield },
     ],
@@ -127,6 +130,8 @@ export default function SettingsForm({
       case "plateMatching":
         newFormData.append("plateMatching", formData.get("plateMatching"));
         break;
+      case "plateReview":
+        return <PlateReviewSettings />;
       case "push":
         newFormData.append(
           "pushoverEnabled",
@@ -718,7 +723,7 @@ export default function SettingsForm({
               )}
 
               {/* Form Content */}
-              {activeSection !== "security" && activeSection !== "privacy" ? (
+              {!["security", "privacy", "plateReview"].includes(activeSection) ? (
                 <form action={handleSettingsSubmit}>
                   <div className="space-y-8">
                     {renderSection()}
