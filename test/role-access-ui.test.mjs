@@ -198,3 +198,26 @@ test("Viewer, Operator, and Auditor page loaders stay within non-admin permissio
   assert.ok(logs, "expected getSystemLogs action");
   assert.match(logs, /requirePermission\("system\.view_audit"\)/);
 });
+
+test("unfinished AI Assistant stays hidden and permission-locked until a real agent exists", async () => {
+  const [layout, sidebar, agentChat, chatRoute, route, settings, model] =
+    await Promise.all([
+      source("app/layout.jsx"),
+      source("components/Sidebar.jsx"),
+      source("lib/agentchat.ts"),
+      source("lib/chat-route.mjs"),
+      source("app/api/chat/route.js"),
+      source("lib/settings.js"),
+      source("lib/identity-model.mjs"),
+    ]);
+
+  assert.doesNotMatch(layout, /ChatProvider|ChatInterface/);
+  assert.doesNotMatch(sidebar, /ChatButton/);
+  assert.doesNotMatch(agentChat, /test-agent|localhost:8000/);
+  assert.match(agentChat, /hasPermission\(principal, "assistant\.use"\)/);
+  assert.doesNotMatch(agentChat, /sessionId:\s*sessionId/);
+  assert.match(route, /hasPermission\(principal, "assistant\.use"\)/);
+  assert.doesNotMatch(chatRoute, /getOwnValidSession|getAuthConfig/);
+  assert.match(settings, /agents:\s*\[\]/);
+  assert.match(model, /"assistant\.use"/);
+});

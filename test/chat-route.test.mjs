@@ -5,21 +5,6 @@ import { createChatRouteHandler } from "../lib/chat-route.mjs";
 
 const SESSION_ID = "a".repeat(64);
 
-function validSession() {
-  const now = Date.now();
-  return {
-    createdAt: now - 1000,
-    lastUsed: now - 500,
-    expiresAt: now + 60_000,
-  };
-}
-
-function makeConfig() {
-  const sessions = Object.create(null);
-  sessions[SESSION_ID] = validSession();
-  return { sessions };
-}
-
 function makeRequest(body, events = []) {
   return {
     json: async () => {
@@ -31,7 +16,6 @@ function makeRequest(body, events = []) {
 
 function makeHarness(overrides = {}) {
   const logs = [];
-  const config = overrides.config || makeConfig();
   const logger = {
     log: (...values) => logs.push(values.join(" ")),
     warn: (...values) => logs.push(values.join(" ")),
@@ -48,18 +32,14 @@ function makeHarness(overrides = {}) {
         url: "https://agent.invalid/webhook",
       },
     ],
-    getAuthConfig: async () => config,
-    updateAuthConfig: async () => {},
     fetchImpl: async () =>
       Response.json({ agentMessage: "Hello", structuredData: null }),
     logger,
     ...overrides,
   };
-  delete dependencies.config;
   return {
     handler: createChatRouteHandler(dependencies),
     logs,
-    config,
   };
 }
 
@@ -176,13 +156,9 @@ test("client validation responses remain generic", async () => {
   });
 });
 
-test("successful chat preserves timezone, structured data, and agent session", async () => {
-  const config = makeConfig();
-  config.sessions[SESSION_ID]["agent-1_sessionId"] = "old-agent-session";
+test("successful chat preserves timezone and structured data without leaking the login session", async () => {
   let outbound;
-  let updates = 0;
   const { handler } = makeHarness({
-    config,
     fetchImpl: async (url, options) => {
       outbound = { url, options };
       return new Response(
@@ -190,14 +166,8 @@ test("successful chat preserves timezone, structured data, and agent session", a
           agentMessage: "It is morning",
           structuredData: { type: "metrics", value: 1 },
         }),
-        {
-          status: 200,
-          headers: { "x-session-id": "new-agent-session" },
-        }
+        { status: 200, headers: { "x-session-id": "ignored-agent-session" } }
       );
-    },
-    updateAuthConfig: async () => {
-      updates += 1;
     },
   });
 
@@ -215,12 +185,7 @@ test("successful chat preserves timezone, structured data, and agent session", a
   assert.equal(outbound.url, "https://agent.invalid/webhook");
   assert.equal(payload.chatInput, "What time is it?");
   assert.equal(payload.timezone, "America/Denver");
-  assert.equal(payload.sessionId, "old-agent-session");
+  assert.equal("sessionId" in payload, false);
   assert.equal(body.response, "It is morning");
   assert.deepEqual(body.structured, { type: "metrics", value: 1 });
-  assert.equal(
-    config.sessions[SESSION_ID]["agent-1_sessionId"],
-    "new-agent-session"
-  );
-  assert.equal(updates, 1);
 });

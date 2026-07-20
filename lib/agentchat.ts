@@ -2,7 +2,16 @@
 
 import { cookies } from "next/headers";
 import type { StructuredData, Agent } from "@/lib/agentchat-utils";
-import { getAuthConfig } from "@/lib/auth";
+import { getAuthConfig, getSessionPrincipal } from "@/lib/auth";
+import { hasPermission } from "@/lib/identity-service.mjs";
+
+async function canUseAssistant(): Promise<boolean> {
+  const cookieStore = await cookies();
+  const sessionId = cookieStore.get("session")?.value;
+  if (!sessionId) return false;
+  const principal = await getSessionPrincipal(sessionId);
+  return hasPermission(principal, "assistant.use");
+}
 
 // Agent Management
 export async function getAvailableAgents(): Promise<{
@@ -11,26 +20,14 @@ export async function getAvailableAgents(): Promise<{
   error?: string;
 }> {
   try {
+    if (!(await canUseAssistant())) {
+      return { success: false, error: "AI Assistant is unavailable." };
+    }
+
     const config = await getAuthConfig();
     const agents = config.agents || [];
 
-    // Add default test agent if no agents are configured
     const availableAgents = agents.filter((agent: Agent) => agent.enabled);
-
-    if (availableAgents.length === 0) {
-      // Return default test agent
-      const testAgent: Agent = {
-        id: "test-agent",
-        title: "Test Agent",
-        description: "Default test agent for ALPR database queries",
-        // url: "http://localhost:5678/webhook/alt-alpr",
-        url: "http://localhost:8000/alt-alpr",
-        enabled: true,
-        createdAt: new Date(),
-        updatedAt: new Date(),
-      };
-      availableAgents.push(testAgent);
-    }
 
     return {
       success: true,
@@ -78,6 +75,10 @@ export async function sendChatMessage(
   error?: string;
 }> {
   try {
+    if (!(await canUseAssistant())) {
+      return { success: false, error: "AI Assistant is unavailable." };
+    }
+
     const agents = await getCachedAgents();
     if (!agents.length) {
       return { success: false, error: "No agents available" };
@@ -88,11 +89,6 @@ export async function sendChatMessage(
       return { success: false, error: "Agent not found" };
     }
 
-    // Get session ID from cookies
-    const cookieStore = await cookies();
-    const sessionCookie = cookieStore.get("session");
-    const sessionId = sessionCookie?.value;
-
     const response = await fetch(selectedAgent.url, {
       method: "POST",
       headers: {
@@ -101,7 +97,6 @@ export async function sendChatMessage(
       body: JSON.stringify({
         chatInput: message,
         timezone: timezone,
-        sessionId: sessionId,
       }),
     });
 
@@ -128,13 +123,11 @@ export async function sendChatMessage(
       structured: responseData.structured,
       agentTitle: selectedAgent.title,
     };
-  } catch (error) {
-    console.error("Chat message error:", error);
+  } catch {
+    console.error("AI agent request failed");
     return {
       success: false,
-      error: `Failed to send message: ${
-        error instanceof Error ? error.message : "Unknown error"
-      }`,
+      error: "The configured AI agent is unavailable.",
     };
   }
 }
