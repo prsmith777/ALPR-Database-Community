@@ -15,6 +15,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import { PasswordInput } from "@/components/ui/password-input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import {
@@ -355,9 +356,9 @@ export function MqttBrokers() {
                 <Label htmlFor="mqtt-broker-password">
                   {editingBroker ? "New password" : "Password"}
                 </Label>
-                <Input
+                <PasswordInput
                   id="mqtt-broker-password"
-                  type="password"
+                  visibilityLabel="broker password"
                   value={form.password}
                   onChange={(event) =>
                     updateForm("password", event.target.value)

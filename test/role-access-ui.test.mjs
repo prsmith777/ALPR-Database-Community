@@ -103,6 +103,12 @@ test("personal settings do not load administrator configuration or user lists", 
 
   const security = await source("app/settings/SecuritySettings.jsx");
   assert.match(security, /canManageSettings && \(/);
+  assert.match(page, /canManageUsers[\s\S]*\? getIdentityAdminState\(\)/);
+  assert.match(page, /Promise\.resolve\(personalIdentityState\)/);
+  assert.match(
+    security,
+    /!initialIdentityState\.bootstrapped[\s\S]*initialIdentityState\.canManageUsers/
+  );
 });
 
 test("password reset UI and server action require administrator reauthentication", async () => {
@@ -146,4 +152,49 @@ test("current access carries the persistent temporary-password reminder", async 
   assert.match(actions, /mustChangePassword: Boolean\(principal\.mustChangePassword\)/);
   assert.match(repository, /mustChangePassword: Boolean\(row\.must_change_password\)/);
   assert.match(layout, /<PasswordChangeReminder \/>/);
+});
+
+test("Viewer, Operator, and Auditor page loaders stay within non-admin permissions", async () => {
+  const sharedPlatePages = [
+    "app/dashboard/page.jsx",
+    "app/live_feed/page.jsx",
+    "app/live_feed/viewer/page.jsx",
+    "app/database/page.jsx",
+    "app/known_plates/page.jsx",
+    "app/flagged/page.jsx",
+  ];
+  const auditorPages = ["app/download/page.jsx", "app/logs/page.jsx"];
+
+  for (const path of [...sharedPlatePages, ...auditorPages]) {
+    const page = await source(path);
+    assert.doesNotMatch(
+      page,
+      /\b(?:getSettings|getAuthConfig|getIdentityAdminState)\b/,
+      `${path} must not load administrator-only state`
+    );
+  }
+
+  const actions = await source("app/actions.js");
+  for (const action of [
+    "getDashboardMetrics",
+    "getLatestPlateReads",
+    "getPlates",
+    "getKnownPlatesList",
+    "getFlagged",
+    "getPlateViewSettings",
+  ]) {
+    const body = actions.match(
+      new RegExp(
+        `export async function ${action}\\b[\\s\\S]*?(?=export async function)`
+      )
+    )?.[0];
+    assert.ok(body, `expected ${action} action`);
+    assert.match(body, /requirePermission\("plate\.read"\)/);
+  }
+
+  const logs = actions.match(
+    /export async function getSystemLogs\b[\s\S]*?(?=export async function)/
+  )?.[0];
+  assert.ok(logs, "expected getSystemLogs action");
+  assert.match(logs, /requirePermission\("system\.view_audit"\)/);
 });

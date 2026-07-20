@@ -4,6 +4,7 @@
 import { useState, useTransition } from "react"; // <--- IMPORTANT: Re-added useTransition
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { PasswordInput } from "@/components/ui/password-input";
 import { Label } from "@/components/ui/label";
 import { Eye, EyeOff } from "lucide-react";
 import {
@@ -119,7 +120,10 @@ export function SecuritySettings({
 
   return (
     <div className="space-y-8">
-      <UserManagement initialState={initialIdentityState} />
+      {(!initialIdentityState.bootstrapped ||
+        initialIdentityState.canManageUsers) && (
+        <UserManagement initialState={initialIdentityState} />
+      )}
       {/* Display password specific error/success messages */}
       {passwordError && (
         <div className="p-4 text-red-600 bg-red-50 rounded-md">
@@ -150,10 +154,10 @@ export function SecuritySettings({
         <form onSubmit={handlePasswordChange} className="space-y-4">
           <div>
             <Label htmlFor="currentPassword">Current Password</Label>
-            <Input
+            <PasswordInput
               id="currentPassword"
               name="currentPassword" // <--- Crucial for FormData
-              type="password"
+              visibilityLabel="current password"
               value={passwordData.currentPassword}
               onChange={(e) =>
                 setPasswordData((prev) => ({
@@ -167,10 +171,10 @@ export function SecuritySettings({
           </div>
           <div>
             <Label htmlFor="newPassword">New Password</Label>
-            <Input
+            <PasswordInput
               id="newPassword"
               name="newPassword" // <--- Crucial for FormData
-              type="password"
+              visibilityLabel="new password"
               value={passwordData.newPassword}
               onChange={(e) =>
                 setPasswordData((prev) => ({
@@ -184,10 +188,10 @@ export function SecuritySettings({
           </div>
           <div>
             <Label htmlFor="confirmPassword">Confirm New Password</Label>
-            <Input
+            <PasswordInput
               id="confirmPassword"
               name="confirmPassword" // <--- Crucial for FormData
-              type="password"
+              visibilityLabel="new password confirmation"
               value={passwordData.confirmPassword}
               onChange={(e) =>
                 setPasswordData((prev) => ({
