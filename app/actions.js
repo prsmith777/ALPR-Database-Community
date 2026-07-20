@@ -1059,7 +1059,6 @@ export async function updatePassword(formData) {
   }
 
   if (newPassword.length < 8) {
-    // Example: enforce minimum password length
     return { error: "New password must be at least 8 characters long." };
   }
 
@@ -1070,48 +1069,30 @@ export async function updatePassword(formData) {
         currentPassword,
         newPassword,
       });
-      const cookieStore = await cookies();
-      clearSessionCookie(cookieStore);
-      return {
-        success: true,
-        message: "Password updated. Sign in again with your new password.",
-      };
+    } else {
+      const isCurrentPasswordValid = await verifyPassword(currentPassword);
+      if (!isCurrentPasswordValid) {
+        return { error: "Incorrect current password." };
+      }
+
+      const newHashedPassword = await hashPasswordBcrypt(newPassword);
+      const config = await getAuthConfig();
+      if (!config) {
+        return { error: "Authentication configuration could not be loaded." };
+      }
+
+      config.password = newHashedPassword;
+      config.sessions = {};
+      await updateAuthConfig(config);
     }
-
-    // 1. Verify the current password using the dedicated function
-    const isCurrentPasswordValid = await verifyPassword(currentPassword);
-    if (!isCurrentPasswordValid) {
-      return { error: "Incorrect current password." };
-    }
-
-    // 2. Hash the new password using the dedicated function
-    const newHashedPassword = await hashPasswordBcrypt(newPassword);
-
-    // 3. Get the current auth config, update the password, and save it
-    const config = await getAuthConfig();
-    if (!config) {
-      // This case should ideally not happen if getAuthConfig is robust
-      return { error: "Authentication configuration could not be loaded." };
-    }
-    config.password = newHashedPassword;
-    await updateAuthConfig(config); // Persist the change
-
-    // 4. Invalidate all sessions for security after password change
-    // This will force all existing users to re-login with the new password.
-    // It's more efficient to clear the sessions in memory and then write once.
-    config.sessions = {}; // Clear all sessions
-    await updateAuthConfig(config); // Save the cleared sessions along with the new password
-
-    console.log("Password updated successfully and all sessions invalidated.");
-    return {
-      success: true,
-      message:
-        "Password updated successfully. All active sessions have been logged out.",
-    };
   } catch {
     console.error("Password update failed");
     return { error: "An error occurred while changing password." };
   }
+
+  const cookieStore = await cookies();
+  clearSessionCookie(cookieStore);
+  redirect("/login");
 }
 
 export async function regenerateApiKey() {

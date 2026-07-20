@@ -50,12 +50,57 @@ test("new-user passwords are confirmed and temporary-password reminders persist"
   assert.match(users, /name="confirmPassword"/);
   assert.match(users, /Temporary passwords do not match/);
   assert.match(users, /role="alert"/);
-  assert.match(users, /PasswordInputWithToggle/);
-  assert.match(users, /EyeOff/);
-  assert.match(users, /aria-pressed/);
+  assert.match(users, /PasswordInput/);
+  assert.doesNotMatch(users, /PasswordInputWithToggle/);
   assert.match(actions, /Temporary password and confirmation do not match/);
   assert.match(migration, /must_change_password BOOLEAN NOT NULL DEFAULT FALSE/);
   assert.match(repository, /must_change_password = \$3/);
   assert.match(reminder, /Change your temporary password/);
   assert.match(reminder, /Change password now/);
+});
+
+test("successful password changes end the invalid session with a login redirect", async () => {
+  const actions = await fs.readFile("app/actions.js", "utf8");
+  const changePassword = actions.match(
+    /export async function updatePassword[\s\S]*?(?=export async function regenerateApiKey)/
+  )?.[0];
+
+  assert.ok(changePassword, "expected the complete password-change action");
+  assert.match(changePassword, /clearSessionCookie\(cookieStore\)/);
+  assert.match(changePassword, /redirect\("\/login"\)/);
+  assert.ok(
+    changePassword.lastIndexOf('redirect("/login")') >
+      changePassword.lastIndexOf("} catch"),
+    "redirect must be outside the catch block so Next.js can complete navigation"
+  );
+});
+
+test("every password field uses the shared accessible visibility control", async () => {
+  const passwordEntryFiles = [
+    "app/login/page.jsx",
+    "app/settings/SecuritySettings.jsx",
+    "app/settings/SettingsForm.jsx",
+    "app/settings/UserManagement.jsx",
+    "components/mqtt/MqttBrokers.jsx",
+  ];
+
+  for (const path of passwordEntryFiles) {
+    const file = await fs.readFile(path, "utf8");
+    assert.match(file, /PasswordInput/, `${path} must use PasswordInput`);
+    assert.doesNotMatch(
+      file,
+      /type="password"/,
+      `${path} must not bypass the shared visibility control`
+    );
+  }
+
+  const shared = await fs.readFile(
+    "components/ui/password-input.jsx",
+    "utf8"
+  );
+  assert.match(shared, /type={visible \? "text" : "password"}/);
+  assert.match(shared, /aria-label/);
+  assert.match(shared, /aria-pressed={visible}/);
+  assert.match(shared, /EyeOff/);
+  assert.match(shared, /type="button"/);
 });

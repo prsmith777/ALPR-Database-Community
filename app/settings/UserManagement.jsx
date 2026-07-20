@@ -2,7 +2,7 @@
 
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { Eye, EyeOff, Trash2, UserPlus, Users } from "lucide-react";
+import { Trash2, UserPlus, Users } from "lucide-react";
 import {
   bootstrapNamedAdministrator,
   createNamedUser,
@@ -14,6 +14,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { PasswordInput } from "@/components/ui/password-input";
 import { Label } from "@/components/ui/label";
 import {
   Dialog,
@@ -45,40 +46,6 @@ function ActionMessage({ error, success }) {
       }`}
     >
       {error || success}
-    </div>
-  );
-}
-
-function PasswordInputWithToggle({ id, name, label }) {
-  const [visible, setVisible] = useState(false);
-
-  return (
-    <div className="space-y-2">
-      <Label htmlFor={id}>{label}</Label>
-      <div className="relative">
-        <Input
-          id={id}
-          name={name}
-          type={visible ? "text" : "password"}
-          minLength={8}
-          required
-          autoComplete="new-password"
-          className="pr-10"
-        />
-        <button
-          type="button"
-          className="absolute inset-y-0 right-0 flex w-10 items-center justify-center text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-          onClick={() => setVisible((current) => !current)}
-          aria-label={`${visible ? "Hide" : "Show"} ${label.toLowerCase()}`}
-          aria-pressed={visible}
-        >
-          {visible ? (
-            <EyeOff className="h-4 w-4" aria-hidden="true" />
-          ) : (
-            <Eye className="h-4 w-4" aria-hidden="true" />
-          )}
-        </button>
-      </div>
     </div>
   );
 }
@@ -144,7 +111,13 @@ export function UserManagement({ initialState }) {
           </div>
           <div className="space-y-2 sm:col-span-2">
             <Label htmlFor="ownerCurrentPassword">Current administrator password</Label>
-            <Input id="ownerCurrentPassword" name="currentPassword" type="password" required autoComplete="current-password" />
+            <PasswordInput
+              id="ownerCurrentPassword"
+              name="currentPassword"
+              visibilityLabel="current administrator password"
+              required
+              autoComplete="current-password"
+            />
           </div>
           <div className="sm:col-span-2">
             <Button type="submit" disabled={isPending}>
@@ -287,15 +260,35 @@ export function UserManagement({ initialState }) {
           >
             <div className="space-y-2">
               <Label htmlFor="resetPassword">New password</Label>
-              <Input id="resetPassword" name="password" type="password" minLength={8} required autoComplete="new-password" />
+              <PasswordInput
+                id="resetPassword"
+                name="password"
+                visibilityLabel="new password"
+                minLength={8}
+                required
+                autoComplete="new-password"
+              />
             </div>
             <div className="space-y-2">
               <Label htmlFor="resetConfirmPassword">Confirm new password</Label>
-              <Input id="resetConfirmPassword" name="confirmPassword" type="password" minLength={8} required autoComplete="new-password" />
+              <PasswordInput
+                id="resetConfirmPassword"
+                name="confirmPassword"
+                visibilityLabel="new password confirmation"
+                minLength={8}
+                required
+                autoComplete="new-password"
+              />
             </div>
             <div className="space-y-2">
               <Label htmlFor="resetAdministratorPassword">Your administrator password</Label>
-              <Input id="resetAdministratorPassword" name="currentPassword" type="password" required autoComplete="current-password" />
+              <PasswordInput
+                id="resetAdministratorPassword"
+                name="currentPassword"
+                visibilityLabel="administrator password"
+                required
+                autoComplete="current-password"
+              />
             </div>
             <DialogFooter>
               <Button type="button" variant="outline" onClick={() => setResetUserId(null)}>
@@ -358,10 +351,10 @@ export function UserManagement({ initialState }) {
               <Label htmlFor="deleteAdministratorPassword">
                 Your administrator password
               </Label>
-              <Input
+              <PasswordInput
                 id="deleteAdministratorPassword"
                 name="currentPassword"
-                type="password"
+                visibilityLabel="administrator password"
                 required
                 autoComplete="current-password"
               />
@@ -398,16 +391,30 @@ export function UserManagement({ initialState }) {
         <h4 className="flex items-center gap-2 font-semibold sm:col-span-2"><UserPlus className="h-4 w-4 text-primary" /> Add user</h4>
         <div className="space-y-2"><Label htmlFor="newUsername">Username</Label><Input id="newUsername" name="username" required minLength={3} /></div>
         <div className="space-y-2"><Label htmlFor="newDisplayName">Display name</Label><Input id="newDisplayName" name="displayName" required /></div>
-        <PasswordInputWithToggle
-          id="newUserPassword"
-          name="password"
-          label="Temporary password"
-        />
-        <PasswordInputWithToggle
-          id="newUserConfirmPassword"
-          name="confirmPassword"
-          label="Confirm temporary password"
-        />
+        <div className="space-y-2">
+          <Label htmlFor="newUserPassword">Temporary password</Label>
+          <PasswordInput
+            id="newUserPassword"
+            name="password"
+            visibilityLabel="temporary password"
+            minLength={8}
+            required
+            autoComplete="new-password"
+          />
+        </div>
+        <div className="space-y-2">
+          <Label htmlFor="newUserConfirmPassword">
+            Confirm temporary password
+          </Label>
+          <PasswordInput
+            id="newUserConfirmPassword"
+            name="confirmPassword"
+            visibilityLabel="temporary password confirmation"
+            minLength={8}
+            required
+            autoComplete="new-password"
+          />
+        </div>
         <div className="space-y-2">
           <Label htmlFor="newUserRole">Role</Label>
           <Select name="role" defaultValue="viewer">

@@ -12,10 +12,19 @@ export const revalidate = 0;
 export default async function SettingsPage() {
   const access = await getCurrentAccess();
   const canManageSettings = access.permissions.includes("system.manage_settings");
+  const canManageUsers = access.permissions.includes("system.manage_users");
+  const personalIdentityState = {
+    bootstrapped: access.currentUser.authMode === "named",
+    users: [],
+    currentUser: access.currentUser,
+    canManageUsers: false,
+  };
   const [settings, authConfig, identityState] = await Promise.all([
     canManageSettings ? getSettings() : Promise.resolve(null),
     canManageSettings ? getAuthConfig() : Promise.resolve({ apiKey: "" }),
-    getIdentityAdminState(),
+    canManageUsers
+      ? getIdentityAdminState()
+      : Promise.resolve(personalIdentityState),
   ]);
 
   if (canManageSettings && !settings) {
