@@ -2,7 +2,7 @@
 
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { Trash2, UserPlus, Users } from "lucide-react";
+import { Eye, EyeOff, Trash2, UserPlus, Users } from "lucide-react";
 import {
   bootstrapNamedAdministrator,
   createNamedUser,
@@ -49,11 +49,46 @@ function ActionMessage({ error, success }) {
   );
 }
 
+function PasswordInputWithToggle({ id, name, label }) {
+  const [visible, setVisible] = useState(false);
+
+  return (
+    <div className="space-y-2">
+      <Label htmlFor={id}>{label}</Label>
+      <div className="relative">
+        <Input
+          id={id}
+          name={name}
+          type={visible ? "text" : "password"}
+          minLength={8}
+          required
+          autoComplete="new-password"
+          className="pr-10"
+        />
+        <button
+          type="button"
+          className="absolute inset-y-0 right-0 flex w-10 items-center justify-center text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          onClick={() => setVisible((current) => !current)}
+          aria-label={`${visible ? "Hide" : "Show"} ${label.toLowerCase()}`}
+          aria-pressed={visible}
+        >
+          {visible ? (
+            <EyeOff className="h-4 w-4" aria-hidden="true" />
+          ) : (
+            <Eye className="h-4 w-4" aria-hidden="true" />
+          )}
+        </button>
+      </div>
+    </div>
+  );
+}
+
 export function UserManagement({ initialState }) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
+  const [addUserError, setAddUserError] = useState("");
   const [resetUserId, setResetUserId] = useState(null);
   const [deleteUserId, setDeleteUserId] = useState(null);
 
@@ -345,13 +380,16 @@ export function UserManagement({ initialState }) {
 
       <form
         className="grid gap-4 border-t border-border pt-6 sm:grid-cols-2"
+        onChange={() => setAddUserError("")}
         onSubmit={(event) => {
           event.preventDefault();
           const form = event.currentTarget;
           const data = new FormData(form);
+          setAddUserError("");
           if (data.get("password") !== data.get("confirmPassword")) {
             setSuccess("");
-            setError("Temporary password and confirmation do not match.");
+            setError("");
+            setAddUserError("Temporary passwords do not match.");
             return;
           }
           run(createNamedUser, data, "User created.", form);
@@ -360,8 +398,16 @@ export function UserManagement({ initialState }) {
         <h4 className="flex items-center gap-2 font-semibold sm:col-span-2"><UserPlus className="h-4 w-4 text-primary" /> Add user</h4>
         <div className="space-y-2"><Label htmlFor="newUsername">Username</Label><Input id="newUsername" name="username" required minLength={3} /></div>
         <div className="space-y-2"><Label htmlFor="newDisplayName">Display name</Label><Input id="newDisplayName" name="displayName" required /></div>
-        <div className="space-y-2"><Label htmlFor="newUserPassword">Temporary password</Label><Input id="newUserPassword" name="password" type="password" minLength={8} required autoComplete="new-password" /></div>
-        <div className="space-y-2"><Label htmlFor="newUserConfirmPassword">Confirm temporary password</Label><Input id="newUserConfirmPassword" name="confirmPassword" type="password" minLength={8} required autoComplete="new-password" /></div>
+        <PasswordInputWithToggle
+          id="newUserPassword"
+          name="password"
+          label="Temporary password"
+        />
+        <PasswordInputWithToggle
+          id="newUserConfirmPassword"
+          name="confirmPassword"
+          label="Confirm temporary password"
+        />
         <div className="space-y-2">
           <Label htmlFor="newUserRole">Role</Label>
           <Select name="role" defaultValue="viewer">
@@ -369,7 +415,19 @@ export function UserManagement({ initialState }) {
             <SelectContent>{roles.map((role) => <SelectItem key={role} value={role}>{role[0].toUpperCase() + role.slice(1)}</SelectItem>)}</SelectContent>
           </Select>
         </div>
-        <div className="sm:col-span-2"><Button type="submit" disabled={isPending}>{isPending ? "Saving..." : "Add user"}</Button></div>
+        <div className="flex flex-col gap-3 sm:col-span-2 sm:flex-row sm:items-center">
+          <Button type="submit" disabled={isPending}>
+            {isPending ? "Saving..." : "Add user"}
+          </Button>
+          {addUserError && (
+            <p
+              role="alert"
+              className="rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive"
+            >
+              {addUserError}
+            </p>
+          )}
+        </div>
       </form>
     </section>
   );

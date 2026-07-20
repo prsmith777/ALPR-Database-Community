@@ -48,7 +48,11 @@ test("new-user passwords are confirmed and temporary-password reminders persist"
     fs.readFile("components/auth/PasswordChangeReminder.jsx", "utf8"),
   ]);
   assert.match(users, /name="confirmPassword"/);
-  assert.match(users, /Temporary password and confirmation do not match/);
+  assert.match(users, /Temporary passwords do not match/);
+  assert.match(users, /role="alert"/);
+  assert.match(users, /PasswordInputWithToggle/);
+  assert.match(users, /EyeOff/);
+  assert.match(users, /aria-pressed/);
   assert.match(actions, /Temporary password and confirmation do not match/);
   assert.match(migration, /must_change_password BOOLEAN NOT NULL DEFAULT FALSE/);
   assert.match(repository, /must_change_password = \$3/);
