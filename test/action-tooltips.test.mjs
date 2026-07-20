@@ -25,7 +25,7 @@ test("plate tables label icon-only row actions with accessible tooltips", async 
   assert.match(liveFeed, /aria-label="Open filters"/);
   assert.match(liveFeed, /<TooltipContent>Open filters<\/TooltipContent>/);
   assert.match(liveFeed, /<TooltipContent>Correct plate<\/TooltipContent>/);
-  assert.match(liveFeed, /Confirm AI label/);
+  assert.match(liveFeed, /Confirm detected plate/);
   assert.match(plateDatabase, /<TooltipContent>View insights<\/TooltipContent>/);
   assert.match(plateDatabase, /Flag plate/);
   assert.match(knownPlates, /<TooltipProvider delayDuration=\{250\}>/);

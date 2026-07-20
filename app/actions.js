@@ -27,8 +27,6 @@ import {
   getTagsForPlate,
   correctAllPlateReads,
   getDistinctCameraNames,
-  updatePlateRead,
-  updateAllPlateReads,
   togglePlateIgnore,
   getPlateImagePreviews,
   backfillOccurrenceCounts,
@@ -42,10 +40,10 @@ import {
   checkUpdateStatus,
   markUpdateComplete,
   updateTagName,
-  confirmPlateRecord,
   addUnseenPlate,
 } from "@/lib/db";
 import { normalizePlateMatchingSettings } from "@/lib/plate-matching.mjs";
+import { getPlateReviewRepository } from "@/lib/plate-review-runtime.mjs";
 import {
   getNotificationPlates as getNotificationPlatesDB,
   addNotificationPlate as addNotificationPlateDB,
@@ -98,6 +96,27 @@ async function requirePermission(permission) {
     throw new Error("Permission denied");
   }
   return principal;
+}
+
+
+function plateReviewActionFailure(error, fallback) {
+  const safeCodes = new Set([
+    "ALIAS_EXISTS",
+    "ALIAS_NOT_FOUND",
+    "INVALID_ACTION",
+    "INVALID_PLATE",
+    "INVALID_STATUS",
+    "NOTHING_TO_REVERSE",
+    "NO_MATCHING_READS",
+    "PLATE_UNCHANGED",
+    "READ_NOT_FOUND",
+    "REASON_REQUIRED",
+  ]);
+  if (safeCodes.has(error?.code)) {
+    return { success: false, error: error.message };
+  }
+  console.error(fallback, error);
+  return { success: false, error: fallback };
 }
 
 function identityActionFailure(error, fallback) {
@@ -1132,28 +1151,159 @@ export async function getCameraNames() {
 }
 
 export async function correctPlateRead(formData) {
-  await requirePermission("plate.review");
+  const principal = await requirePermission("plate.review");
   try {
     const readId = formData.get("readId");
     const oldPlateNumber = formData.get("oldPlateNumber");
     const newPlateNumber = formData.get("newPlateNumber");
     const correctAll = formData.get("correctAll") === "true";
-    const removePrevious = formData.get("removePrevious") === "true";
+    const rememberAlias = formData.get("rememberAlias") === "true";
+    const cameraName =
+      formData.get("aliasScope") === "camera"
+        ? formData.get("cameraName")
+        : null;
+    const reason = formData.get("reason");
+    const notes = formData.get("notes");
+    const repository = getPlateReviewRepository();
 
-    if (correctAll) {
-      await updateAllPlateReads(oldPlateNumber, newPlateNumber);
-    } else {
-      await updatePlateRead(readId, newPlateNumber);
+    if (correctAll && !hasPermission(principal, "plate.review.batch")) {
+      return { success: false, error: "Administrator permission is required for batch correction." };
+    }
+    if (rememberAlias && !hasPermission(principal, "plate.alias.manage")) {
+      return { success: false, error: "Administrator permission is required to create a recurring alias." };
     }
 
-    if (removePrevious) {
-      await removePlate(oldPlateNumber);
+    const data = correctAll
+      ? await repository.batchCorrect({
+          sourcePlate: oldPlateNumber,
+          targetPlate: newPlateNumber,
+          cameraName: formData.get("batchCameraOnly") === "true"
+            ? formData.get("cameraName")
+            : null,
+          unreviewedOnly: formData.get("unreviewedOnly") === "true",
+          reason,
+          notes,
+          actor: principal,
+        })
+      : await repository.reviewRead({
+          readId,
+          action: "correct",
+          newPlate: newPlateNumber,
+          reason,
+          notes,
+          actor: principal,
+        });
+
+    let alias = null;
+    let warning = null;
+    if (rememberAlias) {
+      try {
+        alias = await repository.createAlias({
+          sourcePlate: formData.get("aliasSourcePlate") || oldPlateNumber,
+          targetPlate: newPlateNumber,
+          cameraName,
+          reason,
+          actor: principal,
+        });
+      } catch (error) {
+        warning = error?.message || "The read was corrected, but the recurring alias could not be created.";
+      }
     }
 
-    return { success: true };
+    revalidatePath("/live_feed");
+    revalidatePath("/database");
+    return { success: true, data, alias, warning };
   } catch (error) {
-    console.error("Error correcting plate read:", error);
-    return { success: false, error: "Failed to correct plate read" };
+    return plateReviewActionFailure(error, "Failed to correct the plate read.");
+  }
+}
+
+export async function previewPlateCorrection(formData) {
+  const principal = await requirePermission("plate.review.batch");
+  try {
+    return {
+      success: true,
+      data: await getPlateReviewRepository().previewBatch({
+        sourcePlate: formData.get("oldPlateNumber"),
+        cameraName:
+          formData.get("batchCameraOnly") === "true"
+            ? formData.get("cameraName")
+            : null,
+        unreviewedOnly: formData.get("unreviewedOnly") === "true",
+        actor: principal,
+      }),
+    };
+  } catch (error) {
+    return plateReviewActionFailure(error, "Unable to preview the batch correction.");
+  }
+}
+
+export async function getPlateReviewHistory(readId) {
+  await requirePermission("plate.read");
+  try {
+    return {
+      success: true,
+      data: await getPlateReviewRepository().getHistory(readId),
+    };
+  } catch (error) {
+    return plateReviewActionFailure(error, "Unable to load plate review history.");
+  }
+}
+
+export async function reversePlateReview(formData) {
+  const principal = await requirePermission("plate.review.batch");
+  try {
+    const data = await getPlateReviewRepository().reverseLatestReview({
+      readId: formData.get("readId"),
+      reason: formData.get("reason"),
+      actor: principal,
+    });
+    revalidatePath("/live_feed");
+    revalidatePath("/database");
+    return { success: true, data };
+  } catch (error) {
+    return plateReviewActionFailure(error, "Unable to reverse the plate review.");
+  }
+}
+
+export async function listPlateAliases() {
+  await requirePermission("plate.alias.manage");
+  try {
+    return { success: true, data: await getPlateReviewRepository().listAliases() };
+  } catch (error) {
+    return plateReviewActionFailure(error, "Unable to load recurring plate aliases.");
+  }
+}
+
+export async function createPlateAlias(formData) {
+  const principal = await requirePermission("plate.alias.manage");
+  try {
+    const data = await getPlateReviewRepository().createAlias({
+      sourcePlate: formData.get("sourcePlate"),
+      targetPlate: formData.get("targetPlate"),
+      cameraName: formData.get("cameraName"),
+      reason: formData.get("reason"),
+      actor: principal,
+    });
+    revalidatePath("/settings");
+    return { success: true, data };
+  } catch (error) {
+    return plateReviewActionFailure(error, "Unable to create the recurring alias.");
+  }
+}
+
+export async function disablePlateAlias(formData) {
+  const principal = await requirePermission("plate.alias.manage");
+  try {
+    const data = await getPlateReviewRepository().disableAlias({
+      aliasId: formData.get("aliasId"),
+      reason: formData.get("reason") || "disabled_by_administrator",
+      actor: principal,
+    });
+    revalidatePath("/settings");
+    return { success: true, data };
+  } catch (error) {
+    return plateReviewActionFailure(error, "Unable to disable the recurring alias.");
   }
 }
 
@@ -1290,14 +1440,18 @@ export async function skipImageMigration() {
 }
 
 export async function validatePlateRecord(readId, value) {
-  await requirePermission("plate.review");
+  const principal = await requirePermission("plate.review");
   try {
-    await confirmPlateRecord(readId, value);
-
-    return { success: true };
+    const data = await getPlateReviewRepository().reviewRead({
+      readId,
+      action: value ? "confirm" : "reopen",
+      reason: value ? "human_confirmation" : "reopened_for_review",
+      actor: principal,
+    });
+    revalidatePath("/live_feed");
+    return { success: true, data };
   } catch (error) {
-    console.error("Error validating plate record:", error);
-    return { success: false, error: "Failed to validate plate record" };
+    return plateReviewActionFailure(error, "Failed to update the plate review.");
   }
 }
 

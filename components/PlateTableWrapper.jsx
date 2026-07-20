@@ -11,6 +11,9 @@ import {
   addKnownPlate,
   correctPlateRead,
   deletePlateRead,
+  getPlateReviewHistory,
+  previewPlateCorrection,
+  reversePlateReview,
   tagPlate,
   untagPlate,
   validatePlateRecord,
@@ -295,6 +298,20 @@ export default function PlateTableWrapper({
     return result;
   };
 
+  const handlePreviewCorrection = async (formData) => {
+    return await previewPlateCorrection(formData);
+  };
+
+  const handleReviewHistory = async (readId) => {
+    return await getPlateReviewHistory(readId);
+  };
+
+  const handleReverseReview = async (formData) => {
+    const result = await reversePlateReview(formData);
+    if (result.success) router.refresh();
+    return result;
+  };
+
   const handleSort = useCallback(
     (field) => {
       // Sorting means live mode should be off
@@ -369,6 +386,9 @@ export default function PlateTableWrapper({
       onAddKnownPlate={handleAddKnownPlate}
       onDeleteRecord={handleDeleteRecord}
       onCorrectPlate={handleCorrectPlate}
+      onPreviewCorrection={handlePreviewCorrection}
+      onReviewHistory={handleReviewHistory}
+      onReverseReview={handleReverseReview}
       onValidate={handleValidatePlate}
       isLive={isLiveModeActive} // Pass the live mode state
       onLiveChange={setIsLiveModeActive} // Pass the setter for live mode
