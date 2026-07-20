@@ -24,9 +24,18 @@ test("identity roles expose the agreed least-privilege permission matrix", () =>
     "auditor",
   ]);
   assert.deepEqual(permissionsForRole("administrator"), PERMISSION_KEYS);
-  assert.equal(ROLE_PERMISSIONS.operator.includes("system.manage_users"), false);
-  assert.equal(ROLE_PERMISSIONS.viewer.includes("plate.review"), false);
-  assert.equal(ROLE_PERMISSIONS.auditor.includes("system.view_audit"), true);
+  assert.deepEqual(ROLE_PERMISSIONS.operator, [
+    "plate.read",
+    "plate.review",
+    "known_plate.manage",
+    "tag.manage",
+  ]);
+  assert.deepEqual(ROLE_PERMISSIONS.viewer, ["plate.read"]);
+  assert.deepEqual(ROLE_PERMISSIONS.auditor, [
+    "plate.read",
+    "system.view_audit",
+    "export.create",
+  ]);
   assert.equal(isSystemRole("Operator"), true);
   assert.equal(isPermissionKey("mqtt.manage"), true);
   assert.equal(isPermissionKey("shell.execute"), false);
@@ -60,6 +69,9 @@ test("identity migration creates durable normalized security records", async () 
   }
 
   assert.match(migration, /users_username_lower_key/);
+  assert.match(migration, /ADD COLUMN IF NOT EXISTS deleted_at/);
+  assert.match(migration, /ADD COLUMN IF NOT EXISTS must_change_password/);
+  assert.match(migration, /DELETE FROM public\.role_permissions/);
   assert.match(migration, /user_sessions_token_hash_format/);
   assert.match(migration, /api_credentials_secret_hash_format/);
   assert.match(migration, /audit_events_append_only/);

@@ -422,6 +422,12 @@ CREATE TABLE IF NOT EXISTS public.users (
 CREATE UNIQUE INDEX IF NOT EXISTS users_username_lower_key
     ON public.users (LOWER(username));
 
+ALTER TABLE public.users
+    ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ;
+
+ALTER TABLE public.users
+    ADD COLUMN IF NOT EXISTS must_change_password BOOLEAN NOT NULL DEFAULT FALSE;
+
 CREATE TABLE IF NOT EXISTS public.roles (
     id SMALLSERIAL PRIMARY KEY,
     name VARCHAR(50) NOT NULL UNIQUE,
@@ -584,7 +590,7 @@ SET display_name = EXCLUDED.display_name,
 
 INSERT INTO public.permissions (permission_key, description)
 VALUES
-    ('system.manage_users', 'Create, disable, and assign roles to users.'),
+    ('system.manage_users', 'Create, disable, delete, and assign roles to users.'),
     ('system.manage_settings', 'Change application and integration settings.'),
     ('system.view_audit', 'View append-only audit history.'),
     ('plate.read', 'View plate reads, images, and known-plate details.'),
@@ -599,6 +605,13 @@ VALUES
 ON CONFLICT (permission_key) DO UPDATE
 SET description = EXCLUDED.description;
 
+-- Keep the durable database grants synchronized with the application role
+-- matrix when an existing installation receives a least-privilege correction.
+DELETE FROM public.role_permissions AS role_permission
+USING public.roles AS role
+WHERE role_permission.role_id = role.id
+  AND role.name IN ('administrator', 'operator', 'viewer', 'auditor');
+
 INSERT INTO public.role_permissions (role_id, permission_id)
 SELECT role.id, permission.id
 FROM public.roles AS role
@@ -610,19 +623,14 @@ WHERE
         AND permission.permission_key IN (
             'plate.read',
             'plate.review',
-            'plate.delete',
             'known_plate.manage',
-            'tag.manage',
-            'notification.manage',
-            'mqtt.manage',
-            'export.create'
+            'tag.manage'
         )
     )
     OR (
         role.name = 'viewer'
         AND permission.permission_key IN (
-            'plate.read',
-            'export.create'
+            'plate.read'
         )
     )
     OR (
@@ -641,4 +649,3 @@ VALUES (
     'Create users, roles, permissions, database sessions, scoped credentials, and append-only audit events.'
 )
 ON CONFLICT (version) DO NOTHING;
-

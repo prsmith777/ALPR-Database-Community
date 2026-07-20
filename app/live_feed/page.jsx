@@ -1,6 +1,6 @@
 // app/dashboard/plates/page.jsx
 import {
-  getSettings,
+  getPlateViewSettings,
   getLatestPlateReads,
   getTags,
   getCameraNames,
@@ -17,10 +17,12 @@ import TitleNavbar from "@/components/layout/LiveFeedNav";
 
 import { Button } from "@/components/ui/button";
 import { unstable_noStore as noStore } from "next/cache";
+import { requirePagePermission } from "@/lib/page-permission.mjs";
 
 export const dynamic = "force-dynamic"; // Ensures data is fetched on every request
 
 export default async function LivePlates(props) {
+  await requirePagePermission("plate.read");
   noStore(); // Opt-out of data caching for this component and its data fetches
 
   const searchParams = await props.searchParams;
@@ -55,7 +57,7 @@ export default async function LivePlates(props) {
       getTags(),
       getCameraNames(),
       getTimeFormat(),
-      getSettings(),
+      getPlateViewSettings(),
     ]);
 
   return (

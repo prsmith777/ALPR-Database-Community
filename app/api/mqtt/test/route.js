@@ -8,8 +8,11 @@ import {
 } from "@/lib/mqtt/admin-runtime.mjs";
 import { startMqttRuntime } from "@/lib/mqtt/runtime.mjs";
 import { queueMqttTestPublish } from "@/lib/mqtt/test-publish.mjs";
+import { denyUnlessRoutePermission } from "@/lib/route-permission.mjs";
 
 export async function POST(request) {
+  const denied = await denyUnlessRoutePermission("mqtt.manage");
+  if (denied) return denied;
   try {
     const input = await readJsonObject(request);
     const adminRepository = await getMqttAdminRepository();

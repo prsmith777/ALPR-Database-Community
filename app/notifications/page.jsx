@@ -2,10 +2,12 @@ import { getNotificationPlates } from "@/app/actions";
 import { NotificationsTable } from "@/components/NotificationsTable";
 import DashboardLayout from "@/components/layout/MainLayout";
 import BasicTitle from "@/components/layout/BasicTitle";
+import { requirePagePermission } from "@/lib/page-permission.mjs";
 
 export const dynamic = "force-dynamic";
 
 export default async function NotificationsPage() {
+  await requirePagePermission("notification.manage");
   const response = await getNotificationPlates();
   const notificationPlates = response.success ? response.data : [];
 

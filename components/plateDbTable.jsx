@@ -87,6 +87,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { formatPlateDateTime } from "@/lib/plate-date.mjs";
 import PlateDatabaseFilters from "@/components/PlateDatabaseFilters";
+import { useAccess } from "@/components/auth/AccessProvider";
 import {
   readPlateMatchPreference,
   writePlateMatchPreference,
@@ -121,6 +122,12 @@ const formatTimestamp = (timestamp, timeFormat) => {
 };
 
 export default function PlateTable({ matchingSettings }) {
+  const { can } = useAccess();
+  const canReview = can("plate.review");
+  const canDelete = can("plate.delete");
+  const canManageKnownPlates = can("known_plate.manage");
+  const canManageTags = can("tag.manage");
+
   const [data, setData] = useState([]);
   const [isAddKnownPlateOpen, setIsAddKnownPlateOpen] = useState(false);
   const [isDeleteConfirmOpen, setIsDeleteConfirmOpen] = useState(false);
@@ -549,7 +556,7 @@ export default function PlateTable({ matchingSettings }) {
                               }}
                             >
                               <span>{tag.name}</span>
-                              <Tooltip>
+                              {canManageTags && <Tooltip>
                                 <TooltipTrigger asChild>
                                   <Button
                                     variant="ghost"
@@ -570,7 +577,7 @@ export default function PlateTable({ matchingSettings }) {
                                   </Button>
                                 </TooltipTrigger>
                                 <TooltipContent>Remove tag</TooltipContent>
-                              </Tooltip>
+                              </Tooltip>}
                             </Badge>
                           ))
                         ) : (
@@ -582,7 +589,7 @@ export default function PlateTable({ matchingSettings }) {
                     </TableCell>
                     <TableCell className="text-right">
                       <div className="flex justify-end space-x-2">
-                        <DropdownMenu>
+                        {canManageTags && <DropdownMenu>
                           <Tooltip>
                             <TooltipTrigger asChild>
                               <DropdownMenuTrigger asChild>
@@ -616,8 +623,8 @@ export default function PlateTable({ matchingSettings }) {
                               </DropdownMenuItem>
                             ))}
                           </DropdownMenuContent>
-                        </DropdownMenu>
-                        <Tooltip>
+                        </DropdownMenu>}
+                        {canManageKnownPlates && <Tooltip>
                           <TooltipTrigger asChild>
                             <Button
                               variant="ghost"
@@ -635,8 +642,8 @@ export default function PlateTable({ matchingSettings }) {
                             </Button>
                           </TooltipTrigger>
                           <TooltipContent>Add to known plates</TooltipContent>
-                        </Tooltip>
-                        <Tooltip>
+                        </Tooltip>}
+                        {canReview && <Tooltip>
                           <TooltipTrigger asChild>
                             <Button
                               variant="ghost"
@@ -669,9 +676,9 @@ export default function PlateTable({ matchingSettings }) {
                           <TooltipContent>
                             {plate.flagged ? "Remove flag" : "Flag plate"}
                           </TooltipContent>
-                        </Tooltip>
+                        </Tooltip>}
 
-                        <Tooltip>
+                        {canDelete && <Tooltip>
                           <TooltipTrigger asChild>
                             <Button
                               variant="ghost"
@@ -688,7 +695,7 @@ export default function PlateTable({ matchingSettings }) {
                             </Button>
                           </TooltipTrigger>
                           <TooltipContent>Delete record</TooltipContent>
-                        </Tooltip>
+                        </Tooltip>}
                       </div>
                     </TableCell>
                   </TableRow>
@@ -742,7 +749,7 @@ export default function PlateTable({ matchingSettings }) {
                         <TooltipContent>View insights</TooltipContent>
                       </Tooltip>
 
-                      <DropdownMenu>
+                      {(canManageKnownPlates || canReview || canDelete) && <DropdownMenu>
                         <Tooltip>
                           <TooltipTrigger asChild>
                             <DropdownMenuTrigger asChild>
@@ -759,7 +766,7 @@ export default function PlateTable({ matchingSettings }) {
                           <TooltipContent>More actions</TooltipContent>
                         </Tooltip>
                         <DropdownMenuContent align="end">
-                          <DropdownMenuItem
+                          {canManageKnownPlates && <DropdownMenuItem
                             onClick={() => {
                               setActivePlate(plate);
                               setIsAddKnownPlateOpen(true);
@@ -767,9 +774,9 @@ export default function PlateTable({ matchingSettings }) {
                           >
                             <Plus className="h-4 w-4 mr-2" />
                             Edit Details
-                          </DropdownMenuItem>
+                          </DropdownMenuItem>}
 
-                          <DropdownMenuItem
+                          {canReview && <DropdownMenuItem
                             onClick={() =>
                               handleToggleFlag(
                                 plate.plate_number,
@@ -783,9 +790,9 @@ export default function PlateTable({ matchingSettings }) {
                               }`}
                             />
                             {plate.flagged ? "Remove Flag" : "Add Flag"}
-                          </DropdownMenuItem>
+                          </DropdownMenuItem>}
 
-                          <DropdownMenuItem
+                          {canDelete && <DropdownMenuItem
                             className="text-destructive focus:text-destructive"
                             onClick={() => {
                               setActivePlate(plate);
@@ -794,9 +801,9 @@ export default function PlateTable({ matchingSettings }) {
                           >
                             <Trash2 className="h-4 w-4 mr-2" />
                             Delete Record
-                          </DropdownMenuItem>
+                          </DropdownMenuItem>}
                         </DropdownMenuContent>
-                      </DropdownMenu>
+                      </DropdownMenu>}
                     </div>
                   </div>
 
@@ -868,7 +875,7 @@ export default function PlateTable({ matchingSettings }) {
                             }}
                           >
                             <span>{tag.name}</span>
-                            <Tooltip>
+                            {canManageTags && <Tooltip>
                               <TooltipTrigger asChild>
                                 <Button
                                   variant="ghost"
@@ -886,7 +893,7 @@ export default function PlateTable({ matchingSettings }) {
                                 </Button>
                               </TooltipTrigger>
                               <TooltipContent>Remove tag</TooltipContent>
-                            </Tooltip>
+                            </Tooltip>}
                           </Badge>
                         ))}
                       </>
@@ -897,7 +904,7 @@ export default function PlateTable({ matchingSettings }) {
                     )}
 
                     {/* Add tag button */}
-                    <DropdownMenu>
+                    {canManageTags && <DropdownMenu>
                       <DropdownMenuTrigger asChild>
                         <Button
                           variant="outline"
@@ -926,7 +933,7 @@ export default function PlateTable({ matchingSettings }) {
                           </DropdownMenuItem>
                         ))}
                       </DropdownMenuContent>
-                    </DropdownMenu>
+                    </DropdownMenu>}
                   </div>
                 </div>
               ))}

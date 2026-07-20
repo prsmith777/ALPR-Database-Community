@@ -1,7 +1,10 @@
 import { sendPushoverNotification } from "@/lib/notifications";
 import { NextResponse } from "next/server";
+import { denyUnlessRoutePermission } from "@/lib/route-permission.mjs";
 
 export async function POST(request) {
+  const denied = await denyUnlessRoutePermission("notification.manage");
+  if (denied) return denied;
   try {
     const formData = await request.formData();
     const plateNumber = formData.get("plateNumber");

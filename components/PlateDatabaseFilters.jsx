@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import PlateMatchModeSelect from "@/components/PlateMatchModeSelect";
+import { useAccess } from "@/components/auth/AccessProvider";
 import {
   Select,
   SelectContent,
@@ -50,6 +51,7 @@ export default function PlateDatabaseFilters({
   sortConfig,
   matchingSettings,
 }) {
+  const { can } = useAccess();
   const [isOpen, setIsOpen] = useState(false);
   const hourFrom = filters.hourRange ? String(filters.hourRange.from) : "all";
   const hourTo = filters.hourRange ? String(filters.hourRange.to) : "all";
@@ -193,11 +195,13 @@ export default function PlateDatabaseFilters({
         <Button variant="outline" onClick={onClear}>
           <X className="mr-2 h-4 w-4" /> Clear filters
         </Button>
-        <Button variant="secondary" asChild>
-          <Link href={exportHref(filters, sortConfig)}>
-            <Download className="mr-2 h-4 w-4" /> Export these results
-          </Link>
-        </Button>
+        {can("export.create") && (
+          <Button variant="secondary" asChild>
+            <Link href={exportHref(filters, sortConfig)}>
+              <Download className="mr-2 h-4 w-4" /> Export these results
+            </Link>
+          </Button>
+        )}
         <div className="flex items-center gap-2 sm:ml-auto">
           <Label htmlFor="plate-database-page-size" className="whitespace-nowrap text-sm font-normal">Rows per page</Label>
           <Select value={String(pageSize)} onValueChange={onPageSizeChange}>

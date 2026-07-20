@@ -1,5 +1,5 @@
 import {
-  getSettings,
+  getPlateViewSettings,
   getLatestPlateReads,
   getTags,
   getCameraNames,
@@ -11,11 +11,13 @@ import TitleNavbar from "@/components/layout/LiveFeedNav";
 import { Suspense } from "react";
 import LiveRecognitionViewer from "@/components/LiveRecognitionViewer";
 import LiveFeedSkeleton from "@/components/LiveFeedSkeleton";
+import { requirePagePermission } from "@/lib/page-permission.mjs";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0; // Make sure the page is always fresh
 
 export default async function LiveViewerPage() {
+  await requirePagePermission("plate.read");
   // We only need the most recent plate read
   const params = {
     page: 1,
@@ -30,7 +32,7 @@ export default async function LiveViewerPage() {
       getTags(),
       getCameraNames(),
       getTimeFormat(),
-      getSettings(),
+      getPlateViewSettings(),
     ]);
   const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
 

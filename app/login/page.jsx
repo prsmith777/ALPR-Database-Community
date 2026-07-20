@@ -1,7 +1,7 @@
 // app/login/page.js
 "use client";
 
-import { useRef, useState, useTransition } from "react";
+import { useEffect, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { loginAction } from "@/app/actions";
 import { Input } from "@/components/ui/input";
@@ -12,10 +12,29 @@ import Image from "next/image";
 
 export default function LoginPage() {
   const [error, setError] = useState("");
+  const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
+  const [showCompatibilityHelp, setShowCompatibilityHelp] = useState(false);
   const [isPending, startTransition] = useTransition();
   const passwordInputRef = useRef(null);
   const router = useRouter();
+
+  useEffect(() => {
+    let active = true;
+    fetch("/api/login-state", { method: "GET", cache: "no-store" })
+      .then((response) =>
+        response.ok ? response.json() : { bootstrapped: true }
+      )
+      .then((state) => {
+        if (active) setShowCompatibilityHelp(state?.bootstrapped === false);
+      })
+      .catch(() => {
+        if (active) setShowCompatibilityHelp(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
 
   const clearFailedPassword = () => {
     setPassword("");
@@ -74,7 +93,7 @@ export default function LoginPage() {
             ALPR Database
           </h1>
           <p className="text-sm sm:text-base text-muted-foreground">
-            Enter your password to continue
+            Sign in with your named account
           </p>
         </div>
 
@@ -85,16 +104,26 @@ export default function LoginPage() {
               className="space-y-4 sm:space-y-6"
               autoComplete="on"
             >
-              {/* HIDDEN FIELD FOR AUTOFULL HEURISTICS */}
-              <Input
-                id="username_hidden" // Unique ID
-                name="username_hidden" // Unique name
-                type="text"
-                autoComplete="username" // Crucial for username autofill context
-                style={{ display: "none", opacity: 0, height: 0, width: 0 }} // Visually hide it completely
-                aria-hidden="true" // Hide from screen readers
-                tabIndex="-1" // Make it non-focusable
-              />
+              <div className="space-y-2">
+                <Label htmlFor="username">Username</Label>
+                <Input
+                  id="username"
+                  name="username"
+                  type="text"
+                  value={username}
+                  onChange={(event) => setUsername(event.target.value)}
+                  autoComplete="username"
+                  autoFocus
+                  placeholder="Enter your username"
+                  className="h-10 sm:h-12 px-4 bg-background/50"
+                />
+                {showCompatibilityHelp && (
+                  <p className="text-xs text-muted-foreground">
+                    During setup, leave username blank to use the compatibility
+                    administrator password.
+                  </p>
+                )}
+              </div>
 
               <div className="space-y-2">
                 <Label htmlFor="password">Password</Label>
@@ -107,7 +136,6 @@ export default function LoginPage() {
                   onChange={(event) => setPassword(event.target.value)}
                   required
                   autoComplete="current-password"
-                  autoFocus
                   placeholder="Enter your password"
                   className="h-10 sm:h-12 px-4 bg-background/50"
                   aria-invalid={Boolean(error)}
@@ -144,7 +172,7 @@ export default function LoginPage() {
         </div>
 
         <div className="mt-6 sm:mt-8 text-center text-xs sm:text-sm text-muted-foreground">
-          <p>Administrator Login</p>
+          <p>Secure ALPR access</p>
         </div>
       </div>
     </div>

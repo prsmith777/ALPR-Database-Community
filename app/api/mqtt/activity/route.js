@@ -3,8 +3,11 @@ import {
   mqttAdminErrorStatus,
 } from "@/lib/mqtt/admin-api.mjs";
 import { getMqttAdminRepository } from "@/lib/mqtt/admin-runtime.mjs";
+import { denyUnlessRoutePermission } from "@/lib/route-permission.mjs";
 
 export async function GET(request) {
+  const denied = await denyUnlessRoutePermission("mqtt.manage");
+  if (denied) return denied;
   try {
     const url = new URL(request.url);
     const repository = await getMqttAdminRepository();

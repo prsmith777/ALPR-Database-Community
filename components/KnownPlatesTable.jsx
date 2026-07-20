@@ -45,6 +45,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { IconTooltip } from "@/components/ui/icon-tooltip";
 import { TooltipProvider } from "@/components/ui/tooltip";
+import { useAccess } from "@/components/auth/AccessProvider";
 import { sortKnownPlates } from "@/lib/known-plate-sort.mjs";
 import {
   Sheet,
@@ -106,6 +107,11 @@ function SortableTableHead({
 }
 
 export function KnownPlatesTable({ initialData }) {
+  const { can } = useAccess();
+  const canReview = can("plate.review");
+  const canManageKnownPlates = can("known_plate.manage");
+  const canManageTags = can("tag.manage");
+
   const [data, setData] = useState(initialData);
   const [searchTerm, setSearchTerm] = useState("");
   const [sortConfig, setSortConfig] = useState({
@@ -297,12 +303,12 @@ export function KnownPlatesTable({ initialData }) {
                 }
               />
             </div>
-            <Button
+            {canManageKnownPlates && <Button
               onClick={() => setIsAddPlateOpen(true)}
               className="w-full sm:w-auto"
             >
               <Plus className="h-4 w-4 mr-2" /> Add New Plate
-            </Button>
+            </Button>}
           </div>
 
           {/* Desktop Table View */}
@@ -387,7 +393,7 @@ export function KnownPlatesTable({ initialData }) {
                                   }}
                                 >
                                   <span>{tagName}</span>
-                                  <IconTooltip label={`Remove ${tagName} tag`}>
+                                  {canManageTags && <IconTooltip label={`Remove ${tagName} tag`}>
                                     <Button
                                       variant="ghost"
                                       size="icon"
@@ -404,7 +410,7 @@ export function KnownPlatesTable({ initialData }) {
                                         Remove {tagName} tag
                                       </span>
                                     </Button>
-                                  </IconTooltip>
+                                  </IconTooltip>}
                                 </Badge>
                               );
                             })
@@ -417,7 +423,7 @@ export function KnownPlatesTable({ initialData }) {
                       </TableCell>
                       <TableCell className="text-right">
                         <div className="flex justify-end space-x-2">
-                          <DropdownMenu>
+                          {canManageTags && <DropdownMenu>
                             <IconTooltip label="Add tag">
                               <DropdownMenuTrigger asChild>
                                 <Button variant="ghost" size="icon">
@@ -444,8 +450,8 @@ export function KnownPlatesTable({ initialData }) {
                                 </DropdownMenuItem>
                               ))}
                             </DropdownMenuContent>
-                          </DropdownMenu>
-                          <IconTooltip label="Edit plate details">
+                          </DropdownMenu>}
+                          {canManageKnownPlates && <IconTooltip label="Edit plate details">
                             <Button
                               variant="ghost"
                               size="icon"
@@ -461,8 +467,8 @@ export function KnownPlatesTable({ initialData }) {
                               <Pencil className="h-4 w-4" />
                               <span className="sr-only">Edit plate details</span>
                             </Button>
-                          </IconTooltip>
-                          <IconTooltip
+                          </IconTooltip>}
+                          {canReview && <IconTooltip
                             label={
                               plate.ignore ? "Stop ignoring plate" : "Ignore plate"
                             }
@@ -489,8 +495,8 @@ export function KnownPlatesTable({ initialData }) {
                                 {plate.ignore ? "Stop ignoring" : "Ignore plate"}
                               </span>
                             </Button>
-                          </IconTooltip>
-                          <IconTooltip label="Remove from known plates">
+                          </IconTooltip>}
+                          {canManageKnownPlates && <IconTooltip label="Remove from known plates">
                             <Button
                               variant="ghost"
                               size="icon"
@@ -505,7 +511,7 @@ export function KnownPlatesTable({ initialData }) {
                                 Remove from known plates
                               </span>
                             </Button>
-                          </IconTooltip>
+                          </IconTooltip>}
                         </div>
                       </TableCell>
                     </TableRow>
@@ -544,7 +550,7 @@ export function KnownPlatesTable({ initialData }) {
                         </div>
 
                         <div className="flex gap-1">
-                          <IconTooltip label="Edit plate details">
+                          {canManageKnownPlates && <IconTooltip label="Edit plate details">
                             <Button
                               variant="ghost"
                               size="icon"
@@ -561,9 +567,9 @@ export function KnownPlatesTable({ initialData }) {
                               <Pencil className="h-4 w-4" />
                               <span className="sr-only">Edit plate details</span>
                             </Button>
-                          </IconTooltip>
+                          </IconTooltip>}
 
-                          <DropdownMenu>
+                          {(canReview || canManageKnownPlates) && <DropdownMenu>
                             <IconTooltip label="More plate actions">
                               <DropdownMenuTrigger asChild>
                                 <Button
@@ -579,7 +585,7 @@ export function KnownPlatesTable({ initialData }) {
                               </DropdownMenuTrigger>
                             </IconTooltip>
                             <DropdownMenuContent align="end">
-                              <DropdownMenuItem
+                              {canReview && <DropdownMenuItem
                                 onClick={() => {
                                   setActivePlate(plate);
                                   setIsIgnoreConfirmOpen(true);
@@ -596,8 +602,8 @@ export function KnownPlatesTable({ initialData }) {
                                     Ignore Plate
                                   </>
                                 )}
-                              </DropdownMenuItem>
-                              <DropdownMenuItem
+                              </DropdownMenuItem>}
+                              {canManageKnownPlates && <DropdownMenuItem
                                 className="text-destructive focus:text-destructive"
                                 onClick={() => {
                                   setActivePlate(plate);
@@ -606,9 +612,9 @@ export function KnownPlatesTable({ initialData }) {
                               >
                                 <X className="h-4 w-4 mr-2" />
                                 Remove
-                              </DropdownMenuItem>
+                              </DropdownMenuItem>}
                             </DropdownMenuContent>
-                          </DropdownMenu>
+                          </DropdownMenu>}
                         </div>
                       </div>
 
@@ -643,7 +649,7 @@ export function KnownPlatesTable({ initialData }) {
                             Tags
                           </div>
 
-                          <DropdownMenu>
+                          {canManageTags && <DropdownMenu>
                             <DropdownMenuTrigger asChild>
                               <Button
                                 variant="outline"
@@ -672,7 +678,7 @@ export function KnownPlatesTable({ initialData }) {
                                 </DropdownMenuItem>
                               ))}
                             </DropdownMenuContent>
-                          </DropdownMenu>
+                          </DropdownMenu>}
                         </div>
 
                         <div className="flex flex-wrap items-center gap-1.5">
@@ -694,7 +700,7 @@ export function KnownPlatesTable({ initialData }) {
                                   }}
                                 >
                                   <span>{tagName}</span>
-                                  <IconTooltip label={`Remove ${tagName} tag`}>
+                                  {canManageTags && <IconTooltip label={`Remove ${tagName} tag`}>
                                     <Button
                                       variant="ghost"
                                       size="icon"
@@ -711,7 +717,7 @@ export function KnownPlatesTable({ initialData }) {
                                         Remove {tagName} tag
                                       </span>
                                     </Button>
-                                  </IconTooltip>
+                                  </IconTooltip>}
                                 </Badge>
                               );
                             })
