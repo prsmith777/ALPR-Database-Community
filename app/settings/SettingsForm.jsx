@@ -130,8 +130,6 @@ export default function SettingsForm({
       case "plateMatching":
         newFormData.append("plateMatching", formData.get("plateMatching"));
         break;
-      case "plateReview":
-        return <PlateReviewSettings />;
       case "push":
         newFormData.append(
           "pushoverEnabled",
@@ -629,6 +627,8 @@ export default function SettingsForm({
             initialSettings={initialSettings.plateMatching}
           />
         );
+      case "plateReview":
+        return <PlateReviewSettings />;
       case "push":
         return renderPushSection();
       case "homeassistant":
