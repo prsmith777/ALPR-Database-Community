@@ -913,3 +913,12 @@ BEGIN
         );
     END IF;
 END $$;
+
+-- Remove the obsolete synthetic-fixture registry after replacing its corpus.
+DO $$
+BEGIN
+    IF to_regclass('public.codex_staging_fixture_sets') IS NOT NULL THEN
+        DELETE FROM public.codex_staging_fixture_sets
+        WHERE fixture_set_id = '5d5d95b7-5df0-4b10-8e20-7edb4d7d3b26'::uuid;
+    END IF;
+END $$;
