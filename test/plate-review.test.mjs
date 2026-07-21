@@ -190,3 +190,19 @@ test("correction UI exposes previewed batch scope, recurring alias, and append-o
   assert.match(actions, /requirePermission\("plate\.alias\.manage"\)/);
   assert.doesNotMatch(actions.match(/export async function correctPlateRead[\s\S]*?\n}/)[0], /removePlate/);
 });
+
+test("administrator Review & Corrections navigation renders the review settings component", async () => {
+  const settingsForm = await readFile(
+    new URL("../app/settings/SettingsForm.jsx", import.meta.url),
+    "utf8"
+  );
+  const renderSection = settingsForm.match(
+    /const renderSection = \(\) => \{[\s\S]*?\n  \};/
+  )?.[0];
+
+  assert.ok(renderSection, "expected the settings section renderer");
+  assert.match(
+    renderSection,
+    /case "plateReview":\s*return <PlateReviewSettings \/>;/
+  );
+});
