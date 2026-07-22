@@ -5,6 +5,11 @@ import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 
 function conditionLabel(condition = {}) {
+  if (condition.kind === "group") {
+    const children = (condition.children || []).map(conditionLabel).filter(Boolean);
+    const prefix = condition.combinator === "any" ? "Any of" : condition.combinator === "not" ? "Not" : "All of";
+    return `${prefix}: ${children.join("; ") || "(empty group)"}`;
+  }
   const value = condition.value ?? {};
   if (condition.conditionType === "always") return "Any accepted plate";
   if (condition.conditionType === "plate_match") {
@@ -75,7 +80,7 @@ function RulePreview({ rule }) {
           <p className="font-medium">Conditions</p>
           <ul className="mt-1 list-disc space-y-1 pl-5 text-muted-foreground">
             {conditions.map((condition, index) => (
-              <li key={`${condition.conditionType}-${index}`}>{conditionLabel(condition)}</li>
+              <li key={`${condition.conditionType || condition.kind}-${index}`}>{conditionLabel(condition)}</li>
             ))}
           </ul>
         </div>
