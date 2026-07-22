@@ -85,6 +85,7 @@ test("repository reads only safe legacy rule fields and returns the normalized p
       if (sql.includes("plate_notifications")) {
         return { rows: [{ id: 1, plate_number: "ABC123", enabled: true, priority: 1 }] };
       }
+      if (sql.includes("notification_rule_migrations")) return { rows: [] };
       return {
         rows: [
           {
@@ -106,12 +107,48 @@ test("repository reads only safe legacy rule fields and returns the normalized p
   const repository = new NotificationMigrationRepository({ pool });
   const preview = await repository.preview({ pushover: { enabled: true, configured: true } });
 
-  assert.equal(queries.length, 2);
+  assert.equal(queries.length, 3);
   assert.equal(queries.every((sql) => /^\s*SELECT\b/i.test(sql)), true);
   assert.equal(queries.some((sql) => /\b(?:INSERT|UPDATE|DELETE|ALTER|CREATE|DROP)\b/i.test(sql)), false);
   assert.equal(queries.some((sql) => /password|app_token|user_key/i.test(sql)), false);
   assert.equal(preview.sourceCounts.total, 2);
   assert.equal(preview.readyCount, 2);
+  assert.equal(preview.migratedCount, 0);
+  assert.equal(preview.pendingReadyCount, 2);
+});
+
+test("migration preview marks durable disabled copies without changing readiness", () => {
+  const preview = buildNotificationMigrationPreview({
+    mqttRules: [
+      {
+        id: 2,
+        name: "Any plate",
+        enabled: true,
+        match_type: "any_plate",
+        broker_id: 3,
+        broker_name: "HOMESEER",
+        broker_enabled: true,
+        destination_mode: "per_camera",
+      },
+    ],
+    migrationMappings: [
+      {
+        source_type: "mqtt",
+        source_id: 2,
+        target_rule_id: 41,
+        created_at: "2026-07-22T16:00:00.000Z",
+      },
+    ],
+  });
+
+  assert.equal(preview.readyCount, 1);
+  assert.equal(preview.migratedCount, 1);
+  assert.equal(preview.pendingReadyCount, 0);
+  assert.deepEqual(preview.rules[0].migration, {
+    status: "created_disabled",
+    targetRuleId: 41,
+    createdAt: "2026-07-22T16:00:00.000Z",
+  });
 });
 
 test("MQTT match types that need a value are blocked when it is missing", () => {
@@ -132,15 +169,19 @@ test("MQTT match types that need a value are blocked when it is missing", () => 
   }
 });
 
-test("Notifications exposes the read-only migration preview without a cutover action", async () => {
-  const [page, component] = await Promise.all([
+test("Notifications exposes an explicitly confirmed disabled-only migration without cutover", async () => {
+  const [page, component, applyComponent] = await Promise.all([
     readFile(new URL("../app/notifications/page.jsx", import.meta.url), "utf8"),
     readFile(new URL("../components/NotificationMigrationPreview.jsx", import.meta.url), "utf8"),
+    readFile(new URL("../components/ApplyNotificationMigrationButton.jsx", import.meta.url), "utf8"),
   ]);
 
   assert.match(page, /getNotificationRuleMigrationPreview/);
   assert.match(page, /<NotificationMigrationPreview preview={migrationPreview}/);
   assert.match(component, /Unified rules migration preview/);
   assert.match(component, /performs no writes/);
-  assert.equal(/migrate|apply migration|activate all/i.test(component.match(/<Button[\s\S]*?<\/Button>/)?.[0] || ""), false);
+  assert.match(component, /ApplyNotificationMigrationButton/);
+  assert.match(applyComponent, /create_disabled_rules/);
+  assert.match(applyComponent, /copied rules will remain disabled pending review/i);
+  assert.doesNotMatch(applyComponent, /activate all|enable all|cutover/i);
 });

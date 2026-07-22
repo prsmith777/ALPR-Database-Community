@@ -44,7 +44,10 @@ import {
 } from "@/lib/db";
 import { normalizePlateMatchingSettings } from "@/lib/plate-matching.mjs";
 import { getPlateReviewRepository } from "@/lib/plate-review-runtime.mjs";
-import { getNotificationMigrationPreview as loadNotificationMigrationPreview } from "@/lib/notification-migration-runtime.mjs";
+import {
+  applyDisabledNotificationMigration,
+  getNotificationMigrationPreview as loadNotificationMigrationPreview,
+} from "@/lib/notification-migration-runtime.mjs";
 import {
   getNotificationPlates as getNotificationPlatesDB,
   addNotificationPlate as addNotificationPlateDB,
@@ -653,6 +656,27 @@ export async function getNotificationRuleMigrationPreview() {
     return {
       success: false,
       error: "Failed to build notification rule migration preview",
+    };
+  }
+}
+
+export async function applyDisabledNotificationRuleMigration(formData) {
+  const principal = await requirePermission("notification.manage");
+  if (formData?.get("confirmation") !== "create_disabled_rules") {
+    return {
+      success: false,
+      error: "Confirm that the copied rules will remain disabled before continuing.",
+    };
+  }
+  try {
+    const data = await applyDisabledNotificationMigration({ actor: principal });
+    revalidatePath("/notifications");
+    return { success: true, data };
+  } catch (error) {
+    console.error("Error creating disabled unified notification rules:", error);
+    return {
+      success: false,
+      error: "Failed to create disabled unified notification rules",
     };
   }
 }

@@ -1,5 +1,6 @@
 import { ArrowRight, ShieldCheck } from "lucide-react";
 
+import { ApplyNotificationMigrationButton } from "@/components/ApplyNotificationMigrationButton";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 
@@ -39,6 +40,7 @@ function actionLabel(action = {}) {
 function RulePreview({ rule }) {
   const conditions = rule.proposed.conditionTree?.children ?? [];
   const actions = rule.proposed.actions ?? [];
+  const migrated = rule.migration?.status === "created_disabled";
 
   return (
     <div className="rounded-lg border p-4 space-y-3">
@@ -56,9 +58,16 @@ function RulePreview({ rule }) {
             {rule.proposed.name}
           </p>
         </div>
-        <Badge variant={rule.ready ? "outline" : "destructive"}>
-          {rule.ready ? "Ready to review" : "Needs attention"}
-        </Badge>
+        <div className="flex flex-wrap items-center gap-2">
+          <Badge variant={rule.ready ? "outline" : "destructive"}>
+            {rule.ready ? "Ready to review" : "Needs attention"}
+          </Badge>
+          {migrated && (
+            <Badge variant="secondary">
+              Created disabled rule #{rule.migration.targetRuleId}
+            </Badge>
+          )}
+        </div>
       </div>
 
       <div className="grid gap-3 text-sm md:grid-cols-2">
@@ -124,7 +133,7 @@ export function NotificationMigrationPreview({ preview }) {
         </div>
       </CardHeader>
       <CardContent className="space-y-4">
-        <div className="grid gap-3 sm:grid-cols-4">
+        <div className="grid gap-3 sm:grid-cols-3 lg:grid-cols-6">
           <div className="rounded-md border p-3">
             <p className="text-xs uppercase tracking-wide text-muted-foreground">Pushover</p>
             <p className="text-2xl font-semibold">{preview.sourceCounts.pushover}</p>
@@ -138,10 +147,23 @@ export function NotificationMigrationPreview({ preview }) {
             <p className="text-2xl font-semibold">{preview.readyCount}</p>
           </div>
           <div className="rounded-md border p-3">
+            <p className="text-xs uppercase tracking-wide text-muted-foreground">Created</p>
+            <p className="text-2xl font-semibold">{preview.migratedCount ?? 0}</p>
+          </div>
+          <div className="rounded-md border p-3">
+            <p className="text-xs uppercase tracking-wide text-muted-foreground">Pending</p>
+            <p className="text-2xl font-semibold">{preview.pendingReadyCount ?? preview.readyCount}</p>
+          </div>
+          <div className="rounded-md border p-3">
             <p className="text-xs uppercase tracking-wide text-muted-foreground">Writes</p>
             <p className="text-2xl font-semibold">{preview.writesPerformed}</p>
           </div>
         </div>
+
+        <ApplyNotificationMigrationButton
+          pendingCount={preview.pendingReadyCount ?? preview.readyCount}
+          migratedCount={preview.migratedCount ?? 0}
+        />
 
         {preview.rules.length === 0 ? (
           <p className="rounded-md border p-4 text-sm text-muted-foreground">
