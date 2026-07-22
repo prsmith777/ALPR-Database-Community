@@ -8,6 +8,7 @@ function status(rule) {
   if (rule.status === "approved") return { label: "Approved", variant: "default" };
   if (rule.status === "ready") return { label: "Ready for approval", variant: "outline" };
   if (rule.status === "no_samples") return { label: "Waiting for reads", variant: "secondary" };
+  if (rule.status === "no_positive_matches") return { label: "Waiting for a matching read", variant: "secondary" };
   if (rule.status === "unsafe") return { label: "Safety check failed", variant: "destructive" };
   return { label: "Mismatch found", variant: "destructive" };
 }
@@ -24,7 +25,10 @@ function formatTimestamp(value) {
 function RuleReview({ rule }) {
   const state = status(rule);
   const canApprove =
-    rule.status === "ready" && rule.sampleCount > 0 && rule.mismatchCount === 0;
+    rule.status === "ready" &&
+    rule.sampleCount > 0 &&
+    rule.mismatchCount === 0 &&
+    rule.positiveMatchCount > 0;
   const visibleDecisions = rule.decisions.slice(0, 10);
 
   return (
@@ -51,9 +55,15 @@ function RuleReview({ rule }) {
       <div className="grid gap-3 sm:grid-cols-4">
         <div className="rounded-md border p-3"><p className="text-xs uppercase text-muted-foreground">Relevant reads</p><p className="text-xl font-semibold">{rule.sampleCount}</p></div>
         <div className="rounded-md border p-3"><p className="text-xs uppercase text-muted-foreground">Agreements</p><p className="text-xl font-semibold">{rule.agreementCount}</p></div>
+        <div className="rounded-md border p-3"><p className="text-xs uppercase text-muted-foreground">Positive matches</p><p className="text-xl font-semibold">{rule.positiveMatchCount}</p></div>
         <div className="rounded-md border p-3"><p className="text-xs uppercase text-muted-foreground">Mismatches</p><p className="text-xl font-semibold">{rule.mismatchCount}</p></div>
-        <div className="rounded-md border p-3"><p className="text-xs uppercase text-muted-foreground">Agreement</p><p className="text-xl font-semibold">{rule.agreementRate == null ? "—" : `${rule.agreementRate}%`}</p></div>
       </div>
+
+      {rule.status === "no_positive_matches" && (
+        <div className="rounded-md border p-3 text-sm text-muted-foreground">
+          Negative comparisons agree, but approval stays locked until this rule sees at least one read that both legacy and unified logic match.
+        </div>
+      )}
 
       {!rule.allDisabled && (
         <div className="flex gap-2 rounded-md border border-destructive/40 bg-destructive/5 p-3 text-sm text-destructive">
