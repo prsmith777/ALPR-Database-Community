@@ -30,6 +30,13 @@ test("pagination rejects SQL fragments and invalid numbers", () => {
 test("pagination clamps excessive values", () => {
   assert.deepEqual(normalizePagination(2_000_000, 10_000), {
     page: 1_000_000,
-    pageSize: 100,
+    pageSize: 500,
+  });
+});
+
+test("pagination accepts the large-page option", () => {
+  assert.deepEqual(normalizePagination(1, 500), {
+    page: 1,
+    pageSize: 500,
   });
 });

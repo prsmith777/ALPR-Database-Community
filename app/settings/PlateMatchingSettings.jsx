@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { RotateCcw } from "lucide-react";
+import { RotateCcw, ScanSearch } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -91,7 +91,10 @@ export default function PlateMatchingSettings({ initialSettings }) {
 
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div>
-          <h2 className="text-2xl font-semibold text-foreground mb-2">Plate Matching</h2>
+          <h2 className="mb-2 flex items-center gap-2 text-2xl font-semibold text-foreground">
+            <ScanSearch className="h-6 w-6 text-blue-600 dark:text-blue-400" />
+            Plate Matching
+          </h2>
           <p className="max-w-3xl text-muted-foreground">
             Configure the shared fuzzy-matching profiles used by Recognition Feed,
             Plate Database, Downloads, and MQTT rules. Each page and MQTT rule keeps
@@ -103,8 +106,10 @@ export default function PlateMatchingSettings({ initialSettings }) {
         </Button>
       </div>
 
-      <Card>
-        <CardHeader><CardTitle className="text-primary">Site defaults</CardTitle></CardHeader>
+      <Card className="border-blue-500/20 shadow-sm">
+        <CardHeader className="border-b border-blue-500/10 bg-blue-500/5">
+          <CardTitle className="text-blue-700 dark:text-blue-300">Site defaults</CardTitle>
+        </CardHeader>
         <CardContent className="grid gap-5 md:grid-cols-2">
           <div className="space-y-2">
             <Label htmlFor="minimum-match-characters">Minimum characters for fuzzy matching</Label>
@@ -144,9 +149,9 @@ export default function PlateMatchingSettings({ initialSettings }) {
 
       <div className="grid gap-4 xl:grid-cols-3">
         {Object.entries(settings.profiles).map(([name, profile]) => (
-          <Card key={name}>
-            <CardHeader>
-              <CardTitle className="capitalize text-primary">{name}</CardTitle>
+          <Card key={name} className="border-blue-500/20 shadow-sm">
+            <CardHeader className="border-b border-blue-500/10 bg-blue-500/5">
+              <CardTitle className="capitalize text-blue-700 dark:text-blue-300">{name}</CardTitle>
               <p className="text-sm text-muted-foreground">{PROFILE_DETAILS[name]}</p>
             </CardHeader>
             <CardContent className="space-y-5">
@@ -187,9 +192,9 @@ export default function PlateMatchingSettings({ initialSettings }) {
         ))}
       </div>
 
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-primary">Test the profiles</CardTitle>
+      <Card className="border-blue-500/20 shadow-sm">
+        <CardHeader className="border-b border-blue-500/10 bg-blue-500/5">
+          <CardTitle className="text-blue-700 dark:text-blue-300">Test the profiles</CardTitle>
           <p className="text-sm text-muted-foreground">
             Compare a search with a stored plate before saving these settings.
           </p>

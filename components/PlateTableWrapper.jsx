@@ -7,6 +7,7 @@ import {
   readPlateMatchPreference,
   writePlateMatchPreference,
 } from "@/lib/plate-match-preference.mjs";
+import { scrollMainToTop } from "@/lib/page-scroll.mjs";
 import {
   addKnownPlate,
   correctPlateRead,
@@ -176,6 +177,11 @@ export default function PlateTableWrapper({
     (updates) => {
       const current = new URLSearchParams(params);
       Object.entries(updates).forEach(([key, value]) => {
+        if (Array.isArray(value)) {
+          current.delete(key);
+          value.filter(Boolean).forEach((item) => current.append(key, item));
+          return;
+        }
         if (value === null || value === undefined || value === "") {
           current.delete(key);
         } else {
@@ -231,8 +237,10 @@ export default function PlateTableWrapper({
         return;
       }
 
+      scrollMainToTop();
       router.push(
-        `${pathname}?${createQueryString({ page: newPage.toString() })}`
+        `${pathname}?${createQueryString({ page: newPage.toString() })}`,
+        { scroll: false }
       );
     },
     [createQueryString, params, pathname, router, total]
@@ -358,7 +366,7 @@ export default function PlateTableWrapper({
       filters={{
         search: params.get("search") || "",
         matchMode: params.get("matchMode") || preferredMatchMode,
-        tag: params.get("tag") || "all",
+        tags: params.getAll("tag").filter((tag) => tag && tag !== "all"),
         dateRange: {
           from: params.get("dateFrom")
             ? new Date(params.get("dateFrom"))
@@ -372,7 +380,7 @@ export default function PlateTableWrapper({
                 to: parseInt(params.get("hourTo")),
               }
             : null,
-        cameraName: params.get("camera"),
+        cameraNames: params.getAll("camera").filter(Boolean),
       }}
       sort={{
         field: params.get("sortField") || "timestamp",

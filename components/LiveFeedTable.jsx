@@ -10,6 +10,11 @@ import {
   getTimeFormat,
 } from "@/app/actions";
 
+function searchParamList(value) {
+  if (Array.isArray(value)) return value.filter(Boolean);
+  return value ? [value] : [];
+}
+
 export default async function LiveFeedTable(props) {
   const searchParams = await props.searchParams;
 
@@ -20,7 +25,7 @@ export default async function LiveFeedTable(props) {
     matchMode:
       searchParams?.matchMode ||
       "balanced",
-    tag: searchParams?.tag || "all",
+    tags: searchParamList(searchParams?.tag).filter((tag) => tag !== "all"),
     dateRange:
       searchParams?.dateFrom && searchParams?.dateTo
         ? { from: searchParams.dateFrom, to: searchParams.dateTo }
@@ -32,7 +37,7 @@ export default async function LiveFeedTable(props) {
             to: parseInt(searchParams.hourTo),
           }
         : null,
-    cameraName: searchParams?.camera,
+    cameraNames: searchParamList(searchParams?.camera),
   };
 
   const [platesRes, tagsRes, camerasRes, timeFormat, settings] = await Promise.all([

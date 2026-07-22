@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef } from "react";
 import NextImage from "next/image";
+import Link from "next/link";
 import {
   Search,
   Filter,
@@ -82,6 +83,7 @@ import { Switch } from "@/components/ui/switch";
 import { useRouter } from "next/navigation";
 import PlateMatchModeSelect from "@/components/PlateMatchModeSelect";
 import PlateImage from "@/components/PlateImage";
+import MultiSelectFilter from "@/components/MultiSelectFilter";
 import { getSettings } from "@/app/actions";
 import ImageViewer from "./ImageViewer";
 import { useAccess } from "@/components/auth/AccessProvider";
@@ -140,7 +142,13 @@ function PlateIdentity({ plate, compact = false }) {
   return (
     <div className={compact ? "space-y-1" : "space-y-1.5"}>
       <div className="flex flex-wrap items-center gap-2">
-        <span>{plate.plate_number}</span>
+        <Link
+          href={`/live_feed?search=${encodeURIComponent(plate.plate_number)}&matchMode=off`}
+          className="text-blue-600 underline-offset-4 hover:underline focus-visible:rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 dark:text-blue-400"
+          title={`View exact reads for ${plate.plate_number}`}
+        >
+          {plate.plate_number}
+        </Link>
         <Badge
           variant="outline"
           className={`px-1.5 py-0 text-[10px] font-sans ${REVIEW_STATUS_CLASSES[status] || ""}`}
@@ -195,6 +203,28 @@ export default function PlateTable({
   const canManageKnownPlates = can("known_plate.manage");
   const canManageTags = can("tag.manage");
   const canExport = can("export.create");
+  const selectedTags = Array.isArray(filters.tags)
+    ? filters.tags
+    : filters.tag && filters.tag !== "all"
+      ? [filters.tag]
+      : [];
+  const selectedCameras = Array.isArray(filters.cameraNames)
+    ? filters.cameraNames
+    : filters.cameraName
+      ? [filters.cameraName]
+      : [];
+  const tagFilterOptions = [
+    { value: "untagged", label: "Untagged", color: "#6B7280" },
+    ...availableTags.map((tag) => ({
+      value: tag.name,
+      label: tag.name,
+      color: tag.color,
+    })),
+  ];
+  const cameraFilterOptions = availableCameras.map((camera) => ({
+    value: camera,
+    label: camera,
+  }));
 
   // Only keep state for modals and temporary form data
   const [isAddKnownPlateOpen, setIsAddKnownPlateOpen] = useState(false);
@@ -470,12 +500,12 @@ export default function PlateTable({
     onUpdateFilters({ matchMode, fuzzySearch: null });
   };
 
-  const handleTagChange = (value) => {
-    onUpdateFilters({ tag: value });
+  const handleTagChange = (values) => {
+    onUpdateFilters({ tag: values });
   };
 
-  const handleCameraChange = (value) => {
-    onUpdateFilters({ camera: value === "all" ? "" : value });
+  const handleCameraChange = (values) => {
+    onUpdateFilters({ camera: values });
   };
 
   const handleDateRangeSelect = (range) => {
@@ -786,45 +816,27 @@ export default function PlateTable({
     <div className="space-y-6 py-4">
       <div className="space-y-2">
         <h4 className="text-sm font-medium">Filter by Tag</h4>
-        <Select value={filters.tag} onValueChange={handleTagChange}>
-          <SelectTrigger className="w-full">
-            <SelectValue placeholder="Select tag" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">All tags</SelectItem>
-            {availableTags.map((tag) => (
-              <SelectItem key={tag.name} value={tag.name}>
-                <div className="flex items-center">
-                  <div
-                    className="w-3 h-3 rounded-full mr-2"
-                    style={{ backgroundColor: tag.color }}
-                  />
-                  {tag.name}
-                </div>
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+        <MultiSelectFilter
+          ariaLabel="Filter by tags"
+          allLabel="All tags"
+          value={selectedTags}
+          options={tagFilterOptions}
+          exclusiveValues={["untagged"]}
+          onChange={handleTagChange}
+          className="w-full"
+        />
       </div>
 
       <div className="space-y-2">
         <h4 className="text-sm font-medium">Filter by Camera</h4>
-        <Select
-          value={filters.cameraName || "all"}
-          onValueChange={handleCameraChange}
-        >
-          <SelectTrigger className="w-full">
-            <SelectValue placeholder="Select camera" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">All cameras</SelectItem>
-            {availableCameras.map((camera) => (
-              <SelectItem key={camera} value={camera}>
-                {camera}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+        <MultiSelectFilter
+          ariaLabel="Filter by cameras"
+          allLabel="All cameras"
+          value={selectedCameras}
+          options={cameraFilterOptions}
+          onChange={handleCameraChange}
+          className="w-full"
+        />
       </div>
 
       <div className="space-y-3">
@@ -937,9 +949,9 @@ export default function PlateTable({
             <SelectValue>{pagination.pageSize}</SelectValue>
           </SelectTrigger>
           <SelectContent>
-            {[10, 25, 50, 100].map((size) => (
+            {[10, 25, 50, 100, 250, 500].map((size) => (
               <SelectItem key={size} value={size.toString()}>
-                {size} results per page
+                {size} results per page{size === 500 ? " (large)" : ""}
               </SelectItem>
             ))}
           </SelectContent>
@@ -1077,41 +1089,23 @@ export default function PlateTable({
 
             {/* Desktop Filters */}
             <div className="hidden sm:flex flex-wrap gap-2">
-              <Select value={filters.tag} onValueChange={handleTagChange}>
-                <SelectTrigger className="w-[180px] h-9 dark:bg-[#161618]">
-                  <SelectValue placeholder="Filter by tag" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All tags</SelectItem>
-                  {availableTags.map((tag) => (
-                    <SelectItem key={tag.name} value={tag.name}>
-                      <div className="flex items-center">
-                        <div
-                          className="w-3 h-3 rounded-full mr-2"
-                          style={{ backgroundColor: tag.color }}
-                        />
-                        {tag.name}
-                      </div>
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              <Select
-                value={filters.cameraName || "all"}
-                onValueChange={handleCameraChange}
-              >
-                <SelectTrigger className="w-[180px] dark:bg-[#161618]">
-                  <SelectValue placeholder="Filter by camera" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All cameras</SelectItem>
-                  {availableCameras.map((camera) => (
-                    <SelectItem key={camera} value={camera}>
-                      {camera}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <MultiSelectFilter
+                ariaLabel="Filter by tags"
+                allLabel="All tags"
+                value={selectedTags}
+                options={tagFilterOptions}
+                exclusiveValues={["untagged"]}
+                onChange={handleTagChange}
+                className="h-9 w-[180px] dark:bg-[#161618]"
+              />
+              <MultiSelectFilter
+                ariaLabel="Filter by cameras"
+                allLabel="All cameras"
+                value={selectedCameras}
+                options={cameraFilterOptions}
+                onChange={handleCameraChange}
+                className="h-9 w-[180px] dark:bg-[#161618]"
+              />
 
               <Popover>
                 <PopoverTrigger asChild>
@@ -1171,7 +1165,7 @@ export default function PlateTable({
                 }
               />
               {(filters.search ||
-                filters.tag !== "all" ||
+                selectedTags.length > 0 ||
                 filters.dateRange.from ||
                 (filters.hourRange?.from !== undefined &&
                   filters.hourRange?.to !== undefined)) && (
@@ -1199,9 +1193,9 @@ export default function PlateTable({
                 <SelectValue>{pagination.pageSize}</SelectValue>
               </SelectTrigger>
               <SelectContent>
-                {[10, 25, 50, 100].map((size) => (
+                {[10, 25, 50, 100, 250, 500].map((size) => (
                   <SelectItem key={size} value={size.toString()}>
-                    {size}
+                    {size}{size === 500 ? " (large)" : ""}
                   </SelectItem>
                 ))}
               </SelectContent>
@@ -1217,9 +1211,9 @@ export default function PlateTable({
 
         {/* Active filters display on mobile */}
         {(filters.search ||
-          filters.tag !== "all" ||
+          selectedTags.length > 0 ||
           filters.dateRange.from ||
-          filters.cameraName ||
+          selectedCameras.length > 0 ||
           (filters.hourRange?.from !== undefined &&
             filters.hourRange?.to !== undefined)) && (
           <div className="flex sm:hidden items-center gap-2 mb-4 overflow-x-auto pb-2">
@@ -1236,21 +1230,21 @@ export default function PlateTable({
               </Badge>
             )}
 
-            {filters.tag !== "all" && (
+            {selectedTags.length > 0 && (
               <Badge
                 variant="outline"
                 className="text-xs h-6 whitespace-nowrap"
               >
-                Tag: {filters.tag}
+                Tags: {selectedTags.join(", ")}
               </Badge>
             )}
 
-            {filters.cameraName && (
+            {selectedCameras.length > 0 && (
               <Badge
                 variant="outline"
                 className="text-xs h-6 whitespace-nowrap"
               >
-                Camera: {filters.cameraName}
+                Cameras: {selectedCameras.join(", ")}
               </Badge>
             )}
 

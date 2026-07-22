@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useTransition } from "react";
+import Link from "next/link";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -23,8 +24,8 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { Plus } from "lucide-react";
-import { addDBPlate } from "@/app/actions";
+import { BellRing, Eye, Plus, X } from "lucide-react";
+import { addDBPlate, alterPlateFlag } from "@/app/actions";
 import { useAccess } from "@/components/auth/AccessProvider";
 
 export function FlaggedPlatesTable({ initialData }) {
@@ -33,6 +34,11 @@ export function FlaggedPlatesTable({ initialData }) {
   const [open, setOpen] = useState(false);
   const [plateNumber, setPlateNumber] = useState("");
   const [isPending, startTransition] = useTransition();
+
+  const formatLastSeen = (value) => {
+    if (!value) return "No reads yet";
+    return new Date(value).toLocaleString();
+  };
 
   // Update data when initialData prop changes (after revalidation)
   useEffect(() => {
@@ -54,13 +60,23 @@ export function FlaggedPlatesTable({ initialData }) {
       try {
         const result = await addDBPlate(trimmedPlate.toUpperCase(), true);
         if (result.success) {
-          setData((prev) => [
-            {
-              plate_number: trimmedPlate.toUpperCase(),
-              tags: [],
-            },
-            ...prev,
-          ]);
+          setData((prev) => {
+            const normalizedPlate = trimmedPlate.toUpperCase();
+            if (prev.some((plate) => plate.plate_number === normalizedPlate)) {
+              return prev;
+            }
+            return [
+              {
+                plate_number: normalizedPlate,
+                name: null,
+                notes: null,
+                occurrence_count: 0,
+                last_seen_at: null,
+                tags: [],
+              },
+              ...prev,
+            ];
+          });
           setPlateNumber("");
           setOpen(false);
         }
@@ -70,29 +86,74 @@ export function FlaggedPlatesTable({ initialData }) {
     });
   };
 
+  const handleRemove = (plateNumberToRemove) => {
+    const formData = new FormData();
+    formData.append("plateNumber", plateNumberToRemove);
+    formData.append("flagged", "false");
+
+    startTransition(async () => {
+      const result = await alterPlateFlag(formData);
+      if (result.success) {
+        setData((current) =>
+          current.filter((plate) => plate.plate_number !== plateNumberToRemove)
+        );
+      }
+    });
+  };
+
   return (
     <>
+      <div className="mb-4 flex gap-3 rounded-lg border border-blue-500/30 bg-blue-500/5 p-4 text-sm">
+        <BellRing className="mt-0.5 h-5 w-5 shrink-0 text-blue-600 dark:text-blue-400" />
+        <div>
+          <p className="font-medium text-blue-700 dark:text-blue-300">
+            Watchlist is integrated with unified rules
+          </p>
+          <p className="mt-1 text-muted-foreground">
+            Adding a plate here marks it as watchlisted. A unified notification
+            rule with the Watchlist condition decides which cameras and delivery
+            channels should act when that plate is read.
+          </p>
+        </div>
+      </div>
+
       <Card className="mt-4 sm:mt-0 dark:bg-[#0e0e10]">
         <CardContent className="py-4 ">
           <Table>
             <TableHeader>
               <TableRow>
                 <TableHead>Plate Number</TableHead>
+                <TableHead>Known Name</TableHead>
+                <TableHead>Last Seen</TableHead>
+                <TableHead className="text-right">Reads</TableHead>
                 <TableHead>Tags</TableHead>
+                <TableHead className="text-right">Actions</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {data.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={2} className="text-center py-4">
-                    No flagged plates found
+                  <TableCell colSpan={6} className="text-center py-8">
+                    No watchlist plates found
                   </TableCell>
                 </TableRow>
               ) : (
                 data.map((plate) => (
                   <TableRow key={plate.plate_number}>
-                    <TableCell className="font-medium font-mono text-[#F31260]">
-                      {plate.plate_number}
+                    <TableCell className="font-medium font-mono">
+                      <Link
+                        href={`/live_feed?search=${encodeURIComponent(plate.plate_number)}&matchMode=off`}
+                        className="text-blue-600 underline-offset-4 hover:underline dark:text-blue-400"
+                      >
+                        {plate.plate_number}
+                      </Link>
+                    </TableCell>
+                    <TableCell>{plate.name || "—"}</TableCell>
+                    <TableCell className="whitespace-nowrap text-sm text-muted-foreground">
+                      {formatLastSeen(plate.last_seen_at)}
+                    </TableCell>
+                    <TableCell className="text-right tabular-nums">
+                      {plate.occurrence_count || 0}
                     </TableCell>
                     <TableCell>
                       <div className="flex flex-wrap items-center gap-1.5">
@@ -117,6 +178,27 @@ export function FlaggedPlatesTable({ initialData }) {
                         )}
                       </div>
                     </TableCell>
+                    <TableCell>
+                      <div className="flex justify-end gap-2">
+                        <Button variant="outline" size="sm" asChild>
+                          <Link
+                            href={`/live_feed?search=${encodeURIComponent(plate.plate_number)}&matchMode=off`}
+                          >
+                            <Eye className="mr-2 h-4 w-4" /> Reads
+                          </Link>
+                        </Button>
+                        {can("plate.review") && (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => handleRemove(plate.plate_number)}
+                            disabled={isPending}
+                          >
+                            <X className="mr-2 h-4 w-4" /> Remove
+                          </Button>
+                        )}
+                      </div>
+                    </TableCell>
                   </TableRow>
                 ))
               )}
@@ -131,14 +213,14 @@ export function FlaggedPlatesTable({ initialData }) {
           <DialogTrigger asChild>
             <Button>
               <Plus className="h-4 w-4 mr-2" />
-              Add Flagged Plate
+              Add to Watchlist
             </Button>
           </DialogTrigger>
           <DialogContent className="sm:max-w-[425px]">
             <DialogHeader>
-              <DialogTitle>Add Flagged Plate</DialogTitle>
+              <DialogTitle>Add to Watchlist</DialogTitle>
               <DialogDescription>
-                Add a new plate number to the flagged list for monitoring.
+                Add a plate number for unified Watchlist rules to monitor.
               </DialogDescription>
             </DialogHeader>
             <form onSubmit={handleSubmit}>
@@ -171,7 +253,7 @@ export function FlaggedPlatesTable({ initialData }) {
                   type="submit"
                   disabled={isPending || !plateNumber.trim()}
                 >
-                  {isPending ? "Adding..." : "Add Plate"}
+                  {isPending ? "Adding..." : "Add to Watchlist"}
                 </Button>
               </DialogFooter>
             </form>
