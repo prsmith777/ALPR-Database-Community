@@ -1,9 +1,11 @@
 import {
   getNotificationPlates,
   getNotificationRuleMigrationPreview,
+  getUnifiedNotificationRuleReview,
 } from "@/app/actions";
 import { NotificationMigrationPreview } from "@/components/NotificationMigrationPreview";
 import { NotificationsTable } from "@/components/NotificationsTable";
+import { UnifiedRuleShadowReview } from "@/components/UnifiedRuleShadowReview";
 import DashboardLayout from "@/components/layout/MainLayout";
 import BasicTitle from "@/components/layout/BasicTitle";
 import { requirePagePermission } from "@/lib/page-permission.mjs";
@@ -12,14 +14,16 @@ export const dynamic = "force-dynamic";
 
 export default async function NotificationsPage() {
   await requirePagePermission("notification.manage");
-  const [response, migrationPreviewResponse] = await Promise.all([
+  const [response, migrationPreviewResponse, shadowReviewResponse] = await Promise.all([
     getNotificationPlates(),
     getNotificationRuleMigrationPreview(),
+    getUnifiedNotificationRuleReview(),
   ]);
   const notificationPlates = response.success ? response.data : [];
   const migrationPreview = migrationPreviewResponse.success
     ? migrationPreviewResponse.data
     : null;
+  const shadowReview = shadowReviewResponse.success ? shadowReviewResponse.data : null;
 
   return (
     <DashboardLayout>
@@ -33,6 +37,9 @@ export default async function NotificationsPage() {
         <NotificationsTable initialData={notificationPlates} />
         <div className="mt-8">
           <NotificationMigrationPreview preview={migrationPreview} />
+        </div>
+        <div className="mt-8">
+          <UnifiedRuleShadowReview review={shadowReview} />
         </div>
       </BasicTitle>
     </DashboardLayout>
