@@ -8,6 +8,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import PlateMatchModeSelect from "@/components/PlateMatchModeSelect";
+import MultiSelectFilter from "@/components/MultiSelectFilter";
 import {
   readPlateMatchPreference,
   writePlateMatchPreference,
@@ -41,8 +42,12 @@ export default function PlateExportForm({
         ? "balanced"
         : readPlateMatchPreference("downloads"))
   );
-  const [tag, setTag] = useState(() => searchParams.get("tag") || "all");
-  const [camera, setCamera] = useState(() => searchParams.get("camera") || "all");
+  const [selectedTags, setSelectedTags] = useState(() =>
+    searchParams.getAll("tag").filter((tag) => tag && tag !== "all")
+  );
+  const [selectedCameras, setSelectedCameras] = useState(() =>
+    searchParams.getAll("camera").filter(Boolean)
+  );
   const [dateFrom, setDateFrom] = useState(() => searchParams.get("dateFrom") || "");
   const [dateTo, setDateTo] = useState(() => searchParams.get("dateTo") || "");
   const [hourFrom, setHourFrom] = useState(() => searchParams.get("hourFrom") || "all");
@@ -52,8 +57,8 @@ export default function PlateExportForm({
     const params = new URLSearchParams();
     if (search.trim()) params.set("search", search.trim());
     if (matchMode) params.set("matchMode", matchMode);
-    if (tag !== "all") params.set("tag", tag);
-    if (camera !== "all") params.set("camera", camera);
+    selectedTags.forEach((tag) => params.append("tag", tag));
+    selectedCameras.forEach((camera) => params.append("camera", camera));
     if (dateFrom) params.set("dateFrom", dateFrom);
     if (dateTo) params.set("dateTo", dateTo);
     if (hourFrom !== "all" && hourTo !== "all") {
@@ -65,7 +70,17 @@ export default function PlateExportForm({
       params.set("sortDirection", searchParams.get("sortDirection") || "desc");
     }
     return params;
-  }, [camera, dateFrom, dateTo, hourFrom, hourTo, matchMode, search, searchParams, tag]);
+  }, [
+    dateFrom,
+    dateTo,
+    hourFrom,
+    hourTo,
+    matchMode,
+    search,
+    searchParams,
+    selectedCameras,
+    selectedTags,
+  ]);
 
   const startDownload = (format) => {
     const params = new URLSearchParams(query);
@@ -80,8 +95,8 @@ export default function PlateExportForm({
 
   const clearFilters = () => {
     setSearch("");
-    setTag("all");
-    setCamera("all");
+    setSelectedTags([]);
+    setSelectedCameras([]);
     setDateFrom("");
     setDateTo("");
     setHourFrom("all");
@@ -129,30 +144,37 @@ export default function PlateExportForm({
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="export-tag">Tag</Label>
-              <Select value={tag} onValueChange={setTag}>
-                <SelectTrigger id="export-tag"><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All tags</SelectItem>
-                  <SelectItem value="untagged">Untagged</SelectItem>
-                  {tags.map((item) => (
-                    <SelectItem key={item.name} value={item.name}>{item.name}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <Label htmlFor="export-tag">Tags</Label>
+              <MultiSelectFilter
+                id="export-tag"
+                ariaLabel="Filter export by tags"
+                allLabel="All tags"
+                value={selectedTags}
+                options={[
+                  { value: "untagged", label: "Untagged", color: "#6B7280" },
+                  ...tags.map((item) => ({
+                    value: item.name,
+                    label: item.name,
+                    color: item.color,
+                  })),
+                ]}
+                exclusiveValues={["untagged"]}
+                onChange={setSelectedTags}
+                className="w-full"
+              />
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="export-camera">Camera</Label>
-              <Select value={camera} onValueChange={setCamera}>
-                <SelectTrigger id="export-camera"><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All cameras</SelectItem>
-                  {cameras.map((item) => (
-                    <SelectItem key={item} value={item}>{item}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <Label htmlFor="export-camera">Cameras</Label>
+              <MultiSelectFilter
+                id="export-camera"
+                ariaLabel="Filter export by cameras"
+                allLabel="All cameras"
+                value={selectedCameras}
+                options={cameras.map((item) => ({ value: item, label: item }))}
+                onChange={setSelectedCameras}
+                className="w-full"
+              />
             </div>
 
             <div className="space-y-2">

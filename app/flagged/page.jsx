@@ -12,7 +12,10 @@ export default async function FlaggedPlatesPage() {
 
   return (
     <DashboardLayout>
-      <BasicTitle title="Flagged Plates">
+      <BasicTitle
+        title="Watchlist"
+        subtitle="Plates monitored by unified notification rules"
+      >
         <FlaggedPlatesTable initialData={flaggedPlates} />
       </BasicTitle>
     </DashboardLayout>

@@ -8,6 +8,11 @@ import {
   readPlateMatchPreference,
   writePlateMatchPreference,
 } from "@/lib/plate-match-preference.mjs";
+import {
+  readTablePageSizePreference,
+  writeTablePageSizePreference,
+} from "@/lib/table-page-size-preference.mjs";
+import { scrollMainToTop } from "@/lib/page-scroll.mjs";
 import PlateTable from "./PlateTable";
 import {
   addKnownPlate,
@@ -32,10 +37,16 @@ export default function PlateTableClient({
     params.get("fuzzySearch") === "true"
       ? "balanced"
       : readPlateMatchPreference("recognition-feed");
+  const preferredPageSize = readTablePageSizePreference("live-feed");
 
   const createQueryString = (updates) => {
     const current = new URLSearchParams(params);
     Object.entries(updates).forEach(([key, value]) => {
+      if (Array.isArray(value)) {
+        current.delete(key);
+        value.filter(Boolean).forEach((item) => current.append(key, item));
+        return;
+      }
       if (value === null || value === undefined || value === "") {
         current.delete(key);
       } else {
@@ -48,6 +59,9 @@ export default function PlateTableClient({
   const updateFilters = (newParams) => {
     if (newParams.matchMode) {
       writePlateMatchPreference("recognition-feed", newParams.matchMode);
+    }
+    if (newParams.pageSize !== undefined) {
+      writeTablePageSizePreference("live-feed", newParams.pageSize);
     }
     const queryString = createQueryString({ ...newParams, page: "1" });
     router.push(`${pathname}?${queryString}`);
@@ -65,8 +79,10 @@ export default function PlateTableClient({
       return;
     }
 
+    scrollMainToTop();
     router.push(
-      `${pathname}?${createQueryString({ page: newPage.toString() })}`
+      `${pathname}?${createQueryString({ page: newPage.toString() })}`,
+      { scroll: false }
     );
   };
 
@@ -130,7 +146,7 @@ export default function PlateTableClient({
       timeFormat={timeFormat}
       pagination={{
         page: parseInt(params.get("page") || "1"),
-        pageSize: parseInt(params.get("pageSize") || "25"),
+        pageSize: parseInt(params.get("pageSize") || String(preferredPageSize)),
         total,
         onNextPage: () => handlePageChange("next"),
         onPreviousPage: () => handlePageChange("prev"),
@@ -138,7 +154,7 @@ export default function PlateTableClient({
       filters={{
         search: params.get("search") || "",
         matchMode: params.get("matchMode") || preferredMatchMode,
-        tag: params.get("tag") || "all",
+        tags: params.getAll("tag").filter((tag) => tag && tag !== "all"),
         dateRange: {
           from: params.get("dateFrom")
             ? new Date(params.get("dateFrom"))
@@ -152,7 +168,7 @@ export default function PlateTableClient({
                 to: parseInt(params.get("hourTo")),
               }
             : null,
-        cameraName: params.get("camera"),
+        cameraNames: params.getAll("camera").filter(Boolean),
       }}
       onUpdateFilters={updateFilters}
       onAddTag={handleAddTag}

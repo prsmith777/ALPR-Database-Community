@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import PlateMatchModeSelect from "@/components/PlateMatchModeSelect";
+import MultiSelectFilter from "@/components/MultiSelectFilter";
 import { useAccess } from "@/components/auth/AccessProvider";
 import {
   Select,
@@ -27,8 +28,8 @@ function exportHref(filters, sortConfig) {
   const params = new URLSearchParams();
   if (filters.search.trim()) params.set("search", filters.search.trim());
   if (filters.matchMode) params.set("matchMode", filters.matchMode);
-  if (filters.tag !== "all") params.set("tag", filters.tag);
-  if (filters.cameraName) params.set("camera", filters.cameraName);
+  (filters.tags || []).forEach((tag) => params.append("tag", tag));
+  (filters.cameraNames || []).forEach((camera) => params.append("camera", camera));
   if (filters.dateRange.from) params.set("dateFrom", filters.dateRange.from);
   if (filters.dateRange.to) params.set("dateTo", filters.dateRange.to);
   if (filters.hourRange) {
@@ -55,6 +56,18 @@ export default function PlateDatabaseFilters({
   const [isOpen, setIsOpen] = useState(false);
   const hourFrom = filters.hourRange ? String(filters.hourRange.from) : "all";
   const hourTo = filters.hourRange ? String(filters.hourRange.to) : "all";
+  const tagOptions = [
+    { value: "untagged", label: "Untagged", color: "#6B7280" },
+    ...availableTags.map((tag) => ({
+      value: tag.name,
+      label: tag.name,
+      color: tag.color,
+    })),
+  ];
+  const cameraOptions = availableCameras.map((camera) => ({
+    value: camera,
+    label: camera,
+  }));
   const updateHour = (side, value) => {
     if (value === "all") {
       onChange({ hourRange: null });
@@ -120,33 +133,30 @@ export default function PlateDatabaseFilters({
         </div>
 
         <div className="space-y-2">
-          <Label htmlFor="plate-database-tag">Tag</Label>
-          <Select value={filters.tag} onValueChange={(tag) => onChange({ tag })}>
-            <SelectTrigger id="plate-database-tag"><SelectValue /></SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All tags</SelectItem>
-              <SelectItem value="untagged">Untagged</SelectItem>
-              {availableTags.map((tag) => (
-                <SelectItem key={tag.name} value={tag.name}>{tag.name}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          <Label htmlFor="plate-database-tag">Tags</Label>
+          <MultiSelectFilter
+            id="plate-database-tag"
+            ariaLabel="Filter plate database by tags"
+            allLabel="All tags"
+            value={filters.tags}
+            options={tagOptions}
+            exclusiveValues={["untagged"]}
+            onChange={(tags) => onChange({ tags })}
+            className="w-full"
+          />
         </div>
 
         <div className="space-y-2">
-          <Label htmlFor="plate-database-camera">Camera</Label>
-          <Select
-            value={filters.cameraName || "all"}
-            onValueChange={(camera) => onChange({ cameraName: camera === "all" ? "" : camera })}
-          >
-            <SelectTrigger id="plate-database-camera"><SelectValue /></SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All cameras</SelectItem>
-              {availableCameras.map((camera) => (
-                <SelectItem key={camera} value={camera}>{camera}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          <Label htmlFor="plate-database-camera">Cameras</Label>
+          <MultiSelectFilter
+            id="plate-database-camera"
+            ariaLabel="Filter plate database by cameras"
+            allLabel="All cameras"
+            value={filters.cameraNames}
+            options={cameraOptions}
+            onChange={(cameraNames) => onChange({ cameraNames })}
+            className="w-full"
+          />
         </div>
 
         <div className="space-y-2">
@@ -207,8 +217,10 @@ export default function PlateDatabaseFilters({
           <Select value={String(pageSize)} onValueChange={onPageSizeChange}>
             <SelectTrigger id="plate-database-page-size" className="w-24"><SelectValue /></SelectTrigger>
             <SelectContent>
-              {[10, 25, 50, 100].map((size) => (
-                <SelectItem key={size} value={String(size)}>{size}</SelectItem>
+              {[10, 25, 50, 100, 250, 500].map((size) => (
+                <SelectItem key={size} value={String(size)}>
+                  {size}{size === 500 ? " (large)" : ""}
+                </SelectItem>
               ))}
             </SelectContent>
           </Select>

@@ -24,20 +24,47 @@ test("combined plate filters stay grouped and parameterized", () => {
   assert.match(result.whereClause, /LEVENSHTEIN/);
   assert.match(result.whereClause, /TRANSLATE/);
   assert.match(result.whereClause, /AND EXISTS \(/);
-  assert.match(result.whereClause, /LOWER\(pr_filter\.camera_name\) = LOWER\(\$10\)/);
+  assert.match(result.whereClause, /LOWER\(pr_filter\.camera_name\) = ANY\(\$10::text\[\]\)/);
   assert.match(result.whereClause, /timestamp::date >= \$11/);
   assert.match(result.whereClause, /timestamp::date <= \$12/);
   assert.match(result.whereClause, /BETWEEN \$13 AND \$14/);
   assert.equal(result.values[0], "%ABC-123%");
   assert.equal(result.values[1], "ABC123");
   assert.deepEqual(result.values.slice(8), [
-    "Watchlist",
-    "Driveway",
+    ["Watchlist"],
+    ["driveway"],
     "2026-07-01",
     "2026-07-19",
     7,
     19,
   ]);
+});
+
+test("multiple tags and cameras use OR within each filter group", () => {
+  const result = buildPlateDatabaseFilterClause({
+    tags: ["Family", "Delivery"],
+    cameraNames: ["Entry LPR 1", "Street LPR 2"],
+  });
+
+  assert.match(result.whereClause, /t_filter\.name = ANY\(\$1::text\[\]\)/);
+  assert.match(
+    result.whereClause,
+    /LOWER\(pr_filter\.camera_name\) = ANY\(\$2::text\[\]\)/
+  );
+  assert.deepEqual(result.values, [
+    ["Family", "Delivery"],
+    ["entry lpr 1", "street lpr 2"],
+  ]);
+});
+
+test("untagged remains exclusive when combined with named tags", () => {
+  const result = buildPlateDatabaseFilterClause({
+    tags: ["untagged", "Family"],
+  });
+
+  assert.match(result.whereClause, /NOT EXISTS/);
+  assert.match(result.whereClause, / OR EXISTS/);
+  assert.deepEqual(result.values, [["Family"]]);
 });
 
 test("overnight hour filters use one read-scoped OR group", () => {

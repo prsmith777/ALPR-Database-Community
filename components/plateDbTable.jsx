@@ -87,12 +87,17 @@ import {
 } from "@/app/actions";
 import Image from "next/image";
 import { formatPlateDateTime } from "@/lib/plate-date.mjs";
+import { scrollMainToTop } from "@/lib/page-scroll.mjs";
 import PlateDatabaseFilters from "@/components/PlateDatabaseFilters";
 import { useAccess } from "@/components/auth/AccessProvider";
 import {
   readPlateMatchPreference,
   writePlateMatchPreference,
 } from "@/lib/plate-match-preference.mjs";
+import {
+  readTablePageSizePreference,
+  writeTablePageSizePreference,
+} from "@/lib/table-page-size-preference.mjs";
 
 const formatDaysAgo = (days) => {
   if (days === 0) return "Today";
@@ -144,9 +149,9 @@ export default function PlateTable({ matchingSettings }) {
   });
   const [filters, setFilters] = useState(() => ({
     search: "",
-    tag: "all",
+    tags: [],
     matchMode: readPlateMatchPreference("plate-database"),
-    cameraName: "",
+    cameraNames: [],
     dateRange: { from: "", to: "" },
     hourRange: null,
   }));
@@ -162,12 +167,16 @@ export default function PlateTable({ matchingSettings }) {
   const [timeFormat, setTimeFormat] = useState(12);
 
   useEffect(() => {
+    setPageSize(readTablePageSizePreference("plate-database"));
+  }, []);
+
+  useEffect(() => {
     const loadData = async () => {
       const result = await getPlates(page, pageSize, sortConfig, {
         search: deferredSearch,
-        tag: filters.tag,
+        tags: filters.tags,
         matchMode: filters.matchMode,
-        cameraName: filters.cameraName,
+        cameraNames: filters.cameraNames,
         dateRange: {
           from: filterDateFrom,
           to: filterDateTo,
@@ -189,9 +198,9 @@ export default function PlateTable({ matchingSettings }) {
     pageSize,
     sortConfig,
     deferredSearch,
-    filters.tag,
+    filters.tags,
     filters.matchMode,
-    filters.cameraName,
+    filters.cameraNames,
     filterDateFrom,
     filterDateTo,
     filterHourFrom,
@@ -390,7 +399,7 @@ export default function PlateTable({ matchingSettings }) {
   };
 
   const handlePageSizeChange = (value) => {
-    setPageSize(Number(value));
+    setPageSize(writeTablePageSizePreference("plate-database", value));
     setPage(1);
   };
 
@@ -405,9 +414,9 @@ export default function PlateTable({ matchingSettings }) {
   const clearFilters = () => {
     setFilters((current) => ({
       search: "",
-      tag: "all",
+      tags: [],
       matchMode: current.matchMode,
-      cameraName: "",
+      cameraNames: [],
       dateRange: { from: "", to: "" },
       hourRange: null,
     }));
@@ -415,10 +424,12 @@ export default function PlateTable({ matchingSettings }) {
   };
 
   const handlePreviousPage = () => {
+    scrollMainToTop();
     setPage((prev) => Math.max(1, prev - 1));
   };
 
   const handleNextPage = () => {
+    scrollMainToTop();
     setPage((prev) => Math.min(pageCount, prev + 1));
   };
 

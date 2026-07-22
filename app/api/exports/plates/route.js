@@ -38,8 +38,10 @@ export async function GET(request) {
         matchMode:
           url.searchParams.get("matchMode") || "balanced",
         matchingSettings: config.plateMatching,
-        tag: url.searchParams.get("tag") || "all",
-        cameraName: url.searchParams.get("camera") || "",
+        tags: url.searchParams
+          .getAll("tag")
+          .filter((tag) => tag && tag !== "all"),
+        cameraNames: url.searchParams.getAll("camera").filter(Boolean),
         dateRange: {
           from: url.searchParams.get("dateFrom") || null,
           to: url.searchParams.get("dateTo") || null,

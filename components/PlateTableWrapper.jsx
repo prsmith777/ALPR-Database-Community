@@ -8,6 +8,11 @@ import {
   writePlateMatchPreference,
 } from "@/lib/plate-match-preference.mjs";
 import {
+  readTablePageSizePreference,
+  writeTablePageSizePreference,
+} from "@/lib/table-page-size-preference.mjs";
+import { scrollMainToTop } from "@/lib/page-scroll.mjs";
+import {
   addKnownPlate,
   correctPlateRead,
   deletePlateRead,
@@ -35,6 +40,7 @@ export default function PlateTableWrapper({
     params.get("fuzzySearch") === "true"
       ? "balanced"
       : readPlateMatchPreference("recognition-feed");
+  const preferredPageSize = readTablePageSizePreference("live-feed");
 
   // State for live data, initially populated with server-rendered data
   // This will be updated by SSE.
@@ -176,6 +182,11 @@ export default function PlateTableWrapper({
     (updates) => {
       const current = new URLSearchParams(params);
       Object.entries(updates).forEach(([key, value]) => {
+        if (Array.isArray(value)) {
+          current.delete(key);
+          value.filter(Boolean).forEach((item) => current.append(key, item));
+          return;
+        }
         if (value === null || value === undefined || value === "") {
           current.delete(key);
         } else {
@@ -188,11 +199,16 @@ export default function PlateTableWrapper({
   );
 
   useEffect(() => {
+    const updates = {};
     if (!params.get("matchMode")) {
-      const queryString = createQueryString({
-        matchMode: preferredMatchMode,
-        fuzzySearch: null,
-      });
+      updates.matchMode = preferredMatchMode;
+      updates.fuzzySearch = null;
+    }
+    if (!params.get("pageSize")) {
+      updates.pageSize = String(preferredPageSize);
+    }
+    if (Object.keys(updates).length > 0) {
+      const queryString = createQueryString(updates);
       router.replace(`${pathname}?${queryString}`, { scroll: false });
     }
   }, [
@@ -200,6 +216,7 @@ export default function PlateTableWrapper({
     params,
     pathname,
     preferredMatchMode,
+    preferredPageSize,
     router,
   ]);
 
@@ -209,6 +226,9 @@ export default function PlateTableWrapper({
       setIsLiveModeActive(false);
       if (newParams.matchMode) {
         writePlateMatchPreference("recognition-feed", newParams.matchMode);
+      }
+      if (newParams.pageSize !== undefined) {
+        writeTablePageSizePreference("live-feed", newParams.pageSize);
       }
       const queryString = createQueryString({ ...newParams, page: "1" });
       router.push(`${pathname}?${queryString}`);
@@ -231,8 +251,10 @@ export default function PlateTableWrapper({
         return;
       }
 
+      scrollMainToTop();
       router.push(
-        `${pathname}?${createQueryString({ page: newPage.toString() })}`
+        `${pathname}?${createQueryString({ page: newPage.toString() })}`,
+        { scroll: false }
       );
     },
     [createQueryString, params, pathname, router, total]
@@ -358,7 +380,7 @@ export default function PlateTableWrapper({
       filters={{
         search: params.get("search") || "",
         matchMode: params.get("matchMode") || preferredMatchMode,
-        tag: params.get("tag") || "all",
+        tags: params.getAll("tag").filter((tag) => tag && tag !== "all"),
         dateRange: {
           from: params.get("dateFrom")
             ? new Date(params.get("dateFrom"))
@@ -372,7 +394,7 @@ export default function PlateTableWrapper({
                 to: parseInt(params.get("hourTo")),
               }
             : null,
-        cameraName: params.get("camera"),
+        cameraNames: params.getAll("camera").filter(Boolean),
       }}
       sort={{
         field: params.get("sortField") || "timestamp",

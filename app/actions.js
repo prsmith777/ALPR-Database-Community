@@ -455,14 +455,24 @@ export async function getPlates(
       sortBy: sortConfig.key,
       sortDesc: sortConfig.direction === "desc",
       filters: {
-        tag: filters.tag !== "all" ? filters.tag : undefined,
+        tags:
+          Array.isArray(filters.tags) && filters.tags.length > 0
+            ? filters.tags
+            : filters.tag && filters.tag !== "all"
+              ? [filters.tag]
+              : [],
         dateRange: filters.dateRange,
         search: filters.search,
         matchMode:
           filters.matchMode || "balanced",
         matchingSettings: config.plateMatching,
         hourRange: filters.hourRange,
-        cameraName: filters.cameraName,
+        cameraNames:
+          Array.isArray(filters.cameraNames) && filters.cameraNames.length > 0
+            ? filters.cameraNames
+            : filters.cameraName
+              ? [filters.cameraName]
+              : [],
       },
     });
     return { success: true, ...result };
@@ -489,9 +499,11 @@ export async function getLatestPlateReads({
   fuzzySearch = false,
   matchMode = "balanced",
   tag = "all",
+  tags = [],
   dateRange = null,
   hourRange = null,
   cameraName = "",
+  cameraNames = [],
   sortField = "",
   sortDirection = "",
 } = {}) {
@@ -507,10 +519,20 @@ export async function getLatestPlateReads({
         matchMode:
           fuzzySearch && !matchMode ? "balanced" : matchMode || "balanced",
         matchingSettings: config.plateMatching,
-        tag: tag !== "all" ? tag : undefined,
+        tags:
+          Array.isArray(tags) && tags.length > 0
+            ? tags
+            : tag !== "all"
+              ? [tag]
+              : [],
         dateRange,
         hourRange,
-        cameraName: cameraName || undefined,
+        cameraNames:
+          Array.isArray(cameraNames) && cameraNames.length > 0
+            ? cameraNames
+            : cameraName
+              ? [cameraName]
+              : [],
       },
       sort: {
         field: sortField,
@@ -617,6 +639,9 @@ export async function alterPlateFlag(formData) {
     const flagged = formData.get("flagged") === "true";
 
     const result = await togglePlateFlag(plateNumber, flagged);
+
+    revalidatePath("/flagged");
+    revalidatePath("/database");
 
     return {
       success: true,
