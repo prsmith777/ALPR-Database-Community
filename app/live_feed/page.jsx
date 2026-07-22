@@ -21,6 +21,11 @@ import { requirePagePermission } from "@/lib/page-permission.mjs";
 
 export const dynamic = "force-dynamic"; // Ensures data is fetched on every request
 
+function searchParamList(value) {
+  if (Array.isArray(value)) return value.filter(Boolean);
+  return value ? [value] : [];
+}
+
 export default async function LivePlates(props) {
   await requirePagePermission("plate.read");
   noStore(); // Opt-out of data caching for this component and its data fetches
@@ -34,7 +39,7 @@ export default async function LivePlates(props) {
     matchMode:
       searchParams?.matchMode ||
       "balanced",
-    tag: searchParams?.tag || "all",
+    tags: searchParamList(searchParams?.tag).filter((tag) => tag !== "all"),
     dateRange:
       searchParams?.dateFrom && searchParams?.dateTo
         ? { from: searchParams.dateFrom, to: searchParams.dateTo }
@@ -46,7 +51,7 @@ export default async function LivePlates(props) {
             to: parseInt(searchParams.hourTo),
           }
         : null,
-    cameraName: searchParams?.camera,
+    cameraNames: searchParamList(searchParams?.camera),
     sortField: searchParams?.sortField,
     sortDirection: searchParams?.sortDirection,
   };
