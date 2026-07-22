@@ -49,6 +49,10 @@ import {
   getNotificationMigrationPreview as loadNotificationMigrationPreview,
 } from "@/lib/notification-migration-runtime.mjs";
 import {
+  approveNotificationShadowReview as recordNotificationShadowReviewApproval,
+  getNotificationShadowReview as loadNotificationShadowReview,
+} from "@/lib/notification-shadow-review-runtime.mjs";
+import {
   getNotificationPlates as getNotificationPlatesDB,
   addNotificationPlate as addNotificationPlateDB,
   toggleNotification as toggleNotificationDB,
@@ -677,6 +681,52 @@ export async function applyDisabledNotificationRuleMigration(formData) {
     return {
       success: false,
       error: "Failed to create disabled unified notification rules",
+    };
+  }
+}
+
+export async function getUnifiedNotificationRuleReview() {
+  await requirePermission("notification.manage");
+  try {
+    const review = await loadNotificationShadowReview();
+    return { success: true, data: review };
+  } catch (error) {
+    console.error("Error building unified notification shadow review:", error);
+    return { success: false, error: "Failed to build unified rule shadow review" };
+  }
+}
+
+export async function approveUnifiedNotificationRuleReview(formData) {
+  const principal = await requirePermission("notification.manage");
+  if (formData?.get("confirmation") !== "approve_disabled_shadow_review") {
+    return {
+      success: false,
+      error: "Confirm that this approval records evidence only and keeps delivery disabled.",
+    };
+  }
+  try {
+    const data = await recordNotificationShadowReviewApproval({
+      ruleId: formData.get("ruleId"),
+      actor: principal,
+    });
+    revalidatePath("/notifications");
+    return { success: true, data };
+  } catch (error) {
+    console.error("Error approving unified notification shadow review:", error);
+    const safeMessages = new Set([
+      "Select a valid unified rule to approve",
+      "The migrated unified rule was not found",
+      "Approval blocked because the rule, channel, or action is not safely disabled",
+      "Approval requires at least one relevant recent read",
+      "Resolve shadow comparison mismatches before approval",
+      "Approval requires at least one positive legacy and unified match",
+    ]);
+    return {
+      success: false,
+      error:
+        error instanceof Error && safeMessages.has(error.message)
+          ? error.message
+          : "Failed to record shadow review approval",
     };
   }
 }
