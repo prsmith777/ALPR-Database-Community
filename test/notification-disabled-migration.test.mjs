@@ -20,7 +20,7 @@ const readyMqttRule = {
   camera_names: ["Street LPR 2"],
 };
 
-function transactionalPool({ mappings = [], failOn = null } = {}) {
+function transactionalPool({ mappings = [], mqttRule = readyMqttRule, failOn = null } = {}) {
   const calls = [];
   let released = false;
   const client = {
@@ -29,8 +29,11 @@ function transactionalPool({ mappings = [], failOn = null } = {}) {
       calls.push({ sql: normalized, values });
       if (failOn && normalized.includes(failOn)) throw new Error("injected migration failure");
       if (normalized.includes("FROM public.plate_notifications")) return { rows: [] };
-      if (normalized.includes("FROM public.mqtt_rules")) return { rows: [readyMqttRule] };
+      if (normalized.includes("FROM public.mqtt_rules")) return { rows: [mqttRule] };
       if (normalized.startsWith("SELECT source_type")) return { rows: mappings };
+      if (normalized.startsWith("SELECT r.enabled")) {
+        return { rows: [{ enabled: false, has_enabled_delivery: false }] };
+      }
       if (normalized.startsWith("INSERT INTO public.notification_rules")) {
         return { rowCount: 1, rows: [{ id: 51 }] };
       }
@@ -66,6 +69,7 @@ test("disabled migration copies a ready legacy rule atomically and audits it", a
 
   assert.equal(result.mode, "disabled_only");
   assert.equal(result.createdCount, 1);
+  assert.equal(result.reconciledCount, 0);
   assert.equal(result.skippedCount, 0);
   assert.equal(result.blockedCount, 0);
   assert.equal(result.allCreatedDisabled, true);
@@ -103,9 +107,11 @@ test("disabled migration copies a ready legacy rule atomically and audits it", a
   assert.equal(audit.values[0], 9);
   assert.deepEqual(JSON.parse(audit.values[1]), {
     createdCount: 1,
+    reconciledCount: 0,
     skippedCount: 0,
     blockedCount: 0,
     created: [{ sourceType: "mqtt", sourceId: 7, targetRuleId: 51 }],
+    reconciled: [],
     allCreatedDisabled: true,
     legacyDeliveryChanged: false,
   });
@@ -127,12 +133,96 @@ test("disabled migration safely skips a source that already has a durable mappin
   const result = await repository.applyDisabledMigration({ actor: { id: 9 } });
 
   assert.equal(result.createdCount, 0);
+  assert.equal(result.reconciledCount, 0);
   assert.equal(result.skippedCount, 1);
   assert.equal(result.skipped[0].targetRuleId, 44);
   assert.ok(!fixture.calls.some(({ sql }) => sql.includes("INSERT INTO public.notification_rules")));
   assert.ok(!fixture.calls.some(({ sql }) => sql.includes("INSERT INTO public.notification_channels")));
   assert.ok(!fixture.calls.some(({ sql }) => sql.includes("INSERT INTO public.notification_actions")));
   assert.ok(fixture.calls.some(({ sql }) => sql === "COMMIT"));
+});
+
+test("disabled migration reconciles an older tag copy only while delivery remains disabled", async () => {
+  const fixture = transactionalPool({
+    mqttRule: {
+      ...readyMqttRule,
+      id: 9,
+      name: "Delivery arrival",
+      match_type: "tag",
+      match_value: "Delivery",
+    },
+    mappings: [
+      {
+        source_type: "mqtt",
+        source_id: 9,
+        target_rule_id: 44,
+        target_all_disabled: true,
+        target_has_known_plate_guard: false,
+      },
+    ],
+  });
+  const repository = new NotificationMigrationRepository({ pool: fixture.pool });
+  const result = await repository.applyDisabledMigration({ actor: { id: 9 } });
+
+  assert.equal(result.createdCount, 0);
+  assert.equal(result.reconciledCount, 1);
+  assert.equal(result.skippedCount, 0);
+  assert.equal(result.blockedCount, 0);
+  assert.deepEqual(result.reconciled[0], {
+    sourceType: "mqtt",
+    sourceId: 9,
+    targetRuleId: 44,
+    name: "Delivery arrival",
+    enabled: false,
+  });
+  assert.ok(
+    fixture.calls.some(({ sql, values }) =>
+      sql.startsWith("DELETE FROM public.notification_condition_groups") && values[0] === 44
+    )
+  );
+  assert.ok(
+    fixture.calls.some(({ sql, values }) =>
+      sql.startsWith("UPDATE public.notification_rules") && values[0] === 44 && values[1] === 9
+    )
+  );
+  assert.ok(
+    fixture.calls.some(
+      ({ sql, values }) =>
+        sql.startsWith("INSERT INTO public.notification_conditions") &&
+        values[1] === "known_plate"
+    )
+  );
+});
+
+test("disabled migration blocks reconciliation if any unified delivery path is enabled", async () => {
+  const fixture = transactionalPool({
+    mqttRule: {
+      ...readyMqttRule,
+      id: 9,
+      match_type: "tag",
+      match_value: "Delivery",
+    },
+    mappings: [
+      {
+        source_type: "mqtt",
+        source_id: 9,
+        target_rule_id: 44,
+        target_all_disabled: false,
+        target_has_known_plate_guard: false,
+      },
+    ],
+  });
+  const repository = new NotificationMigrationRepository({ pool: fixture.pool });
+  const result = await repository.applyDisabledMigration({ actor: { id: 9 } });
+
+  assert.equal(result.reconciledCount, 0);
+  assert.equal(result.blockedCount, 1);
+  assert.match(result.blocked[0].blockers.join(" "), /must remain disabled/i);
+  assert.ok(
+    !fixture.calls.some(({ sql }) =>
+      sql.startsWith("DELETE FROM public.notification_condition_groups")
+    )
+  );
 });
 
 test("disabled migration rolls the whole transaction back when any copy fails", async () => {
