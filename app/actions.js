@@ -53,6 +53,11 @@ import {
   getNotificationShadowReview as loadNotificationShadowReview,
 } from "@/lib/notification-shadow-review-runtime.mjs";
 import {
+  cutoverNotificationRule,
+  getNotificationCutoverPreview as loadNotificationCutoverPreview,
+  rollbackNotificationRule,
+} from "@/lib/notification-cutover-runtime.mjs";
+import {
   getNotificationPlates as getNotificationPlatesDB,
   addNotificationPlate as addNotificationPlateDB,
   toggleNotification as toggleNotificationDB,
@@ -727,6 +732,79 @@ export async function approveUnifiedNotificationRuleReview(formData) {
         error instanceof Error && safeMessages.has(error.message)
           ? error.message
           : "Failed to record shadow review approval",
+    };
+  }
+}
+
+export async function getUnifiedNotificationCutoverPreview() {
+  await requirePermission("notification.manage");
+  try {
+    const preview = await loadNotificationCutoverPreview();
+    return { success: true, data: preview };
+  } catch (error) {
+    console.error("Error building unified notification cutover preview:", error);
+    return { success: false, error: "Failed to build unified notification cutover preview" };
+  }
+}
+
+const CUTOVER_SAFE_MESSAGES = new Set([
+  "Select a valid unified rule to cut over",
+  "Select a valid unified rule to roll back",
+  "The migrated unified rule was not found",
+  "The legacy source rule was not found",
+  "The unified rule has no delivery actions",
+  "Cutover requires an active legacy rule and a fully disabled unified rule",
+  "Rollback requires an active unified rule and a disabled legacy rule",
+  "A live unified delivery adapter is not available for this channel",
+  "Unified MQTT destination no longer matches the legacy source rule",
+  "Cutover requires current administrator-approved shadow evidence",
+  "Cutover requires zero mismatches and at least one positive match",
+]);
+
+export async function cutoverUnifiedNotificationRule(formData) {
+  const principal = await requirePermission("notification.manage");
+  if (formData?.get("confirmation") !== "cutover_one_rule") {
+    return { success: false, error: "Confirm the guarded one-rule cutover before continuing." };
+  }
+  try {
+    const data = await cutoverNotificationRule({
+      ruleId: formData.get("ruleId"),
+      actor: principal,
+    });
+    revalidatePath("/notifications");
+    return { success: true, data };
+  } catch (error) {
+    console.error("Error cutting over unified notification rule:", error);
+    return {
+      success: false,
+      error:
+        error instanceof Error && CUTOVER_SAFE_MESSAGES.has(error.message)
+          ? error.message
+          : "Failed to cut over unified notification rule",
+    };
+  }
+}
+
+export async function rollbackUnifiedNotificationRule(formData) {
+  const principal = await requirePermission("notification.manage");
+  if (formData?.get("confirmation") !== "rollback_one_rule") {
+    return { success: false, error: "Confirm the one-rule rollback before continuing." };
+  }
+  try {
+    const data = await rollbackNotificationRule({
+      ruleId: formData.get("ruleId"),
+      actor: principal,
+    });
+    revalidatePath("/notifications");
+    return { success: true, data };
+  } catch (error) {
+    console.error("Error rolling back unified notification rule:", error);
+    return {
+      success: false,
+      error:
+        error instanceof Error && CUTOVER_SAFE_MESSAGES.has(error.message)
+          ? error.message
+          : "Failed to roll back unified notification rule",
     };
   }
 }
