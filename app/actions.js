@@ -719,6 +719,7 @@ export async function approveUnifiedNotificationRuleReview(formData) {
       "Approval blocked because the rule, channel, or action is not safely disabled",
       "Approval requires at least one relevant recent read",
       "Resolve shadow comparison mismatches before approval",
+      "Approval requires at least one positive legacy and unified match",
     ]);
     return {
       success: false,

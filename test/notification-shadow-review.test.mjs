@@ -76,6 +76,7 @@ test("shadow review compares legacy and unified semantics without enabling deliv
   assert.equal(report.rules[0].sampleCount, 1, "camera-scoped rules use only relevant reads");
   assert.equal(report.rules[0].agreementCount, 1);
   assert.equal(report.rules[0].mismatchCount, 0);
+  assert.equal(report.rules[0].positiveMatchCount, 1);
   assert.equal(report.rules[0].status, "ready");
   assert.equal(report.rules[0].allDisabled, true);
   assert.equal(report.rules[0].noDeliveries, true);
@@ -157,6 +158,32 @@ test("approval applies only to the exact rule version and evidence fingerprint",
   const changed = buildNotificationShadowReview({ ...input, recentReads: [read(), read({ id: 103 })], reviews: approved.rules[0].latestReview ? [{ rule_id: 52, sample_count: 1, report_fingerprint: fingerprint, reviewed_at: "2026-07-22T18:05:00.000Z" }] : [] });
   assert.equal(changed.rules[0].status, "ready");
   assert.equal(changed.rules[0].latestReview.current, false);
+});
+
+test("negative-only agreement waits for a positive match before approval", () => {
+  const report = buildNotificationShadowReview({
+    entries: [
+      {
+        sourceType: "pushover",
+        sourceId: 8,
+        sourceRule: { id: 8, plate_number: "TARGET1", enabled: true },
+        targetRule: targetRule({
+          id: 52,
+          conditionTree: {
+            kind: "group",
+            combinator: "all",
+            children: [
+              { kind: "condition", conditionType: "plate_match", operator: "matches", value: { plate: "TARGET1", mode: "off" } },
+            ],
+          },
+        }),
+      },
+    ],
+    recentReads: [read()],
+  });
+  assert.equal(report.rules[0].agreementCount, 1);
+  assert.equal(report.rules[0].positiveMatchCount, 0);
+  assert.equal(report.rules[0].status, "no_positive_matches");
 });
 
 test("condition rows hydrate into the nested evaluator tree", () => {
