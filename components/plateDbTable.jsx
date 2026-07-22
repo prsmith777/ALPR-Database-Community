@@ -94,6 +94,10 @@ import {
   readPlateMatchPreference,
   writePlateMatchPreference,
 } from "@/lib/plate-match-preference.mjs";
+import {
+  readTablePageSizePreference,
+  writeTablePageSizePreference,
+} from "@/lib/table-page-size-preference.mjs";
 
 const formatDaysAgo = (days) => {
   if (days === 0) return "Today";
@@ -161,6 +165,10 @@ export default function PlateTable({ matchingSettings }) {
   const [totalCount, setTotalCount] = useState(0);
   const [pageCount, setPageCount] = useState(0);
   const [timeFormat, setTimeFormat] = useState(12);
+
+  useEffect(() => {
+    setPageSize(readTablePageSizePreference("plate-database"));
+  }, []);
 
   useEffect(() => {
     const loadData = async () => {
@@ -391,7 +399,7 @@ export default function PlateTable({ matchingSettings }) {
   };
 
   const handlePageSizeChange = (value) => {
-    setPageSize(Number(value));
+    setPageSize(writeTablePageSizePreference("plate-database", value));
     setPage(1);
   };
 

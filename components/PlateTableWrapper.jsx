@@ -7,6 +7,10 @@ import {
   readPlateMatchPreference,
   writePlateMatchPreference,
 } from "@/lib/plate-match-preference.mjs";
+import {
+  readTablePageSizePreference,
+  writeTablePageSizePreference,
+} from "@/lib/table-page-size-preference.mjs";
 import { scrollMainToTop } from "@/lib/page-scroll.mjs";
 import {
   addKnownPlate,
@@ -36,6 +40,7 @@ export default function PlateTableWrapper({
     params.get("fuzzySearch") === "true"
       ? "balanced"
       : readPlateMatchPreference("recognition-feed");
+  const preferredPageSize = readTablePageSizePreference("live-feed");
 
   // State for live data, initially populated with server-rendered data
   // This will be updated by SSE.
@@ -194,11 +199,16 @@ export default function PlateTableWrapper({
   );
 
   useEffect(() => {
+    const updates = {};
     if (!params.get("matchMode")) {
-      const queryString = createQueryString({
-        matchMode: preferredMatchMode,
-        fuzzySearch: null,
-      });
+      updates.matchMode = preferredMatchMode;
+      updates.fuzzySearch = null;
+    }
+    if (!params.get("pageSize")) {
+      updates.pageSize = String(preferredPageSize);
+    }
+    if (Object.keys(updates).length > 0) {
+      const queryString = createQueryString(updates);
       router.replace(`${pathname}?${queryString}`, { scroll: false });
     }
   }, [
@@ -206,6 +216,7 @@ export default function PlateTableWrapper({
     params,
     pathname,
     preferredMatchMode,
+    preferredPageSize,
     router,
   ]);
 
@@ -215,6 +226,9 @@ export default function PlateTableWrapper({
       setIsLiveModeActive(false);
       if (newParams.matchMode) {
         writePlateMatchPreference("recognition-feed", newParams.matchMode);
+      }
+      if (newParams.pageSize !== undefined) {
+        writeTablePageSizePreference("live-feed", newParams.pageSize);
       }
       const queryString = createQueryString({ ...newParams, page: "1" });
       router.push(`${pathname}?${queryString}`);

@@ -8,6 +8,10 @@ import {
   readPlateMatchPreference,
   writePlateMatchPreference,
 } from "@/lib/plate-match-preference.mjs";
+import {
+  readTablePageSizePreference,
+  writeTablePageSizePreference,
+} from "@/lib/table-page-size-preference.mjs";
 import { scrollMainToTop } from "@/lib/page-scroll.mjs";
 import PlateTable from "./PlateTable";
 import {
@@ -33,6 +37,7 @@ export default function PlateTableClient({
     params.get("fuzzySearch") === "true"
       ? "balanced"
       : readPlateMatchPreference("recognition-feed");
+  const preferredPageSize = readTablePageSizePreference("live-feed");
 
   const createQueryString = (updates) => {
     const current = new URLSearchParams(params);
@@ -54,6 +59,9 @@ export default function PlateTableClient({
   const updateFilters = (newParams) => {
     if (newParams.matchMode) {
       writePlateMatchPreference("recognition-feed", newParams.matchMode);
+    }
+    if (newParams.pageSize !== undefined) {
+      writeTablePageSizePreference("live-feed", newParams.pageSize);
     }
     const queryString = createQueryString({ ...newParams, page: "1" });
     router.push(`${pathname}?${queryString}`);
@@ -138,7 +146,7 @@ export default function PlateTableClient({
       timeFormat={timeFormat}
       pagination={{
         page: parseInt(params.get("page") || "1"),
-        pageSize: parseInt(params.get("pageSize") || "25"),
+        pageSize: parseInt(params.get("pageSize") || String(preferredPageSize)),
         total,
         onNextPage: () => handlePageChange("next"),
         onPreviousPage: () => handlePageChange("prev"),
