@@ -144,7 +144,7 @@ function PlateIdentity({ plate, compact = false }) {
       <div className="flex flex-wrap items-center gap-2">
         <Link
           href={`/live_feed?search=${encodeURIComponent(plate.plate_number)}&matchMode=off`}
-          className="text-blue-600 underline-offset-4 hover:underline focus-visible:rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 dark:text-blue-400"
+          className="text-foreground underline-offset-4 hover:underline focus-visible:rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
           title={`View exact reads for ${plate.plate_number}`}
         >
           {plate.plate_number}

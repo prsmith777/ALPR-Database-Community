@@ -13,6 +13,14 @@ test("live feed plate identities open exact matching read history", async () => 
     plateTable,
     /live_feed\?search=\$\{encodeURIComponent\(plate\.plate_number\)\}&matchMode=off/
   );
+  assert.match(
+    plateTable,
+    /className="text-foreground underline-offset-4 hover:underline/
+  );
+  assert.doesNotMatch(
+    plateTable,
+    /className="text-blue-600 underline-offset-4 hover:underline/
+  );
 });
 
 test("table pagination scrolls the application content to the top", async () => {
