@@ -70,8 +70,12 @@ export function ApplyNotificationMigrationButton({
       </label>
       <Button type="button" disabled={!confirmed || isPending} onClick={applyMigration}>
         {isPending
-          ? "Creating disabled rules..."
-          : `Create ${pendingCount} disabled ${pendingCount === 1 ? "rule" : "rules"}`}
+          ? "Updating disabled copies..."
+          : pendingCount > 0 && reconcileCount > 0
+            ? `Create ${pendingCount} and reconcile ${reconcileCount} disabled copies`
+            : reconcileCount > 0
+              ? `Reconcile ${reconcileCount} disabled ${reconcileCount === 1 ? "copy" : "copies"}`
+              : `Create ${pendingCount} disabled ${pendingCount === 1 ? "rule" : "rules"}`}
       </Button>
       {message && (
         <p

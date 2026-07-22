@@ -16,6 +16,7 @@ test("unified notifications have normalized rule, condition, action, and deliver
     "notification_deliveries",
     "notification_delivery_attempts",
     "notification_rule_migrations",
+    "notification_rule_cutover_events",
   ]) {
     assert.match(migration, new RegExp(`CREATE TABLE IF NOT EXISTS public\\.${table}\\b`, "i"));
   }
@@ -59,6 +60,9 @@ test("execution and delivery history enforce idempotence, retry, and lock state"
   assert.match(migration, /2026072201_unified_notification_foundation/i);
   assert.match(migration, /2026072202_notification_migration_preview/i);
   assert.match(migration, /2026072203_disabled_notification_rule_migration/i);
+  assert.match(migration, /2026072204_notification_shadow_review/i);
+  assert.match(migration, /2026072205_guarded_notification_cutover/i);
+  assert.match(migration, /notification_rule_cutover_events is append-only/i);
 });
 
 test("legacy notification copies have durable one-to-one provenance", () => {

@@ -1,8 +1,10 @@
 import {
   getNotificationPlates,
   getNotificationRuleMigrationPreview,
+  getUnifiedNotificationCutoverPreview,
   getUnifiedNotificationRuleReview,
 } from "@/app/actions";
+import { NotificationCutoverPanel } from "@/components/NotificationCutoverPanel";
 import { NotificationMigrationPreview } from "@/components/NotificationMigrationPreview";
 import { NotificationsTable } from "@/components/NotificationsTable";
 import { UnifiedRuleShadowReview } from "@/components/UnifiedRuleShadowReview";
@@ -14,16 +16,18 @@ export const dynamic = "force-dynamic";
 
 export default async function NotificationsPage() {
   await requirePagePermission("notification.manage");
-  const [response, migrationPreviewResponse, shadowReviewResponse] = await Promise.all([
+  const [response, migrationPreviewResponse, shadowReviewResponse, cutoverPreviewResponse] = await Promise.all([
     getNotificationPlates(),
     getNotificationRuleMigrationPreview(),
     getUnifiedNotificationRuleReview(),
+    getUnifiedNotificationCutoverPreview(),
   ]);
   const notificationPlates = response.success ? response.data : [];
   const migrationPreview = migrationPreviewResponse.success
     ? migrationPreviewResponse.data
     : null;
   const shadowReview = shadowReviewResponse.success ? shadowReviewResponse.data : null;
+  const cutoverPreview = cutoverPreviewResponse.success ? cutoverPreviewResponse.data : null;
 
   return (
     <DashboardLayout>
@@ -40,6 +44,9 @@ export default async function NotificationsPage() {
         </div>
         <div className="mt-8">
           <UnifiedRuleShadowReview review={shadowReview} />
+        </div>
+        <div className="mt-8">
+          <NotificationCutoverPanel preview={cutoverPreview} />
         </div>
       </BasicTitle>
     </DashboardLayout>

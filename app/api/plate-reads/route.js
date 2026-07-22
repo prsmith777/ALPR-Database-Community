@@ -6,6 +6,8 @@ import {
 } from "@/lib/db";
 import { sendPushoverNotification } from "@/lib/notifications";
 import { processAcceptedPlateReadEffects } from "@/lib/accepted-plate-read-effects.mjs";
+import { NotificationAcceptedReadService } from "@/lib/notification-accepted-read-service.mjs";
+import { NotificationRuntimeRepository } from "@/lib/notification-runtime-repository.mjs";
 import { createPlateReadEventIdentity } from "@/lib/plate-read-event-identity.mjs";
 import {
   recordAliasApplicationWithClient,
@@ -251,6 +253,12 @@ async function processPlateRead(data) {
       logger: console,
       matchingSettings: config.plateMatching,
     });
+    const notificationService = new NotificationAcceptedReadService({
+      repository: new NotificationRuntimeRepository({ executor: dbClient }),
+      mqttRepository,
+      logger: console,
+      matchingSettings: config.plateMatching,
+    });
 
     const processedPlates = [];
     const duplicatePlates = [];
@@ -414,11 +422,18 @@ async function processPlateRead(data) {
             `MQTT outbox handoff failed for accepted read ${readId}`
           );
         }
+        const unifiedResult = await notificationService.processAcceptedRead(acceptedRead);
+        if (unifiedResult.status === "error" || unifiedResult.status === "partial") {
+          throw new Error(
+            `Unified notification outbox handoff failed for accepted read ${readId}`
+          );
+        }
 
         pendingEffects.push({
           read: acceptedRead,
           imageData: data.Image,
           mqttResult,
+          unifiedResult,
         });
       }
     }

@@ -242,5 +242,8 @@ test("Notifications exposes an explicitly confirmed disabled-only migration with
   assert.match(component, /ApplyNotificationMigrationButton/);
   assert.match(applyComponent, /create_disabled_rules/);
   assert.match(applyComponent, /copied rules will remain disabled pending review/i);
+  assert.match(applyComponent, /Reconcile \$\{reconcileCount\} disabled/);
+  assert.match(component, /All of/);
+  assert.match(component, /Any known plate/);
   assert.doesNotMatch(applyComponent, /activate all|enable all|cutover/i);
 });
