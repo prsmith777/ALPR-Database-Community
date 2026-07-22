@@ -56,6 +56,11 @@ Generalize the durable MQTT rule/outbox foundation into a channel-neutral
 event, condition, and action engine. Migrate Pushover and MQTT into the same
 model before adding email and webhooks.
 
+**In progress:** the first implementation slice adds the inert normalized rule,
+nested-condition, channel/action, execution, delivery, and attempt records plus
+a deterministic explainable evaluator. Existing Pushover and MQTT delivery
+remain unchanged until a later migration slice is previewed and accepted.
+
 Initial triggers and conditions:
 
 - arrival and any accepted read;
@@ -75,6 +80,8 @@ Operational behavior:
 - cooldown, deduplication, quiet hours, delivery retries, and dead-letter state;
 - rule preview against recent reads;
 - alert history that explains why each condition matched.
+- account-wide Pushover monthly quota visibility so rule volume can be planned
+  before the service rejects messages.
 
 ### Phase 4 — Operations, storage, and updates
 
