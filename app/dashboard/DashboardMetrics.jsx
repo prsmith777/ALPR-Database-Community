@@ -48,6 +48,7 @@ import {
   Calendar,
   Clock,
   Database,
+  BookOpen,
   ArrowUpRight,
   Loader2,
 } from "lucide-react";
@@ -357,6 +358,11 @@ export default function DashboardMetrics() {
                   aria-label="Community product roadmap"
                 >
                   <FaRoad className="hover:text-blue-500" />
+                </Link>
+              </IconTooltip>
+              <IconTooltip label="Help and user guide">
+                <Link href="/help" aria-label="Help and user guide">
+                  <BookOpen className="h-5 w-5 hover:text-blue-500" />
                 </Link>
               </IconTooltip>
             </div>
