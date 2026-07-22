@@ -55,6 +55,7 @@ import ToggleSwitch from "@/components/ui/toggle-switch";
 import { SecuritySettings } from "./SecuritySettings";
 import PlateMatchingSettings from "./PlateMatchingSettings";
 import PlateReviewSettings from "./PlateReviewSettings";
+import PushoverUsageCard from "./PushoverUsageCard";
 
 const administratorNavigationSections = [
   {
@@ -381,6 +382,8 @@ export default function SettingsForm({
         </p>
       </div>
       <div className="space-y-6">
+        <PushoverUsageCard />
+
         <div className="max-w-4xl px-4 border rounded-lg">
           <div className="flex items-center justify-between py-4">
             <div className="space-y-1">
