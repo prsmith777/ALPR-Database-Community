@@ -60,9 +60,12 @@ model before adding email and webhooks.
 nested-condition, channel/action, execution, delivery, and attempt records plus
 a deterministic explainable evaluator. The second slice adds a read-only preview
 of how existing Pushover and MQTT rules map into that shared model, including any
-configuration blockers, while keeping every proposed rule disabled. Existing
-Pushover and MQTT delivery remain unchanged until the preview is accepted and a
-separate cutover is explicitly approved.
+configuration blockers, while keeping every proposed rule disabled. The third
+slice can transactionally create idempotently tracked disabled copies after an
+administrator confirms the preview; it audits the operation and leaves every
+legacy delivery path unchanged. Existing Pushover and MQTT delivery remain
+unchanged until the copied rules are reviewed and a separate cutover is
+explicitly approved.
 
 Initial triggers and conditions:
 
