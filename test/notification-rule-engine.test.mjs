@@ -80,6 +80,22 @@ test("plate conditions reuse the shared exact and fuzzy matching profiles", () =
   assert.equal(strict.evidence.method, "ocr");
 });
 
+test("known-name conditions preserve legacy MQTT name matching", () => {
+  const matching = evaluateNotificationCondition(
+    condition("known_name", "equals", { names: ["Liz's Lexus"] }),
+    { event: { ...acceptedRead, knownName: "Liz's Lexus" } }
+  );
+  const mismatch = evaluateNotificationCondition(
+    condition("known_name", "in", { names: ["Delivery Van"] }),
+    { event: { ...acceptedRead, known_name: "Liz's Lexus" } }
+  );
+
+  assert.equal(matching.matched, true);
+  assert.equal(matching.reason, "known-name-matched");
+  assert.equal(mismatch.matched, false);
+  assert.equal(mismatch.reason, "known-name-mismatch");
+});
+
 test("count conditions consume explicit precomputed metrics without database side effects", () => {
   const readCount = condition("read_count", "at_least", {
     scope: "plate",

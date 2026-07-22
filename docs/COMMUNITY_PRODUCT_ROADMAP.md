@@ -58,8 +58,11 @@ model before adding email and webhooks.
 
 **In progress:** the first implementation slice adds the inert normalized rule,
 nested-condition, channel/action, execution, delivery, and attempt records plus
-a deterministic explainable evaluator. Existing Pushover and MQTT delivery
-remain unchanged until a later migration slice is previewed and accepted.
+a deterministic explainable evaluator. The second slice adds a read-only preview
+of how existing Pushover and MQTT rules map into that shared model, including any
+configuration blockers, while keeping every proposed rule disabled. Existing
+Pushover and MQTT delivery remain unchanged until the preview is accepted and a
+separate cutover is explicitly approved.
 
 Initial triggers and conditions:
 

@@ -140,7 +140,15 @@ export default function SettingsForm({
           "pushoverAppToken",
           formData.get("pushoverAppToken")
         );
+        newFormData.append(
+          "clearPushoverAppToken",
+          formData.get("clearPushoverAppToken") === "on"
+        );
         newFormData.append("pushoverUserKey", formData.get("pushoverUserKey"));
+        newFormData.append(
+          "clearPushoverUserKey",
+          formData.get("clearPushoverUserKey") === "on"
+        );
         newFormData.append("pushoverTitle", formData.get("pushoverTitle"));
         newFormData.append(
           "pushoverPriority",
@@ -355,17 +363,26 @@ export default function SettingsForm({
           />
         </div>
         <div className="space-y-2">
-          <Label htmlFor="dbPassword" className="text-sm font-medium">
-            Database Password
-          </Label>
+          <div className="flex items-center justify-between gap-2">
+            <Label htmlFor="dbPassword" className="text-sm font-medium">
+              Database Password
+            </Label>
+            <Badge variant="outline">
+              {initialSettings.database.passwordConfigured
+                ? "Configured"
+                : "Not configured"}
+            </Badge>
+          </div>
           <PasswordInput
             id="dbPassword"
             name="dbPassword"
             visibilityLabel="database password"
-            defaultValue={initialSettings.database.password}
-            placeholder="••••••••"
+            placeholder="Enter a replacement password"
             autoComplete="new-password"
           />
+          <p className="text-xs text-muted-foreground">
+            Leave blank to keep the configured password. Saved passwords are never sent to the browser.
+          </p>
         </div>
       </div>
     </div>
@@ -404,40 +421,78 @@ export default function SettingsForm({
 
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 max-w-4xl ml-2">
           <div className="space-y-2">
-            <Label htmlFor="pushoverAppToken" className="text-sm font-medium">
-              Application Token (APP_TOKEN)
-            </Label>
-            <Input
+            <div className="flex items-center justify-between gap-2">
+              <Label htmlFor="pushoverAppToken" className="text-sm font-medium">
+                Application Token (APP_TOKEN)
+              </Label>
+              <Badge variant="outline">
+                {initialSettings.notifications?.pushover?.appTokenConfigured
+                  ? "Configured"
+                  : "Not configured"}
+              </Badge>
+            </div>
+            <PasswordInput
               id="pushoverAppToken"
               name="pushoverAppToken"
-              type="token"
-              defaultValue={initialSettings.notifications?.pushover?.app_token}
-              placeholder="Your Pushover application token"
-              autoComplete="off"
+              visibilityLabel="Pushover application token"
+              placeholder="Enter a replacement token"
+              autoComplete="new-password"
               autoCorrect="off"
               autoCapitalize="off"
               spellCheck="false"
               data-form-type="other"
               {...{ "data-lpignore": "true" }}
             />
+            <p className="text-xs text-muted-foreground">
+              Leave blank to keep the configured token. Saved tokens are never sent to the browser.
+            </p>
+            {initialSettings.notifications?.pushover?.appTokenConfigured && (
+              <label className="flex items-center gap-2 text-xs text-muted-foreground">
+                <input
+                  type="checkbox"
+                  name="clearPushoverAppToken"
+                  className="h-4 w-4 rounded border-input"
+                />
+                Clear the saved application token
+              </label>
+            )}
           </div>
           <div className="space-y-2">
-            <Label htmlFor="pushoverUserKey" className="text-sm font-medium">
-              User Key (USER_KEY)
-            </Label>
-            <Input
+            <div className="flex items-center justify-between gap-2">
+              <Label htmlFor="pushoverUserKey" className="text-sm font-medium">
+                User Key (USER_KEY)
+              </Label>
+              <Badge variant="outline">
+                {initialSettings.notifications?.pushover?.userKeyConfigured
+                  ? "Configured"
+                  : "Not configured"}
+              </Badge>
+            </div>
+            <PasswordInput
               id="pushoverUserKey"
               name="pushoverUserKey"
-              type="token"
-              defaultValue={initialSettings.notifications?.pushover?.user_key}
-              placeholder="Your Pushover user key"
-              autoComplete="off"
+              visibilityLabel="Pushover user key"
+              placeholder="Enter a replacement user key"
+              autoComplete="new-password"
               autoCorrect="off"
               autoCapitalize="off"
               spellCheck="false"
               data-form-type="other"
               {...{ "data-lpignore": "true" }}
             />
+            <p className="text-xs text-muted-foreground">
+              Leave blank to keep the configured key. Saved keys are never sent to the browser.
+            </p>
+            {initialSettings.notifications?.pushover?.userKeyConfigured && (
+              <label className="flex items-center gap-2 text-xs text-muted-foreground">
+                <input
+                  type="checkbox"
+                  name="clearPushoverUserKey"
+                  className="h-4 w-4 rounded border-input"
+                />
+                Clear the saved user key
+              </label>
+            )}
           </div>
           <div className="space-y-2">
             <Label htmlFor="pushoverTitle" className="text-sm font-medium">

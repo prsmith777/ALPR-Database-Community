@@ -33,6 +33,7 @@ test("condition and event constraints match the deterministic evaluator contract
     "plate_match",
     "camera",
     "known_plate",
+    "known_name",
     "tag",
     "watchlist",
     "confidence",
@@ -55,4 +56,5 @@ test("execution and delivery history enforce idempotence, retry, and lock state"
   assert.match(migration, /notification_deliveries_lock_state/i);
   assert.match(migration, /UNIQUE \(delivery_id, attempt_number\)/i);
   assert.match(migration, /2026072201_unified_notification_foundation/i);
+  assert.match(migration, /2026072202_notification_migration_preview/i);
 });
