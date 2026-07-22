@@ -44,6 +44,7 @@ import {
 } from "@/lib/db";
 import { normalizePlateMatchingSettings } from "@/lib/plate-matching.mjs";
 import { getPlateReviewRepository } from "@/lib/plate-review-runtime.mjs";
+import { getNotificationMigrationPreview as loadNotificationMigrationPreview } from "@/lib/notification-migration-runtime.mjs";
 import {
   getNotificationPlates as getNotificationPlatesDB,
   addNotificationPlate as addNotificationPlateDB,
@@ -56,6 +57,10 @@ import { cookies, headers } from "next/headers";
 import { redirect } from "next/navigation";
 import crypto from "crypto";
 import { getConfig, saveConfig } from "@/lib/settings";
+import {
+  resolveStoredSecretUpdate,
+  sanitizeSettingsForClient,
+} from "@/lib/settings-client.mjs";
 import {
   createSession,
   invalidateSession,
@@ -638,6 +643,20 @@ export async function getNotificationPlates() {
   }
 }
 
+export async function getNotificationRuleMigrationPreview() {
+  await requirePermission("notification.manage");
+  try {
+    const preview = await loadNotificationMigrationPreview();
+    return { success: true, data: preview };
+  } catch (error) {
+    console.error("Error building notification rule migration preview:", error);
+    return {
+      success: false,
+      error: "Failed to build notification rule migration preview",
+    };
+  }
+}
+
 export async function addNotificationPlate(formData) {
   await requirePermission("notification.manage");
   console.log("Adding notification plate");
@@ -943,7 +962,7 @@ export async function logoutAction() {
 export async function getSettings() {
   await requirePermission("system.manage_settings");
   const config = await getConfig();
-  return config;
+  return sanitizeSettingsForClient(config);
 }
 
 export async function getPlateViewSettings() {
@@ -994,10 +1013,10 @@ export async function updateSettings(formData) {
         host: formData.get("dbHost") ?? currentConfig.database.host,
         name: formData.get("dbName") ?? currentConfig.database.name,
         user: formData.get("dbUser") ?? currentConfig.database.user,
-        password:
-          formData.get("dbPassword") === "••••••••"
-            ? currentConfig.database.password
-            : formData.get("dbPassword") ?? currentConfig.database.password,
+        password: resolveStoredSecretUpdate({
+          currentValue: currentConfig.database.password,
+          replacement: formData.get("dbPassword"),
+        }),
       };
     }
 
@@ -1007,16 +1026,16 @@ export async function updateSettings(formData) {
         pushover: {
           ...currentConfig.notifications?.pushover,
           enabled: formData.get("pushoverEnabled") === "true",
-          app_token:
-            formData.get("pushoverAppToken") === "••••••••"
-              ? currentConfig.notifications?.pushover?.app_token
-              : formData.get("pushoverAppToken") ??
-                currentConfig.notifications?.pushover?.app_token,
-          user_key:
-            formData.get("pushoverUserKey") === "••••••••"
-              ? currentConfig.notifications?.pushover?.user_key
-              : formData.get("pushoverUserKey") ??
-                currentConfig.notifications?.pushover?.user_key,
+          app_token: resolveStoredSecretUpdate({
+            currentValue: currentConfig.notifications?.pushover?.app_token,
+            replacement: formData.get("pushoverAppToken"),
+            clear: formData.get("clearPushoverAppToken"),
+          }),
+          user_key: resolveStoredSecretUpdate({
+            currentValue: currentConfig.notifications?.pushover?.user_key,
+            replacement: formData.get("pushoverUserKey"),
+            clear: formData.get("clearPushoverUserKey"),
+          }),
           title:
             formData.get("pushoverTitle") ??
             currentConfig.notifications?.pushover?.title,
