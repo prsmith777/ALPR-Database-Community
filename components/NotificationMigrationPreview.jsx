@@ -155,6 +155,10 @@ export function NotificationMigrationPreview({ preview }) {
             <p className="text-2xl font-semibold">{preview.pendingReadyCount ?? preview.readyCount}</p>
           </div>
           <div className="rounded-md border p-3">
+            <p className="text-xs uppercase tracking-wide text-muted-foreground">Reconcile</p>
+            <p className="text-2xl font-semibold">{preview.reconcileReadyCount ?? 0}</p>
+          </div>
+          <div className="rounded-md border p-3">
             <p className="text-xs uppercase tracking-wide text-muted-foreground">Writes</p>
             <p className="text-2xl font-semibold">{preview.writesPerformed}</p>
           </div>
@@ -163,6 +167,7 @@ export function NotificationMigrationPreview({ preview }) {
         <ApplyNotificationMigrationButton
           pendingCount={preview.pendingReadyCount ?? preview.readyCount}
           migratedCount={preview.migratedCount ?? 0}
+          reconcileCount={preview.reconcileReadyCount ?? 0}
         />
 
         {preview.rules.length === 0 ? (

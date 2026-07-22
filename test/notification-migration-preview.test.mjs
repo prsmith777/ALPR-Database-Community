@@ -50,6 +50,31 @@ test("MQTT rules preview with name, camera, broker, and destination semantics", 
   assert.equal(preview.proposed.actions[0].configuration.fixedTopic, "Blue Iris/ALPR/family");
 });
 
+test("MQTT tag migration preserves the legacy known-plate boundary", () => {
+  const preview = previewLegacyMqttRule({
+    id: 8,
+    name: "Delivery arrival",
+    enabled: true,
+    match_type: "tag",
+    match_value: "Delivery",
+    broker_id: 2,
+    broker_name: "HOMESEER",
+    broker_enabled: true,
+    destination_mode: "per_camera",
+    camera_names: ["Entry LPR 1"],
+  });
+
+  const identityGroup = preview.proposed.conditionTree.children[0];
+  assert.equal(identityGroup.kind, "group");
+  assert.equal(identityGroup.combinator, "all");
+  assert.deepEqual(
+    identityGroup.children.map((condition) => condition.conditionType),
+    ["known_plate", "tag"]
+  );
+  assert.equal(identityGroup.children[0].operator, "is_true");
+  assert.deepEqual(identityGroup.children[1].value.tags, ["Delivery"]);
+});
+
 test("migration preview is read-only and reports blockers without hiding source rules", () => {
   const preview = buildNotificationMigrationPreview({
     pushoverRules: [{ id: 1, plate_number: "ABC123", enabled: true, priority: 2 }],
@@ -114,6 +139,7 @@ test("repository reads only safe legacy rule fields and returns the normalized p
   assert.equal(preview.sourceCounts.total, 2);
   assert.equal(preview.readyCount, 2);
   assert.equal(preview.migratedCount, 0);
+  assert.equal(preview.reconcileReadyCount, 0);
   assert.equal(preview.pendingReadyCount, 2);
 });
 
@@ -149,6 +175,39 @@ test("migration preview marks durable disabled copies without changing readiness
     targetRuleId: 41,
     createdAt: "2026-07-22T16:00:00.000Z",
   });
+});
+
+test("migration preview offers safe reconciliation for an older disabled tag copy", () => {
+  const preview = buildNotificationMigrationPreview({
+    mqttRules: [
+      {
+        id: 9,
+        name: "Delivery arrival",
+        enabled: true,
+        match_type: "tag",
+        match_value: "Delivery",
+        broker_id: 3,
+        broker_name: "HOMESEER",
+        broker_enabled: true,
+        destination_mode: "per_camera",
+      },
+    ],
+    migrationMappings: [
+      {
+        source_type: "mqtt",
+        source_id: 9,
+        target_rule_id: 42,
+        target_all_disabled: true,
+        target_has_known_plate_guard: false,
+      },
+    ],
+  });
+
+  assert.equal(preview.pendingReadyCount, 0);
+  assert.equal(preview.reconcileReadyCount, 1);
+  assert.equal(preview.reconcileBlockedCount, 0);
+  assert.equal(preview.rules[0].migration.needsReconciliation, true);
+  assert.equal(preview.rules[0].migration.reconciliationSafe, true);
 });
 
 test("MQTT match types that need a value are blocked when it is missing", () => {

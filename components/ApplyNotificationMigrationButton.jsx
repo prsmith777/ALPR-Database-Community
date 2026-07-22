@@ -6,13 +6,17 @@ import { useState, useTransition } from "react";
 import { applyDisabledNotificationRuleMigration } from "@/app/actions";
 import { Button } from "@/components/ui/button";
 
-export function ApplyNotificationMigrationButton({ pendingCount = 0, migratedCount = 0 }) {
+export function ApplyNotificationMigrationButton({
+  pendingCount = 0,
+  migratedCount = 0,
+  reconcileCount = 0,
+}) {
   const router = useRouter();
   const [confirmed, setConfirmed] = useState(false);
   const [message, setMessage] = useState(null);
   const [isPending, startTransition] = useTransition();
 
-  if (pendingCount === 0) {
+  if (pendingCount === 0 && reconcileCount === 0) {
     return (
       <div className="rounded-md border border-emerald-500/40 bg-emerald-500/5 p-4 text-sm">
         <p className="font-medium">Disabled unified copies are up to date</p>
@@ -34,11 +38,11 @@ export function ApplyNotificationMigrationButton({ pendingCount = 0, migratedCou
         setMessage({ kind: "error", text: result.error });
         return;
       }
-      const { createdCount, skippedCount, blockedCount } = result.data;
+      const { createdCount, reconciledCount, skippedCount, blockedCount } = result.data;
       setConfirmed(false);
       setMessage({
         kind: "success",
-        text: `Created ${createdCount} disabled ${createdCount === 1 ? "rule" : "rules"}; ${skippedCount} already existed and ${blockedCount} remained blocked.`,
+        text: `Created ${createdCount} and reconciled ${reconciledCount} disabled ${createdCount + reconciledCount === 1 ? "rule" : "rules"}; ${skippedCount} were already current and ${blockedCount} remained blocked.`,
       });
       router.refresh();
     });
@@ -47,11 +51,12 @@ export function ApplyNotificationMigrationButton({ pendingCount = 0, migratedCou
   return (
     <div className="rounded-md border p-4 space-y-3">
       <div>
-        <p className="font-medium">Create disabled unified copies</p>
+        <p className="font-medium">Create or reconcile disabled unified copies</p>
         <p className="mt-1 text-sm text-muted-foreground">
-          This creates {pendingCount} review-only {pendingCount === 1 ? "rule" : "rules"}. It
-          does not enable unified delivery and does not change or disable the existing Pushover
-          or MQTT paths.
+          This creates {pendingCount} review-only {pendingCount === 1 ? "rule" : "rules"} and
+          safely reconciles {reconcileCount} existing disabled {reconcileCount === 1 ? "copy" : "copies"}.
+          It does not enable unified delivery and does not change or disable the existing
+          Pushover or MQTT paths.
         </p>
       </div>
       <label className="flex items-start gap-2 text-sm">

@@ -83,6 +83,88 @@ test("shadow review compares legacy and unified semantics without enabling deliv
   assert.equal(report.rules[0].decisions[0].unifiedReason, "no-enabled-actions");
 });
 
+test("shadow review replays the effective plate identity used by live legacy MQTT", () => {
+  const report = buildNotificationShadowReview({
+    entries: [
+      {
+        sourceType: "mqtt",
+        sourceId: 4,
+        sourceRule: {
+          id: 4,
+          name: "Family arrival",
+          enabled: true,
+          match_type: "tag",
+          match_value: "Family",
+          plate_match_mode: "off",
+          camera_ids: [11],
+        },
+        targetRule: targetRule({
+          conditionTree: {
+            kind: "group",
+            combinator: "all",
+            children: [
+              { kind: "condition", conditionType: "known_plate", operator: "is_true", value: { expected: true } },
+              { kind: "condition", conditionType: "tag", operator: "any", value: { tags: ["Family"] } },
+            ],
+          },
+        }),
+      },
+    ],
+    recentReads: [
+      read({
+        plate_number: "DPOM90",
+        observed_plate: "BDPOM90",
+        known_plate: true,
+        known_name: "Liz's Lexus",
+        tags: ["Family"],
+      }),
+    ],
+    knownPlates: [{ plate_number: "DPOM90", name: "Liz's Lexus", tags: ["Family"] }],
+  });
+
+  assert.equal(report.rules[0].mismatchCount, 0);
+  assert.equal(report.rules[0].positiveMatchCount, 1);
+  assert.equal(report.rules[0].decisions[0].legacyReason, "matched");
+});
+
+test("migrated MQTT tag rules do not match tagged plates outside the known set", () => {
+  const report = buildNotificationShadowReview({
+    entries: [
+      {
+        sourceType: "mqtt",
+        sourceId: 3,
+        sourceRule: {
+          id: 3,
+          name: "Delivery arrival",
+          enabled: true,
+          match_type: "tag",
+          match_value: "Delivery",
+          plate_match_mode: "off",
+          camera_ids: [11],
+        },
+        targetRule: targetRule({
+          conditionTree: {
+            kind: "group",
+            combinator: "all",
+            children: [
+              { kind: "condition", conditionType: "known_plate", operator: "is_true", value: { expected: true } },
+              { kind: "condition", conditionType: "tag", operator: "any", value: { tags: ["Delivery"] } },
+            ],
+          },
+        }),
+      },
+    ],
+    recentReads: [read({ plate_number: "Y157026", observed_plate: "Y157026", tags: ["Delivery"] })],
+    knownPlates: [],
+  });
+
+  assert.equal(report.rules[0].mismatchCount, 0);
+  assert.equal(report.rules[0].positiveMatchCount, 0);
+  assert.equal(report.rules[0].status, "no_positive_matches");
+  assert.equal(report.rules[0].decisions[0].legacyMatched, false);
+  assert.equal(report.rules[0].decisions[0].unifiedMatched, false);
+});
+
 test("shadow review surfaces a semantic mismatch and blocks approval readiness", () => {
   const report = buildNotificationShadowReview({
     entries: [
