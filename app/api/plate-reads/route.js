@@ -340,14 +340,14 @@ async function processPlateRead(data) {
             plate_annotation,
             event_identity
           )
-          SELECT $1, $2, $3,
+          SELECT $1, $2::varchar, $3,
                  CASE WHEN $3::bigint IS NULL THEN 'unreviewed' ELSE 'alias_resolved' END,
                  CASE WHEN $3::bigint IS NULL THEN 0 ELSE 1 END,
                  ($3::bigint IS NOT NULL),
                  $4, $5, $6, $7, $8::varchar, $9, $10, $11, $12, $13, $14
           WHERE NOT EXISTS (
             SELECT 1 FROM plate_reads
-            WHERE observed_plate = $2 AND timestamp = $7
+            WHERE observed_plate = $2::varchar AND timestamp = $7
               AND camera_name IS NOT DISTINCT FROM $8::varchar
           )
           ON CONFLICT DO NOTHING

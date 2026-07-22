@@ -190,11 +190,11 @@ test("the plate route commits each read and MQTT outbox handoff atomically", asy
   assert.equal(source.includes("processAcceptedPlateReadEffects"), true);
   assert.match(
     source,
-    /SELECT \$1, \$2, \$3,[\s\S]*\$8::varchar,[\s\S]*\$14/
+    /SELECT \$1, \$2::varchar, \$3,[\s\S]*\$8::varchar,[\s\S]*\$14/
   );
   assert.match(
     source,
-    /observed_plate = \$2 AND timestamp = \$7\s+AND camera_name IS NOT DISTINCT FROM \$8::varchar/
+    /observed_plate = \$2::varchar AND timestamp = \$7\s+AND camera_name IS NOT DISTINCT FROM \$8::varchar/
   );
   assert.match(
     migrations,
