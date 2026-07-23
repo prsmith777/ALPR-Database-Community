@@ -93,6 +93,14 @@ test("visual-search actions enforce read and maintenance permissions", async () 
   assert.match(actions, /findSimilarCaptures[\s\S]*?requirePermission\("plate\.read"\)/);
 });
 
+test("plate tables render the visual-search link only for an open image", async () => {
+  const plateTable = await readFile(new URL("../components/PlateTable.jsx", import.meta.url), "utf8");
+  assert.match(
+    plateTable,
+    /\{canRead && selectedImage && <Button[\s\S]*?href=\{`\/visual_search\?readId=\$\{selectedImage\.id\}`\}/
+  );
+});
+
 test("indexing creates a derived crop and hashes without replacing the source", async () => {
   const source = await sharp({
     create: {

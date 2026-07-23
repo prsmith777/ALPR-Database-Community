@@ -1953,7 +1953,7 @@ export default function PlateTable({
             <DialogFooter>
               <div className="flex flex-col sm:flex-row justify-between w-full gap-4 sm:gap-2">
                 <div className="flex flex-wrap gap-2">
-                  {canRead && <Button asChild variant="outline" size="sm" className="text-xs sm:text-sm">
+                  {canRead && selectedImage && <Button asChild variant="outline" size="sm" className="text-xs sm:text-sm">
                     <Link href={`/visual_search?readId=${selectedImage.id}`}>
                       <ScanSearch className="h-3 w-3 sm:h-4 sm:w-4 mr-1 sm:mr-2" />
                       <span className="whitespace-nowrap">Find similar vehicle</span>
