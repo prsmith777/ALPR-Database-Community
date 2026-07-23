@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import crypto from "node:crypto";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 import sharp from "sharp";
@@ -6,6 +7,7 @@ import sharp from "sharp";
 import {
   calculateVehicleCrop,
   createDHash,
+  decodeVisualUploadDataUrl,
   explainSimilarity,
   hammingDistance,
   normalizeBatchSize,
@@ -67,6 +69,17 @@ test("camera profile inputs are clamped to safe setup ranges", () => {
   );
 });
 
+test("uploaded visual queries accept only bounded raster data URLs", async () => {
+  const jpeg = await sharp({
+    create: { width: 2, height: 2, channels: 3, background: "navy" },
+  }).jpeg().toBuffer();
+  const decoded = decodeVisualUploadDataUrl(`data:image/jpeg;base64,${jpeg.toString("base64")}`);
+  assert.deepEqual(decoded.buffer, jpeg);
+  assert.equal(decoded.mimeType, "image/jpeg");
+  assert.throws(() => decodeVisualUploadDataUrl("data:image/svg+xml;base64,PHN2Zz4="), (error) => error.code === "INVALID_VISUAL_UPLOAD");
+  assert.throws(() => decodeVisualUploadDataUrl(`data:image/jpeg;base64,${"A".repeat(9_000_000)}`), (error) => error.code === "UPLOAD_TOO_LARGE");
+});
+
 test("dHash is stable and Hamming distance is explainable", () => {
   const descendingRows = Uint8Array.from(
     Array.from({ length: 8 }, () => [9, 8, 7, 6, 5, 4, 3, 2, 1]).flat()
@@ -125,6 +138,7 @@ test("visual-search actions enforce read and maintenance permissions", async () 
   assert.match(actions, /findSimilarCaptures[\s\S]*?requirePermission\("plate\.read"\)/);
   assert.match(actions, /saveCameraVisualProfile[\s\S]*?requirePermission\("maintenance\.manage"\)/);
   assert.match(actions, /indexCameraCaptureAssetsBatch[\s\S]*?requirePermission\("maintenance\.manage"\)/);
+  assert.match(actions, /findSimilarUploadedCaptures[\s\S]*?requirePermission\("plate\.read"\)/);
 });
 
 test("camera crop setup exposes preview controls and version-aware indexing", async () => {
@@ -137,6 +151,8 @@ test("camera crop setup exposes preview controls and version-aware indexing", as
   assert.match(component, /Save & reindex next 20/);
   assert.match(repository, /crop_profile_version = COALESCE\(cvp\.profile_version, 1\)/);
   assert.match(repository, /LOWER\(BTRIM\(pr\.camera_name\)\) = LOWER\(BTRIM\(\$\$\{values\.length\}\)\)/);
+  assert.match(component, /Drop a vehicle image here, or choose a file/);
+  assert.match(component, /processed transiently/);
 });
 
 test("plate tables render the visual-search link only for an open image", async () => {
@@ -245,4 +261,49 @@ test("search ranks exact and near matches and excludes distant crops", async () 
   assert.deepEqual(result.matches.map((match) => match.readId), [3, 2]);
   assert.equal(result.matches[0].label, "Exact duplicate");
   assert.equal(result.matches[1].distance, 1);
+});
+
+test("uploaded-image search is transient and uses the existing filtered index", async () => {
+  const upload = await sharp({
+    create: {
+      width: 120,
+      height: 80,
+      channels: 3,
+      background: { r: 30, g: 120, b: 200 },
+    },
+  }).jpeg().toBuffer();
+  const pixels = await sharp(upload).rotate().resize(9, 8, { fit: "fill" }).grayscale().raw().toBuffer();
+  const candidate = {
+    read_id: 99,
+    derived_path: "derived/match.jpg",
+    source_sha256: crypto.createHash("sha256").update(upload).digest("hex"),
+    perceptual_hash: createDHash(pixels),
+    plate_number: "MATCH99",
+    camera_name: "Street LPR 2",
+    timestamp: "2026-07-23T03:00:00.000Z",
+  };
+  let filters = null;
+  const service = new CaptureAssetService({
+    repository: {
+      listSearchCandidates: async (input) => {
+        filters = input;
+        return [candidate];
+      },
+    },
+    fileStorage: new Proxy({}, { get: () => assert.fail("uploaded queries must not use file storage") }),
+  });
+
+  const result = await service.searchUpload({
+    dataUrl: `data:image/jpeg;base64,${upload.toString("base64")}`,
+    fileName: "driveway.jpg",
+    cameraNames: ["Street LPR 2"],
+    startDate: "2026-07-01T00:00:00.000Z",
+  });
+  assert.equal(result.source.uploaded, true);
+  assert.equal(result.source.imageUrl, null);
+  assert.equal(result.source.plateNumber, "driveway.jpg");
+  assert.equal(result.matches[0].readId, 99);
+  assert.equal(result.matches[0].exact, true);
+  assert.deepEqual(filters.cameraNames, ["Street LPR 2"]);
+  assert.equal(filters.readId, null);
 });

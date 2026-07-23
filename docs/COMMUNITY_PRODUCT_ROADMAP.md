@@ -113,6 +113,9 @@ Operational behavior:
 - Camera-specific crop setup implemented: Auto, Custom, and Full frame modes,
   live source-image preview, vehicle-context and vertical-position controls,
   versioned profiles, and camera-scoped reindexing.
+- Transient uploaded-image queries implemented: drag-and-drop JPEG, PNG, or
+  WebP images can use the existing camera/time filters without creating a
+  plate read or storing the uploaded source.
 - Foundation search is deliberately bounded to recent filtered indexed
   captures. Its crop similarity is a candidate finder, not identity proof.
 - Add asynchronous vehicle observations with per-field confidence,
@@ -121,8 +124,6 @@ Operational behavior:
   orientation, alternate OCR candidates, and bounding boxes.
 - Store a learned vehicle embedding for cross-angle/lighting similarity. Use
   cosine similarity through pgvector or a bounded external vector index.
-- Let a user upload an image or select an existing capture as the query, then
-  combine similarity with vehicle, camera, and time filters.
 - Rank results with clearly labeled scores and match types.
 - Render configurable overlays at view/export time and cache derived assets;
   never burn overlays into the original capture.

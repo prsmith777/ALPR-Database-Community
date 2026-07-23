@@ -1763,7 +1763,9 @@ function visualSearchFailure(error, fallback) {
     "IMAGE_INDEX_FAILED",
     "INVALID_SEARCH_FILTER",
     "INVALID_CAMERA_PROFILE",
+    "INVALID_VISUAL_UPLOAD",
     "SOURCE_IMAGE_MISSING",
+    "UPLOAD_TOO_LARGE",
   ]);
   if (safeCodes.has(error?.code)) return { success: false, error: error.message };
   console.error(fallback, { code: String(error?.code || "") });
@@ -1838,5 +1840,22 @@ export async function findSimilarCaptures(input = {}) {
     return { success: true, data };
   } catch (error) {
     return visualSearchFailure(error, "Unable to search capture images.");
+  }
+}
+
+export async function findSimilarUploadedCaptures(input = {}) {
+  await requirePermission("plate.read");
+  try {
+    const data = await (await getCaptureAssetService()).searchUpload({
+      dataUrl: input.dataUrl,
+      fileName: input.fileName,
+      cameraNames: Array.isArray(input.cameraNames) ? input.cameraNames : [],
+      startDate: input.startDate || null,
+      endDate: input.endDate || null,
+      limit: input.limit,
+    });
+    return { success: true, data };
+  } catch (error) {
+    return visualSearchFailure(error, "Unable to search the uploaded image.");
   }
 }
