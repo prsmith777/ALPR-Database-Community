@@ -6,7 +6,9 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 
 function status(rule) {
   if (rule.status === "approved") return { label: "Approved", variant: "default" };
+  if (rule.status === "approved_intentional") return { label: "Approved expansion", variant: "default" };
   if (rule.status === "ready") return { label: "Ready for approval", variant: "outline" };
+  if (rule.status === "intentional_expansion") return { label: "Expansion ready for approval", variant: "outline" };
   if (rule.status === "no_samples") return { label: "Waiting for reads", variant: "secondary" };
   if (rule.status === "no_positive_matches") return { label: "Waiting for a matching read", variant: "secondary" };
   if (rule.status === "unsafe") return { label: "Safety check failed", variant: "destructive" };
@@ -25,10 +27,13 @@ function formatTimestamp(value) {
 function RuleReview({ rule }) {
   const state = status(rule);
   const canApprove =
-    rule.status === "ready" &&
+    ["ready", "intentional_expansion"].includes(rule.status) &&
     rule.sampleCount > 0 &&
-    rule.mismatchCount === 0 &&
-    rule.positiveMatchCount > 0;
+    rule.regressionCount === 0 &&
+    rule.unifiedPositiveMatchCount > 0;
+  const approvalMode = rule.status === "intentional_expansion"
+    ? "intentional_expansion"
+    : "parity";
   const visibleDecisions = rule.decisions.slice(0, 10);
 
   return (
@@ -52,16 +57,30 @@ function RuleReview({ rule }) {
         </div>
       </div>
 
-      <div className="grid gap-3 sm:grid-cols-4">
+      <div className="grid gap-3 sm:grid-cols-3 lg:grid-cols-6">
         <div className="rounded-md border p-3"><p className="text-xs uppercase text-muted-foreground">Relevant reads</p><p className="text-xl font-semibold">{rule.sampleCount}</p></div>
         <div className="rounded-md border p-3"><p className="text-xs uppercase text-muted-foreground">Agreements</p><p className="text-xl font-semibold">{rule.agreementCount}</p></div>
         <div className="rounded-md border p-3"><p className="text-xs uppercase text-muted-foreground">Positive matches</p><p className="text-xl font-semibold">{rule.positiveMatchCount}</p></div>
         <div className="rounded-md border p-3"><p className="text-xs uppercase text-muted-foreground">Mismatches</p><p className="text-xl font-semibold">{rule.mismatchCount}</p></div>
+        <div className="rounded-md border p-3"><p className="text-xs uppercase text-muted-foreground">Expansions</p><p className="text-xl font-semibold">{rule.expansionCount}</p></div>
+        <div className="rounded-md border p-3"><p className="text-xs uppercase text-muted-foreground">Regressions</p><p className="text-xl font-semibold">{rule.regressionCount}</p></div>
       </div>
 
       {rule.status === "no_positive_matches" && (
         <div className="rounded-md border p-3 text-sm text-muted-foreground">
           Negative comparisons agree, but approval stays locked until this rule sees at least one read that both legacy and unified logic match.
+        </div>
+      )}
+
+      {rule.status === "intentional_expansion" && (
+        <div className="rounded-md border border-amber-500/40 bg-amber-500/5 p-3 text-sm">
+          Unified logic adds {rule.expansionCount} real-read match{rule.expansionCount === 1 ? "" : "es"} that legacy logic would not deliver. No legacy matches are lost. Approve only if this broader behavior is intentional.
+        </div>
+      )}
+
+      {rule.regressionCount > 0 && (
+        <div className="rounded-md border border-destructive/40 bg-destructive/5 p-3 text-sm text-destructive">
+          Approval is blocked because unified logic would lose {rule.regressionCount} legacy match{rule.regressionCount === 1 ? "" : "es"}.
         </div>
       )}
 
@@ -74,7 +93,7 @@ function RuleReview({ rule }) {
 
       {rule.latestReview && (
         <div className={`rounded-md border p-3 text-sm ${rule.latestReview.current ? "border-emerald-500/40 bg-emerald-500/5" : ""}`}>
-          <p className="font-medium">{rule.latestReview.current ? "Current evidence approved" : "Earlier evidence approval is stale"}</p>
+          <p className="font-medium">{rule.latestReview.current ? (rule.latestReview.approvalMode === "intentional_expansion" ? "Current intentional expansion approved" : "Current evidence approved") : "Earlier evidence approval is stale"}</p>
           <p className="mt-1 text-muted-foreground">
             {rule.latestReview.reviewerName} reviewed {rule.latestReview.sampleCount} reads on {formatTimestamp(rule.latestReview.reviewedAt)}.
           </p>
@@ -107,8 +126,8 @@ function RuleReview({ rule }) {
         )}
       </details>
 
-      {rule.status !== "approved" && (
-        <ApproveShadowReviewButton ruleId={rule.targetRule.id} disabled={!canApprove} />
+      {!["approved", "approved_intentional"].includes(rule.status) && (
+        <ApproveShadowReviewButton ruleId={rule.targetRule.id} disabled={!canApprove} mode={approvalMode} />
       )}
     </div>
   );

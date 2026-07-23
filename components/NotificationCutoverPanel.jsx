@@ -60,7 +60,11 @@ function RuleCutover({ rule }) {
           <Badge variant={rule.targetEnabled ? "default" : "secondary"}>
             Unified {rule.targetEnabled ? "active" : "disabled"}
           </Badge>
-          {rule.approved && <Badge variant="outline">Evidence approved</Badge>}
+          {rule.approved && (
+            <Badge variant="outline">
+              {rule.approvalMode === "intentional_expansion" ? "Expansion approved" : "Evidence approved"}
+            </Badge>
+          )}
         </div>
       </div>
 
@@ -82,7 +86,9 @@ function RuleCutover({ rule }) {
             <span>
               {active
                 ? "I understand rollback disables this unified rule and atomically restores its legacy rule."
-                : "I approve cutting over this one rule; legacy delivery will be disabled atomically before unified delivery becomes active."}
+                : rule.approvalMode === "intentional_expansion"
+                  ? "I approve this intentional expansion and cutting over this one rule; legacy delivery will be disabled atomically before broader unified delivery becomes active."
+                  : "I approve cutting over this one rule; legacy delivery will be disabled atomically before unified delivery becomes active."}
             </span>
           </label>
           <Button type="button" disabled={!confirmed || isPending} onClick={submit}>

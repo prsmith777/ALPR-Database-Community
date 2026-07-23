@@ -6,7 +6,7 @@ import { useState, useTransition } from "react";
 import { approveUnifiedNotificationRuleReview } from "@/app/actions";
 import { Button } from "@/components/ui/button";
 
-export function ApproveShadowReviewButton({ ruleId, disabled = false }) {
+export function ApproveShadowReviewButton({ ruleId, disabled = false, mode = "parity" }) {
   const router = useRouter();
   const [confirmed, setConfirmed] = useState(false);
   const [message, setMessage] = useState(null);
@@ -17,7 +17,13 @@ export function ApproveShadowReviewButton({ ruleId, disabled = false }) {
     startTransition(async () => {
       const formData = new FormData();
       formData.set("ruleId", String(ruleId));
-      formData.set("confirmation", "approve_disabled_shadow_review");
+      formData.set("approvalMode", mode);
+      formData.set(
+        "confirmation",
+        mode === "intentional_expansion"
+          ? "approve_intentional_expansion"
+          : "approve_disabled_shadow_review"
+      );
       const result = await approveUnifiedNotificationRuleReview(formData);
       if (!result.success) {
         setMessage({ kind: "error", text: result.error });
@@ -44,7 +50,11 @@ export function ApproveShadowReviewButton({ ruleId, disabled = false }) {
           onChange={(event) => setConfirmed(event.target.checked)}
           className="mt-0.5 h-4 w-4"
         />
-        <span>I approve this shadow evidence; keep the rule and delivery disabled.</span>
+        <span>
+          {mode === "intentional_expansion"
+            ? "I intentionally approve the additional unified-only matches shown above; no legacy matches may be lost, and delivery remains disabled."
+            : "I approve this shadow evidence; keep the rule and delivery disabled."}
+        </span>
       </label>
       <Button type="button" size="sm" disabled={disabled || !confirmed || isPending} onClick={approve}>
         {isPending ? "Recording approval..." : "Record administrator approval"}

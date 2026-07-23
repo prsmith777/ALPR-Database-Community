@@ -6,6 +6,7 @@ import {
 } from "@/app/actions";
 import { NotificationCutoverPanel } from "@/components/NotificationCutoverPanel";
 import { NotificationMigrationPreview } from "@/components/NotificationMigrationPreview";
+import { NotificationRuleDraftEditor } from "@/components/NotificationRuleDraftEditor";
 import { NotificationsTable } from "@/components/NotificationsTable";
 import { UnifiedRuleShadowReview } from "@/components/UnifiedRuleShadowReview";
 import DashboardLayout from "@/components/layout/MainLayout";
@@ -41,6 +42,9 @@ export default async function NotificationsPage() {
         <NotificationsTable initialData={notificationPlates} />
         <div className="mt-8">
           <NotificationMigrationPreview preview={migrationPreview} />
+        </div>
+        <div className="mt-8">
+          <NotificationRuleDraftEditor review={shadowReview} />
         </div>
         <div className="mt-8">
           <UnifiedRuleShadowReview review={shadowReview} />
