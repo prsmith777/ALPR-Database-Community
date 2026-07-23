@@ -9,6 +9,7 @@ import {
   explainSimilarity,
   hammingDistance,
   normalizeBatchSize,
+  normalizeCameraCropProfile,
 } from "../lib/image-similarity.mjs";
 import { resolveStoragePath } from "../lib/storage-path.mjs";
 import { CaptureAssetService } from "../lib/capture-asset-service.mjs";
@@ -20,7 +21,8 @@ test("vehicle crop expands a plate box while remaining inside the source image",
     cropCoordinates: [900, 700, 1020, 760],
   });
 
-  assert.equal(crop.mode, "plate_expand_v1");
+  assert.equal(crop.mode, "adaptive_context");
+  assert.equal(crop.contextPercent, 90);
   assert.ok(crop.left <= 900);
   assert.ok(crop.top <= 700);
   assert.ok(crop.left + crop.width >= 1020);
@@ -31,10 +33,37 @@ test("vehicle crop expands a plate box while remaining inside the source image",
   assert.ok(crop.top + crop.height <= 1080);
 });
 
-test("captures without a valid plate box use a full-frame fallback", () => {
+test("camera profiles support custom context, vertical position, and full-frame fallback", () => {
+  const fallback = calculateVehicleCrop({ width: 640, height: 480, cropCoordinates: null });
+  assert.equal(fallback.mode, "full_frame_fallback");
+  assert.deepEqual([fallback.left, fallback.top, fallback.width, fallback.height], [0, 0, 640, 480]);
+
+  const custom = calculateVehicleCrop({
+    width: 1000,
+    height: 800,
+    cropCoordinates: [450, 500, 550, 550],
+    profile: { cropMode: "custom", contextPercent: 60, verticalOffsetPercent: -10, profileVersion: 3 },
+  });
+  assert.equal(custom.mode, "custom_context");
+  assert.equal(custom.width, 600);
+  assert.equal(custom.height, 480);
+  assert.equal(custom.profileVersion, 3);
+  assert.ok(custom.top < 500 - custom.height / 2);
+
+  const full = calculateVehicleCrop({
+    width: 1000,
+    height: 800,
+    cropCoordinates: [450, 500, 550, 550],
+    profile: { cropMode: "full_frame" },
+  });
+  assert.deepEqual([full.left, full.top, full.width, full.height], [0, 0, 1000, 800]);
+  assert.equal(full.mode, "full_frame");
+});
+
+test("camera profile inputs are clamped to safe setup ranges", () => {
   assert.deepEqual(
-    calculateVehicleCrop({ width: 640, height: 480, cropCoordinates: null }),
-    { left: 0, top: 0, width: 640, height: 480, mode: "full_frame_fallback" }
+    normalizeCameraCropProfile({ cropMode: "custom", contextPercent: 150, verticalOffsetPercent: -90, profileVersion: 4 }),
+    { cropMode: "custom", contextPercent: 100, verticalOffsetPercent: -25, profileVersion: 4 }
   );
 });
 
@@ -82,6 +111,9 @@ test("migration keeps image similarity inert and source images immutable", async
   assert.match(section, /source_sha256 CHAR\(64\)/i);
   assert.match(section, /perceptual_hash CHAR\(16\)/i);
   assert.match(section, /2026072207_image_similarity_foundation/i);
+  assert.match(section, /CREATE TABLE IF NOT EXISTS public\.camera_visual_profiles/i);
+  assert.match(section, /crop_profile_version INTEGER NOT NULL DEFAULT 1/i);
+  assert.match(section, /2026072208_camera_visual_profiles/i);
   assert.equal(/UPDATE\s+public\.plate_reads/i.test(section), false);
   assert.equal(/INSERT\s+INTO\s+public\.capture_assets[\s\S]*SELECT/i.test(section), false);
 });
@@ -91,6 +123,20 @@ test("visual-search actions enforce read and maintenance permissions", async () 
   assert.match(actions, /getVisualSearchBootstrap[\s\S]*?requirePermission\("plate\.read"\)/);
   assert.match(actions, /indexCaptureAssetsBatch[\s\S]*?requirePermission\("maintenance\.manage"\)/);
   assert.match(actions, /findSimilarCaptures[\s\S]*?requirePermission\("plate\.read"\)/);
+  assert.match(actions, /saveCameraVisualProfile[\s\S]*?requirePermission\("maintenance\.manage"\)/);
+  assert.match(actions, /indexCameraCaptureAssetsBatch[\s\S]*?requirePermission\("maintenance\.manage"\)/);
+});
+
+test("camera crop setup exposes preview controls and version-aware indexing", async () => {
+  const component = await readFile(new URL("../components/VisualSearch.jsx", import.meta.url), "utf8");
+  const repository = await readFile(new URL("../lib/capture-asset-repository.mjs", import.meta.url), "utf8");
+  assert.match(component, /Camera crop setup/);
+  assert.match(component, /Auto \(recommended\)/);
+  assert.match(component, /Vehicle context/);
+  assert.match(component, /Vertical position/);
+  assert.match(component, /Save & reindex next 20/);
+  assert.match(repository, /crop_profile_version = COALESCE\(cvp\.profile_version, 1\)/);
+  assert.match(repository, /LOWER\(BTRIM\(pr\.camera_name\)\) = LOWER\(BTRIM\(\$\$\{values\.length\}\)\)/);
 });
 
 test("plate tables render the visual-search link only for an open image", async () => {
@@ -124,6 +170,7 @@ test("indexing creates a derived crop and hashes without replacing the source", 
   };
   const repository = {
     getAsset: async (readId) => assets.get(Number(readId)) || null,
+    getCameraProfile: async () => ({ cropMode: "custom", contextPercent: 90, verticalOffsetPercent: 0, profileVersion: 2 }),
     recordReady: async (asset) => {
       assets.set(asset.read.id, {
         read_id: asset.read.id,
@@ -152,7 +199,7 @@ test("indexing creates a derived crop and hashes without replacing the source", 
   assert.deepEqual(source, original);
   assert.match(asset.source_sha256, /^[0-9a-f]{64}$/);
   assert.match(asset.perceptual_hash, /^[0-9a-f]{16}$/);
-  assert.match(asset.derived_path, /^derived\/2026\/07\/22\/vehicle_v1_read_17\.jpg$/);
+  assert.match(asset.derived_path, /^derived\/2026\/07\/22\/vehicle_v2_read_17\.jpg$/);
   assert.ok(derived.get(asset.derived_path)?.length > 0);
   const metadata = await sharp(derived.get(asset.derived_path)).metadata();
   assert.ok(metadata.width <= 100);

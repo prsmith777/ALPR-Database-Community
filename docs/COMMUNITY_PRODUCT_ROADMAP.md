@@ -110,14 +110,15 @@ Operational behavior:
   64-bit dHash, resumable newest-first indexing, existing-capture queries,
   camera/time filters, and explainable match labels and scores. Original
   captures remain unchanged and ingestion does not wait for indexing.
+- Camera-specific crop setup implemented: Auto, Custom, and Full frame modes,
+  live source-image preview, vehicle-context and vertical-position controls,
+  versioned profiles, and camera-scoped reindexing.
 - Foundation search is deliberately bounded to recent filtered indexed
   captures. Its crop similarity is a candidate finder, not identity proof.
 - Add asynchronous vehicle observations with per-field confidence,
   provider/model/version provenance, raw result, status, and error.
 - Store plate jurisdiction/region, make, model, color, body type, year range,
   orientation, alternate OCR candidates, and bounding boxes.
-- Create a vehicle crop before indexing.
-- Store SHA-256 for exact duplicates and pHash/dHash for near-identical frames.
 - Store a learned vehicle embedding for cross-angle/lighting similarity. Use
   cosine similarity through pgvector or a bounded external vector index.
 - Let a user upload an image or select an existing capture as the query, then

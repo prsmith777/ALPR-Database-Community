@@ -3,12 +3,14 @@
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import NextImage from "next/image";
-import { Images, Loader2, Play, Search, SlidersHorizontal } from "lucide-react";
+import { Camera, Images, Loader2, Play, Save, Search, SlidersHorizontal } from "lucide-react";
 
 import {
   findSimilarCaptures,
   getVisualSearchBootstrap,
+  indexCameraCaptureAssetsBatch,
   indexCaptureAssetsBatch,
+  saveCameraVisualProfile,
 } from "@/app/actions";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -23,6 +25,15 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Progress } from "@/components/ui/progress";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Slider } from "@/components/ui/slider";
+import { calculateVehicleCrop } from "@/lib/image-similarity.mjs";
 
 function formatTimestamp(value) {
   if (!value) return "Unknown time";
@@ -75,6 +86,145 @@ function CaptureCard({ capture, source = false, onSearch }) {
               Plate details
             </Link>
           </Button>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+function percentBox(box, width, height) {
+  return {
+    left: `${box.left / width * 100}%`,
+    top: `${box.top / height * 100}%`,
+    width: `${box.width / width * 100}%`,
+    height: `${box.height / height * 100}%`,
+  };
+}
+
+function CameraCropSetup({ profiles, onSaved }) {
+  const [selectedCamera, setSelectedCamera] = useState(profiles[0]?.cameraName || "");
+  const selected = profiles.find((profile) => profile.cameraName === selectedCamera) || profiles[0];
+  const [draft, setDraft] = useState(selected || null);
+  const [saving, setSaving] = useState(false);
+  const [message, setMessage] = useState("");
+
+  useEffect(() => {
+    if (!selected) return;
+    setDraft(selected);
+    setMessage("");
+  }, [selected]);
+
+  if (!selected || !draft) return null;
+  const preview = selected.preview;
+  const crop = preview ? calculateVehicleCrop({
+    width: preview.width,
+    height: preview.height,
+    cropCoordinates: preview.cropCoordinates,
+    profile: draft,
+  }) : null;
+  const plate = preview && Array.isArray(preview.cropCoordinates) && preview.cropCoordinates.length === 4
+    ? {
+        left: Math.min(preview.cropCoordinates[0], preview.cropCoordinates[2]),
+        top: Math.min(preview.cropCoordinates[1], preview.cropCoordinates[3]),
+        width: Math.abs(preview.cropCoordinates[2] - preview.cropCoordinates[0]),
+        height: Math.abs(preview.cropCoordinates[3] - preview.cropCoordinates[1]),
+      }
+    : null;
+
+  const saveAndReindex = async () => {
+    setSaving(true);
+    setMessage("");
+    try {
+      const saved = await saveCameraVisualProfile({
+        cameraName: selected.cameraName,
+        cropMode: draft.cropMode,
+        contextPercent: draft.contextPercent,
+        verticalOffsetPercent: draft.verticalOffsetPercent,
+      });
+      if (!saved.success) {
+        setMessage(saved.error);
+        return;
+      }
+      const indexed = await indexCameraCaptureAssetsBatch(selected.cameraName, 20);
+      if (!indexed.success) {
+        setMessage(`Profile saved. ${indexed.error}`);
+        return;
+      }
+      setMessage(`Profile saved as revision ${saved.data.profileVersion}. Reindexed ${indexed.data.succeeded} of ${indexed.data.processed} captures.`);
+      await onSaved();
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2">
+          <Camera className="h-5 w-5" /> Camera crop setup
+        </CardTitle>
+        <CardDescription>
+          Tune the derived vehicle-search region per camera. Original capture images are never changed.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="grid gap-6 lg:grid-cols-[minmax(0,1.5fr)_minmax(300px,1fr)]">
+        <div className="space-y-3">
+          {preview ? (
+            <>
+              <div
+                className="relative mx-auto w-full max-w-4xl overflow-hidden rounded-lg border bg-muted"
+                style={{ aspectRatio: `${preview.width} / ${preview.height}` }}
+              >
+                <NextImage src={preview.imageUrl} alt={`Crop preview for ${selected.cameraName}`} fill className="object-contain" unoptimized />
+                {crop && <div className="absolute border-2 border-emerald-400 bg-emerald-400/10 shadow-[0_0_0_9999px_rgba(0,0,0,0.28)]" style={percentBox(crop, preview.width, preview.height)} />}
+                {plate && <div className="absolute border-2 border-amber-400" style={percentBox(plate, preview.width, preview.height)} />}
+              </div>
+              <div className="flex flex-wrap justify-between gap-2 text-xs text-muted-foreground">
+                <span>Latest: {preview.plateNumber} · {formatTimestamp(preview.timestamp)}</span>
+                <span><span className="text-amber-500">Amber</span> plate · <span className="text-emerald-500">Green</span> derived crop</span>
+              </div>
+            </>
+          ) : (
+            <div className="rounded-lg border border-dashed p-10 text-center text-sm text-muted-foreground">No source image is available for this camera.</div>
+          )}
+        </div>
+
+        <div className="space-y-5">
+          <div className="space-y-2">
+            <Label>Camera</Label>
+            <Select value={selected.cameraName} onValueChange={setSelectedCamera}>
+              <SelectTrigger><SelectValue /></SelectTrigger>
+              <SelectContent>{profiles.map((profile) => <SelectItem key={profile.cameraName} value={profile.cameraName}>{profile.cameraName}</SelectItem>)}</SelectContent>
+            </Select>
+          </div>
+          <div className="space-y-2">
+            <Label>Crop mode</Label>
+            <Select value={draft.cropMode} onValueChange={(cropMode) => setDraft((current) => ({ ...current, cropMode }))}>
+              <SelectTrigger><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="auto">Auto (recommended)</SelectItem>
+                <SelectItem value="custom">Custom</SelectItem>
+                <SelectItem value="full_frame">Full frame</SelectItem>
+              </SelectContent>
+            </Select>
+            <p className="text-xs text-muted-foreground">Auto adapts to plate size. Use Full frame for a future overview camera.</p>
+          </div>
+          <div className="space-y-3">
+            <div className="flex justify-between"><Label>Vehicle context</Label><span className="text-sm tabular-nums">{draft.cropMode === "full_frame" ? 100 : draft.contextPercent}%</span></div>
+            <Slider min={40} max={100} step={5} value={[draft.contextPercent]} disabled={draft.cropMode !== "custom"} onValueChange={([contextPercent]) => setDraft((current) => ({ ...current, contextPercent }))} />
+            <p className="text-xs text-muted-foreground">Lower is tighter; higher includes more of the vehicle and surroundings. Custom 100% uses the full source width and height.</p>
+          </div>
+          <div className="space-y-3">
+            <div className="flex justify-between"><Label>Vertical position</Label><span className="text-sm tabular-nums">{draft.verticalOffsetPercent > 0 ? "+" : ""}{draft.verticalOffsetPercent}%</span></div>
+            <Slider min={-25} max={25} step={1} value={[draft.verticalOffsetPercent]} disabled={draft.cropMode === "full_frame"} onValueChange={([verticalOffsetPercent]) => setDraft((current) => ({ ...current, verticalOffsetPercent }))} />
+            <p className="text-xs text-muted-foreground">Move the crop upward or downward when the plate is not centered on the vehicle.</p>
+          </div>
+          <Button className="w-full" onClick={saveAndReindex} disabled={saving || !preview}>
+            {saving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
+            Save & reindex next 20
+          </Button>
+          <p className="text-xs text-muted-foreground">Current saved revision: {selected.profileVersion}</p>
+          {message && <div role="status" className="rounded-md border p-3 text-sm">{message}</div>}
         </div>
       </CardContent>
     </Card>
@@ -243,6 +393,10 @@ export default function VisualSearch({ initialResult, initialReadId }) {
           </Card>
         </div>
       </div>
+
+      {bootstrap?.canManageIndex && bootstrap.cameraProfiles?.length > 0 && (
+        <CameraCropSetup profiles={bootstrap.cameraProfiles} onSaved={refreshBootstrap} />
+      )}
 
       {error && <div role="alert" className="rounded-lg border border-destructive/40 bg-destructive/10 p-4 text-sm text-destructive">{error}</div>}
       {searching && <div className="flex items-center justify-center gap-2 py-10 text-muted-foreground"><Loader2 className="h-5 w-5 animate-spin" /> Comparing indexed vehicle crops…</div>}

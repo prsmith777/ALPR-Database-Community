@@ -1398,3 +1398,43 @@ VALUES (
     'Add inert local derived capture assets for resumable exact and perceptual image search.'
 )
 ON CONFLICT (version) DO NOTHING;
+
+-- Camera-scoped crop profiles allow tight LPR and wide overview cameras to
+-- derive appropriately framed search assets without modifying source images.
+CREATE TABLE IF NOT EXISTS public.camera_visual_profiles (
+    camera_key VARCHAR(100) PRIMARY KEY,
+    camera_name VARCHAR(100) NOT NULL,
+    crop_mode VARCHAR(20) NOT NULL DEFAULT 'auto'
+        CHECK (crop_mode IN ('auto', 'custom', 'full_frame')),
+    context_percent INTEGER NOT NULL DEFAULT 90
+        CHECK (context_percent BETWEEN 40 AND 100),
+    vertical_offset_percent INTEGER NOT NULL DEFAULT 0
+        CHECK (vertical_offset_percent BETWEEN -25 AND 25),
+    profile_version INTEGER NOT NULL DEFAULT 1 CHECK (profile_version > 0),
+    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+ALTER TABLE public.capture_assets
+    ADD COLUMN IF NOT EXISTS crop_profile_version INTEGER NOT NULL DEFAULT 1
+        CHECK (crop_profile_version > 0);
+
+CREATE OR REPLACE FUNCTION public.camera_visual_profile_set_updated_at()
+RETURNS TRIGGER AS $$
+BEGIN
+    NEW.updated_at = CURRENT_TIMESTAMP;
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS camera_visual_profiles_set_updated_at ON public.camera_visual_profiles;
+CREATE TRIGGER camera_visual_profiles_set_updated_at
+BEFORE UPDATE ON public.camera_visual_profiles
+FOR EACH ROW EXECUTE FUNCTION public.camera_visual_profile_set_updated_at();
+
+INSERT INTO public.schema_migrations (version, description)
+VALUES (
+    '2026072208_camera_visual_profiles',
+    'Add versioned camera-specific crop setup for derived visual-search assets.'
+)
+ON CONFLICT (version) DO NOTHING;

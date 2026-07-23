@@ -365,6 +365,20 @@ CREATE INDEX IF NOT EXISTS idx_capture_assets_ready_hash
 CREATE INDEX IF NOT EXISTS idx_capture_assets_status
     ON public.capture_assets (status, updated_at DESC, id DESC);
 
+ALTER TABLE public.capture_assets
+    ADD COLUMN IF NOT EXISTS crop_profile_version INTEGER NOT NULL DEFAULT 1;
+
+CREATE TABLE IF NOT EXISTS public.camera_visual_profiles (
+    camera_key VARCHAR(100) PRIMARY KEY,
+    camera_name VARCHAR(100) NOT NULL,
+    crop_mode VARCHAR(20) NOT NULL DEFAULT 'auto',
+    context_percent INTEGER NOT NULL DEFAULT 90,
+    vertical_offset_percent INTEGER NOT NULL DEFAULT 0,
+    profile_version INTEGER NOT NULL DEFAULT 1,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
 
 --
 -- Name: idx_known_plates_plate_number; Type: INDEX; Schema: public; Owner: postgres
