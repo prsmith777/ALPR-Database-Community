@@ -146,6 +146,10 @@ test("the production image uses a supported non-root deterministic runtime", asy
   assert.match(dockerfile, /^FROM node:24-bookworm AS builder/m);
   assert.match(dockerfile, /^FROM node:24-bookworm-slim$/m);
   assert.match(dockerfile, /yarn install --frozen-lockfile --ignore-scripts/);
+  assert.match(
+    dockerfile,
+    /PREBUILDS_ONLY=1 node \.\.\/node-gyp-build\/build-test\.js/,
+  );
   assert.match(dockerfile, /node scripts\/install-openvino-runtime\.mjs/);
   assert.equal(dockerfile.includes("yarn add"), false);
   assert.equal(packageJson.dependencies["openvino-node"], "2025.4.0");

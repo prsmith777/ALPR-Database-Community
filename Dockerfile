@@ -8,8 +8,8 @@ COPY package.json yarn.lock ./
 RUN yarn install --frozen-lockfile --ignore-scripts --network-timeout 100000
 
 COPY scripts/install-openvino-runtime.mjs ./scripts/install-openvino-runtime.mjs
-RUN (cd node_modules/bcrypt && node ../node-gyp-build/bin.js) \
-    && (cd node_modules/bufferutil && node ../node-gyp-build/bin.js) \
+RUN (cd node_modules/bcrypt && PREBUILDS_ONLY=1 node ../node-gyp-build/build-test.js) \
+    && (cd node_modules/bufferutil && PREBUILDS_ONLY=1 node ../node-gyp-build/build-test.js) \
     && node scripts/install-openvino-runtime.mjs
 
 COPY . .
