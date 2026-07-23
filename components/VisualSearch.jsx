@@ -3,10 +3,11 @@
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import NextImage from "next/image";
-import { Camera, Images, Loader2, Play, Save, Search, SlidersHorizontal } from "lucide-react";
+import { Camera, Images, Loader2, Play, Save, Search, SlidersHorizontal, UploadCloud, X } from "lucide-react";
 
 import {
   findSimilarCaptures,
+  findSimilarUploadedCaptures,
   getVisualSearchBootstrap,
   indexCameraCaptureAssetsBatch,
   indexCaptureAssetsBatch,
@@ -35,6 +36,9 @@ import {
 import { Slider } from "@/components/ui/slider";
 import { calculateVehicleCrop } from "@/lib/image-similarity.mjs";
 
+const UPLOAD_TYPES = new Set(["image/jpeg", "image/png", "image/webp"]);
+const MAX_UPLOAD_BYTES = 5 * 1024 * 1024;
+
 function formatTimestamp(value) {
   if (!value) return "Unknown time";
   return new Date(value).toLocaleString();
@@ -49,7 +53,7 @@ function CaptureCard({ capture, source = false, onSearch }) {
           alt={`Vehicle region for ${capture.plateNumber}`}
           fill
           sizes="(min-width: 1280px) 30vw, (min-width: 640px) 50vw, 100vw"
-          className="object-cover"
+          className={capture.uploaded ? "object-contain" : "object-cover"}
           unoptimized
         />
         {source && <Badge className="absolute left-2 top-2">Search source</Badge>}
@@ -76,16 +80,18 @@ function CaptureCard({ capture, source = false, onSearch }) {
           </p>
         )}
         <div className="flex flex-wrap gap-2">
-          {onSearch && (
+          {onSearch && capture.readId && (
             <Button size="sm" onClick={() => onSearch(capture.readId)}>
               <Search className="mr-2 h-4 w-4" /> Find matches
             </Button>
           )}
-          <Button asChild size="sm" variant="outline">
-            <Link href={`/live_feed?search=${encodeURIComponent(capture.plateNumber)}&matchMode=off`}>
-              Plate details
-            </Link>
-          </Button>
+          {capture.readId && (
+            <Button asChild size="sm" variant="outline">
+              <Link href={`/live_feed?search=${encodeURIComponent(capture.plateNumber)}&matchMode=off`}>
+                Plate details
+              </Link>
+            </Button>
+          )}
         </div>
       </CardContent>
     </Card>
@@ -241,7 +247,10 @@ export default function VisualSearch({ initialResult, initialReadId }) {
   const [selectedCameras, setSelectedCameras] = useState([]);
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
+  const [uploadedQuery, setUploadedQuery] = useState(null);
+  const [draggingUpload, setDraggingUpload] = useState(false);
   const initialSearchStarted = useRef(false);
+  const uploadInputRef = useRef(null);
 
   const refreshBootstrap = async () => {
     const result = await getVisualSearchBootstrap();
@@ -253,6 +262,7 @@ export default function VisualSearch({ initialResult, initialReadId }) {
     setSearching(true);
     setError("");
     try {
+      setUploadedQuery(null);
       const result = await findSimilarCaptures({
         readId,
         cameraNames: selectedCameras,
@@ -270,6 +280,53 @@ export default function VisualSearch({ initialResult, initialReadId }) {
     } finally {
       setSearching(false);
     }
+  };
+
+  const runUploadedSearch = async (query = uploadedQuery) => {
+    if (!query) return;
+    setSearching(true);
+    setError("");
+    try {
+      const result = await findSimilarUploadedCaptures({
+        dataUrl: query.dataUrl,
+        fileName: query.fileName,
+        cameraNames: selectedCameras,
+        startDate: startDate || null,
+        endDate: endDate ? new Date(`${endDate}T23:59:59.999`).toISOString() : null,
+        limit: 24,
+      });
+      if (!result.success) {
+        setError(result.error);
+        return;
+      }
+      setSearchResult({
+        ...result.data,
+        source: { ...result.data.source, imageUrl: query.dataUrl },
+      });
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    } finally {
+      setSearching(false);
+    }
+  };
+
+  const selectUpload = (file) => {
+    setError("");
+    if (!file || !UPLOAD_TYPES.has(file.type)) {
+      setError("Choose a JPEG, PNG, or WebP image.");
+      return;
+    }
+    if (file.size > MAX_UPLOAD_BYTES) {
+      setError("Choose an image no larger than 5 MB.");
+      return;
+    }
+    const reader = new FileReader();
+    reader.onerror = () => setError("The selected image could not be read.");
+    reader.onload = () => {
+      const query = { dataUrl: String(reader.result), fileName: file.name };
+      setUploadedQuery(query);
+      setSearchResult(null);
+    };
+    reader.readAsDataURL(file);
   };
 
   useEffect(() => {
@@ -318,6 +375,57 @@ export default function VisualSearch({ initialResult, initialReadId }) {
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
+            <input
+              ref={uploadInputRef}
+              type="file"
+              accept="image/jpeg,image/png,image/webp"
+              className="sr-only"
+              onChange={(event) => selectUpload(event.target.files?.[0])}
+            />
+            <div
+              role="button"
+              tabIndex={0}
+              onClick={() => uploadInputRef.current?.click()}
+              onKeyDown={(event) => {
+                if (event.key === "Enter" || event.key === " ") uploadInputRef.current?.click();
+              }}
+              onDragEnter={(event) => { event.preventDefault(); setDraggingUpload(true); }}
+              onDragOver={(event) => event.preventDefault()}
+              onDragLeave={(event) => { event.preventDefault(); setDraggingUpload(false); }}
+              onDrop={(event) => {
+                event.preventDefault();
+                setDraggingUpload(false);
+                selectUpload(event.dataTransfer.files?.[0]);
+              }}
+              className={`rounded-lg border border-dashed p-5 text-center transition-colors ${draggingUpload ? "border-primary bg-primary/5" : "hover:bg-muted/50"}`}
+            >
+              <UploadCloud className="mx-auto mb-2 h-6 w-6 text-muted-foreground" />
+              <div className="text-sm font-medium">Drop a vehicle image here, or choose a file</div>
+              <div className="mt-1 text-xs text-muted-foreground">JPEG, PNG, or WebP · maximum 5 MB · processed transiently</div>
+              <div className="mt-1 text-xs text-muted-foreground">Best results when the vehicle fills most of the image.</div>
+            </div>
+            {uploadedQuery && (
+              <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border p-3">
+                <div className="min-w-0">
+                  <div className="truncate text-sm font-medium">{uploadedQuery.fileName}</div>
+                  <div className="text-xs text-muted-foreground">Ready to compare with the current filters</div>
+                </div>
+                <div className="flex gap-2">
+                  <Button size="sm" onClick={() => runUploadedSearch()} disabled={searching}>
+                    {searching ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Search className="mr-2 h-4 w-4" />}
+                    Search upload
+                  </Button>
+                  <Button
+                    size="icon"
+                    variant="ghost"
+                    aria-label="Clear uploaded image"
+                    onClick={() => { setUploadedQuery(null); setSearchResult(null); if (uploadInputRef.current) uploadInputRef.current.value = ""; }}
+                  >
+                    <X className="h-4 w-4" />
+                  </Button>
+                </div>
+              </div>
+            )}
             {searchResult ? (
               <CaptureCard capture={searchResult.source} source onSearch={runSearch} />
             ) : (
@@ -385,7 +493,7 @@ export default function VisualSearch({ initialResult, initialReadId }) {
                 </div>
               </div>
               {searchResult && (
-                <Button variant="outline" className="w-full" onClick={() => runSearch(searchResult.source.readId)} disabled={searching}>
+                <Button variant="outline" className="w-full" onClick={() => searchResult.source.uploaded ? runUploadedSearch() : runSearch(searchResult.source.readId)} disabled={searching}>
                   {searching && <Loader2 className="mr-2 h-4 w-4 animate-spin" />} Apply filters
                 </Button>
               )}
