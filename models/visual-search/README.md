@@ -1,6 +1,7 @@
 # Visual-search models
 
-These pinned models run locally through `openvino-node@2024.6.0`. The application
+These pinned models run locally through the OpenVINO 2025.4 LTS runtime
+(`openvino-node@2025.4.0`). The application
 does not download models or transmit images during runtime.
 
 ## vehicle-detection-0202
