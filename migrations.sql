@@ -1325,3 +1325,116 @@ VALUES (
     'Allow version-bound approval of intentional disabled-rule expansions without enabling delivery.'
 )
 ON CONFLICT (version) DO NOTHING;
+
+-- Local-only visual search foundation. Derived vehicle-region crops and
+-- explainable exact/perceptual hashes are separate from immutable source
+-- captures. No historical work is queued automatically by this migration.
+CREATE TABLE IF NOT EXISTS public.capture_assets (
+    id BIGSERIAL PRIMARY KEY,
+    read_id INTEGER NOT NULL
+        REFERENCES public.plate_reads(id) ON DELETE CASCADE,
+    asset_type VARCHAR(30) NOT NULL DEFAULT 'vehicle_crop'
+        CHECK (asset_type IN ('vehicle_crop')),
+    algorithm_version VARCHAR(40) NOT NULL,
+    status VARCHAR(20) NOT NULL
+        CHECK (status IN ('ready', 'failed')),
+    source_image_path VARCHAR(255) NOT NULL,
+    derived_path VARCHAR(255),
+    source_sha256 CHAR(64)
+        CHECK (source_sha256 IS NULL OR source_sha256 ~ '^[0-9a-f]{64}$'),
+    perceptual_hash CHAR(16)
+        CHECK (perceptual_hash IS NULL OR perceptual_hash ~ '^[0-9a-f]{16}$'),
+    crop_box JSONB,
+    image_width INTEGER CHECK (image_width IS NULL OR image_width > 0),
+    image_height INTEGER CHECK (image_height IS NULL OR image_height > 0),
+    crop_width INTEGER CHECK (crop_width IS NULL OR crop_width > 0),
+    crop_height INTEGER CHECK (crop_height IS NULL OR crop_height > 0),
+    attempt_count INTEGER NOT NULL DEFAULT 1 CHECK (attempt_count > 0),
+    error_code VARCHAR(80),
+    indexed_at TIMESTAMPTZ,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE (read_id, asset_type, algorithm_version),
+    CONSTRAINT capture_assets_ready_state CHECK (
+        (status = 'ready'
+         AND derived_path IS NOT NULL
+         AND source_sha256 IS NOT NULL
+         AND perceptual_hash IS NOT NULL
+         AND crop_box IS NOT NULL
+         AND indexed_at IS NOT NULL
+         AND error_code IS NULL)
+        OR
+        (status = 'failed'
+         AND derived_path IS NULL
+         AND source_sha256 IS NULL
+         AND perceptual_hash IS NULL
+         AND indexed_at IS NULL
+         AND error_code IS NOT NULL)
+    )
+);
+
+CREATE INDEX IF NOT EXISTS idx_capture_assets_ready_hash
+    ON public.capture_assets (perceptual_hash, read_id)
+    WHERE status = 'ready';
+CREATE INDEX IF NOT EXISTS idx_capture_assets_status
+    ON public.capture_assets (status, updated_at DESC, id DESC);
+
+CREATE OR REPLACE FUNCTION public.capture_asset_set_updated_at()
+RETURNS TRIGGER AS $$
+BEGIN
+    NEW.updated_at = CURRENT_TIMESTAMP;
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS capture_assets_set_updated_at ON public.capture_assets;
+CREATE TRIGGER capture_assets_set_updated_at
+BEFORE UPDATE ON public.capture_assets
+FOR EACH ROW EXECUTE FUNCTION public.capture_asset_set_updated_at();
+
+INSERT INTO public.schema_migrations (version, description)
+VALUES (
+    '2026072207_image_similarity_foundation',
+    'Add inert local derived capture assets for resumable exact and perceptual image search.'
+)
+ON CONFLICT (version) DO NOTHING;
+
+-- Camera-scoped crop profiles allow tight LPR and wide overview cameras to
+-- derive appropriately framed search assets without modifying source images.
+CREATE TABLE IF NOT EXISTS public.camera_visual_profiles (
+    camera_key VARCHAR(100) PRIMARY KEY,
+    camera_name VARCHAR(100) NOT NULL,
+    crop_mode VARCHAR(20) NOT NULL DEFAULT 'auto'
+        CHECK (crop_mode IN ('auto', 'custom', 'full_frame')),
+    context_percent INTEGER NOT NULL DEFAULT 90
+        CHECK (context_percent BETWEEN 40 AND 100),
+    vertical_offset_percent INTEGER NOT NULL DEFAULT 0
+        CHECK (vertical_offset_percent BETWEEN -25 AND 25),
+    profile_version INTEGER NOT NULL DEFAULT 1 CHECK (profile_version > 0),
+    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+ALTER TABLE public.capture_assets
+    ADD COLUMN IF NOT EXISTS crop_profile_version INTEGER NOT NULL DEFAULT 1
+        CHECK (crop_profile_version > 0);
+
+CREATE OR REPLACE FUNCTION public.camera_visual_profile_set_updated_at()
+RETURNS TRIGGER AS $$
+BEGIN
+    NEW.updated_at = CURRENT_TIMESTAMP;
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS camera_visual_profiles_set_updated_at ON public.camera_visual_profiles;
+CREATE TRIGGER camera_visual_profiles_set_updated_at
+BEFORE UPDATE ON public.camera_visual_profiles
+FOR EACH ROW EXECUTE FUNCTION public.camera_visual_profile_set_updated_at();
+
+INSERT INTO public.schema_migrations (version, description)
+VALUES (
+    '2026072208_camera_visual_profiles',
+    'Add versioned camera-specific crop setup for derived visual-search assets.'
+)
+ON CONFLICT (version) DO NOTHING;

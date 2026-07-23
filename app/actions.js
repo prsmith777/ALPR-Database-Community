@@ -61,6 +61,7 @@ import {
   simulateNotificationRuleDraft,
   updateNotificationRuleDraft,
 } from "@/lib/notification-rule-draft-runtime.mjs";
+import { getCaptureAssetService } from "@/lib/capture-asset-runtime.mjs";
 import {
   getNotificationPlates as getNotificationPlatesDB,
   addNotificationPlate as addNotificationPlateDB,
@@ -1752,5 +1753,90 @@ export async function addDBPlate(plate_number, flagged = false) {
   } catch (error) {
     console.error("Error adding plate:", error);
     return { success: false, error: "Failed to add plate" };
+  }
+}
+
+function visualSearchFailure(error, fallback) {
+  const safeCodes = new Set([
+    "CAPTURE_NOT_FOUND",
+    "IMAGE_DECODE_FAILED",
+    "IMAGE_INDEX_FAILED",
+    "INVALID_SEARCH_FILTER",
+    "INVALID_CAMERA_PROFILE",
+    "SOURCE_IMAGE_MISSING",
+  ]);
+  if (safeCodes.has(error?.code)) return { success: false, error: error.message };
+  console.error(fallback, { code: String(error?.code || "") });
+  return { success: false, error: fallback };
+}
+
+export async function getVisualSearchBootstrap() {
+  const principal = await requirePermission("plate.read");
+  try {
+    const canManageIndex = hasPermission(principal, "maintenance.manage");
+    const data = await (await getCaptureAssetService()).getBootstrap({
+      includeCameraSetup: canManageIndex,
+    });
+    return {
+      success: true,
+      data: {
+        ...data,
+        canManageIndex,
+      },
+    };
+  } catch (error) {
+    return visualSearchFailure(error, "Unable to load visual search.");
+  }
+}
+
+export async function indexCaptureAssetsBatch(batchSize = 20) {
+  await requirePermission("maintenance.manage");
+  try {
+    const data = await (await getCaptureAssetService()).indexBatch({ limit: batchSize });
+    revalidatePath("/visual_search");
+    return { success: true, data };
+  } catch (error) {
+    return visualSearchFailure(error, "Unable to index capture images.");
+  }
+}
+
+export async function saveCameraVisualProfile(input = {}) {
+  await requirePermission("maintenance.manage");
+  try {
+    const data = await (await getCaptureAssetService()).saveCameraProfile(input);
+    revalidatePath("/visual_search");
+    return { success: true, data };
+  } catch (error) {
+    return visualSearchFailure(error, "Unable to save the camera crop profile.");
+  }
+}
+
+export async function indexCameraCaptureAssetsBatch(cameraName, batchSize = 20) {
+  await requirePermission("maintenance.manage");
+  try {
+    const data = await (await getCaptureAssetService()).indexCameraBatch({
+      cameraName,
+      limit: batchSize,
+    });
+    revalidatePath("/visual_search");
+    return { success: true, data };
+  } catch (error) {
+    return visualSearchFailure(error, "Unable to reindex this camera.");
+  }
+}
+
+export async function findSimilarCaptures(input = {}) {
+  await requirePermission("plate.read");
+  try {
+    const data = await (await getCaptureAssetService()).search({
+      readId: input.readId,
+      cameraNames: Array.isArray(input.cameraNames) ? input.cameraNames : [],
+      startDate: input.startDate || null,
+      endDate: input.endDate || null,
+      limit: input.limit,
+    });
+    return { success: true, data };
+  } catch (error) {
+    return visualSearchFailure(error, "Unable to search capture images.");
   }
 }
