@@ -141,11 +141,18 @@ test("legacy upstream installer and updater scripts are retired", async () => {
 test("the production image uses a supported non-root deterministic runtime", async () => {
   const dockerfile = await fs.readFile("Dockerfile", "utf8");
   const packageJson = JSON.parse(await fs.readFile("package.json", "utf8"));
+  const openvinoInstaller = await fs.readFile("scripts/install-openvino-runtime.mjs", "utf8");
 
   assert.match(dockerfile, /^FROM node:24-bookworm AS builder/m);
   assert.match(dockerfile, /^FROM node:24-bookworm-slim$/m);
-  assert.match(dockerfile, /yarn install --frozen-lockfile/);
+  assert.match(dockerfile, /yarn install --frozen-lockfile --ignore-scripts/);
+  assert.match(dockerfile, /node scripts\/install-openvino-runtime\.mjs/);
   assert.equal(dockerfile.includes("yarn add"), false);
+  assert.equal(packageJson.dependencies["openvino-node"], "2025.4.0");
+  assert.match(openvinoInstaller, /storage\.openvinotoolkit\.org/);
+  assert.match(openvinoInstaller, /RUNTIME_SHA256 = "[0-9a-f]{64}"/);
+  assert.match(openvinoInstaller, /MAX_ARCHIVE_BYTES/);
+  assert.match(openvinoInstaller, /packageJson\.version !== "2025\.4\.0"/);
   assert.equal(
     dockerfile.match(/NEXT_TELEMETRY_DISABLED=1/g)?.length,
     2,
