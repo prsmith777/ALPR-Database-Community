@@ -12,33 +12,19 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-
-const EDITABLE_TYPES = new Set(["known_plate", "tag", "camera"]);
-
-function values(condition, key) {
-  const value = condition?.value?.[key];
-  return Array.isArray(value) ? value.map(String) : [];
-}
+import { normalizeEditableTagCameraTree } from "@/lib/notification-rule-draft-shape.mjs";
 
 function editableDraft(rule) {
   const root = rule?.targetRule?.conditionTree;
-  const children = Array.isArray(root?.children) ? root.children : [];
-  if (
-    !rule?.allDisabled ||
-    root?.combinator !== "all" ||
-    root?.negated === true ||
-    children.some((child) => child?.kind === "group" || !EDITABLE_TYPES.has(child?.conditionType))
-  ) return null;
-  const tag = children.find((child) => child.conditionType === "tag");
-  const camera = children.find((child) => child.conditionType === "camera");
-  if (!tag || !camera) return null;
+  const shape = normalizeEditableTagCameraTree(root);
+  if (!rule?.allDisabled || !shape) return null;
   return {
     ruleId: rule.targetRule.id,
     name: rule.targetRule.name,
     version: rule.targetRule.version,
-    requireKnownPlate: children.some((child) => child.conditionType === "known_plate"),
-    tags: values(tag, "tags"),
-    cameras: values(camera, "names"),
+    requireKnownPlate: shape.requireKnownPlate,
+    tags: shape.tags,
+    cameras: shape.cameras,
   };
 }
 

@@ -2,16 +2,19 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 
+import { previewLegacyMqttRule } from "../lib/notification-migration-preview.mjs";
 import { NotificationRuleDraftRepository } from "../lib/notification-rule-draft-repository.mjs";
+import { normalizeEditableTagCameraTree } from "../lib/notification-rule-draft-shape.mjs";
 import { buildNotificationShadowReview } from "../lib/notification-shadow-review.mjs";
 
-function draftPool({ deliveryEnabled = false, includeKnownGuard = true } = {}) {
+function draftPool({ deliveryEnabled = false, includeKnownGuard = true, nested = true } = {}) {
   const calls = [];
+  const sourceGroupId = nested ? 62 : 61;
   const conditionRows = [
     ...(includeKnownGuard
-      ? [{ id: 1, group_id: 61, condition_type: "known_plate", operator: "is_true", operand: { expected: true }, position: 0 }]
+      ? [{ id: 1, group_id: sourceGroupId, condition_type: "known_plate", operator: "is_true", operand: { expected: true }, position: 0 }]
       : []),
-    { id: 2, group_id: 61, condition_type: "tag", operator: "any", operand: { tags: ["Delivery"] }, position: 1 },
+    { id: 2, group_id: sourceGroupId, condition_type: "tag", operator: "any", operand: { tags: ["Delivery"] }, position: 1 },
     { id: 3, group_id: 61, condition_type: "camera", operator: "in", operand: { names: ["Entry LPR 1"] }, position: 2 },
   ];
   const client = {
@@ -25,7 +28,10 @@ function draftPool({ deliveryEnabled = false, includeKnownGuard = true } = {}) {
         return { rows: [{ id: 71, action_enabled: deliveryEnabled, channel_id: 81, channel_enabled: deliveryEnabled }] };
       }
       if (normalized.startsWith("SELECT id, parent_group_id")) {
-        return { rows: [{ id: 61, parent_group_id: null, combinator: "all", negated: false, position: 0 }] };
+        return { rows: [
+          { id: 61, parent_group_id: null, combinator: "all", negated: false, position: 0 },
+          ...(nested ? [{ id: 62, parent_group_id: 61, combinator: "all", negated: false, position: 0 }] : []),
+        ] };
       }
       if (normalized.startsWith("SELECT c.id, c.group_id")) return { rows: conditionRows };
       if (normalized.startsWith("UPDATE public.notification_rules")) {
@@ -61,6 +67,7 @@ test("disabled tag rule can remove the known-plate guard without enabling delive
     .map(({ values }) => values[1]);
   assert.deepEqual(insertedTypes, ["tag", "camera"]);
   assert.ok(fixture.calls.some(({ sql }) => sql.startsWith("DELETE FROM public.notification_conditions")));
+  assert.ok(fixture.calls.some(({ sql }) => sql.startsWith("DELETE FROM public.notification_condition_groups")));
   assert.ok(fixture.calls.some(({ sql }) => sql === "COMMIT"));
   assert.ok(!fixture.calls.some(({ sql }) => /SET enabled = TRUE/i.test(sql)));
 });
@@ -81,7 +88,7 @@ test("rule editing fails closed if an action or channel is enabled", async () =>
 });
 
 test("no-delivery simulator matches an unknown tagged plate without writing", async () => {
-  const fixture = draftPool({ includeKnownGuard: false });
+  const fixture = draftPool({ includeKnownGuard: false, nested: false });
   const repository = new NotificationRuleDraftRepository({ pool: fixture.pool });
   const result = await repository.simulate({
     ruleId: 51,
@@ -97,6 +104,64 @@ test("no-delivery simulator matches an unknown tagged plate without writing", as
   assert.equal(result.ruleRemainedDisabled, true);
   assert.ok(fixture.calls.every(({ sql }) => sql.startsWith("SELECT")));
   assert.ok(fixture.calls.every(({ sql }) => !sql.includes("FOR UPDATE")));
+});
+
+test("no-delivery simulator evaluates the original nested migrated tag shape", async () => {
+  const fixture = draftPool();
+  const repository = new NotificationRuleDraftRepository({ pool: fixture.pool });
+  const result = await repository.simulate({
+    ruleId: 51,
+    plateNumber: "DPOM90",
+    cameraName: "Entry LPR 1",
+    tags: ["Delivery"],
+    knownPlate: true,
+  });
+
+  assert.equal(result.matched, true);
+  assert.equal(result.deliveryAttempts, 0);
+  assert.ok(fixture.calls.every(({ sql }) => sql.startsWith("SELECT")));
+});
+
+test("editor shape accepts the exact nested tree produced by MQTT tag migration", () => {
+  const preview = previewLegacyMqttRule({
+    id: 7,
+    name: "Delivery arrival",
+    enabled: true,
+    match_type: "tag",
+    match_value: "Delivery",
+    broker_id: 2,
+    broker_name: "HOMESEER",
+    broker_enabled: true,
+    camera_names: ["Entry LPR 1"],
+  });
+
+  assert.deepEqual(normalizeEditableTagCameraTree(preview.proposed.conditionTree), {
+    requireKnownPlate: true,
+    tags: ["Delivery"],
+    cameras: ["Entry LPR 1"],
+  });
+});
+
+test("editor shape fails closed for nested groups outside the migrated tag shape", () => {
+  const malformed = {
+    kind: "group",
+    combinator: "all",
+    children: [{
+      kind: "group",
+      combinator: "any",
+      children: [
+        { kind: "condition", conditionType: "tag", operator: "any", value: { tags: ["Delivery"] } },
+        { kind: "condition", conditionType: "known_plate", operator: "is_true", value: { expected: true } },
+      ],
+    }, {
+      kind: "condition",
+      conditionType: "camera",
+      operator: "in",
+      value: { names: ["Entry LPR 1"] },
+    }],
+  };
+
+  assert.equal(normalizeEditableTagCameraTree(malformed), null);
 });
 
 test("shadow review classifies tag-only behavior as a safe intentional expansion", () => {
