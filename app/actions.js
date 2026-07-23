@@ -58,6 +58,10 @@ import {
   rollbackNotificationRule,
 } from "@/lib/notification-cutover-runtime.mjs";
 import {
+  simulateNotificationRuleDraft,
+  updateNotificationRuleDraft,
+} from "@/lib/notification-rule-draft-runtime.mjs";
+import {
   getNotificationPlates as getNotificationPlatesDB,
   addNotificationPlate as addNotificationPlateDB,
   toggleNotification as toggleNotificationDB,
@@ -728,15 +732,22 @@ export async function getUnifiedNotificationRuleReview() {
 
 export async function approveUnifiedNotificationRuleReview(formData) {
   const principal = await requirePermission("notification.manage");
-  if (formData?.get("confirmation") !== "approve_disabled_shadow_review") {
+  const approvalMode = formData?.get("approvalMode") === "intentional_expansion"
+    ? "intentional_expansion"
+    : "parity";
+  const expectedConfirmation = approvalMode === "intentional_expansion"
+    ? "approve_intentional_expansion"
+    : "approve_disabled_shadow_review";
+  if (formData?.get("confirmation") !== expectedConfirmation) {
     return {
       success: false,
-      error: "Confirm that this approval records evidence only and keeps delivery disabled.",
+      error: "Confirm that this approval records the current disabled-rule evidence only.",
     };
   }
   try {
     const data = await recordNotificationShadowReviewApproval({
       ruleId: formData.get("ruleId"),
+      approvalMode,
       actor: principal,
     });
     revalidatePath("/notifications");
@@ -750,6 +761,9 @@ export async function approveUnifiedNotificationRuleReview(formData) {
       "Approval requires at least one relevant recent read",
       "Resolve shadow comparison mismatches before approval",
       "Approval requires at least one positive legacy and unified match",
+      "Select a valid unified rule approval mode",
+      "Intentional expansion cannot approve a legacy match that unified logic would lose",
+      "Intentional expansion requires at least one real read matched only by unified logic",
     ]);
     return {
       success: false,
@@ -757,6 +771,83 @@ export async function approveUnifiedNotificationRuleReview(formData) {
         error instanceof Error && safeMessages.has(error.message)
           ? error.message
           : "Failed to record shadow review approval",
+    };
+  }
+}
+
+function commaSeparated(value) {
+  return [...new Set(String(value ?? "").split(",").map((item) => item.trim()).filter(Boolean))];
+}
+
+export async function updateDisabledUnifiedNotificationRule(formData) {
+  const principal = await requirePermission("notification.manage");
+  if (formData?.get("confirmation") !== "save_disabled_rule_draft") {
+    return { success: false, error: "Confirm that the unified rule and delivery remain disabled." };
+  }
+  try {
+    const data = await updateNotificationRuleDraft({
+      ruleId: formData.get("ruleId"),
+      requireKnownPlate: formData.get("requireKnownPlate") === "true",
+      tags: commaSeparated(formData.get("tags")),
+      cameras: commaSeparated(formData.get("cameras")),
+      actor: principal,
+    });
+    revalidatePath("/notifications");
+    return { success: true, data };
+  } catch (error) {
+    console.error("Error updating disabled unified notification rule:", error);
+    const safeMessages = new Set([
+      "Select a valid unified rule to edit",
+      "The migrated unified rule was not found",
+      "Only migrated MQTT tag rules can be edited here",
+      "Disable the unified rule before editing its conditions",
+      "Rule editing requires the rule, channel, and actions to remain disabled",
+      "This rule uses a condition structure that is not editable here",
+      "Only migrated tag-and-camera rules can be edited here",
+      "Select at least one tag",
+      "Select valid tag",
+      "Select at least one camera",
+      "Select valid camera",
+    ]);
+    return {
+      success: false,
+      error: error instanceof Error && safeMessages.has(error.message)
+        ? error.message
+        : "Failed to update the disabled unified notification rule",
+    };
+  }
+}
+
+export async function simulateDisabledUnifiedNotificationRule(formData) {
+  await requirePermission("notification.manage");
+  try {
+    const data = await simulateNotificationRuleDraft({
+      ruleId: formData.get("ruleId"),
+      plateNumber: formData.get("plateNumber"),
+      cameraName: formData.get("cameraName"),
+      tags: commaSeparated(formData.get("testTags")),
+      knownPlate: formData.get("knownPlate") === "true",
+    });
+    return { success: true, data };
+  } catch (error) {
+    console.error("Error simulating disabled unified notification rule:", error);
+    const safeMessages = new Set([
+      "Select a valid unified rule to test",
+      "The migrated unified rule was not found",
+      "Only migrated MQTT tag rules can be edited here",
+      "Disable the unified rule before editing its conditions",
+      "Rule editing requires the rule, channel, and actions to remain disabled",
+      "This rule uses a condition structure that is not editable here",
+      "Only migrated tag-and-camera rules can be edited here",
+      "Enter a valid test plate number",
+      "Enter a valid test camera",
+      "Enter valid test tags",
+    ]);
+    return {
+      success: false,
+      error: error instanceof Error && safeMessages.has(error.message)
+        ? error.message
+        : "Failed to simulate the disabled unified notification rule",
     };
   }
 }
@@ -784,6 +875,7 @@ const CUTOVER_SAFE_MESSAGES = new Set([
   "Unified MQTT destination no longer matches the legacy source rule",
   "Cutover requires current administrator-approved shadow evidence",
   "Cutover requires zero mismatches and at least one positive match",
+  "Cutover requires an approved expansion with no lost legacy matches",
 ]);
 
 export async function cutoverUnifiedNotificationRule(formData) {

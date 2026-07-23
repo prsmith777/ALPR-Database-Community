@@ -8,15 +8,23 @@ import {
 } from "../lib/notification-cutover-repository.mjs";
 
 function approvedShadow(status = "approved") {
+  const intentional = status === "approved_intentional";
+  const current = status === "approved" || intentional;
   return {
     rules: [
       {
         targetRule: { id: 51 },
         status,
         positiveMatchCount: status === "approved" ? 5 : 0,
-        mismatchCount: 0,
+        unifiedPositiveMatchCount: intentional ? 4 : status === "approved" ? 5 : 0,
+        mismatchCount: intentional ? 4 : 0,
+        expansionCount: intentional ? 4 : 0,
+        regressionCount: 0,
         reportFingerprint: "a".repeat(64),
-        latestReview: { current: status === "approved" },
+        latestReview: {
+          current,
+          approvalMode: intentional ? "intentional_expansion" : "parity",
+        },
       },
     ],
   };
@@ -103,6 +111,24 @@ test("guarded cutover atomically disables legacy before enabling the approved un
     sql.includes("INSERT INTO public.audit_events") && values[1] === "notification.rule_cutover"
   ));
   assert.ok(fixture.calls.some(({ sql }) => sql === "COMMIT"));
+});
+
+test("guarded cutover accepts a current approved expansion with no lost legacy matches", async () => {
+  const fixture = transactionalPool({ shadowStatus: "approved_intentional" });
+  const repository = new NotificationCutoverRepository({
+    pool: fixture.pool,
+    shadowRepositoryFactory: fixture.shadowRepositoryFactory,
+  });
+  const result = await repository.cutover({ ruleId: 51, actor: { id: 9 } });
+  assert.equal(result.state, "unified_active");
+  const event = fixture.calls.find(({ sql }) =>
+    sql.includes("INSERT INTO public.notification_rule_cutover_events")
+  );
+  assert.ok(event);
+  const metadata = JSON.parse(event.values[4]);
+  assert.equal(metadata.approvalMode, "intentional_expansion");
+  assert.equal(metadata.expansionCount, 4);
+  assert.equal(metadata.regressionCount, 0);
 });
 
 test("cutover is refused when positive evidence is not currently approved", async () => {
