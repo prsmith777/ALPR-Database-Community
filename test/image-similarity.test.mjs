@@ -5,8 +5,10 @@ import test from "node:test";
 import sharp from "sharp";
 
 import {
+  COLOR_SIGNATURE_VERSION,
   calculateVehicleCrop,
   colorSignatureDistance,
+  colorSignatureReliability,
   createColorSignature,
   createDHash,
   decodeVisualUploadDataUrl,
@@ -104,7 +106,7 @@ test("dHash is stable and Hamming distance is explainable", () => {
   assert.equal(exact.signalCount, 1);
   assert.equal(
     explainSimilarity({ sourceSha256: "a", candidateSha256: "b", distance: 6 }).label,
-    "Near-identical structure"
+    "Visual candidate"
   );
 });
 
@@ -113,7 +115,7 @@ test("color signatures distinguish vehicle color distributions with an explainab
   const blue = solidColorSignature(30, 50, 220);
   assert.match(red, /^[0-9a-f]{40}$/);
   assert.equal(colorSignatureDistance(red, red), 0);
-  assert.ok(colorSignatureDistance(red, blue) > 0.5);
+  assert.ok(colorSignatureDistance(red, blue) >= 0.5);
   const combined = explainSimilarity({
     sourceSha256: "a",
     candidateSha256: "b",
@@ -121,9 +123,29 @@ test("color signatures distinguish vehicle color distributions with an explainab
     colorDistance: colorSignatureDistance(red, red),
   });
   assert.equal(combined.signalCount, 2);
-  assert.equal(combined.rankingVersion, "multisignal-v1");
+  assert.equal(combined.rankingVersion, "vehicle-focus-v2");
   assert.equal(combined.colorScore, 100);
   assert.ok(combined.score > combined.structuralScore);
+});
+
+test("vehicle-focused color ignores gray hue and separates body colors from a shared scene", () => {
+  const scene = (vehicle, border = [70, 105, 65]) => {
+    const pixels = [];
+    for (let y = 0; y < 16; y += 1) {
+      for (let x = 0; x < 16; x += 1) {
+        pixels.push(...(x >= 3 && x <= 12 && y >= 3 && y <= 11 ? vehicle : border));
+      }
+    }
+    return createColorSignature(Uint8Array.from(pixels));
+  };
+  const red = scene([210, 28, 35]);
+  const redWithDifferentBorder = scene([195, 35, 42], [55, 85, 110]);
+  const white = scene([220, 220, 216]);
+  const black = scene([28, 30, 32]);
+
+  assert.ok(colorSignatureReliability(red) > colorSignatureReliability(white));
+  assert.ok(colorSignatureDistance(red, redWithDifferentBorder) < colorSignatureDistance(red, white));
+  assert.ok(colorSignatureDistance(red, redWithDifferentBorder) < colorSignatureDistance(red, black));
 });
 
 test("index batches are deliberately bounded", () => {
@@ -156,6 +178,8 @@ test("migration keeps image similarity inert and source images immutable", async
   assert.match(section, /2026072208_camera_visual_profiles/i);
   assert.match(section, /color_signature CHAR\(40\)/i);
   assert.match(section, /2026072301_visual_color_signatures/i);
+  assert.match(section, /color_signature_version SMALLINT/i);
+  assert.match(section, /2026072302_vehicle_focus_ranking/i);
   assert.equal(/UPDATE\s+public\.plate_reads/i.test(section), false);
   assert.equal(/INSERT\s+INTO\s+public\.capture_assets[\s\S]*SELECT/i.test(section), false);
 });
@@ -182,7 +206,7 @@ test("camera crop setup exposes preview controls and version-aware indexing", as
   assert.match(repository, /LOWER\(BTRIM\(pr\.camera_name\)\) = LOWER\(BTRIM\(\$\$\{values\.length\}\)\)/);
   assert.match(component, /Drop a vehicle image here, or choose a file/);
   assert.match(component, /processed transiently/);
-  assert.match(component, /structural and color agreement/);
+  assert.match(component, /structure and vehicle-focused color/);
 });
 
 test("plate tables render the visual-search link only for an open image", async () => {
@@ -224,6 +248,7 @@ test("indexing creates a derived crop and hashes without replacing the source", 
         source_sha256: asset.sourceSha256,
         perceptual_hash: asset.perceptualHash,
         color_signature: asset.colorSignature,
+        color_signature_version: asset.colorSignatureVersion,
         derived_path: asset.derivedPath,
         plate_number: asset.read.plate_number,
         observed_plate: asset.read.observed_plate,
@@ -247,6 +272,7 @@ test("indexing creates a derived crop and hashes without replacing the source", 
   assert.match(asset.source_sha256, /^[0-9a-f]{64}$/);
   assert.match(asset.perceptual_hash, /^[0-9a-f]{16}$/);
   assert.match(asset.color_signature, /^[0-9a-f]{40}$/);
+  assert.equal(asset.color_signature_version, COLOR_SIGNATURE_VERSION);
   assert.match(asset.derived_path, /^derived\/2026\/07\/22\/vehicle_v2_read_17\.jpg$/);
   assert.ok(derived.get(asset.derived_path)?.length > 0);
   const metadata = await sharp(derived.get(asset.derived_path)).metadata();
@@ -263,6 +289,7 @@ test("search ranks exact and near matches and excludes distant crops", async () 
     source_sha256: "a".repeat(64),
     perceptual_hash: "0000000000000000",
     color_signature: redSignature,
+    color_signature_version: COLOR_SIGNATURE_VERSION,
     plate_number: "SOURCE",
     camera_name: "Street",
     timestamp: "2026-07-22T18:00:00.000Z",
@@ -273,6 +300,7 @@ test("search ranks exact and near matches and excludes distant crops", async () 
     source_sha256: "b".repeat(64),
     perceptual_hash: "0000000000000001",
     color_signature: redSignature,
+    color_signature_version: COLOR_SIGNATURE_VERSION,
     plate_number: "CANDIDATE",
     camera_name: "Driveway",
     timestamp: "2026-07-22T18:01:00.000Z",
@@ -300,6 +328,60 @@ test("search ranks exact and near matches and excludes distant crops", async () 
   assert.equal(result.matches[1].distance, 1);
   assert.ok(result.matches[1].score > result.matches[2].score);
   assert.equal(result.matches[1].signalCount, 2);
+});
+
+test("an exact uploaded capture infers plate identity and ranks every confirmed vehicle first", async () => {
+  const upload = await sharp({
+    create: { width: 120, height: 80, channels: 3, background: { r: 205, g: 30, b: 35 } },
+  }).jpeg().toBuffer();
+  const hashPixels = await sharp(upload).resize(9, 8, { fit: "fill" }).grayscale().raw().toBuffer();
+  const colorPixels = await sharp(upload).resize(16, 16, { fit: "fill" }).toColourspace("srgb").raw().toBuffer();
+  const uploadHash = createDHash(hashPixels);
+  const colorSignature = createColorSignature(colorPixels);
+  const base = {
+    derived_path: "derived/candidate.jpg",
+    color_signature: colorSignature,
+    color_signature_version: COLOR_SIGNATURE_VERSION,
+    observed_plate: "069YQZ",
+    camera_name: "Entry LPR 1",
+    timestamp: "2026-07-23T03:00:00.000Z",
+  };
+  const candidates = [
+    {
+      ...base,
+      read_id: 1,
+      plate_number: "069YQZ",
+      source_sha256: crypto.createHash("sha256").update(upload).digest("hex"),
+      perceptual_hash: uploadHash,
+    },
+    {
+      ...base,
+      read_id: 2,
+      plate_number: "069YQZ",
+      source_sha256: "b".repeat(64),
+      perceptual_hash: "ffffffffffffffff",
+    },
+    {
+      ...base,
+      read_id: 3,
+      plate_number: "OTHER",
+      source_sha256: "c".repeat(64),
+      perceptual_hash: uploadHash,
+    },
+  ];
+  const service = new CaptureAssetService({
+    repository: { listSearchCandidates: async () => candidates },
+    fileStorage: {},
+  });
+
+  const result = await service.searchUpload({
+    dataUrl: `data:image/jpeg;base64,${upload.toString("base64")}`,
+    fileName: "truck.jpg",
+  });
+  assert.deepEqual(result.matches.map((match) => match.readId), [1, 2, 3]);
+  assert.equal(result.matches[1].plateConfirmed, true);
+  assert.equal(result.matches[1].label, "Plate-confirmed vehicle");
+  assert.equal(result.matches[1].score, 99);
 });
 
 test("older structural assets receive transient color ranking without database writes", async () => {
@@ -352,6 +434,7 @@ test("uploaded-image search is transient and uses the existing filtered index", 
     source_sha256: crypto.createHash("sha256").update(upload).digest("hex"),
     perceptual_hash: createDHash(pixels),
     color_signature: createColorSignature(colorPixels),
+    color_signature_version: COLOR_SIGNATURE_VERSION,
     plate_number: "MATCH99",
     camera_name: "Street LPR 2",
     timestamp: "2026-07-23T03:00:00.000Z",

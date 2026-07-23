@@ -1452,3 +1452,16 @@ VALUES (
     'Add a backward-compatible compact color signal for explainable multi-signal visual ranking.'
 )
 ON CONFLICT (version) DO NOTHING;
+
+-- Version the color signal so the improved vehicle-focused histogram can be
+-- derived lazily for existing assets without mixing incompatible signatures.
+ALTER TABLE public.capture_assets
+    ADD COLUMN IF NOT EXISTS color_signature_version SMALLINT
+        CHECK (color_signature_version IS NULL OR color_signature_version > 0);
+
+INSERT INTO public.schema_migrations (version, description)
+VALUES (
+    '2026072302_vehicle_focus_ranking',
+    'Version vehicle-focused color signatures for conservative visual ranking and lazy compatibility.'
+)
+ON CONFLICT (version) DO NOTHING;

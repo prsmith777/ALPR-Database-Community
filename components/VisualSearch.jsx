@@ -76,8 +76,10 @@ function CaptureCard({ capture, source = false, onSearch }) {
           <p className="text-xs text-muted-foreground">
             {capture.exact
               ? "The complete stored source image has the same SHA-256 hash."
+              : capture.plateConfirmed
+                ? `The indexed plate identity confirms this vehicle; the visual comparison is structure ${capture.structuralScore}% and vehicle-focused color ${capture.colorScore}%.`
               : capture.colorScore !== null && capture.colorScore !== undefined
-                ? `${capture.distance} of 64 structural bits differ · structure ${capture.structuralScore}% · color ${capture.colorScore}% · combined ${capture.score}%.`
+                ? `${capture.distance} of 64 structural bits differ · structure ${capture.structuralScore}% · vehicle-focused color ${capture.colorScore}% · combined ${capture.score}%.`
                 : `${capture.distance} of 64 structural bits differ · structure-only fallback ${capture.structuralScore}%.`}
           </p>
         )}
@@ -514,10 +516,10 @@ export default function VisualSearch({ initialResult, initialReadId }) {
       {!searching && searchResult && (
         <section className="space-y-3">
           <div>
-            <h2 className="text-xl font-semibold">Matches</h2>
+            <h2 className="text-xl font-semibold">Results</h2>
             <p className="text-sm text-muted-foreground">
-              {searchResult.matches.length} matches from {searchResult.searchedCandidates.toLocaleString()} filtered indexed captures.
-              Higher combined scores use structural and color agreement when available; labels remain candidates for human review.
+              {searchResult.matches.length} candidates from {searchResult.searchedCandidates.toLocaleString()} filtered indexed captures.
+              Plate-confirmed vehicles rank first when identity is available; visual-only results use structure and vehicle-focused color and still require human review.
             </p>
           </div>
           {searchResult.matches.length ? (

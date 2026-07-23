@@ -116,9 +116,11 @@ Operational behavior:
 - Transient uploaded-image queries implemented: drag-and-drop JPEG, PNG, or
   WebP images can use the existing camera/time filters without creating a
   plate read or storing the uploaded source.
-- Explainable multi-signal ranking implemented: structural dHash similarity is
-  combined with a compact hue/saturation/value distribution when available,
-  with a safe structure-only fallback for older assets.
+- Explainable multi-signal ranking implemented and recalibrated from staging
+  evidence: exact uploads can recover plate-confirmed captures, while visual
+  candidates combine structural dHash with a versioned, center-weighted color
+  signal that excludes gray pixels from hue and falls back conservatively when
+  color is unreliable.
 - Foundation search is deliberately bounded to recent filtered indexed
   captures. Its crop similarity is a candidate finder, not identity proof.
 - Add asynchronous vehicle observations with per-field confidence,
