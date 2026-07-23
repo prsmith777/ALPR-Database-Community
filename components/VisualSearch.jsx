@@ -76,11 +76,7 @@ function CaptureCard({ capture, source = false, onSearch }) {
           <p className="text-xs text-muted-foreground">
             {capture.exact
               ? "The complete stored source image has the same SHA-256 hash."
-              : capture.plateConfirmed
-                ? `The indexed plate identity confirms this vehicle; the visual comparison is structure ${capture.structuralScore}% and vehicle-focused color ${capture.colorScore}%.`
-              : capture.colorScore !== null && capture.colorScore !== undefined
-                ? `${capture.distance} of 64 structural bits differ · structure ${capture.structuralScore}% · vehicle-focused color ${capture.colorScore}% · combined ${capture.score}%.`
-                : `${capture.distance} of 64 structural bits differ · structure-only fallback ${capture.structuralScore}%.`}
+              : `OpenVINO Vehicle ReID cosine similarity: ${capture.score}%. Plate text is displayed for review but is not used in this score or ranking.`}
           </p>
         )}
         <div className="flex flex-wrap gap-2">
@@ -519,7 +515,7 @@ export default function VisualSearch({ initialResult, initialReadId }) {
             <h2 className="text-xl font-semibold">Results</h2>
             <p className="text-sm text-muted-foreground">
               {searchResult.matches.length} candidates from {searchResult.searchedCandidates.toLocaleString()} filtered indexed captures.
-              Plate-confirmed vehicles rank first when identity is available; visual-only results use structure and vehicle-focused color and still require human review.
+              Results are ranked only by learned Vehicle ReID image embeddings. Plate text never affects inclusion, score, or order; candidates still require human review.
             </p>
           </div>
           {searchResult.matches.length ? (
@@ -528,7 +524,7 @@ export default function VisualSearch({ initialResult, initialReadId }) {
             </div>
           ) : (
             <div className="rounded-lg border border-dashed p-8 text-center text-sm text-muted-foreground">
-              No indexed crops met the current similarity threshold and filters.
+              No captures with current Vehicle ReID embeddings matched these filters. Index more captures and try again.
             </div>
           )}
         </section>

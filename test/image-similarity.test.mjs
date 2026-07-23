@@ -19,11 +19,26 @@ import {
 } from "../lib/image-similarity.mjs";
 import { resolveStoragePath } from "../lib/storage-path.mjs";
 import { CaptureAssetService } from "../lib/capture-asset-service.mjs";
+import {
+  VEHICLE_EMBEDDING_BYTES,
+  VEHICLE_REID_MODEL,
+  VehicleReidEngine,
+  cosineSimilarity,
+  decodeVehicleEmbedding,
+  encodeVehicleEmbedding,
+  selectVehicleDetection,
+} from "../lib/vehicle-reid.mjs";
 
 function solidColorSignature(red, green, blue) {
   return createColorSignature(Uint8Array.from(
     Array.from({ length: 16 * 16 }, () => [red, green, blue]).flat()
   ));
+}
+
+function embedding(...entries) {
+  const values = new Float32Array(512);
+  entries.forEach(([index, value]) => { values[index] = value; });
+  return encodeVehicleEmbedding(values);
 }
 
 test("vehicle crop expands a plate box while remaining inside the source image", () => {
@@ -180,6 +195,9 @@ test("migration keeps image similarity inert and source images immutable", async
   assert.match(section, /2026072301_visual_color_signatures/i);
   assert.match(section, /color_signature_version SMALLINT/i);
   assert.match(section, /2026072302_vehicle_focus_ranking/i);
+  assert.match(section, /vehicle_embedding BYTEA/i);
+  assert.match(section, /octet_length\(vehicle_embedding\) = 2048/i);
+  assert.match(section, /2026072303_vehicle_reid_embeddings/i);
   assert.equal(/UPDATE\s+public\.plate_reads/i.test(section), false);
   assert.equal(/INSERT\s+INTO\s+public\.capture_assets[\s\S]*SELECT/i.test(section), false);
 });
@@ -206,7 +224,7 @@ test("camera crop setup exposes preview controls and version-aware indexing", as
   assert.match(repository, /LOWER\(BTRIM\(pr\.camera_name\)\) = LOWER\(BTRIM\(\$\$\{values\.length\}\)\)/);
   assert.match(component, /Drop a vehicle image here, or choose a file/);
   assert.match(component, /processed transiently/);
-  assert.match(component, /structure and vehicle-focused color/);
+  assert.match(component, /ranked only by learned Vehicle ReID image embeddings/);
 });
 
 test("plate tables render the visual-search link only for an open image", async () => {
@@ -217,7 +235,7 @@ test("plate tables render the visual-search link only for an open image", async 
   );
 });
 
-test("indexing creates a derived crop and hashes without replacing the source", async () => {
+test("indexing stores a learned embedding without replacing the source", async () => {
   const source = await sharp({
     create: {
       width: 100,
@@ -247,8 +265,10 @@ test("indexing creates a derived crop and hashes without replacing the source", 
         ...asset,
         source_sha256: asset.sourceSha256,
         perceptual_hash: asset.perceptualHash,
-        color_signature: asset.colorSignature,
-        color_signature_version: asset.colorSignatureVersion,
+        vehicle_embedding: asset.vehicleEmbedding,
+        embedding_model: asset.embeddingModel,
+        detector_model: asset.detectorModel,
+        detection_confidence: asset.detectionConfidence,
         derived_path: asset.derivedPath,
         plate_number: asset.read.plate_number,
         observed_plate: asset.read.observed_plate,
@@ -264,6 +284,17 @@ test("indexing creates a derived crop and hashes without replacing the source", 
       getImage: async () => source,
       saveDerivedImage: async (relativePath, buffer) => derived.set(relativePath, buffer),
     },
+    vehicleMatcher: {
+      analyze: async (buffer) => ({
+        crop: { left: 0, top: 0, width: 100, height: 80, mode: "vehicle_detector", detectionConfidence: 0.91 },
+        cropBuffer: buffer,
+        embedding: decodeVehicleEmbedding(embedding([0, 1])),
+        embeddingModel: VEHICLE_REID_MODEL,
+        detectorModel: "test-detector-v1",
+        imageWidth: 100,
+        imageHeight: 80,
+      }),
+    },
     logger: { warn: assert.fail },
   });
 
@@ -271,25 +302,23 @@ test("indexing creates a derived crop and hashes without replacing the source", 
   assert.deepEqual(source, original);
   assert.match(asset.source_sha256, /^[0-9a-f]{64}$/);
   assert.match(asset.perceptual_hash, /^[0-9a-f]{16}$/);
-  assert.match(asset.color_signature, /^[0-9a-f]{40}$/);
-  assert.equal(asset.color_signature_version, COLOR_SIGNATURE_VERSION);
-  assert.match(asset.derived_path, /^derived\/2026\/07\/22\/vehicle_v2_read_17\.jpg$/);
+  assert.equal(asset.vehicle_embedding.length, VEHICLE_EMBEDDING_BYTES);
+  assert.equal(asset.embedding_model, VEHICLE_REID_MODEL);
+  assert.equal(asset.detection_confidence, 0.91);
+  assert.match(asset.derived_path, /^derived\/2026\/07\/22\/vehicle_reid_v1_read_17\.jpg$/);
   assert.ok(derived.get(asset.derived_path)?.length > 0);
   const metadata = await sharp(derived.get(asset.derived_path)).metadata();
   assert.ok(metadata.width <= 100);
   assert.ok(metadata.height <= 80);
 });
 
-test("search ranks exact and near matches and excludes distant crops", async () => {
-  const redSignature = solidColorSignature(220, 30, 30);
-  const blueSignature = solidColorSignature(30, 50, 220);
+test("search ranks exact and learned embedding matches without using plates", async () => {
   const source = {
     read_id: 1,
     derived_path: "derived/source.jpg",
     source_sha256: "a".repeat(64),
-    perceptual_hash: "0000000000000000",
-    color_signature: redSignature,
-    color_signature_version: COLOR_SIGNATURE_VERSION,
+    vehicle_embedding: embedding([0, 1]),
+    embedding_model: VEHICLE_REID_MODEL,
     plate_number: "SOURCE",
     camera_name: "Street",
     timestamp: "2026-07-22T18:00:00.000Z",
@@ -298,19 +327,18 @@ test("search ranks exact and near matches and excludes distant crops", async () 
     read_id: 2,
     derived_path: "derived/candidate.jpg",
     source_sha256: "b".repeat(64),
-    perceptual_hash: "0000000000000001",
-    color_signature: redSignature,
-    color_signature_version: COLOR_SIGNATURE_VERSION,
+    vehicle_embedding: embedding([0, 0.95], [1, 0.05]),
+    embedding_model: VEHICLE_REID_MODEL,
     plate_number: "CANDIDATE",
     camera_name: "Driveway",
     timestamp: "2026-07-22T18:01:00.000Z",
     ...overrides,
   });
   const candidates = [
-    candidate({ read_id: 2 }),
-    candidate({ read_id: 3, source_sha256: source.source_sha256, perceptual_hash: "ffffffffffffffff" }),
-    candidate({ read_id: 4, perceptual_hash: "ffffffffffffffff" }),
-    candidate({ read_id: 5, color_signature: blueSignature }),
+    candidate({ read_id: 2, plate_number: "SOURCE", vehicle_embedding: embedding([1, 1]) }),
+    candidate({ read_id: 3, plate_number: "OTHER", vehicle_embedding: embedding([0, 0.98], [1, 0.02]) }),
+    candidate({ read_id: 4, source_sha256: source.source_sha256, vehicle_embedding: embedding([2, 1]) }),
+    candidate({ read_id: 5, embedding_model: "obsolete-model" }),
   ];
   const repository = {
     getAsset: async () => source,
@@ -323,25 +351,26 @@ test("search ranks exact and near matches and excludes distant crops", async () 
 
   const result = await service.search({ readId: 1 });
   assert.equal(result.searchedCandidates, 4);
-  assert.deepEqual(result.matches.map((match) => match.readId), [3, 2, 5]);
+  assert.deepEqual(result.matches.map((match) => match.readId), [4, 3, 2]);
   assert.equal(result.matches[0].label, "Exact duplicate");
-  assert.equal(result.matches[1].distance, 1);
+  assert.equal(result.matches[1].plateNumber, "OTHER");
+  assert.equal(result.matches[2].plateNumber, "SOURCE");
   assert.ok(result.matches[1].score > result.matches[2].score);
-  assert.equal(result.matches[1].signalCount, 2);
+  assert.equal(result.matches[1].plateConfirmed, false);
+  candidates[1].plate_number = "SOURCE";
+  candidates[0].plate_number = "OTHER";
+  const platesSwapped = await service.search({ readId: 1 });
+  assert.deepEqual(platesSwapped.matches.map((match) => match.readId), [4, 3, 2]);
 });
 
-test("an exact uploaded capture infers plate identity and ranks every confirmed vehicle first", async () => {
+test("an exact upload remains a byte duplicate without inferring plate identity", async () => {
   const upload = await sharp({
     create: { width: 120, height: 80, channels: 3, background: { r: 205, g: 30, b: 35 } },
   }).jpeg().toBuffer();
-  const hashPixels = await sharp(upload).resize(9, 8, { fit: "fill" }).grayscale().raw().toBuffer();
-  const colorPixels = await sharp(upload).resize(16, 16, { fit: "fill" }).toColourspace("srgb").raw().toBuffer();
-  const uploadHash = createDHash(hashPixels);
-  const colorSignature = createColorSignature(colorPixels);
   const base = {
     derived_path: "derived/candidate.jpg",
-    color_signature: colorSignature,
-    color_signature_version: COLOR_SIGNATURE_VERSION,
+    vehicle_embedding: embedding([0, 1]),
+    embedding_model: VEHICLE_REID_MODEL,
     observed_plate: "069YQZ",
     camera_name: "Entry LPR 1",
     timestamp: "2026-07-23T03:00:00.000Z",
@@ -352,69 +381,41 @@ test("an exact uploaded capture infers plate identity and ranks every confirmed 
       read_id: 1,
       plate_number: "069YQZ",
       source_sha256: crypto.createHash("sha256").update(upload).digest("hex"),
-      perceptual_hash: uploadHash,
     },
     {
       ...base,
       read_id: 2,
       plate_number: "069YQZ",
       source_sha256: "b".repeat(64),
-      perceptual_hash: "ffffffffffffffff",
+      vehicle_embedding: embedding([1, 1]),
     },
     {
       ...base,
       read_id: 3,
       plate_number: "OTHER",
       source_sha256: "c".repeat(64),
-      perceptual_hash: uploadHash,
+      vehicle_embedding: embedding([0, 0.99], [1, 0.01]),
     },
   ];
   const service = new CaptureAssetService({
     repository: { listSearchCandidates: async () => candidates },
     fileStorage: {},
+    vehicleMatcher: {
+      analyze: async () => ({
+        embedding: decodeVehicleEmbedding(embedding([0, 1])),
+        embeddingModel: VEHICLE_REID_MODEL,
+      }),
+    },
   });
 
   const result = await service.searchUpload({
     dataUrl: `data:image/jpeg;base64,${upload.toString("base64")}`,
     fileName: "truck.jpg",
   });
-  assert.deepEqual(result.matches.map((match) => match.readId), [1, 2, 3]);
-  assert.equal(result.matches[1].plateConfirmed, true);
-  assert.equal(result.matches[1].label, "Plate-confirmed vehicle");
-  assert.equal(result.matches[1].score, 99);
-});
-
-test("older structural assets receive transient color ranking without database writes", async () => {
-  const redImage = await sharp({
-    create: { width: 64, height: 48, channels: 3, background: { r: 220, g: 30, b: 30 } },
-  }).jpeg().toBuffer();
-  const source = {
-    read_id: 10,
-    derived_path: "derived/source.jpg",
-    source_sha256: "a".repeat(64),
-    perceptual_hash: "0000000000000000",
-    plate_number: "SOURCE",
-    camera_name: "Street",
-    timestamp: "2026-07-22T18:00:00.000Z",
-  };
-  const candidate = {
-    ...source,
-    read_id: 11,
-    derived_path: "derived/candidate.jpg",
-    source_sha256: "b".repeat(64),
-    perceptual_hash: "0000000000000001",
-    plate_number: "MATCH",
-  };
-  const service = new CaptureAssetService({
-    repository: {
-      getAsset: async () => source,
-      listSearchCandidates: async () => [candidate],
-    },
-    fileStorage: { getImage: async () => redImage },
-  });
-  const result = await service.search({ readId: 10 });
-  assert.equal(result.matches[0].signalCount, 2);
-  assert.equal(result.matches[0].colorScore, 100);
+  assert.deepEqual(result.matches.map((match) => match.readId), [1, 3, 2]);
+  assert.equal(result.matches[0].exact, true);
+  assert.equal(result.matches[1].plateConfirmed, false);
+  assert.equal(result.matches[2].plateConfirmed, false);
 });
 
 test("uploaded-image search is transient and uses the existing filtered index", async () => {
@@ -426,15 +427,12 @@ test("uploaded-image search is transient and uses the existing filtered index", 
       background: { r: 30, g: 120, b: 200 },
     },
   }).jpeg().toBuffer();
-  const pixels = await sharp(upload).rotate().resize(9, 8, { fit: "fill" }).grayscale().raw().toBuffer();
-  const colorPixels = await sharp(upload).rotate().resize(16, 16, { fit: "fill" }).toColourspace("srgb").removeAlpha().raw().toBuffer();
   const candidate = {
     read_id: 99,
     derived_path: "derived/match.jpg",
     source_sha256: crypto.createHash("sha256").update(upload).digest("hex"),
-    perceptual_hash: createDHash(pixels),
-    color_signature: createColorSignature(colorPixels),
-    color_signature_version: COLOR_SIGNATURE_VERSION,
+    vehicle_embedding: embedding([0, 1]),
+    embedding_model: VEHICLE_REID_MODEL,
     plate_number: "MATCH99",
     camera_name: "Street LPR 2",
     timestamp: "2026-07-23T03:00:00.000Z",
@@ -448,6 +446,12 @@ test("uploaded-image search is transient and uses the existing filtered index", 
       },
     },
     fileStorage: new Proxy({}, { get: () => assert.fail("uploaded queries must not use file storage") }),
+    vehicleMatcher: {
+      analyze: async () => ({
+        embedding: decodeVehicleEmbedding(embedding([0, 1])),
+        embeddingModel: VEHICLE_REID_MODEL,
+      }),
+    },
   });
 
   const result = await service.searchUpload({
@@ -463,4 +467,36 @@ test("uploaded-image search is transient and uses the existing filtered index", 
   assert.equal(result.matches[0].exact, true);
   assert.deepEqual(filters.cameraNames, ["Street LPR 2"]);
   assert.equal(filters.readId, null);
+});
+
+test("vehicle detector selection uses plate geometry only as a crop anchor", () => {
+  const selected = selectVehicleDetection([
+    { confidence: 0.96, left: 0.05, top: 0.1, right: 0.45, bottom: 0.8 },
+    { confidence: 0.82, left: 0.5, top: 0.2, right: 0.95, bottom: 0.9 },
+  ], {
+    imageWidth: 1000,
+    imageHeight: 600,
+    plateBox: [700, 360, 780, 410],
+  });
+  assert.equal(selected.containsPlate, true);
+  assert.equal(selected.left, 0.5);
+});
+
+test("vehicle embeddings are fixed-size, normalized, and cosine-ranked", () => {
+  const left = decodeVehicleEmbedding(embedding([0, 3], [1, 4]));
+  const sameDirection = decodeVehicleEmbedding(embedding([0, 6], [1, 8]));
+  const orthogonal = decodeVehicleEmbedding(embedding([2, 1]));
+  assert.equal(encodeVehicleEmbedding(left).length, VEHICLE_EMBEDDING_BYTES);
+  assert.ok(Math.abs(cosineSimilarity(left, sameDirection) - 1) < 1e-6);
+  assert.ok(Math.abs(cosineSimilarity(left, orthogonal)) < 1e-6);
+});
+
+test("pinned OpenVINO Vehicle ReID model produces a normalized descriptor", async () => {
+  const image = await sharp({
+    create: { width: 240, height: 160, channels: 3, background: { r: 180, g: 35, b: 40 } },
+  }).jpeg().toBuffer();
+  const descriptor = await new VehicleReidEngine().embed(image);
+  assert.equal(descriptor.length, 512);
+  const magnitude = Math.sqrt(Array.from(descriptor).reduce((sum, value) => sum + value ** 2, 0));
+  assert.ok(Math.abs(magnitude - 1) < 1e-5);
 });

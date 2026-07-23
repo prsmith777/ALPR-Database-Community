@@ -1465,3 +1465,21 @@ VALUES (
     'Version vehicle-focused color signatures for conservative visual ranking and lazy compatibility.'
 )
 ON CONFLICT (version) DO NOTHING;
+
+-- Learned vehicle re-identification descriptors replace heuristic plate,
+-- structure, and color ranking. Embeddings are fixed-size normalized float32
+-- vectors; plate text remains display metadata and is never a ranking input.
+ALTER TABLE public.capture_assets
+    ADD COLUMN IF NOT EXISTS vehicle_embedding BYTEA
+        CHECK (vehicle_embedding IS NULL OR octet_length(vehicle_embedding) = 2048),
+    ADD COLUMN IF NOT EXISTS embedding_model VARCHAR(80),
+    ADD COLUMN IF NOT EXISTS detector_model VARCHAR(80),
+    ADD COLUMN IF NOT EXISTS detection_confidence REAL
+        CHECK (detection_confidence IS NULL OR detection_confidence BETWEEN 0 AND 1);
+
+INSERT INTO public.schema_migrations (version, description)
+VALUES (
+    '2026072303_vehicle_reid_embeddings',
+    'Add plate-independent OpenVINO vehicle ReID embeddings and detector provenance.'
+)
+ON CONFLICT (version) DO NOTHING;

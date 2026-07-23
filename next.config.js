@@ -1,6 +1,7 @@
 /** @type {import('next').NextConfig} */
 
 const nextConfig = {
+  serverExternalPackages: ["openvino-node"],
   async headers() {
     return [
       {
@@ -28,6 +29,7 @@ const nextConfig = {
       "/middleware.js",
       "/hooks",
       "/auth",
+      "/models/visual-search",
       "/package.json",
     ],
   },

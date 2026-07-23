@@ -116,21 +116,21 @@ Operational behavior:
 - Transient uploaded-image queries implemented: drag-and-drop JPEG, PNG, or
   WebP images can use the existing camera/time filters without creating a
   plate read or storing the uploaded source.
-- Explainable multi-signal ranking implemented and recalibrated from staging
-  evidence: exact uploads can recover plate-confirmed captures, while visual
-  candidates combine structural dHash with a versioned, center-weighted color
-  signal that excludes gray pixels from hue and falls back conservatively when
-  color is unreliable.
+- Plate-independent Vehicle ReID implemented with OpenVINO: a dedicated vehicle
+  detector supplies a tight whole-vehicle crop and vehicle-reid-0001 supplies a
+  normalized 512-value descriptor ranked by cosine similarity. Plate text is
+  display metadata only and cannot affect result inclusion, score, order, or
+  labels. SHA-256 remains a separate byte-for-byte duplicate check.
 - Foundation search is deliberately bounded to recent filtered indexed
   captures. Its crop similarity is a candidate finder, not identity proof.
 - Add asynchronous vehicle observations with per-field confidence,
   provider/model/version provenance, raw result, status, and error.
 - Store plate jurisdiction/region, make, model, color, body type, year range,
   orientation, alternate OCR candidates, and bounding boxes.
-- Store a learned vehicle embedding for cross-angle/lighting similarity. Use
-  cosine similarity through pgvector or a bounded external vector index.
-- Persist missing multi-signal fingerprints through bounded background
-  indexing so searches do not need to derive older color signals transiently.
+- Calibrate Vehicle ReID interpretation thresholds against labeled local
+  same-vehicle and different-vehicle examples before making stronger labels.
+- Consider pgvector only when the bounded in-process cosine scan no longer
+  meets latency targets.
 - Render configurable overlays at view/export time and cache derived assets;
   never burn overlays into the original capture.
 
