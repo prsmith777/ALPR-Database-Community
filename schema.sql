@@ -333,6 +333,38 @@ ALTER TABLE ONLY public.tags
 ALTER TABLE ONLY public.tags
     ADD CONSTRAINT tags_pkey PRIMARY KEY (id);
 
+-- Local derived assets used by visual similarity search. Source plate images
+-- remain unchanged and are referenced by path.
+CREATE TABLE IF NOT EXISTS public.capture_assets (
+    id BIGSERIAL PRIMARY KEY,
+    read_id INTEGER NOT NULL REFERENCES public.plate_reads(id) ON DELETE CASCADE,
+    asset_type VARCHAR(30) NOT NULL DEFAULT 'vehicle_crop'
+        CHECK (asset_type IN ('vehicle_crop')),
+    algorithm_version VARCHAR(40) NOT NULL,
+    status VARCHAR(20) NOT NULL CHECK (status IN ('ready', 'failed')),
+    source_image_path VARCHAR(255) NOT NULL,
+    derived_path VARCHAR(255),
+    source_sha256 CHAR(64),
+    perceptual_hash CHAR(16),
+    crop_box JSONB,
+    image_width INTEGER,
+    image_height INTEGER,
+    crop_width INTEGER,
+    crop_height INTEGER,
+    attempt_count INTEGER NOT NULL DEFAULT 1,
+    error_code VARCHAR(80),
+    indexed_at TIMESTAMPTZ,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE (read_id, asset_type, algorithm_version)
+);
+
+CREATE INDEX IF NOT EXISTS idx_capture_assets_ready_hash
+    ON public.capture_assets (perceptual_hash, read_id)
+    WHERE status = 'ready';
+CREATE INDEX IF NOT EXISTS idx_capture_assets_status
+    ON public.capture_assets (status, updated_at DESC, id DESC);
+
 
 --
 -- Name: idx_known_plates_plate_number; Type: INDEX; Schema: public; Owner: postgres

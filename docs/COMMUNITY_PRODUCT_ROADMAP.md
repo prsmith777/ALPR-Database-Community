@@ -106,6 +106,12 @@ Operational behavior:
 
 ### Phase 5 — Vehicle intelligence and visual search
 
+- Foundation implemented: local derived vehicle-region crops, source SHA-256,
+  64-bit dHash, resumable newest-first indexing, existing-capture queries,
+  camera/time filters, and explainable match labels and scores. Original
+  captures remain unchanged and ingestion does not wait for indexing.
+- Foundation search is deliberately bounded to recent filtered indexed
+  captures. Its crop similarity is a candidate finder, not identity proof.
 - Add asynchronous vehicle observations with per-field confidence,
   provider/model/version provenance, raw result, status, and error.
 - Store plate jurisdiction/region, make, model, color, body type, year range,
