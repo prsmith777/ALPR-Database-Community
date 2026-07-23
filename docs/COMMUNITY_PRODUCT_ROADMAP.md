@@ -116,6 +116,9 @@ Operational behavior:
 - Transient uploaded-image queries implemented: drag-and-drop JPEG, PNG, or
   WebP images can use the existing camera/time filters without creating a
   plate read or storing the uploaded source.
+- Explainable multi-signal ranking implemented: structural dHash similarity is
+  combined with a compact hue/saturation/value distribution when available,
+  with a safe structure-only fallback for older assets.
 - Foundation search is deliberately bounded to recent filtered indexed
   captures. Its crop similarity is a candidate finder, not identity proof.
 - Add asynchronous vehicle observations with per-field confidence,
@@ -124,7 +127,8 @@ Operational behavior:
   orientation, alternate OCR candidates, and bounding boxes.
 - Store a learned vehicle embedding for cross-angle/lighting similarity. Use
   cosine similarity through pgvector or a bounded external vector index.
-- Rank results with clearly labeled scores and match types.
+- Persist missing multi-signal fingerprints through bounded background
+  indexing so searches do not need to derive older color signals transiently.
 - Render configurable overlays at view/export time and cache derived assets;
   never burn overlays into the original capture.
 

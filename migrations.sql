@@ -1438,3 +1438,17 @@ VALUES (
     'Add versioned camera-specific crop setup for derived visual-search assets.'
 )
 ON CONFLICT (version) DO NOTHING;
+
+-- A compact color-distribution signal complements structural dHash ranking.
+-- Existing assets remain valid and fall back safely until background indexing
+-- persists their color signature; searches may derive it transiently meanwhile.
+ALTER TABLE public.capture_assets
+    ADD COLUMN IF NOT EXISTS color_signature CHAR(40)
+        CHECK (color_signature IS NULL OR color_signature ~ '^[0-9a-f]{40}$');
+
+INSERT INTO public.schema_migrations (version, description)
+VALUES (
+    '2026072301_visual_color_signatures',
+    'Add a backward-compatible compact color signal for explainable multi-signal visual ranking.'
+)
+ON CONFLICT (version) DO NOTHING;

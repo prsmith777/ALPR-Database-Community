@@ -6,6 +6,8 @@ import sharp from "sharp";
 
 import {
   calculateVehicleCrop,
+  colorSignatureDistance,
+  createColorSignature,
   createDHash,
   decodeVisualUploadDataUrl,
   explainSimilarity,
@@ -15,6 +17,12 @@ import {
 } from "../lib/image-similarity.mjs";
 import { resolveStoragePath } from "../lib/storage-path.mjs";
 import { CaptureAssetService } from "../lib/capture-asset-service.mjs";
+
+function solidColorSignature(red, green, blue) {
+  return createColorSignature(Uint8Array.from(
+    Array.from({ length: 16 * 16 }, () => [red, green, blue]).flat()
+  ));
+}
 
 test("vehicle crop expands a plate box while remaining inside the source image", () => {
   const crop = calculateVehicleCrop({
@@ -89,14 +97,33 @@ test("dHash is stable and Hamming distance is explainable", () => {
   assert.equal(hammingDistance(hash, hash), 0);
   assert.equal(hammingDistance("0000000000000000", hash), 64);
 
-  assert.deepEqual(
-    explainSimilarity({ sourceSha256: "same", candidateSha256: "same", distance: 0 }),
-    { exact: true, distance: 0, score: 100, label: "Exact duplicate" }
-  );
+  const exact = explainSimilarity({ sourceSha256: "same", candidateSha256: "same", distance: 0 });
+  assert.equal(exact.exact, true);
+  assert.equal(exact.score, 100);
+  assert.equal(exact.label, "Exact duplicate");
+  assert.equal(exact.signalCount, 1);
   assert.equal(
     explainSimilarity({ sourceSha256: "a", candidateSha256: "b", distance: 6 }).label,
-    "Near-identical crop"
+    "Near-identical structure"
   );
+});
+
+test("color signatures distinguish vehicle color distributions with an explainable score", () => {
+  const red = solidColorSignature(220, 30, 30);
+  const blue = solidColorSignature(30, 50, 220);
+  assert.match(red, /^[0-9a-f]{40}$/);
+  assert.equal(colorSignatureDistance(red, red), 0);
+  assert.ok(colorSignatureDistance(red, blue) > 0.5);
+  const combined = explainSimilarity({
+    sourceSha256: "a",
+    candidateSha256: "b",
+    distance: 8,
+    colorDistance: colorSignatureDistance(red, red),
+  });
+  assert.equal(combined.signalCount, 2);
+  assert.equal(combined.rankingVersion, "multisignal-v1");
+  assert.equal(combined.colorScore, 100);
+  assert.ok(combined.score > combined.structuralScore);
 });
 
 test("index batches are deliberately bounded", () => {
@@ -127,6 +154,8 @@ test("migration keeps image similarity inert and source images immutable", async
   assert.match(section, /CREATE TABLE IF NOT EXISTS public\.camera_visual_profiles/i);
   assert.match(section, /crop_profile_version INTEGER NOT NULL DEFAULT 1/i);
   assert.match(section, /2026072208_camera_visual_profiles/i);
+  assert.match(section, /color_signature CHAR\(40\)/i);
+  assert.match(section, /2026072301_visual_color_signatures/i);
   assert.equal(/UPDATE\s+public\.plate_reads/i.test(section), false);
   assert.equal(/INSERT\s+INTO\s+public\.capture_assets[\s\S]*SELECT/i.test(section), false);
 });
@@ -153,6 +182,7 @@ test("camera crop setup exposes preview controls and version-aware indexing", as
   assert.match(repository, /LOWER\(BTRIM\(pr\.camera_name\)\) = LOWER\(BTRIM\(\$\$\{values\.length\}\)\)/);
   assert.match(component, /Drop a vehicle image here, or choose a file/);
   assert.match(component, /processed transiently/);
+  assert.match(component, /structural and color agreement/);
 });
 
 test("plate tables render the visual-search link only for an open image", async () => {
@@ -193,6 +223,7 @@ test("indexing creates a derived crop and hashes without replacing the source", 
         ...asset,
         source_sha256: asset.sourceSha256,
         perceptual_hash: asset.perceptualHash,
+        color_signature: asset.colorSignature,
         derived_path: asset.derivedPath,
         plate_number: asset.read.plate_number,
         observed_plate: asset.read.observed_plate,
@@ -215,6 +246,7 @@ test("indexing creates a derived crop and hashes without replacing the source", 
   assert.deepEqual(source, original);
   assert.match(asset.source_sha256, /^[0-9a-f]{64}$/);
   assert.match(asset.perceptual_hash, /^[0-9a-f]{16}$/);
+  assert.match(asset.color_signature, /^[0-9a-f]{40}$/);
   assert.match(asset.derived_path, /^derived\/2026\/07\/22\/vehicle_v2_read_17\.jpg$/);
   assert.ok(derived.get(asset.derived_path)?.length > 0);
   const metadata = await sharp(derived.get(asset.derived_path)).metadata();
@@ -223,11 +255,14 @@ test("indexing creates a derived crop and hashes without replacing the source", 
 });
 
 test("search ranks exact and near matches and excludes distant crops", async () => {
+  const redSignature = solidColorSignature(220, 30, 30);
+  const blueSignature = solidColorSignature(30, 50, 220);
   const source = {
     read_id: 1,
     derived_path: "derived/source.jpg",
     source_sha256: "a".repeat(64),
     perceptual_hash: "0000000000000000",
+    color_signature: redSignature,
     plate_number: "SOURCE",
     camera_name: "Street",
     timestamp: "2026-07-22T18:00:00.000Z",
@@ -237,6 +272,7 @@ test("search ranks exact and near matches and excludes distant crops", async () 
     derived_path: "derived/candidate.jpg",
     source_sha256: "b".repeat(64),
     perceptual_hash: "0000000000000001",
+    color_signature: redSignature,
     plate_number: "CANDIDATE",
     camera_name: "Driveway",
     timestamp: "2026-07-22T18:01:00.000Z",
@@ -246,6 +282,7 @@ test("search ranks exact and near matches and excludes distant crops", async () 
     candidate({ read_id: 2 }),
     candidate({ read_id: 3, source_sha256: source.source_sha256, perceptual_hash: "ffffffffffffffff" }),
     candidate({ read_id: 4, perceptual_hash: "ffffffffffffffff" }),
+    candidate({ read_id: 5, color_signature: blueSignature }),
   ];
   const repository = {
     getAsset: async () => source,
@@ -257,10 +294,45 @@ test("search ranks exact and near matches and excludes distant crops", async () 
   });
 
   const result = await service.search({ readId: 1 });
-  assert.equal(result.searchedCandidates, 3);
-  assert.deepEqual(result.matches.map((match) => match.readId), [3, 2]);
+  assert.equal(result.searchedCandidates, 4);
+  assert.deepEqual(result.matches.map((match) => match.readId), [3, 2, 5]);
   assert.equal(result.matches[0].label, "Exact duplicate");
   assert.equal(result.matches[1].distance, 1);
+  assert.ok(result.matches[1].score > result.matches[2].score);
+  assert.equal(result.matches[1].signalCount, 2);
+});
+
+test("older structural assets receive transient color ranking without database writes", async () => {
+  const redImage = await sharp({
+    create: { width: 64, height: 48, channels: 3, background: { r: 220, g: 30, b: 30 } },
+  }).jpeg().toBuffer();
+  const source = {
+    read_id: 10,
+    derived_path: "derived/source.jpg",
+    source_sha256: "a".repeat(64),
+    perceptual_hash: "0000000000000000",
+    plate_number: "SOURCE",
+    camera_name: "Street",
+    timestamp: "2026-07-22T18:00:00.000Z",
+  };
+  const candidate = {
+    ...source,
+    read_id: 11,
+    derived_path: "derived/candidate.jpg",
+    source_sha256: "b".repeat(64),
+    perceptual_hash: "0000000000000001",
+    plate_number: "MATCH",
+  };
+  const service = new CaptureAssetService({
+    repository: {
+      getAsset: async () => source,
+      listSearchCandidates: async () => [candidate],
+    },
+    fileStorage: { getImage: async () => redImage },
+  });
+  const result = await service.search({ readId: 10 });
+  assert.equal(result.matches[0].signalCount, 2);
+  assert.equal(result.matches[0].colorScore, 100);
 });
 
 test("uploaded-image search is transient and uses the existing filtered index", async () => {
@@ -273,11 +345,13 @@ test("uploaded-image search is transient and uses the existing filtered index", 
     },
   }).jpeg().toBuffer();
   const pixels = await sharp(upload).rotate().resize(9, 8, { fit: "fill" }).grayscale().raw().toBuffer();
+  const colorPixels = await sharp(upload).rotate().resize(16, 16, { fit: "fill" }).toColourspace("srgb").removeAlpha().raw().toBuffer();
   const candidate = {
     read_id: 99,
     derived_path: "derived/match.jpg",
     source_sha256: crypto.createHash("sha256").update(upload).digest("hex"),
     perceptual_hash: createDHash(pixels),
+    color_signature: createColorSignature(colorPixels),
     plate_number: "MATCH99",
     camera_name: "Street LPR 2",
     timestamp: "2026-07-23T03:00:00.000Z",

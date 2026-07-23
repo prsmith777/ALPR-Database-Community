@@ -76,7 +76,9 @@ function CaptureCard({ capture, source = false, onSearch }) {
           <p className="text-xs text-muted-foreground">
             {capture.exact
               ? "The complete stored source image has the same SHA-256 hash."
-              : `${capture.distance} of 64 perceptual bits differ in the derived vehicle crop.`}
+              : capture.colorScore !== null && capture.colorScore !== undefined
+                ? `${capture.distance} of 64 structural bits differ · structure ${capture.structuralScore}% · color ${capture.colorScore}% · combined ${capture.score}%.`
+                : `${capture.distance} of 64 structural bits differ · structure-only fallback ${capture.structuralScore}%.`}
           </p>
         )}
         <div className="flex flex-wrap gap-2">
@@ -515,7 +517,7 @@ export default function VisualSearch({ initialResult, initialReadId }) {
             <h2 className="text-xl font-semibold">Matches</h2>
             <p className="text-sm text-muted-foreground">
               {searchResult.matches.length} matches from {searchResult.searchedCandidates.toLocaleString()} filtered indexed captures.
-              Lower bit distance means a closer perceptual match.
+              Higher combined scores use structural and color agreement when available; labels remain candidates for human review.
             </p>
           </div>
           {searchResult.matches.length ? (
