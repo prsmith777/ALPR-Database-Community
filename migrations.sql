@@ -1483,3 +1483,32 @@ VALUES (
     'Add plate-independent OpenVINO vehicle ReID embeddings and detector provenance.'
 )
 ON CONFLICT (version) DO NOTHING;
+
+-- Vehicle detection now scans the complete source image before any fallback is
+-- considered. Preserve explicit operator choices while giving unconfigured
+-- cameras a safe full-image fallback and a new profile revision.
+ALTER TABLE public.camera_visual_profiles
+    ALTER COLUMN crop_mode SET DEFAULT 'full_frame',
+    ALTER COLUMN context_percent SET DEFAULT 100;
+
+INSERT INTO public.camera_visual_profiles (
+    camera_key, camera_name, crop_mode, context_percent,
+    vertical_offset_percent, profile_version
+)
+SELECT camera_key, camera_name, 'full_frame', 100, 0, 2
+FROM (
+    SELECT DISTINCT ON (LOWER(BTRIM(camera_name)))
+        LOWER(BTRIM(camera_name)) AS camera_key,
+        camera_name
+    FROM public.plate_reads
+    WHERE camera_name IS NOT NULL AND BTRIM(camera_name) <> ''
+    ORDER BY LOWER(BTRIM(camera_name)), "timestamp" DESC
+) cameras
+ON CONFLICT (camera_key) DO NOTHING;
+
+INSERT INTO public.schema_migrations (version, description)
+VALUES (
+    '2026072304_vehicle_detector_fallbacks',
+    'Default unconfigured cameras to full-image detector fallback while preserving explicit profiles.'
+)
+ON CONFLICT (version) DO NOTHING;

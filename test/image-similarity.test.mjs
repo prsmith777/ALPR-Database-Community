@@ -18,7 +18,10 @@ import {
   normalizeCameraCropProfile,
 } from "../lib/image-similarity.mjs";
 import { resolveStoragePath } from "../lib/storage-path.mjs";
-import { CaptureAssetService } from "../lib/capture-asset-service.mjs";
+import {
+  CaptureAssetService,
+  captureAssetServiceInternals,
+} from "../lib/capture-asset-service.mjs";
 import {
   VEHICLE_EMBEDDING_BYTES,
   VEHICLE_REID_MODEL,
@@ -46,6 +49,7 @@ test("vehicle crop expands a plate box while remaining inside the source image",
     width: 1920,
     height: 1080,
     cropCoordinates: [900, 700, 1020, 760],
+    profile: { cropMode: "auto" },
   });
 
   assert.equal(crop.mode, "adaptive_context");
@@ -62,8 +66,13 @@ test("vehicle crop expands a plate box while remaining inside the source image",
 
 test("camera profiles support custom context, vertical position, and full-frame fallback", () => {
   const fallback = calculateVehicleCrop({ width: 640, height: 480, cropCoordinates: null });
-  assert.equal(fallback.mode, "full_frame_fallback");
+  assert.equal(fallback.mode, "full_frame");
   assert.deepEqual([fallback.left, fallback.top, fallback.width, fallback.height], [0, 0, 640, 480]);
+
+  assert.deepEqual(
+    normalizeCameraCropProfile(),
+    { cropMode: "full_frame", contextPercent: 100, verticalOffsetPercent: 0, profileVersion: 1 }
+  );
 
   const custom = calculateVehicleCrop({
     width: 1000,
@@ -198,6 +207,8 @@ test("migration keeps image similarity inert and source images immutable", async
   assert.match(section, /vehicle_embedding BYTEA/i);
   assert.match(section, /octet_length\(vehicle_embedding\) = 2048/i);
   assert.match(section, /2026072303_vehicle_reid_embeddings/i);
+  assert.match(section, /ALTER COLUMN crop_mode SET DEFAULT 'full_frame'/i);
+  assert.match(section, /2026072304_vehicle_detector_fallbacks/i);
   assert.equal(/UPDATE\s+public\.plate_reads/i.test(section), false);
   assert.equal(/INSERT\s+INTO\s+public\.capture_assets[\s\S]*SELECT/i.test(section), false);
 });
@@ -212,19 +223,60 @@ test("visual-search actions enforce read and maintenance permissions", async () 
   assert.match(actions, /findSimilarUploadedCaptures[\s\S]*?requirePermission\("plate\.read"\)/);
 });
 
-test("camera crop setup exposes preview controls and version-aware indexing", async () => {
+test("camera fallback setup is advanced, measured, and version-aware", async () => {
   const component = await readFile(new URL("../components/VisualSearch.jsx", import.meta.url), "utf8");
   const repository = await readFile(new URL("../lib/capture-asset-repository.mjs", import.meta.url), "utf8");
-  assert.match(component, /Camera crop setup/);
-  assert.match(component, /Auto \(recommended\)/);
-  assert.match(component, /Vehicle context/);
-  assert.match(component, /Vertical position/);
-  assert.match(component, /Save & reindex next 20/);
+  assert.match(component, /Automatic vehicle detection/);
+  assert.match(component, /Advanced camera fallback settings/);
+  assert.match(component, /Full image \(recommended\)/);
+  assert.match(component, /Fallback context/);
+  assert.match(component, /Fallback vertical position/);
+  assert.match(component, /Save fallback & reindex next 20/);
+  assert.match(component, /stats\.shouldReviewFallback/);
   assert.match(repository, /crop_profile_version = COALESCE\(cvp\.profile_version, 1\)/);
+  assert.match(repository, /COUNT\(\*\) FILTER \(WHERE ca\.detection_confidence IS NOT NULL\)/);
   assert.match(repository, /LOWER\(BTRIM\(pr\.camera_name\)\) = LOWER\(BTRIM\(\$\$\{values\.length\}\)\)/);
   assert.match(component, /Drop a vehicle image here, or choose a file/);
   assert.match(component, /processed transiently/);
   assert.match(component, /ranked only by learned Vehicle ReID image embeddings/);
+});
+
+test("detector statistics recommend fallback review only after meaningful misses", () => {
+  const { detectorStats } = captureAssetServiceInternals;
+  assert.deepEqual(detectorStats({}), {
+    indexedCount: 0,
+    detectedCount: 0,
+    fallbackCount: 0,
+    successRate: null,
+    averageConfidence: null,
+    state: "collecting",
+    shouldReviewFallback: false,
+  });
+  assert.equal(detectorStats({ indexed_count: 19, detected_count: 5 }).shouldReviewFallback, false);
+  assert.deepEqual(
+    detectorStats({ indexed_count: 20, detected_count: 19, average_confidence: 0.923 }),
+    {
+      indexedCount: 20,
+      detectedCount: 19,
+      fallbackCount: 1,
+      successRate: 95,
+      averageConfidence: 92.3,
+      state: "healthy",
+      shouldReviewFallback: false,
+    }
+  );
+  assert.deepEqual(
+    detectorStats({ indexed_count: 20, detected_count: 12, average_confidence: 0.75 }),
+    {
+      indexedCount: 20,
+      detectedCount: 12,
+      fallbackCount: 8,
+      successRate: 60,
+      averageConfidence: 75,
+      state: "review",
+      shouldReviewFallback: true,
+    }
+  );
 });
 
 test("plate tables render the visual-search link only for an open image", async () => {
