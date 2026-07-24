@@ -257,6 +257,7 @@ export default function PlateTable({
   const [zoom, setZoom] = useState(1);
   const [position, setPosition] = useState({ x: 0, y: 0 });
   const imageContainerRef = useRef(null);
+  const correctionInputRef = useRef(null);
 
   const router = useRouter();
 
@@ -1932,7 +1933,7 @@ export default function PlateTable({
             }
           }}
         >
-          <DialogContent className="max-w-7xl sm:max-w-7xl w-[calc(100vw-32px)] sm:w-2/3">
+          <DialogContent className="max-h-[calc(100vh-2rem)] w-[calc(100vw-32px)] max-w-7xl overflow-y-auto sm:w-2/3 sm:max-w-7xl">
             <DialogHeader>
               <DialogTitle>
                 License Plate Image - {selectedImage?.plateNumber}
@@ -1963,7 +1964,7 @@ export default function PlateTable({
               )}
             </div>
             <DialogFooter>
-              <div className="flex flex-col sm:flex-row justify-between w-full gap-4 sm:gap-2">
+              <div className="flex w-full flex-col justify-between gap-4 sm:gap-2">
                 <div className="flex flex-wrap gap-2">
                   {canRead && selectedImage && <Button asChild variant="outline" size="sm" className="text-xs sm:text-sm">
                     <Link href={`/visual_search?readId=${selectedImage.id}`}>
@@ -2054,33 +2055,35 @@ export default function PlateTable({
                       ))}
                     </DropdownMenuContent>
                   </DropdownMenu>}
-                  {canReview && <Button
-                    variant="outline"
-                    size="sm"
-                    className={
-                      selectedImage?.validated
-                        ? "text-xs sm:text-sm text-green-500"
-                        : "text-xs sm:text-sm"
-                    }
-                    onClick={() => {
-                      onValidate(selectedImage.id, !selectedImage.validated);
-                    }}
-                  >
-                    <Check className="h-3 w-3 sm:h-4 sm:w-4 mr-1 sm:mr-2" />
-                    <span className="whitespace-nowrap">{selectedImage?.validated ? "Reopen review" : "Confirm detected plate"}</span>
-                  </Button>}
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="text-xs sm:text-sm"
-                    onClick={handleNextImage}
-                    disabled={data.length <= 1}
-                    aria-label="Show next read in the current Live Feed list"
-                    title="Show next read (Right Arrow)"
-                  >
-                    <span className="whitespace-nowrap">Next read</span>
-                    <ChevronRight className="ml-1 h-3 w-3 sm:ml-2 sm:h-4 sm:w-4" />
-                  </Button>
+                  <div className="flex shrink-0 gap-2">
+                    {canReview && <Button
+                      variant="outline"
+                      size="sm"
+                      className={
+                        selectedImage?.validated
+                          ? "text-xs sm:text-sm text-green-500"
+                          : "text-xs sm:text-sm"
+                      }
+                      onClick={() => {
+                        onValidate(selectedImage.id, !selectedImage.validated);
+                      }}
+                    >
+                      <Check className="h-3 w-3 sm:h-4 sm:w-4 mr-1 sm:mr-2" />
+                      <span className="whitespace-nowrap">{selectedImage?.validated ? "Reopen review" : "Confirm detected plate"}</span>
+                    </Button>}
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="text-xs sm:text-sm"
+                      onClick={handleNextImage}
+                      disabled={data.length <= 1}
+                      aria-label="Show next read in the current Live Feed list"
+                      title="Show next read (Right Arrow)"
+                    >
+                      <span className="whitespace-nowrap">Next read</span>
+                      <ChevronRight className="ml-1 h-3 w-3 sm:ml-2 sm:h-4 sm:w-4" />
+                    </Button>
+                  </div>
                 </div>
                 <div className="flex justify-end space-x-2">
                   {biHost && selectedImage?.bi_path && (
@@ -2206,7 +2209,19 @@ export default function PlateTable({
             }
           }}
         >
-          <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-2xl">
+          <DialogContent
+            className="max-h-[90vh] overflow-y-auto sm:max-w-2xl"
+            onOpenAutoFocus={(event) => {
+              event.preventDefault();
+              requestAnimationFrame(() => {
+                const input = correctionInputRef.current;
+                if (!input) return;
+                input.focus();
+                const cursorPosition = input.value.length;
+                input.setSelectionRange(cursorPosition, cursorPosition);
+              });
+            }}
+          >
             <DialogHeader>
               <DialogTitle>Correct this plate read</DialogTitle>
               <DialogDescription>
@@ -2234,6 +2249,7 @@ export default function PlateTable({
               <div className="grid gap-2">
                 <Label htmlFor="new-plate">Corrected effective plate</Label>
                 <Input
+                  ref={correctionInputRef}
                   id="new-plate"
                   value={correction?.newPlateNumber || ""}
                   onChange={(event) =>
