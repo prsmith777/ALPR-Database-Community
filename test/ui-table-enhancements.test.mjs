@@ -66,7 +66,10 @@ test("plate correction opens with an editable caret instead of selected text", a
   assert.match(plateTable, /input\.setSelectionRange\(cursorPosition, cursorPosition\)/);
   assert.match(plateTable, /ref=\{correctionInputRef\}/);
   assert.match(plateTable, /Plate image/);
-  assert.match(plateTable, /<ImageViewer image=\{selectedImage\} \/>/);
+  assert.match(plateTable, /<ImageViewer image=\{selectedImage\} compactControls \/>/);
+  assert.match(imageViewer, /compactControls = false/);
+  assert.match(imageViewer, /"grid grid-cols-2 gap-2 py-2"/);
+  assert.match(imageViewer, /"col-span-2 px-1"/);
   assert.match(imageViewer, /<Slider/);
   assert.match(imageViewer, />\s*Reset/);
   assert.match(imageViewer, />\s*Zoom to Plate/);

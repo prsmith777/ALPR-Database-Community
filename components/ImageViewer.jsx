@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 import { ZoomIn } from "lucide-react";
 import NextImage from "next/image";
 
-const ImageViewer = ({ image }) => {
+const ImageViewer = ({ image, compactControls = false }) => {
   const [zoom, setZoom] = useState(image?.crop_coordinates ? 3 : 1);
   const [imageSize, setImageSize] = useState(null);
   const [containerSize, setContainerSize] = useState(null);
@@ -99,17 +99,31 @@ const ImageViewer = ({ image }) => {
         </div>
       </div>
       {image?.crop_coordinates && (
-        <div className="flex items-center gap-4 py-2 2xl:pt-6 2xl:px-2">
-          <Button variant="outline" onClick={() => setZoom(1)}>
+        <div
+          className={
+            compactControls
+              ? "grid grid-cols-2 gap-2 py-2"
+              : "flex items-center gap-4 py-2 2xl:px-2 2xl:pt-6"
+          }
+        >
+          <Button
+            variant="outline"
+            className={compactControls ? "w-full" : undefined}
+            onClick={() => setZoom(1)}
+          >
             Reset
           </Button>
           {image?.crop_coordinates && (
-            <Button variant="outline" onClick={() => setZoom(3)}>
+            <Button
+              variant="outline"
+              className={compactControls ? "w-full" : undefined}
+              onClick={() => setZoom(3)}
+            >
               <ZoomIn className="mr-2 h-4 w-4" />
               Zoom to Plate
             </Button>
           )}
-          <div className="flex-1">
+          <div className={compactControls ? "col-span-2 px-1" : "flex-1"}>
             <Slider
               value={[zoom]}
               onValueChange={([newZoom]) => setZoom(newZoom)}
