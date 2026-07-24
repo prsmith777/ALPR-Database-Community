@@ -1438,3 +1438,77 @@ VALUES (
     'Add versioned camera-specific crop setup for derived visual-search assets.'
 )
 ON CONFLICT (version) DO NOTHING;
+
+-- A compact color-distribution signal complements structural dHash ranking.
+-- Existing assets remain valid and fall back safely until background indexing
+-- persists their color signature; searches may derive it transiently meanwhile.
+ALTER TABLE public.capture_assets
+    ADD COLUMN IF NOT EXISTS color_signature CHAR(40)
+        CHECK (color_signature IS NULL OR color_signature ~ '^[0-9a-f]{40}$');
+
+INSERT INTO public.schema_migrations (version, description)
+VALUES (
+    '2026072301_visual_color_signatures',
+    'Add a backward-compatible compact color signal for explainable multi-signal visual ranking.'
+)
+ON CONFLICT (version) DO NOTHING;
+
+-- Version the color signal so the improved vehicle-focused histogram can be
+-- derived lazily for existing assets without mixing incompatible signatures.
+ALTER TABLE public.capture_assets
+    ADD COLUMN IF NOT EXISTS color_signature_version SMALLINT
+        CHECK (color_signature_version IS NULL OR color_signature_version > 0);
+
+INSERT INTO public.schema_migrations (version, description)
+VALUES (
+    '2026072302_vehicle_focus_ranking',
+    'Version vehicle-focused color signatures for conservative visual ranking and lazy compatibility.'
+)
+ON CONFLICT (version) DO NOTHING;
+
+-- Learned vehicle re-identification descriptors replace heuristic plate,
+-- structure, and color ranking. Embeddings are fixed-size normalized float32
+-- vectors; plate text remains display metadata and is never a ranking input.
+ALTER TABLE public.capture_assets
+    ADD COLUMN IF NOT EXISTS vehicle_embedding BYTEA
+        CHECK (vehicle_embedding IS NULL OR octet_length(vehicle_embedding) = 2048),
+    ADD COLUMN IF NOT EXISTS embedding_model VARCHAR(80),
+    ADD COLUMN IF NOT EXISTS detector_model VARCHAR(80),
+    ADD COLUMN IF NOT EXISTS detection_confidence REAL
+        CHECK (detection_confidence IS NULL OR detection_confidence BETWEEN 0 AND 1);
+
+INSERT INTO public.schema_migrations (version, description)
+VALUES (
+    '2026072303_vehicle_reid_embeddings',
+    'Add plate-independent OpenVINO vehicle ReID embeddings and detector provenance.'
+)
+ON CONFLICT (version) DO NOTHING;
+
+-- Vehicle detection now scans the complete source image before any fallback is
+-- considered. Preserve explicit operator choices while giving unconfigured
+-- cameras a safe full-image fallback and a new profile revision.
+ALTER TABLE public.camera_visual_profiles
+    ALTER COLUMN crop_mode SET DEFAULT 'full_frame',
+    ALTER COLUMN context_percent SET DEFAULT 100;
+
+INSERT INTO public.camera_visual_profiles (
+    camera_key, camera_name, crop_mode, context_percent,
+    vertical_offset_percent, profile_version
+)
+SELECT camera_key, camera_name, 'full_frame', 100, 0, 2
+FROM (
+    SELECT DISTINCT ON (LOWER(BTRIM(camera_name)))
+        LOWER(BTRIM(camera_name)) AS camera_key,
+        camera_name
+    FROM public.plate_reads
+    WHERE camera_name IS NOT NULL AND BTRIM(camera_name) <> ''
+    ORDER BY LOWER(BTRIM(camera_name)), "timestamp" DESC
+) cameras
+ON CONFLICT (camera_key) DO NOTHING;
+
+INSERT INTO public.schema_migrations (version, description)
+VALUES (
+    '2026072304_vehicle_detector_fallbacks',
+    'Default unconfigured cameras to full-image detector fallback while preserving explicit profiles.'
+)
+ON CONFLICT (version) DO NOTHING;

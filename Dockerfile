@@ -5,7 +5,12 @@ ENV CXXFLAGS="-DSYZX_FEATURE_FLAG=1"
 ENV NEXT_TELEMETRY_DISABLED=1
 
 COPY package.json yarn.lock ./
-RUN yarn install --frozen-lockfile --network-timeout 100000
+RUN yarn install --frozen-lockfile --ignore-scripts --network-timeout 100000
+
+COPY scripts/install-openvino-runtime.mjs ./scripts/install-openvino-runtime.mjs
+RUN (cd node_modules/bcrypt && PREBUILDS_ONLY=1 node ../node-gyp-build/build-test.js) \
+    && (cd node_modules/bufferutil && PREBUILDS_ONLY=1 node ../node-gyp-build/build-test.js) \
+    && node scripts/install-openvino-runtime.mjs
 
 COPY . .
 RUN yarn build

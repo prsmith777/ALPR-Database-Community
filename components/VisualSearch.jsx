@@ -76,7 +76,7 @@ function CaptureCard({ capture, source = false, onSearch }) {
           <p className="text-xs text-muted-foreground">
             {capture.exact
               ? "The complete stored source image has the same SHA-256 hash."
-              : `${capture.distance} of 64 perceptual bits differ in the derived vehicle crop.`}
+              : `OpenVINO Vehicle ReID cosine similarity: ${capture.score}%. Plate text is displayed for review but is not used in this score or ranking.`}
           </p>
         )}
         <div className="flex flex-wrap gap-2">
@@ -107,7 +107,7 @@ function percentBox(box, width, height) {
   };
 }
 
-function CameraCropSetup({ profiles, onSaved }) {
+function CameraDetectorSetup({ profiles, onSaved }) {
   const [selectedCamera, setSelectedCamera] = useState(profiles[0]?.cameraName || "");
   const selected = profiles.find((profile) => profile.cameraName === selectedCamera) || profiles[0];
   const [draft, setDraft] = useState(selected || null);
@@ -167,71 +167,114 @@ function CameraCropSetup({ profiles, onSaved }) {
     <Card>
       <CardHeader>
         <CardTitle className="flex items-center gap-2">
-          <Camera className="h-5 w-5" /> Camera crop setup
+          <Camera className="h-5 w-5" /> Automatic vehicle detection
         </CardTitle>
         <CardDescription>
-          Tune the derived vehicle-search region per camera. Original capture images are never changed.
+          Every full capture is scanned first. Fallback framing is used only when no vehicle is detected.
         </CardDescription>
       </CardHeader>
-      <CardContent className="grid gap-6 lg:grid-cols-[minmax(0,1.5fr)_minmax(300px,1fr)]">
-        <div className="space-y-3">
-          {preview ? (
-            <>
-              <div
-                className="relative mx-auto w-full max-w-4xl overflow-hidden rounded-lg border bg-muted"
-                style={{ aspectRatio: `${preview.width} / ${preview.height}` }}
-              >
-                <NextImage src={preview.imageUrl} alt={`Crop preview for ${selected.cameraName}`} fill className="object-contain" unoptimized />
-                {crop && <div className="absolute border-2 border-emerald-400 bg-emerald-400/10 shadow-[0_0_0_9999px_rgba(0,0,0,0.28)]" style={percentBox(crop, preview.width, preview.height)} />}
-                {plate && <div className="absolute border-2 border-amber-400" style={percentBox(plate, preview.width, preview.height)} />}
+      <CardContent className="space-y-5">
+        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+          {profiles.map((profile) => {
+            const stats = profile.detectionStats || {};
+            const rate = stats.successRate === null || stats.successRate === undefined
+              ? "No samples yet"
+              : `${stats.successRate}% detected`;
+            const state = stats.state === "review"
+              ? "Review fallback"
+              : stats.state === "healthy" ? "Healthy" : "Collecting samples";
+            return (
+              <div key={profile.cameraName} className="space-y-2 rounded-lg border p-3">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="font-medium">{profile.cameraName}</div>
+                  <Badge variant={stats.state === "review" ? "destructive" : "secondary"}>{state}</Badge>
+                </div>
+                <div className="text-sm tabular-nums">{rate}</div>
+                <div className="text-xs text-muted-foreground">
+                  {stats.indexedCount || 0} indexed · {stats.fallbackCount || 0} detector fallbacks
+                  {stats.averageConfidence !== null && stats.averageConfidence !== undefined
+                    ? ` · ${stats.averageConfidence}% average confidence`
+                    : ""}
+                </div>
+                {stats.shouldReviewFallback && (
+                  <p className="text-xs text-destructive">
+                    Automatic detection is missing vehicles often enough to review this camera&apos;s fallback preview.
+                  </p>
+                )}
               </div>
-              <div className="flex flex-wrap justify-between gap-2 text-xs text-muted-foreground">
-                <span>Latest: {preview.plateNumber} · {formatTimestamp(preview.timestamp)}</span>
-                <span><span className="text-amber-500">Amber</span> plate · <span className="text-emerald-500">Green</span> derived crop</span>
-              </div>
-            </>
-          ) : (
-            <div className="rounded-lg border border-dashed p-10 text-center text-sm text-muted-foreground">No source image is available for this camera.</div>
-          )}
+            );
+          })}
         </div>
 
-        <div className="space-y-5">
-          <div className="space-y-2">
-            <Label>Camera</Label>
-            <Select value={selected.cameraName} onValueChange={setSelectedCamera}>
-              <SelectTrigger><SelectValue /></SelectTrigger>
-              <SelectContent>{profiles.map((profile) => <SelectItem key={profile.cameraName} value={profile.cameraName}>{profile.cameraName}</SelectItem>)}</SelectContent>
-            </Select>
+        <details className="group rounded-lg border">
+          <summary className="cursor-pointer list-none p-4 font-medium">
+            Advanced camera fallback settings
+            <span className="mt-1 block text-xs font-normal text-muted-foreground">
+              Open only when detector statistics or derived images show a recurring miss.
+            </span>
+          </summary>
+          <div className="grid gap-6 border-t p-4 lg:grid-cols-[minmax(0,1.5fr)_minmax(300px,1fr)]">
+            <div className="space-y-3">
+              {preview ? (
+                <>
+                  <div
+                    className="relative mx-auto w-full max-w-4xl overflow-hidden rounded-lg border bg-muted"
+                    style={{ aspectRatio: `${preview.width} / ${preview.height}` }}
+                  >
+                    <NextImage src={preview.imageUrl} alt={`Fallback preview for ${selected.cameraName}`} fill className="object-contain" unoptimized />
+                    {crop && <div className="absolute border-2 border-emerald-400 bg-emerald-400/10 shadow-[0_0_0_9999px_rgba(0,0,0,0.28)]" style={percentBox(crop, preview.width, preview.height)} />}
+                    {plate && <div className="absolute border-2 border-amber-400" style={percentBox(plate, preview.width, preview.height)} />}
+                  </div>
+                  <div className="flex flex-wrap justify-between gap-2 text-xs text-muted-foreground">
+                    <span>Latest: {preview.plateNumber} · {formatTimestamp(preview.timestamp)}</span>
+                    <span><span className="text-amber-500">Amber</span> plate · <span className="text-emerald-500">Green</span> detector fallback</span>
+                  </div>
+                </>
+              ) : (
+                <div className="rounded-lg border border-dashed p-10 text-center text-sm text-muted-foreground">No source image is available for this camera.</div>
+              )}
+            </div>
+
+            <div className="space-y-5">
+              <div className="rounded-md bg-muted p-3 text-xs text-muted-foreground">
+                The detector always scans the full source image first. This framing is used only if it cannot isolate a vehicle.
+              </div>
+              <div className="space-y-2">
+                <Label>Camera</Label>
+                <Select value={selected.cameraName} onValueChange={setSelectedCamera}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>{profiles.map((profile) => <SelectItem key={profile.cameraName} value={profile.cameraName}>{profile.cameraName}</SelectItem>)}</SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <Label>Fallback framing</Label>
+                <Select value={draft.cropMode} onValueChange={(cropMode) => setDraft((current) => ({ ...current, cropMode }))}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="full_frame">Full image (recommended)</SelectItem>
+                    <SelectItem value="auto">Plate-centered adaptive</SelectItem>
+                    <SelectItem value="custom">Plate-centered custom</SelectItem>
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-muted-foreground">Full image is safest for overview cameras and is the default for unconfigured cameras.</p>
+              </div>
+              <div className="space-y-3">
+                <div className="flex justify-between"><Label>Fallback context</Label><span className="text-sm tabular-nums">{draft.cropMode === "full_frame" ? 100 : draft.contextPercent}%</span></div>
+                <Slider min={40} max={100} step={5} value={[draft.contextPercent]} disabled={draft.cropMode !== "custom"} onValueChange={([contextPercent]) => setDraft((current) => ({ ...current, contextPercent }))} />
+              </div>
+              <div className="space-y-3">
+                <div className="flex justify-between"><Label>Fallback vertical position</Label><span className="text-sm tabular-nums">{draft.verticalOffsetPercent > 0 ? "+" : ""}{draft.verticalOffsetPercent}%</span></div>
+                <Slider min={-25} max={25} step={1} value={[draft.verticalOffsetPercent]} disabled={draft.cropMode === "full_frame"} onValueChange={([verticalOffsetPercent]) => setDraft((current) => ({ ...current, verticalOffsetPercent }))} />
+              </div>
+              <Button className="w-full" onClick={saveAndReindex} disabled={saving || !preview}>
+                {saving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
+                Save fallback & reindex next 20
+              </Button>
+              <p className="text-xs text-muted-foreground">Current saved revision: {selected.profileVersion}</p>
+              {message && <div role="status" className="rounded-md border p-3 text-sm">{message}</div>}
+            </div>
           </div>
-          <div className="space-y-2">
-            <Label>Crop mode</Label>
-            <Select value={draft.cropMode} onValueChange={(cropMode) => setDraft((current) => ({ ...current, cropMode }))}>
-              <SelectTrigger><SelectValue /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="auto">Auto (recommended)</SelectItem>
-                <SelectItem value="custom">Custom</SelectItem>
-                <SelectItem value="full_frame">Full frame</SelectItem>
-              </SelectContent>
-            </Select>
-            <p className="text-xs text-muted-foreground">Auto adapts to plate size. Use Full frame for a future overview camera.</p>
-          </div>
-          <div className="space-y-3">
-            <div className="flex justify-between"><Label>Vehicle context</Label><span className="text-sm tabular-nums">{draft.cropMode === "full_frame" ? 100 : draft.contextPercent}%</span></div>
-            <Slider min={40} max={100} step={5} value={[draft.contextPercent]} disabled={draft.cropMode !== "custom"} onValueChange={([contextPercent]) => setDraft((current) => ({ ...current, contextPercent }))} />
-            <p className="text-xs text-muted-foreground">Lower is tighter; higher includes more of the vehicle and surroundings. Custom 100% uses the full source width and height.</p>
-          </div>
-          <div className="space-y-3">
-            <div className="flex justify-between"><Label>Vertical position</Label><span className="text-sm tabular-nums">{draft.verticalOffsetPercent > 0 ? "+" : ""}{draft.verticalOffsetPercent}%</span></div>
-            <Slider min={-25} max={25} step={1} value={[draft.verticalOffsetPercent]} disabled={draft.cropMode === "full_frame"} onValueChange={([verticalOffsetPercent]) => setDraft((current) => ({ ...current, verticalOffsetPercent }))} />
-            <p className="text-xs text-muted-foreground">Move the crop upward or downward when the plate is not centered on the vehicle.</p>
-          </div>
-          <Button className="w-full" onClick={saveAndReindex} disabled={saving || !preview}>
-            {saving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
-            Save & reindex next 20
-          </Button>
-          <p className="text-xs text-muted-foreground">Current saved revision: {selected.profileVersion}</p>
-          {message && <div role="status" className="rounded-md border p-3 text-sm">{message}</div>}
-        </div>
+        </details>
       </CardContent>
     </Card>
   );
@@ -503,7 +546,7 @@ export default function VisualSearch({ initialResult, initialReadId }) {
       </div>
 
       {bootstrap?.canManageIndex && bootstrap.cameraProfiles?.length > 0 && (
-        <CameraCropSetup profiles={bootstrap.cameraProfiles} onSaved={refreshBootstrap} />
+        <CameraDetectorSetup profiles={bootstrap.cameraProfiles} onSaved={refreshBootstrap} />
       )}
 
       {error && <div role="alert" className="rounded-lg border border-destructive/40 bg-destructive/10 p-4 text-sm text-destructive">{error}</div>}
@@ -512,10 +555,10 @@ export default function VisualSearch({ initialResult, initialReadId }) {
       {!searching && searchResult && (
         <section className="space-y-3">
           <div>
-            <h2 className="text-xl font-semibold">Matches</h2>
+            <h2 className="text-xl font-semibold">Results</h2>
             <p className="text-sm text-muted-foreground">
-              {searchResult.matches.length} matches from {searchResult.searchedCandidates.toLocaleString()} filtered indexed captures.
-              Lower bit distance means a closer perceptual match.
+              {searchResult.matches.length} candidates from {searchResult.searchedCandidates.toLocaleString()} filtered indexed captures.
+              Results are ranked only by learned Vehicle ReID image embeddings. Plate text never affects inclusion, score, or order; candidates still require human review.
             </p>
           </div>
           {searchResult.matches.length ? (
@@ -524,7 +567,7 @@ export default function VisualSearch({ initialResult, initialReadId }) {
             </div>
           ) : (
             <div className="rounded-lg border border-dashed p-8 text-center text-sm text-muted-foreground">
-              No indexed crops met the current similarity threshold and filters.
+              No captures with current Vehicle ReID embeddings matched these filters. Index more captures and try again.
             </div>
           )}
         </section>
