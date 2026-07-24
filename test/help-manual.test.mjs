@@ -14,7 +14,7 @@ async function source(path) {
 }
 
 test("the user guide is structured, searchable, and role-aware", () => {
-  assert.equal(HELP_MANUAL.manualVersion, "1.5");
+  assert.equal(HELP_MANUAL.manualVersion, "1.6");
   assert.ok(HELP_MANUAL.sections.length >= 14);
 
   const ids = HELP_MANUAL.sections.map((section) => section.id);
@@ -49,7 +49,9 @@ test("the guide covers required workflows and clearly labels planned features", 
     "export the exact filtered investigation",
     "choose a role for a new user",
     "safely configure mqtt",
-    "unified rules use guarded cutover",
+    "unified rules use guarded activation and cutover",
+    "save disabled draft",
+    "recent real reads",
     "matching real accepted read",
     "vehicle image similarity search",
     "configurable image overlays",

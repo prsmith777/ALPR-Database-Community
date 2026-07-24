@@ -5,7 +5,10 @@ import {
   isPlateIgnored,
 } from "@/lib/db";
 import { sendPushoverNotification } from "@/lib/notifications";
-import { processAcceptedPlateReadEffects } from "@/lib/accepted-plate-read-effects.mjs";
+import {
+  processAcceptedPlateReadEffects,
+  processUnifiedPushoverPlans,
+} from "@/lib/accepted-plate-read-effects.mjs";
 import { NotificationAcceptedReadService } from "@/lib/notification-accepted-read-service.mjs";
 import { NotificationRuntimeRepository } from "@/lib/notification-runtime-repository.mjs";
 import { createPlateReadEventIdentity } from "@/lib/plate-read-event-identity.mjs";
@@ -451,6 +454,12 @@ async function processPlateRead(data) {
           shouldSendPushover: checkPlateForNotification,
           sendPushover: sendPushoverNotification,
           processMqtt: async () => effect.mqttResult,
+          logger: console,
+        });
+        await processUnifiedPushoverPlans({
+          plans: effect.unifiedResult?.pushoverPlans || [],
+          imageData: effect.imageData,
+          sendPushover: sendPushoverNotification,
           logger: console,
         });
       } catch {

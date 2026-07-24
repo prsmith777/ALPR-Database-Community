@@ -28,13 +28,13 @@ test("primary desktop and mobile navigation expose the dedicated MQTT page", asy
   assert.match(sidebar, /navItems\.map/);
 });
 
-test("notifications remain Pushover-only and direct users to the MQTT page", async () => {
+test("notifications host the unified builder without embedding MQTT broker administration", async () => {
   const notifications = await source("app/notifications/page.jsx");
 
   assert.equal(notifications.includes("MqttNotificationsTable"), false);
   assert.equal(notifications.includes("getMqttNotificationsAction"), false);
-  assert.match(notifications, /dedicated MQTT page/);
-  assert.match(notifications, /Push Notifications/);
+  assert.match(notifications, /NotificationRuleBuilder/);
+  assert.match(notifications, /Legacy exact-plate Pushover rules/);
 });
 
 test("general Settings no longer embeds the obsolete MQTT broker manager", async () => {

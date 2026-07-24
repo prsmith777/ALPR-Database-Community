@@ -139,3 +139,41 @@ test("the unified runtime remains inert when no unified rules are enabled", asyn
   assert.equal(state.envelopes.length, 0);
   assert.equal(state.executions.length, 0);
 });
+
+test("unified Pushover actions are planned for post-commit delivery and honor cooldown history", async () => {
+  const state = fixture({
+    rules: [unifiedRule({
+      cooldownSeconds: 900,
+      actions: [{ id: 72, enabled: true, channelType: "pushover", configuration: { priority: 1, message: "Delivery arrived" } }],
+    })],
+  });
+  state.repository.loadEnabledRules = state.repository.loadEnabledMqttRules;
+  state.repository.loadLastMatchedAt = async () => ({ 51: "2026-07-22T19:00:00.000Z" });
+  const service = new NotificationAcceptedReadService({
+    repository: state.repository,
+    mqttRepository: state.mqttRepository,
+    now: () => new Date("2026-07-22T20:00:00.000Z"),
+  });
+  const result = await service.processAcceptedRead({
+    id: 36459,
+    plate_number: "069YQZ",
+    camera_name: "Entry LPR 1",
+    timestamp: "2026-07-22T20:00:00.000Z",
+  });
+
+  assert.equal(result.status, "planned");
+  assert.equal(result.pushoverPlans.length, 1);
+  assert.equal(result.pushoverPlans[0].ruleId, 51);
+  assert.equal(result.pushoverPlans[0].message, "Delivery arrived");
+  assert.equal(state.envelopes.length, 0);
+
+  state.repository.loadLastMatchedAt = async () => ({ 51: "2026-07-22T19:55:00.000Z" });
+  const suppressed = await service.processAcceptedRead({
+    id: 36460,
+    plate_number: "069YQZ",
+    camera_name: "Entry LPR 1",
+    timestamp: "2026-07-22T20:00:00.000Z",
+  });
+  assert.equal(suppressed.status, "no-match");
+  assert.equal(suppressed.pushoverPlans.length, 0);
+});

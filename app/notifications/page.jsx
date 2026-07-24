@@ -1,5 +1,6 @@
 import {
   getNotificationPlates,
+  getNotificationRuleBuilderOverview,
   getNotificationRuleMigrationPreview,
   getUnifiedNotificationCutoverPreview,
   getUnifiedNotificationRuleReview,
@@ -7,6 +8,7 @@ import {
 import { NotificationCutoverPanel } from "@/components/NotificationCutoverPanel";
 import { NotificationMigrationPreview } from "@/components/NotificationMigrationPreview";
 import { NotificationRuleDraftEditor } from "@/components/NotificationRuleDraftEditor";
+import { NotificationRuleBuilder } from "@/components/NotificationRuleBuilder";
 import { NotificationsTable } from "@/components/NotificationsTable";
 import { UnifiedRuleShadowReview } from "@/components/UnifiedRuleShadowReview";
 import DashboardLayout from "@/components/layout/MainLayout";
@@ -17,13 +19,15 @@ export const dynamic = "force-dynamic";
 
 export default async function NotificationsPage() {
   await requirePagePermission("notification.manage");
-  const [response, migrationPreviewResponse, shadowReviewResponse, cutoverPreviewResponse] = await Promise.all([
+  const [response, builderResponse, migrationPreviewResponse, shadowReviewResponse, cutoverPreviewResponse] = await Promise.all([
     getNotificationPlates(),
+    getNotificationRuleBuilderOverview(),
     getNotificationRuleMigrationPreview(),
     getUnifiedNotificationRuleReview(),
     getUnifiedNotificationCutoverPreview(),
   ]);
   const notificationPlates = response.success ? response.data : [];
+  const builderOverview = builderResponse.success ? builderResponse.data : null;
   const migrationPreview = migrationPreviewResponse.success
     ? migrationPreviewResponse.data
     : null;
@@ -33,11 +37,14 @@ export default async function NotificationsPage() {
   return (
     <DashboardLayout>
       <BasicTitle
-        title="Plate Recognition Notifications"
-        subtitle="Configure Pushover alerts for recognition of specific plates. MQTT automation is configured on the dedicated MQTT page."
+        title="Notification Rules"
+        subtitle="Create unified MQTT and Pushover automations, preview them safely, and control activation from one place."
       >
+        <div className="my-4">
+          <NotificationRuleBuilder overview={builderOverview} />
+        </div>
         <h2 className="my-4 ml-1 text-2xl font-medium text-zinc">
-          Push Notifications
+          Legacy exact-plate Pushover rules
         </h2>
         <NotificationsTable initialData={notificationPlates} />
         <div className="mt-8">
