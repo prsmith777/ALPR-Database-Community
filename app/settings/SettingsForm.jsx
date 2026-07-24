@@ -56,6 +56,7 @@ import { SecuritySettings } from "./SecuritySettings";
 import PlateMatchingSettings from "./PlateMatchingSettings";
 import PlateReviewSettings from "./PlateReviewSettings";
 import PushoverUsageCard from "./PushoverUsageCard";
+import StorageHealthCard from "./StorageHealthCard";
 
 const administratorNavigationSections = [
   {
@@ -83,6 +84,7 @@ export default function SettingsForm({
   initialSettings,
   initialApiKey,
   initialIdentityState,
+  initialStorageHealth,
   canManageSettings,
 }) {
   const navigationSections = canManageSettings
@@ -620,7 +622,8 @@ export default function SettingsForm({
           Review how this community build handles information leaving the app.
         </p>
       </div>
-      <div className="max-w-3xl space-y-4">
+      <div className="max-w-5xl space-y-4">
+        <StorageHealthCard snapshot={initialStorageHealth} />
         <div className="rounded-lg border p-5">
           <h3 className="font-semibold">External reporting is disabled</h3>
           <p className="mt-2 text-sm text-muted-foreground">
@@ -634,8 +637,8 @@ export default function SettingsForm({
           <p className="mt-2 text-sm text-muted-foreground">
             Pushover, MQTT, Blue Iris, Home Assistant, and AI-agent connections
             communicate only when you configure and use those integrations.
-            Local retention, export, audit, and deletion controls will be added
-            here in the operations phase.
+            Local retention, export, audit, and deletion controls remain future
+            operations work and require separate safety design and approval.
           </p>
         </div>
       </div>
