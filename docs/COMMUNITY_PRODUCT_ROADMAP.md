@@ -123,6 +123,11 @@ Operational behavior:
   labels. SHA-256 remains a separate byte-for-byte duplicate check.
 - Foundation search is deliberately bounded to recent filtered indexed
   captures. Its crop similarity is a candidate finder, not identity proof.
+- Automatic backlog indexing implemented: a restart-safe background worker
+  drains resumable batches, picks up new captures, supports persisted
+  gentle/balanced/fast pacing and pause/resume controls, reports throughput and
+  estimated completion, and yields when disk-space or CPU-load safety limits
+  are reached.
 - Add asynchronous vehicle observations with per-field confidence,
   provider/model/version provenance, raw result, status, and error.
 - Store plate jurisdiction/region, make, model, color, body type, year range,

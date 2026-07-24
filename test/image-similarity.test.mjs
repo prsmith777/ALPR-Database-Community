@@ -217,6 +217,7 @@ test("visual-search actions enforce read and maintenance permissions", async () 
   const actions = await readFile(new URL("../app/actions.js", import.meta.url), "utf8");
   assert.match(actions, /getVisualSearchBootstrap[\s\S]*?requirePermission\("plate\.read"\)/);
   assert.match(actions, /indexCaptureAssetsBatch[\s\S]*?requirePermission\("maintenance\.manage"\)/);
+  assert.match(actions, /updateVisualIndexSettings[\s\S]*?requirePermission\("maintenance\.manage"\)/);
   assert.match(actions, /findSimilarCaptures[\s\S]*?requirePermission\("plate\.read"\)/);
   assert.match(actions, /saveCameraVisualProfile[\s\S]*?requirePermission\("maintenance\.manage"\)/);
   assert.match(actions, /indexCameraCaptureAssetsBatch[\s\S]*?requirePermission\("maintenance\.manage"\)/);
@@ -232,6 +233,8 @@ test("camera fallback setup is advanced, measured, and version-aware", async () 
   assert.match(component, /Fallback context/);
   assert.match(component, /Fallback vertical position/);
   assert.match(component, /Save fallback & reindex next 20/);
+  assert.match(component, /Run one batch now/);
+  assert.match(component, /Pause automatic indexing/);
   assert.match(component, /stats\.shouldReviewFallback/);
   assert.match(repository, /crop_profile_version = COALESCE\(cvp\.profile_version, 1\)/);
   assert.match(repository, /COUNT\(\*\) FILTER \(WHERE ca\.detection_confidence IS NOT NULL\)/);

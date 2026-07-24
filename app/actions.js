@@ -63,6 +63,15 @@ import {
 } from "@/lib/notification-rule-draft-runtime.mjs";
 import { getCaptureAssetService } from "@/lib/capture-asset-runtime.mjs";
 import {
+  getVisualIndexRuntimeStatus,
+  wakeVisualIndexWorker,
+} from "@/lib/visual-index-runtime.mjs";
+import {
+  applyVisualIndexPace,
+  normalizeVisualIndexSettings,
+  visualIndexPace,
+} from "@/lib/visual-index-settings.mjs";
+import {
   getNotificationPlates as getNotificationPlatesDB,
   addNotificationPlate as addNotificationPlateDB,
   toggleNotification as toggleNotificationDB,
@@ -1776,14 +1785,27 @@ export async function getVisualSearchBootstrap() {
   const principal = await requirePermission("plate.read");
   try {
     const canManageIndex = hasPermission(principal, "maintenance.manage");
-    const data = await (await getCaptureAssetService()).getBootstrap({
-      includeCameraSetup: canManageIndex,
-    });
+    const [data, config] = await Promise.all([
+      (await getCaptureAssetService()).getBootstrap({
+        includeCameraSetup: canManageIndex,
+      }),
+      canManageIndex ? getConfig() : Promise.resolve(null),
+    ]);
+    const visualIndexSettings = canManageIndex
+      ? normalizeVisualIndexSettings(config?.visualIndex)
+      : null;
     return {
       success: true,
       data: {
         ...data,
         canManageIndex,
+        ...(visualIndexSettings ? {
+          visualIndex: {
+            settings: visualIndexSettings,
+            pace: visualIndexPace(visualIndexSettings),
+            runtime: getVisualIndexRuntimeStatus(),
+          },
+        } : {}),
       },
     };
   } catch (error) {
@@ -1799,6 +1821,36 @@ export async function indexCaptureAssetsBatch(batchSize = 20) {
     return { success: true, data };
   } catch (error) {
     return visualSearchFailure(error, "Unable to index capture images.");
+  }
+}
+
+export async function updateVisualIndexSettings(input = {}) {
+  await requirePermission("maintenance.manage");
+  try {
+    const currentConfig = await getConfig();
+    let visualIndex = normalizeVisualIndexSettings(currentConfig.visualIndex);
+    if (input.pace !== undefined) {
+      visualIndex = applyVisualIndexPace(visualIndex, String(input.pace));
+    }
+    if (input.paused !== undefined) {
+      visualIndex = normalizeVisualIndexSettings({
+        ...visualIndex,
+        paused: input.paused === true,
+      });
+    }
+    const result = await saveConfig({ ...currentConfig, visualIndex });
+    if (!result.success) return result;
+    wakeVisualIndexWorker();
+    revalidatePath("/visual_search");
+    return {
+      success: true,
+      data: {
+        settings: visualIndex,
+        pace: visualIndexPace(visualIndex),
+      },
+    };
+  } catch (error) {
+    return visualSearchFailure(error, "Unable to update automatic indexing.");
   }
 }
 

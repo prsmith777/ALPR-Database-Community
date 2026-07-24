@@ -26,18 +26,16 @@ async function registerForRuntime({
 
   try {
     const nodeInstrumentation = await loadNodeInstrumentation();
-    if (
-      typeof nodeInstrumentation?.registerMqttNodeInstrumentation !== "function"
-    ) {
+    if (typeof nodeInstrumentation?.registerNodeInstrumentation !== "function") {
       throw new Error(
-        "Node instrumentation did not expose registerMqttNodeInstrumentation()"
+        "Node instrumentation did not expose registerNodeInstrumentation()"
       );
     }
 
-    return await nodeInstrumentation.registerMqttNodeInstrumentation({ logger });
+    return await nodeInstrumentation.registerNodeInstrumentation({ logger });
   } catch (error) {
     const normalized = safeError(error);
-    logger?.error?.("MQTT instrumentation registration failed", {
+    logger?.error?.("Node instrumentation registration failed", {
       error: normalized,
     });
 
@@ -58,12 +56,12 @@ export async function register() {
   if (process.env.NEXT_RUNTIME === "nodejs") {
     try {
       const nodeInstrumentation = await import("./instrumentation.node.js");
-      return await nodeInstrumentation.registerMqttNodeInstrumentation({
+      return await nodeInstrumentation.registerNodeInstrumentation({
         logger: console,
       });
     } catch (error) {
       const normalized = safeError(error);
-      console.error("MQTT instrumentation registration failed", {
+      console.error("Node instrumentation registration failed", {
         error: normalized,
       });
       return {
