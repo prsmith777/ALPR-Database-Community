@@ -62,6 +62,14 @@ import {
   simulateNotificationRuleDraft,
   updateNotificationRuleDraft,
 } from "@/lib/notification-rule-draft-runtime.mjs";
+import {
+  createNotificationRuleDraft,
+  getNotificationRuleBuilderOverview as loadNotificationRuleBuilderOverview,
+  previewNotificationRuleBuilder,
+  setNotificationRuleBuilderEnabled,
+  updateNotificationRuleBuilderDraft,
+} from "@/lib/notification-rule-builder-runtime.mjs";
+import { parseNotificationRuleDraft } from "@/lib/notification-rule-builder-shape.mjs";
 import { getCaptureAssetService } from "@/lib/capture-asset-runtime.mjs";
 import {
   getVisualIndexRuntimeStatus,
@@ -748,6 +756,109 @@ export async function getUnifiedNotificationRuleReview() {
   } catch (error) {
     console.error("Error building unified notification shadow review:", error);
     return { success: false, error: "Failed to build unified rule shadow review" };
+  }
+}
+
+const RULE_BUILDER_SAFE_MESSAGES = new Set([
+  "Rule draft payload is invalid",
+  "Rule name is required",
+  "Rule name is too long",
+  "Description is too long",
+  "Cooldown must be between 0 and 2678400",
+  "Add at least one condition",
+  "Add at least one notification action",
+  "Select a supported condition type",
+  "Select at least one tag",
+  "Select valid tag",
+  "Select at least one camera",
+  "Select valid camera",
+  "Plate number is required",
+  "Confidence must be between 0 and 100",
+  "Schedule start and end times are required",
+  "Select valid schedule weekdays",
+  "Schedule time zone is required",
+  "Select a valid schedule time zone",
+  "Select MQTT or Pushover for each action",
+  "MQTT broker must be between 1 and 2147483647",
+  "MQTT fixed topic is required",
+  "MQTT publish topics cannot contain wildcard characters",
+  "Pushover priority must be between -2 and 2",
+  "Select a valid notification rule",
+  "The notification rule was not found",
+  "Migrated rules must use the guarded migration workflow",
+  "Disable the rule before editing it",
+  "The rule needs conditions and an action before activation",
+  "Enable and configure Pushover before activating this rule",
+  "Enable MQTT and every selected broker before activating this rule",
+]);
+
+function notificationRuleBuilderFailure(error, fallback) {
+  console.error(fallback, error);
+  return {
+    success: false,
+    error: error instanceof Error && RULE_BUILDER_SAFE_MESSAGES.has(error.message)
+      ? error.message
+      : fallback,
+  };
+}
+
+export async function getNotificationRuleBuilderOverview() {
+  await requirePermission("notification.manage");
+  try {
+    return { success: true, data: await loadNotificationRuleBuilderOverview() };
+  } catch (error) {
+    return notificationRuleBuilderFailure(error, "Failed to load the notification rule builder");
+  }
+}
+
+export async function saveNotificationRuleBuilderDraft(formData) {
+  const principal = await requirePermission("notification.manage");
+  if (formData?.get("confirmation") !== "save_disabled_notification_rule") {
+    return { success: false, error: "Confirm that the rule will remain disabled." };
+  }
+  try {
+    const draft = parseNotificationRuleDraft(formData.get("draft"));
+    const id = Number(formData.get("ruleId"));
+    const data = Number.isInteger(id) && id > 0
+      ? await updateNotificationRuleBuilderDraft({ id, draft, actor: principal })
+      : await createNotificationRuleDraft({ draft, actor: principal });
+    revalidatePath("/notifications");
+    return { success: true, data };
+  } catch (error) {
+    return notificationRuleBuilderFailure(error, "Failed to save the disabled notification rule");
+  }
+}
+
+export async function previewNotificationRuleBuilderDraft(formData) {
+  await requirePermission("notification.manage");
+  try {
+    const data = await previewNotificationRuleBuilder({
+      id: formData.get("ruleId"),
+      limit: formData.get("limit") || 25,
+    });
+    return { success: true, data };
+  } catch (error) {
+    return notificationRuleBuilderFailure(error, "Failed to preview the notification rule");
+  }
+}
+
+export async function toggleNotificationRuleBuilder(formData) {
+  const principal = await requirePermission("notification.manage");
+  const enabled = formData?.get("enabled") === "true";
+  const expected = enabled ? "activate_notification_rule" : "deactivate_notification_rule";
+  if (formData?.get("confirmation") !== expected) {
+    return { success: false, error: `Confirm that you want to ${enabled ? "activate" : "deactivate"} this rule.` };
+  }
+  try {
+    const data = await setNotificationRuleBuilderEnabled({
+      id: formData.get("ruleId"),
+      enabled,
+      actor: principal,
+    });
+    revalidatePath("/notifications");
+    return { success: true, data };
+  } catch (error) {
+    return notificationRuleBuilderFailure(error, `Failed to ${enabled ? "activate" : "deactivate"} the notification rule`);
   }
 }
 
