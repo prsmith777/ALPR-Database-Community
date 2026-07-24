@@ -40,19 +40,29 @@ test("live feed image review advances visibly and starts focused on the plate", 
   assert.match(plateTable, />Next read</);
   assert.match(plateTable, /className="flex shrink-0 gap-2"/);
   assert.match(plateTable, /Show next read \(Right Arrow\)/);
-  assert.match(plateTable, /max-h-\[calc\(100vh-2rem\)\].*overflow-y-auto/);
+  assert.match(plateTable, /sm:grid-rows-\[auto_auto_minmax\(0,1fr\)_auto\].*sm:overflow-hidden/);
+  assert.match(plateTable, /className="contents"/);
+  assert.match(plateTable, /className="ml-auto flex gap-2"/);
   assert.match(imageViewer, /useState\(image\?\.crop_coordinates \? 3 : 1\)/);
   assert.match(imageViewer, /setZoom\(image\?\.crop_coordinates \? 3 : 1\)/);
   assert.match(imageViewer, />\s*Reset/);
 });
 
 test("plate correction opens with an editable caret instead of selected text", async () => {
-  const plateTable = await source("components/PlateTable.jsx");
+  const [plateTable, imageViewer] = await Promise.all([
+    source("components/PlateTable.jsx"),
+    source("components/ImageViewer.jsx"),
+  ]);
 
   assert.match(plateTable, /const correctionInputRef = useRef\(null\)/);
   assert.match(plateTable, /onOpenAutoFocus=\{\(event\) => \{/);
   assert.match(plateTable, /input\.setSelectionRange\(cursorPosition, cursorPosition\)/);
   assert.match(plateTable, /ref=\{correctionInputRef\}/);
+  assert.match(plateTable, /Plate image/);
+  assert.match(plateTable, /<ImageViewer image=\{selectedImage\} \/>/);
+  assert.match(imageViewer, /<Slider/);
+  assert.match(imageViewer, />\s*Reset/);
+  assert.match(imageViewer, />\s*Zoom to Plate/);
 });
 
 test("plate identifiers request a slashed-zero glyph throughout the interface", async () => {
