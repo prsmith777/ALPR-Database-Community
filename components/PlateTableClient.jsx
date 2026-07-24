@@ -67,7 +67,7 @@ export default function PlateTableClient({
     router.push(`${pathname}?${queryString}`);
   };
 
-  const handlePageChange = (direction) => {
+  const handlePageChange = (direction, { scrollToTop = true } = {}) => {
     const currentPage = parseInt(params.get("page") || "1");
     const pageSize = parseInt(params.get("pageSize") || "25");
     const newPage = direction === "next" ? currentPage + 1 : currentPage - 1;
@@ -79,7 +79,7 @@ export default function PlateTableClient({
       return;
     }
 
-    scrollMainToTop();
+    if (scrollToTop) scrollMainToTop();
     router.push(
       `${pathname}?${createQueryString({ page: newPage.toString() })}`,
       { scroll: false }
@@ -150,6 +150,8 @@ export default function PlateTableClient({
         total,
         onNextPage: () => handlePageChange("next"),
         onPreviousPage: () => handlePageChange("prev"),
+        onViewerPageChange: (direction) =>
+          handlePageChange(direction, { scrollToTop: false }),
       }}
       filters={{
         search: params.get("search") || "",

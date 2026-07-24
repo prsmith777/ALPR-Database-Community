@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import NextImage from "next/image";
 import Link from "next/link";
 import {
@@ -89,6 +89,7 @@ import MultiSelectFilter from "@/components/MultiSelectFilter";
 import { getSettings } from "@/app/actions";
 import ImageViewer from "./ImageViewer";
 import { useAccess } from "@/components/auth/AccessProvider";
+import { resolveReadViewerNavigation } from "@/lib/read-viewer-navigation.mjs";
 import {
   Sheet,
   SheetContent,
@@ -246,6 +247,7 @@ export default function PlateTable({
   });
   const [selectedImage, setSelectedImage] = useState(null);
   const [selectedIndex, setSelectedIndex] = useState(-1);
+  const [pendingViewerNavigation, setPendingViewerNavigation] = useState(null);
   const [searchInput, setSearchInput] = useState(filters.search || "");
   const [isLive, setIsLive] = useState(true);
   const [prefetchedImages, setPrefetchedImages] = useState(new Set());
@@ -260,41 +262,6 @@ export default function PlateTable({
   const correctionInputRef = useRef(null);
 
   const router = useRouter();
-
-  // Cycle through images without clicking out with arrow keys
-  const handleKeyPress = (e) => {
-    // Leave arrow keys to editable controls and the zoom slider.
-    if (
-      document.activeElement?.matches(
-        'input, textarea, select, [role="slider"], [contenteditable="true"]'
-      )
-    ) {
-      return;
-    }
-
-    if (selectedImage === null) return;
-
-    if (e.key === "ArrowRight") {
-      e.preventDefault();
-      const nextIndex = (selectedIndex + 1) % data.length;
-      const nextPlate = data[nextIndex];
-      handleImageClick(e, nextPlate);
-    } else if (e.key === "ArrowLeft") {
-      e.preventDefault();
-      const prevIndex =
-        selectedIndex <= 0 ? data.length - 1 : selectedIndex - 1;
-      const prevPlate = data[prevIndex];
-      handleImageClick(e, prevPlate);
-    }
-  };
-
-  // Add keyboard listener when modal is open
-  useEffect(() => {
-    if (selectedImage) {
-      window.addEventListener("keydown", handleKeyPress);
-      return () => window.removeEventListener("keydown", handleKeyPress);
-    }
-  }, [selectedImage, selectedIndex, data]);
 
   useEffect(() => {
     async function fetchBiHost() {
@@ -324,7 +291,7 @@ export default function PlateTable({
     return `data:image/jpeg;base64,${base64Data}`;
   };
 
-  const handleImageClick = (e, plate) => {
+  const handleImageClick = useCallback((e, plate) => {
     e.preventDefault();
     const plateIndex = data.findIndex((p) => p.id === plate.id);
     let imageUrl;
@@ -371,13 +338,112 @@ export default function PlateTable({
     // Reset zoom and position when opening new image
     setZoom(1);
     setPosition({ x: 0, y: 0 });
-  };
+  }, [data]);
 
-  const handleNextImage = () => {
-    if (!selectedImage || data.length <= 1) return;
-    const nextIndex = (selectedIndex + 1) % data.length;
-    handleImageClick({ preventDefault: () => {} }, data[nextIndex]);
-  };
+  const getViewerNavigation = useCallback(
+    (direction) =>
+      resolveReadViewerNavigation({
+        direction,
+        selectedIndex,
+        itemCount: data.length,
+        page: pagination.page,
+        pageSize: pagination.pageSize,
+        total: pagination.total,
+      }),
+    [
+      data.length,
+      pagination.page,
+      pagination.pageSize,
+      pagination.total,
+      selectedIndex,
+    ]
+  );
+  const onViewerPageChange = pagination.onViewerPageChange;
+
+  const handleViewerNavigation = useCallback((direction) => {
+    if (!selectedImage || pendingViewerNavigation) return;
+
+    const destination = getViewerNavigation(direction);
+    if (destination.kind === "item") {
+      handleImageClick(
+        { preventDefault: () => {} },
+        data[destination.index]
+      );
+      return;
+    }
+
+    if (
+      destination.kind === "page" &&
+      typeof onViewerPageChange === "function"
+    ) {
+      setPendingViewerNavigation(destination);
+      onViewerPageChange(direction);
+    }
+  }, [
+    data,
+    getViewerNavigation,
+    handleImageClick,
+    onViewerPageChange,
+    pendingViewerNavigation,
+    selectedImage,
+  ]);
+
+  const handleNextImage = useCallback(() => {
+    handleViewerNavigation("next");
+  }, [handleViewerNavigation]);
+
+  const handlePreviousImage = useCallback(() => {
+    handleViewerNavigation("previous");
+  }, [handleViewerNavigation]);
+
+  useEffect(() => {
+    if (
+      !pendingViewerNavigation ||
+      pendingViewerNavigation.page !== pagination.page ||
+      data.length === 0
+    ) {
+      return;
+    }
+
+    const targetIndex =
+      pendingViewerNavigation.index < 0
+        ? data.length - 1
+        : pendingViewerNavigation.index;
+    handleImageClick({ preventDefault: () => {} }, data[targetIndex]);
+    setPendingViewerNavigation(null);
+  }, [data, handleImageClick, pagination.page, pendingViewerNavigation]);
+
+  // Cycle through images without clicking out, including across result pages.
+  useEffect(() => {
+    const handleKeyPress = (event) => {
+      // Leave arrow keys to editable controls and the zoom slider.
+      if (
+        document.activeElement?.matches(
+          'input, textarea, select, [role="slider"], [contenteditable="true"]'
+        )
+      ) {
+        return;
+      }
+
+      if (selectedImage === null) return;
+
+      if (event.key === "ArrowRight") {
+        event.preventDefault();
+        handleNextImage();
+      } else if (event.key === "ArrowLeft") {
+        event.preventDefault();
+        handlePreviousImage();
+      }
+    };
+
+    if (selectedImage) {
+      window.addEventListener("keydown", handleKeyPress);
+      return () => window.removeEventListener("keydown", handleKeyPress);
+    }
+  }, [handleNextImage, handlePreviousImage, selectedImage]);
+
+  const hasNextImage =
+    selectedImage !== null && getViewerNavigation("next").kind !== "none";
 
   useEffect(() => {
     if (selectedImage && data && data.length > 0) {
@@ -1931,6 +1997,7 @@ export default function PlateTable({
             if (!open) {
               setSelectedImage(null);
               setSelectedIndex(-1);
+              setPendingViewerNavigation(null);
             }
           }}
         >
@@ -2077,8 +2144,8 @@ export default function PlateTable({
                       size="sm"
                       className="text-xs sm:text-sm"
                       onClick={handleNextImage}
-                      disabled={data.length <= 1}
-                      aria-label="Show next read in the current Live Feed list"
+                      disabled={!hasNextImage || pendingViewerNavigation !== null}
+                      aria-label="Show next read in the filtered Live Feed results"
                       title="Show next read (Right Arrow)"
                     >
                       <span className="whitespace-nowrap">Next read</span>

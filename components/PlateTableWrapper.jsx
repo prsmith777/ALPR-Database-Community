@@ -237,7 +237,7 @@ export default function PlateTableWrapper({
   );
 
   const handlePageChange = useCallback(
-    (direction) => {
+    (direction, { scrollToTop = true } = {}) => {
       // Paging means live mode should be off
       setIsLiveModeActive(false);
       const currentPage = parseInt(params.get("page") || "1");
@@ -251,7 +251,7 @@ export default function PlateTableWrapper({
         return;
       }
 
-      scrollMainToTop();
+      if (scrollToTop) scrollMainToTop();
       router.push(
         `${pathname}?${createQueryString({ page: newPage.toString() })}`,
         { scroll: false }
@@ -376,6 +376,8 @@ export default function PlateTableWrapper({
         total: totalToDisplay,
         onNextPage: () => handlePageChange("next"),
         onPreviousPage: () => handlePageChange("prev"),
+        onViewerPageChange: (direction) =>
+          handlePageChange(direction, { scrollToTop: false }),
       }}
       filters={{
         search: params.get("search") || "",

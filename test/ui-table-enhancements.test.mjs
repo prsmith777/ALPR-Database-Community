@@ -35,8 +35,10 @@ test("live feed image review advances visibly and starts focused on the plate", 
     source("components/ImageViewer.jsx"),
   ]);
 
-  assert.match(plateTable, /const handleNextImage = \(\) =>/);
+  assert.match(plateTable, /const handleNextImage = useCallback\(\(\) =>/);
   assert.match(plateTable, /onClick=\{handleNextImage\}/);
+  assert.match(plateTable, /onViewerPageChange/);
+  assert.doesNotMatch(plateTable, /\(selectedIndex \+ 1\) % data\.length/);
   assert.match(plateTable, />Next read</);
   assert.match(plateTable, /className="flex shrink-0 gap-2"/);
   assert.match(plateTable, /Show next read \(Right Arrow\)/);
