@@ -42,7 +42,9 @@ jobs:
           cache: "yarn"
 
       - name: Install dependencies
-        run: yarn install --frozen-lockfile --network-timeout 100000
+        run: |
+          yarn install --frozen-lockfile --ignore-scripts --network-timeout 100000
+          node scripts/install-openvino-runtime.mjs
 
       - name: Install PostgreSQL Client and Setup Database
         run: |
