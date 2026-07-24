@@ -7,12 +7,18 @@ async function source(path) {
 }
 
 test("live feed plate identities open exact matching read history", async () => {
-  const plateTable = await source("components/PlateTable.jsx");
+  const [plateTable, knownPlatesTable] = await Promise.all([
+    source("components/PlateTable.jsx"),
+    source("components/KnownPlatesTable.jsx"),
+  ]);
 
-  assert.match(
-    plateTable,
-    /live_feed\?search=\$\{encodeURIComponent\(plate\.plate_number\)\}&matchMode=off/
-  );
+  for (const component of [plateTable, knownPlatesTable]) {
+    assert.match(
+      component,
+      /live_feed\?search=\$\{encodeURIComponent\(plate\.plate_number\)\}&matchMode=off/
+    );
+    assert.match(component, /View exact reads for \$\{plate\.plate_number\}/);
+  }
   assert.match(
     plateTable,
     /className="text-foreground underline-offset-4 hover:underline/
@@ -21,6 +27,34 @@ test("live feed plate identities open exact matching read history", async () => 
     plateTable,
     /className="text-blue-600 underline-offset-4 hover:underline/
   );
+});
+
+test("live feed image review advances visibly and starts focused on the plate", async () => {
+  const [plateTable, imageViewer] = await Promise.all([
+    source("components/PlateTable.jsx"),
+    source("components/ImageViewer.jsx"),
+  ]);
+
+  assert.match(plateTable, /const handleNextImage = \(\) =>/);
+  assert.match(plateTable, /onClick=\{handleNextImage\}/);
+  assert.match(plateTable, />Next read</);
+  assert.match(plateTable, /Show next read \(Right Arrow\)/);
+  assert.match(imageViewer, /useState\(image\?\.crop_coordinates \? 3 : 1\)/);
+  assert.match(imageViewer, /setZoom\(image\?\.crop_coordinates \? 3 : 1\)/);
+  assert.match(imageViewer, />\s*Reset/);
+});
+
+test("plate identifiers request a slashed-zero glyph throughout the interface", async () => {
+  const [styles, plateTable] = await Promise.all([
+    source("app/globals.css"),
+    source("components/PlateTable.jsx"),
+  ]);
+
+  assert.match(styles, /font-variant-numeric: slashed-zero/);
+  assert.match(styles, /font-feature-settings: "zero" 1/);
+  assert.match(styles, /var\(--font-geist-mono\)/);
+  assert.match(plateTable, /Camera read \{observed\}/);
+  assert.doesNotMatch(plateTable, /text-\[11px\] font-sans text-muted-foreground/);
 });
 
 test("table pagination scrolls the application content to the top", async () => {

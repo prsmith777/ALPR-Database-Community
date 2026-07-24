@@ -29,6 +29,7 @@ import {
   History,
   RotateCcw,
   ScanSearch,
+  ChevronRight,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -158,7 +159,7 @@ function PlateIdentity({ plate, compact = false }) {
         </Badge>
       </div>
       {wasResolved && (
-        <div className="text-[11px] font-sans text-muted-foreground">
+        <div className="text-[11px] text-muted-foreground">
           Camera read {observed}
         </div>
       )}
@@ -368,6 +369,12 @@ export default function PlateTable({
     // Reset zoom and position when opening new image
     setZoom(1);
     setPosition({ x: 0, y: 0 });
+  };
+
+  const handleNextImage = () => {
+    if (!selectedImage || data.length <= 1) return;
+    const nextIndex = (selectedIndex + 1) % data.length;
+    handleImageClick({ preventDefault: () => {} }, data[nextIndex]);
   };
 
   useEffect(() => {
@@ -2062,6 +2069,18 @@ export default function PlateTable({
                     <Check className="h-3 w-3 sm:h-4 sm:w-4 mr-1 sm:mr-2" />
                     <span className="whitespace-nowrap">{selectedImage?.validated ? "Reopen review" : "Confirm detected plate"}</span>
                   </Button>}
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="text-xs sm:text-sm"
+                    onClick={handleNextImage}
+                    disabled={data.length <= 1}
+                    aria-label="Show next read in the current Live Feed list"
+                    title="Show next read (Right Arrow)"
+                  >
+                    <span className="whitespace-nowrap">Next read</span>
+                    <ChevronRight className="ml-1 h-3 w-3 sm:ml-2 sm:h-4 sm:w-4" />
+                  </Button>
                 </div>
                 <div className="flex justify-end space-x-2">
                   {biHost && selectedImage?.bi_path && (

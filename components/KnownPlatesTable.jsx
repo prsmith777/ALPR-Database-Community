@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useMemo } from "react";
+import Link from "next/link";
 import {
   Search,
   Tag,
@@ -366,7 +367,13 @@ export function KnownPlatesTable({ initialData }) {
                   filteredData.map((plate) => (
                     <TableRow key={plate.plate_number}>
                       <TableCell className="font-mono text-lg font-medium pl-4">
-                        {plate.plate_number}
+                        <Link
+                          href={`/live_feed?search=${encodeURIComponent(plate.plate_number)}&matchMode=off`}
+                          className="text-foreground underline-offset-4 hover:underline focus-visible:rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+                          title={`View exact reads for ${plate.plate_number}`}
+                        >
+                          {plate.plate_number}
+                        </Link>
                       </TableCell>
                       <TableCell>{plate.name}</TableCell>
                       <TableCell>{plate.notes}</TableCell>
@@ -535,9 +542,13 @@ export function KnownPlatesTable({ initialData }) {
                       {/* Header: Plate Number + Actions */}
                       <div className="flex justify-between items-center mb-4">
                         <div className="flex items-center">
-                          <div className="font-mono text-lg font-medium pr-2">
+                          <Link
+                            href={`/live_feed?search=${encodeURIComponent(plate.plate_number)}&matchMode=off`}
+                            className="font-mono text-lg font-medium pr-2 text-foreground underline-offset-4 hover:underline focus-visible:rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+                            title={`View exact reads for ${plate.plate_number}`}
+                          >
                             {plate.plate_number}
-                          </div>
+                          </Link>
                           {plate.ignore && (
                             <Badge
                               variant="outline"
