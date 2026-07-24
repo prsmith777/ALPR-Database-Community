@@ -43,6 +43,18 @@ function defaultGroup(combinator = "all") {
   return { kind: "group", key: token(), combinator, children: [defaultCondition()] };
 }
 
+function defaultActivityGroup() {
+  return {
+    kind: "group",
+    key: token(),
+    combinator: "all",
+    children: [
+      { kind: "condition", key: token(), conditionType: "camera", operator: "in", value: { names: [] } },
+      { kind: "condition", key: token(), conditionType: "read_count", operator: "at_most", value: { scope: "camera", count: 0, windowSeconds: 900 } },
+    ],
+  };
+}
+
 function defaultAction(options) {
   const broker = options.brokers.find((candidate) => candidate.enabled) || options.brokers[0];
   return {
@@ -57,6 +69,10 @@ function emptyDraft(options) {
     ruleId: null,
     name: "",
     description: "",
+    eventType: "plate_read.accepted",
+    timeZone: options.localTimeZone,
+    evaluationIntervalSeconds: 300,
+    quietHours: { enabled: false, start: "22:00", end: "06:00", weekdays: [], timeZone: options.localTimeZone },
     cooldownSeconds: 0,
     conditionTree: defaultGroup(),
     actions: [defaultAction(options)],
@@ -77,6 +93,10 @@ function draftFromRule(rule) {
     ruleId: rule.id,
     name: rule.name,
     description: rule.description || "",
+    eventType: rule.eventType || "plate_read.accepted",
+    timeZone: rule.timeZone || "UTC",
+    evaluationIntervalSeconds: rule.evaluationIntervalSeconds || 300,
+    quietHours: { enabled: false, start: "22:00", end: "06:00", weekdays: [], timeZone: rule.timeZone || "UTC", ...(rule.quietHours || {}) },
     cooldownSeconds: rule.cooldownSeconds,
     conditionTree: nodeFromStored(root),
     actions: rule.actions.map((action) => ({
@@ -119,6 +139,10 @@ function payloadFor(draft) {
   return {
     name: draft.name,
     description: draft.description,
+    eventType: draft.eventType,
+    timeZone: draft.timeZone,
+    evaluationIntervalSeconds: Number(draft.evaluationIntervalSeconds),
+    quietHours: draft.quietHours,
     cooldownSeconds: Number(draft.cooldownSeconds),
     conditionTree: cleanNode(draft.conditionTree),
     actions: draft.actions.map(({ channelType, configuration }) => ({ channelType, configuration })),
@@ -299,7 +323,7 @@ export function NotificationRuleBuilder({ overview }) {
   return <Card>
     <CardHeader>
       <div className="flex flex-wrap items-start justify-between gap-3">
-        <div><CardTitle className="flex items-center gap-2"><BellRing className="h-5 w-5" />Unified notification rules</CardTitle><CardDescription className="mt-1 max-w-3xl">Build MQTT and Pushover rules from accepted reads. Saving always creates a disabled draft; preview never sends a notification; activation is separate and audited.</CardDescription></div>
+        <div><CardTitle className="flex items-center gap-2"><BellRing className="h-5 w-5" />Unified notification rules</CardTitle><CardDescription className="mt-1 max-w-3xl">Build MQTT and Pushover rules from accepted reads or scheduled camera-activity checks. Saving always creates a disabled draft; preview never sends a notification; activation is separate and audited.</CardDescription></div>
         <Badge variant="outline"><ShieldCheck className="mr-1 h-3 w-3" />Safe draft workflow</Badge>
       </div>
     </CardHeader>
@@ -316,6 +340,15 @@ export function NotificationRuleBuilder({ overview }) {
         <div className="flex items-center justify-between"><div><h3 className="font-semibold">{draft.ruleId ? `Edit disabled rule #${draft.ruleId}` : "New disabled rule"}</h3><p className="text-sm text-muted-foreground">Combine AND, OR, and NOT groups up to six levels deep.</p></div>{draft.ruleId && <Button type="button" variant="ghost" onClick={() => setDraft(emptyDraft(options))}>New rule</Button>}</div>
         <div className="grid gap-3 md:grid-cols-2"><Input value={draft.name} onChange={(event) => setDraft({ ...draft, name: event.target.value })} placeholder="Rule name" /><Input type="number" min="0" max="2678400" value={draft.cooldownSeconds} onChange={(event) => setDraft({ ...draft, cooldownSeconds: event.target.value })} placeholder="Cooldown seconds" /></div>
         <Textarea value={draft.description} onChange={(event) => setDraft({ ...draft, description: event.target.value })} placeholder="Optional description" />
+        <div className="grid gap-3 rounded-lg border p-3 md:grid-cols-3">
+          <label className="space-y-1 text-sm"><span className="font-medium">Trigger</span><Select className="w-full" value={draft.eventType} onChange={(eventType) => setDraft({ ...draft, eventType, conditionTree: eventType === "camera.activity_check" ? defaultActivityGroup() : defaultGroup() })}><option value="plate_read.accepted">Accepted plate read</option><option value="camera.activity_check">Scheduled camera activity</option></Select></label>
+          <label className="space-y-1 text-sm"><span className="font-medium">Rule time zone</span><Input value={draft.timeZone} onChange={(event) => setDraft({ ...draft, timeZone: event.target.value })} placeholder="America/Denver" /></label>
+          {draft.eventType === "camera.activity_check" ? <label className="space-y-1 text-sm"><span className="font-medium">Check every (seconds)</span><Input type="number" min="60" max="86400" value={draft.evaluationIntervalSeconds} onChange={(event) => setDraft({ ...draft, evaluationIntervalSeconds: event.target.value })} /></label> : <div className="self-end text-xs text-muted-foreground">Conditions use the read&apos;s stored event time.</div>}
+        </div>
+        <div className="space-y-3 rounded-lg border p-3">
+          <label className="flex items-center gap-2 text-sm font-medium"><input type="checkbox" checked={Boolean(draft.quietHours?.enabled)} onChange={(event) => setDraft({ ...draft, quietHours: { ...draft.quietHours, enabled: event.target.checked } })} />Quiet hours</label>
+          {draft.quietHours?.enabled && <><div className="grid gap-2 sm:grid-cols-3"><Input type="time" value={draft.quietHours.start} onChange={(event) => setDraft({ ...draft, quietHours: { ...draft.quietHours, start: event.target.value } })} /><Input type="time" value={draft.quietHours.end} onChange={(event) => setDraft({ ...draft, quietHours: { ...draft.quietHours, end: event.target.value } })} /><Input value={draft.quietHours.timeZone || draft.timeZone} onChange={(event) => setDraft({ ...draft, quietHours: { ...draft.quietHours, timeZone: event.target.value } })} /></div><div className="flex flex-wrap gap-2">{WEEKDAYS.map(([day, label]) => { const selected = (draft.quietHours.weekdays || []).includes(day); return <button type="button" key={day} onClick={() => setDraft({ ...draft, quietHours: { ...draft.quietHours, weekdays: selected ? draft.quietHours.weekdays.filter((entry) => entry !== day) : [...(draft.quietHours.weekdays || []), day] } })} className={`rounded border px-2 py-1 text-xs ${selected ? "bg-primary text-primary-foreground" : ""}`}>{label}</button>; })}<span className="self-center text-xs text-muted-foreground">No days selected means every day.</span></div></>}
+        </div>
         <ConditionTreeEditor node={draft.conditionTree} options={options} isRoot update={(conditionTree) => setDraft({ ...draft, conditionTree })} remove={() => {}} />
         <div className="space-y-3"><h4 className="font-medium">Actions</h4>{draft.actions.map((action) => <ActionEditor key={action.key} action={action} options={options} update={(changes) => patchAction(action.key, changes)} remove={() => setDraft({ ...draft, actions: draft.actions.filter((entry) => entry.key !== action.key) })} />)}<Button type="button" variant="outline" onClick={() => setDraft({ ...draft, actions: [...draft.actions, defaultAction(options)] })}><Plus className="mr-1 h-4 w-4" />Add action</Button></div>
         <div className="flex flex-wrap items-center gap-3"><Button type="button" disabled={isPending} onClick={save}><Save className="mr-1 h-4 w-4" />{isPending ? "Working…" : "Save disabled draft"}</Button><p className="text-xs text-muted-foreground">Saving never activates delivery.</p></div>
