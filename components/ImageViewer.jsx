@@ -5,17 +5,18 @@ import { ZoomIn } from "lucide-react";
 import NextImage from "next/image";
 
 const ImageViewer = ({ image }) => {
-  const [zoom, setZoom] = useState(1);
+  const [zoom, setZoom] = useState(image?.crop_coordinates ? 3 : 1);
   const [imageSize, setImageSize] = useState(null);
   const containerRef = useRef(null);
 
   useEffect(() => {
+    setZoom(image?.crop_coordinates ? 3 : 1);
     const img = new Image();
     img.onload = () => {
       setImageSize({ width: img.width, height: img.height });
     };
     img.src = image.url;
-  }, [image.url]);
+  }, [image.url, image.crop_coordinates]);
 
   const getImageStyle = () => {
     if (zoom === 1 || !image?.crop_coordinates || !imageSize) {

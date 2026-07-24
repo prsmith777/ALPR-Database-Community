@@ -50,6 +50,10 @@ reliable background processing.
   record/image-path counts, recent ingestion, visual-index state,
   index-confirmed missing sources, a bounded recent-file bytes/read sample,
   and estimated 70/80/90% capacity dates. It performs no cleanup or mutation.
+- Read review now keeps operators in the Live Feed image dialog with a visible
+  next-read action and opens image-backed reads focused on the detected plate.
+  Known Plate values link directly to exact individual reads, and plate-oriented
+  typography requests a slashed-zero glyph to distinguish `0` from `O`.
 
 Every production candidate must update this baseline and the in-app help model
 in the same release. The exact deployed Git SHA belongs in deployment status
