@@ -1,23 +1,19 @@
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useCallback } from "react";
 import { Slider } from "@/components/ui/slider";
 import { Button } from "@/components/ui/button";
 import { ZoomIn } from "lucide-react";
 import NextImage from "next/image";
 
-const ImageViewer = ({ image, compactControls = false }) => {
-  const [zoom, setZoom] = useState(image?.crop_coordinates ? 3 : 1);
+const ImageViewer = ({
+  image,
+  compactControls = false,
+  plateZoom = 3,
+  fitPlateOnOpen = false,
+}) => {
+  const [zoom, setZoom] = useState(image?.crop_coordinates ? plateZoom : 1);
   const [imageSize, setImageSize] = useState(null);
   const [containerSize, setContainerSize] = useState(null);
   const containerRef = useRef(null);
-
-  useEffect(() => {
-    setZoom(image?.crop_coordinates ? 3 : 1);
-    const img = new Image();
-    img.onload = () => {
-      setImageSize({ width: img.width, height: img.height });
-    };
-    img.src = image.url;
-  }, [image.url, image.crop_coordinates]);
 
   useEffect(() => {
     const container = containerRef.current;
@@ -35,6 +31,58 @@ const ImageViewer = ({ image, compactControls = false }) => {
     observer.observe(container);
     return () => observer.disconnect();
   }, []);
+
+  const getPlateFitZoom = useCallback(() => {
+    if (
+      !image?.crop_coordinates ||
+      !imageSize ||
+      !containerSize?.width ||
+      !containerSize?.height
+    ) {
+      return plateZoom;
+    }
+
+    const [xMin, yMin, xMax, yMax] = image.crop_coordinates;
+    const fitScale = Math.min(
+      containerSize.width / imageSize.width,
+      containerSize.height / imageSize.height
+    );
+    const cropWidth = Math.max((xMax - xMin) * fitScale, 1);
+    const cropHeight = Math.max((yMax - yMin) * fitScale, 1);
+    const margin = 0.85;
+    const fittedZoom = Math.min(
+      5,
+      (containerSize.width * margin) / cropWidth,
+      (containerSize.height * margin) / cropHeight
+    );
+
+    // Round down to the slider step so the full crop and margin stay visible.
+    return Math.max(1, Math.floor(fittedZoom * 10) / 10);
+  }, [containerSize, image?.crop_coordinates, imageSize, plateZoom]);
+
+  useEffect(() => {
+    setImageSize(null);
+    const img = new Image();
+    img.onload = () => {
+      setImageSize({ width: img.width, height: img.height });
+    };
+    img.src = image.url;
+  }, [image.url]);
+
+  useEffect(() => {
+    setZoom(
+      image?.crop_coordinates
+        ? fitPlateOnOpen
+          ? getPlateFitZoom()
+          : plateZoom
+        : 1
+    );
+  }, [
+    fitPlateOnOpen,
+    getPlateFitZoom,
+    image?.crop_coordinates,
+    plateZoom,
+  ]);
 
   const getImageStyle = () => {
     if (
@@ -117,7 +165,9 @@ const ImageViewer = ({ image, compactControls = false }) => {
             <Button
               variant="outline"
               className={compactControls ? "w-full" : undefined}
-              onClick={() => setZoom(3)}
+              onClick={() =>
+                setZoom(fitPlateOnOpen ? getPlateFitZoom() : plateZoom)
+              }
             >
               <ZoomIn className="mr-2 h-4 w-4" />
               Zoom to Plate

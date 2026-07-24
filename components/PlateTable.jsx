@@ -2245,7 +2245,11 @@ export default function PlateTable({
                       Plate image
                     </div>
                     <div className="relative h-56 overflow-hidden rounded-lg border bg-black p-2">
-                      <ImageViewer image={selectedImage} compactControls />
+                      <ImageViewer
+                        image={selectedImage}
+                        compactControls
+                        fitPlateOnOpen
+                      />
                     </div>
                   </div>
                 )}

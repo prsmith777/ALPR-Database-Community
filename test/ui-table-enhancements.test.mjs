@@ -44,8 +44,8 @@ test("live feed image review advances visibly and starts focused on the plate", 
   assert.match(plateTable, /sm:grid-rows-\[auto_auto_minmax\(0,1fr\)_auto\].*sm:overflow-hidden/);
   assert.match(plateTable, /className="contents"/);
   assert.match(plateTable, /className="ml-auto flex gap-2"/);
-  assert.match(imageViewer, /useState\(image\?\.crop_coordinates \? 3 : 1\)/);
-  assert.match(imageViewer, /setZoom\(image\?\.crop_coordinates \? 3 : 1\)/);
+  assert.match(imageViewer, /useState\(image\?\.crop_coordinates \? plateZoom : 1\)/);
+  assert.match(imageViewer, /fitPlateOnOpen\s+\? getPlateFitZoom\(\)\s+: plateZoom/);
   assert.match(imageViewer, /new ResizeObserver\(updateContainerSize\)/);
   assert.match(imageViewer, /const fitScale = Math\.min\(/);
   assert.match(imageViewer, /const renderedPlateX = offsetX \+ centerX \* fitScale/);
@@ -66,8 +66,10 @@ test("plate correction opens with an editable caret instead of selected text", a
   assert.match(plateTable, /input\.setSelectionRange\(cursorPosition, cursorPosition\)/);
   assert.match(plateTable, /ref=\{correctionInputRef\}/);
   assert.match(plateTable, /Plate image/);
-  assert.match(plateTable, /<ImageViewer image=\{selectedImage\} compactControls \/>/);
-  assert.match(imageViewer, /compactControls = false/);
+  assert.match(plateTable, /compactControls\s+fitPlateOnOpen/);
+  assert.match(imageViewer, /fitPlateOnOpen = false/);
+  assert.match(imageViewer, /const margin = 0\.85/);
+  assert.match(imageViewer, /Math\.floor\(fittedZoom \* 10\) \/ 10/);
   assert.match(imageViewer, /"grid grid-cols-2 gap-2 py-2"/);
   assert.match(imageViewer, /"col-span-2 px-1"/);
   assert.match(imageViewer, /<Slider/);
