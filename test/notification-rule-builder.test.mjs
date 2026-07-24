@@ -57,3 +57,30 @@ test("serialized rule drafts have a bounded, validated parser", () => {
   assert.equal(parseNotificationRuleDraft(JSON.stringify(validDraft())).name, "After-hours monitored vehicle");
   assert.throws(() => parseNotificationRuleDraft("not-json"), /payload is invalid/i);
 });
+
+test("advanced drafts retain deep groups, count windows, and explicit plate strategies", () => {
+  const draft = validDraft({
+    conditionTree: {
+      kind: "group",
+      combinator: "all",
+      children: [{
+        kind: "group",
+        combinator: "any",
+        children: [{
+          kind: "group",
+          combinator: "not",
+          children: [{ kind: "condition", conditionType: "plate_match", operator: "matches", value: { plate: "TEST*", strategy: "wildcard" } }],
+        }],
+      }, {
+        kind: "condition",
+        conditionType: "read_count",
+        operator: "at_least",
+        value: { scope: "plate", count: 3, windowSeconds: 600 },
+      }],
+    },
+  });
+  const normalized = normalizeNotificationRuleDraft(draft);
+  assert.equal(normalized.conditionTree.children[0].children[0].combinator, "not");
+  assert.equal(normalized.conditionTree.children[1].value.windowSeconds, 600);
+  assert.equal(normalized.conditionTree.children[0].children[0].children[0].value.strategy, "wildcard");
+});

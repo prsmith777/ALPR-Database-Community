@@ -177,3 +177,14 @@ test("unified Pushover actions are planned for post-commit delivery and honor co
   assert.equal(suppressed.status, "no-match");
   assert.equal(suppressed.pushoverPlans.length, 0);
 });
+
+test("accepted-read evaluation supplies repository count metrics", async () => {
+  const state = fixture({ rules: [unifiedRule({
+    conditionTree: { kind: "group", combinator: "all", children: [{ kind: "condition", conditionType: "read_count", operator: "at_least", value: { scope: "plate", count: 3, windowSeconds: 600 } }] },
+  })] });
+  state.repository.loadReadCountMetrics = async () => ({ readCounts: [{ scope: "plate", windowSeconds: 600, count: 3 }] });
+  const service = new NotificationAcceptedReadService({ repository: state.repository, mqttRepository: state.mqttRepository });
+  const result = await service.processAcceptedRead({ id: 36500, plate_number: "069YQZ", camera_name: "Entry LPR 1", timestamp: "2026-07-22T20:00:00.000Z" });
+  assert.equal(result.status, "queued");
+  assert.equal(state.executions[0].decisions[0].trace.children[0].actual, 3);
+});
