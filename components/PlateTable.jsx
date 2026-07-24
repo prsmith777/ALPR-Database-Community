@@ -1933,7 +1933,7 @@ export default function PlateTable({
             }
           }}
         >
-          <DialogContent className="max-h-[calc(100vh-2rem)] w-[calc(100vw-32px)] max-w-7xl overflow-y-auto sm:w-2/3 sm:max-w-7xl">
+          <DialogContent className="max-h-[calc(100vh-2rem)] w-[calc(100vw-32px)] max-w-7xl overflow-y-auto sm:h-[calc(100vh-2rem)] sm:w-2/3 sm:max-w-7xl sm:grid-rows-[auto_auto_minmax(0,1fr)_auto] sm:overflow-hidden">
             <DialogHeader>
               <DialogTitle>
                 License Plate Image - {selectedImage?.plateNumber}
@@ -1955,7 +1955,7 @@ export default function PlateTable({
                 </div>
               </div>
             )}
-            <div className="relative w-full h-[40vh] sm:h-[60vh]">
+            <div className="relative h-[40vh] w-full sm:h-auto sm:min-h-0">
               {selectedImage && (
                 <ImageViewer
                   image={selectedImage}
@@ -1964,8 +1964,8 @@ export default function PlateTable({
               )}
             </div>
             <DialogFooter>
-              <div className="flex w-full flex-col justify-between gap-4 sm:gap-2">
-                <div className="flex flex-wrap gap-2">
+              <div className="flex w-full flex-wrap gap-2">
+                <div className="contents">
                   {canRead && selectedImage && <Button asChild variant="outline" size="sm" className="text-xs sm:text-sm">
                     <Link href={`/visual_search?readId=${selectedImage.id}`}>
                       <ScanSearch className="h-3 w-3 sm:h-4 sm:w-4 mr-1 sm:mr-2" />
@@ -2085,7 +2085,7 @@ export default function PlateTable({
                     </Button>
                   </div>
                 </div>
-                <div className="flex justify-end space-x-2">
+                <div className="ml-auto flex gap-2">
                   {biHost && selectedImage?.bi_path && (
                     <Button
                       variant="outline"
