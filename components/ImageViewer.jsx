@@ -7,6 +7,7 @@ import NextImage from "next/image";
 const ImageViewer = ({ image }) => {
   const [zoom, setZoom] = useState(image?.crop_coordinates ? 3 : 1);
   const [imageSize, setImageSize] = useState(null);
+  const [containerSize, setContainerSize] = useState(null);
   const containerRef = useRef(null);
 
   useEffect(() => {
@@ -18,8 +19,31 @@ const ImageViewer = ({ image }) => {
     img.src = image.url;
   }, [image.url, image.crop_coordinates]);
 
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container) return undefined;
+
+    const updateContainerSize = () => {
+      setContainerSize({
+        width: container.clientWidth,
+        height: container.clientHeight,
+      });
+    };
+
+    updateContainerSize();
+    const observer = new ResizeObserver(updateContainerSize);
+    observer.observe(container);
+    return () => observer.disconnect();
+  }, []);
+
   const getImageStyle = () => {
-    if (zoom === 1 || !image?.crop_coordinates || !imageSize) {
+    if (
+      zoom === 1 ||
+      !image?.crop_coordinates ||
+      !imageSize ||
+      !containerSize?.width ||
+      !containerSize?.height
+    ) {
       return {
         transform: "none",
         width: "100%",
@@ -29,17 +53,28 @@ const ImageViewer = ({ image }) => {
 
     const [xMin, yMin, xMax, yMax] = image.crop_coordinates;
 
-    // Calculate true center point of the plate
+    // Map the source-image plate center into the object-contain rendering.
     const centerX = xMin + (xMax - xMin) / 2;
     const centerY = yMin + (yMax - yMin) / 2;
+    const fitScale = Math.min(
+      containerSize.width / imageSize.width,
+      containerSize.height / imageSize.height
+    );
+    const renderedWidth = imageSize.width * fitScale;
+    const renderedHeight = imageSize.height * fitScale;
+    const offsetX = (containerSize.width - renderedWidth) / 2;
+    const offsetY = (containerSize.height - renderedHeight) / 2;
+    const renderedPlateX = offsetX + centerX * fitScale;
+    const renderedPlateY = offsetY + centerY * fitScale;
 
-    // Calculate percentage positions using actual image dimensions
-    const originX = (centerX / imageSize.width) * 100;
-    const originY = (centerY / imageSize.height) * 100;
+    // Scale from the top-left, then translate the rendered plate center to
+    // the center of the viewer. This keeps off-center plates centered at any zoom.
+    const translateX = containerSize.width / 2 - renderedPlateX * zoom;
+    const translateY = containerSize.height / 2 - renderedPlateY * zoom;
 
     return {
-      transform: `scale(${zoom})`,
-      transformOrigin: `${originX}% ${originY}%`,
+      transform: `translate(${translateX}px, ${translateY}px) scale(${zoom})`,
+      transformOrigin: "0 0",
       width: "100%",
       height: "100%",
       transition: "transform 0.2s ease-out",

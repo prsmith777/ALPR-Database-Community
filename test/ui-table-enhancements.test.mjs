@@ -45,6 +45,12 @@ test("live feed image review advances visibly and starts focused on the plate", 
   assert.match(plateTable, /className="ml-auto flex gap-2"/);
   assert.match(imageViewer, /useState\(image\?\.crop_coordinates \? 3 : 1\)/);
   assert.match(imageViewer, /setZoom\(image\?\.crop_coordinates \? 3 : 1\)/);
+  assert.match(imageViewer, /new ResizeObserver\(updateContainerSize\)/);
+  assert.match(imageViewer, /const fitScale = Math\.min\(/);
+  assert.match(imageViewer, /const renderedPlateX = offsetX \+ centerX \* fitScale/);
+  assert.match(imageViewer, /containerSize\.width \/ 2 - renderedPlateX \* zoom/);
+  assert.match(imageViewer, /translate\(\$\{translateX\}px, \$\{translateY\}px\) scale\(\$\{zoom\}\)/);
+  assert.match(imageViewer, /transformOrigin: "0 0"/);
   assert.match(imageViewer, />\s*Reset/);
 });
 
