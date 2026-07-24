@@ -6,7 +6,7 @@ import {
   parseNotificationRuleDraft,
 } from "../lib/notification-rule-builder-shape.mjs";
 import { NotificationRuleBuilderRepository } from "../lib/notification-rule-builder-repository.mjs";
-import { preferredRuleTimeZone, syncQuietHoursTimeZone } from "../lib/notification-rule-time-zone.mjs";
+import { preferredRuleTimeZone, scheduleConditionTimeZone, syncQuietHoursTimeZone } from "../lib/notification-rule-time-zone.mjs";
 
 function validDraft(overrides = {}) {
   return {
@@ -149,4 +149,9 @@ test("new calendar rules prefer the browser clock and keep quiet hours aligned",
     priorRuleTimeZone: "UTC",
     nextRuleTimeZone: "America/Denver",
   }).timeZone, "America/New_York");
+});
+
+test("new schedule conditions inherit the rule clock instead of the server clock", () => {
+  assert.equal(scheduleConditionTimeZone({ ruleTimeZone: "America/Denver", configuredTimeZone: "UTC" }), "America/Denver");
+  assert.equal(scheduleConditionTimeZone({ ruleTimeZone: "invalid", configuredTimeZone: "America/Chicago" }), "America/Chicago");
 });

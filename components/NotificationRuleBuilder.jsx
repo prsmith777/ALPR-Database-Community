@@ -14,7 +14,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import { preferredRuleTimeZone, syncQuietHoursTimeZone } from "@/lib/notification-rule-time-zone.mjs";
+import { preferredRuleTimeZone, scheduleConditionTimeZone, syncQuietHoursTimeZone } from "@/lib/notification-rule-time-zone.mjs";
 
 const CONDITION_LABELS = {
   always: "Any accepted read",
@@ -154,7 +154,7 @@ function Select({ value, onChange, children, className = "" }) {
   return <select value={value} onChange={(event) => onChange(event.target.value)} className={`h-9 rounded-md border bg-background px-3 text-sm ${className}`}>{children}</select>;
 }
 
-function ConditionValue({ condition, update, options }) {
+function ConditionValue({ condition, update, options, ruleTimeZone }) {
   const value = condition.value || {};
   if (["always", "known_plate", "watchlist"].includes(condition.conditionType)) {
     return <p className="text-sm text-muted-foreground">No additional value needed.</p>;
@@ -210,7 +210,7 @@ function ConditionValue({ condition, update, options }) {
     <div className="grid gap-2 sm:grid-cols-3">
       <Input type="time" value={value.start || "00:00"} onChange={(event) => update({ value: { ...value, start: event.target.value } })} />
       <Input type="time" value={value.end || "23:59"} onChange={(event) => update({ value: { ...value, end: event.target.value } })} />
-      <Input value={value.timeZone || options.localTimeZone} onChange={(event) => update({ value: { ...value, timeZone: event.target.value } })} placeholder="America/Denver" />
+      <Input value={value.timeZone || ruleTimeZone || options.localTimeZone} onChange={(event) => update({ value: { ...value, timeZone: event.target.value } })} placeholder="America/Denver" />
     </div>
     <div className="flex flex-wrap gap-2">{WEEKDAYS.map(([day, label]) => {
       const selected = (value.weekdays || []).includes(day);
@@ -230,16 +230,16 @@ function removeFromTree(node, key) {
   return { ...node, children: node.children.filter((child) => child.key !== key).map((child) => removeFromTree(child, key)) };
 }
 
-function ConditionTreeEditor({ node, depth = 1, options, update, remove, isRoot = false }) {
+function ConditionTreeEditor({ node, depth = 1, options, ruleTimeZone, update, remove, isRoot = false }) {
   if (node.kind === "condition") {
     return <div className="space-y-3 rounded-lg border p-3">
-      <div className="grid gap-2 sm:grid-cols-[1fr_auto]"><Select value={node.conditionType} onChange={(conditionType) => update({ ...node, conditionType, operator: "", value: conditionType === "local_time_window" ? { start: "00:00", end: "23:59", weekdays: [], timeZone: options.localTimeZone } : {} })}>{Object.entries(CONDITION_LABELS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</Select><Button type="button" variant="ghost" size="icon" onClick={remove} aria-label="Remove condition"><Trash2 className="h-4 w-4" /></Button></div>
-      <ConditionValue condition={node} update={(changes) => update({ ...node, ...changes })} options={options} />
+      <div className="grid gap-2 sm:grid-cols-[1fr_auto]"><Select value={node.conditionType} onChange={(conditionType) => update({ ...node, conditionType, operator: "", value: conditionType === "local_time_window" ? { start: "00:00", end: "23:59", weekdays: [], timeZone: scheduleConditionTimeZone({ ruleTimeZone, configuredTimeZone: options.localTimeZone }) } : {} })}>{Object.entries(CONDITION_LABELS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</Select><Button type="button" variant="ghost" size="icon" onClick={remove} aria-label="Remove condition"><Trash2 className="h-4 w-4" /></Button></div>
+      <ConditionValue condition={node} update={(changes) => update({ ...node, ...changes })} options={options} ruleTimeZone={ruleTimeZone} />
     </div>;
   }
   return <div className={`space-y-3 rounded-lg border p-3 ${depth > 1 ? "ml-3 border-l-4" : ""}`}>
     <div className="flex flex-wrap items-center gap-2"><span className="text-sm font-medium">{isRoot ? "Root" : `Nested level ${depth}`}</span><Select value={node.combinator} onChange={(combinator) => update({ ...node, combinator, children: combinator === "not" ? node.children.slice(0, 1) : node.children })}><option value="all">All (AND)</option><option value="any">Any (OR)</option><option value="not">Not</option></Select><span className="text-xs text-muted-foreground">{node.combinator === "not" ? "matches when its single child does not" : "of the following must match"}</span>{!isRoot && <Button type="button" variant="ghost" size="icon" onClick={remove} aria-label="Remove group"><Trash2 className="h-4 w-4" /></Button>}</div>
-    <div className="space-y-3">{node.children.map((child) => <ConditionTreeEditor key={child.key} node={child} depth={depth + 1} options={options} update={(next) => update(updateTree(node, child.key, () => next))} remove={() => update(removeFromTree(node, child.key))} />)}</div>
+    <div className="space-y-3">{node.children.map((child) => <ConditionTreeEditor key={child.key} node={child} depth={depth + 1} options={options} ruleTimeZone={ruleTimeZone} update={(next) => update(updateTree(node, child.key, () => next))} remove={() => update(removeFromTree(node, child.key))} />)}</div>
     <div className="flex flex-wrap gap-2"><Button type="button" size="sm" variant="outline" disabled={node.combinator === "not" && node.children.length >= 1} onClick={() => update({ ...node, children: [...node.children, defaultCondition()] })}><Plus className="mr-1 h-4 w-4" />Condition</Button><Button type="button" size="sm" variant="outline" disabled={depth >= 6 || (node.combinator === "not" && node.children.length >= 1)} onClick={() => update({ ...node, children: [...node.children, defaultGroup("any")] })}><Plus className="mr-1 h-4 w-4" />Nested group</Button></div>
   </div>;
 }
@@ -367,7 +367,7 @@ export function NotificationRuleBuilder({ overview }) {
           <label className="flex items-center gap-2 text-sm font-medium"><input type="checkbox" checked={Boolean(draft.quietHours?.enabled)} onChange={(event) => setDraft({ ...draft, quietHours: { ...draft.quietHours, enabled: event.target.checked } })} />Quiet hours</label>
           {draft.quietHours?.enabled && <><div className="grid gap-2 sm:grid-cols-3"><Input type="time" value={draft.quietHours.start} onChange={(event) => setDraft({ ...draft, quietHours: { ...draft.quietHours, start: event.target.value } })} /><Input type="time" value={draft.quietHours.end} onChange={(event) => setDraft({ ...draft, quietHours: { ...draft.quietHours, end: event.target.value } })} /><Input value={draft.quietHours.timeZone || draft.timeZone} onChange={(event) => setDraft({ ...draft, quietHours: { ...draft.quietHours, timeZone: event.target.value } })} /></div><div className="flex flex-wrap gap-2">{WEEKDAYS.map(([day, label]) => { const selected = (draft.quietHours.weekdays || []).includes(day); return <button type="button" key={day} onClick={() => setDraft({ ...draft, quietHours: { ...draft.quietHours, weekdays: selected ? draft.quietHours.weekdays.filter((entry) => entry !== day) : [...(draft.quietHours.weekdays || []), day] } })} className={`rounded border px-2 py-1 text-xs ${selected ? "bg-primary text-primary-foreground" : ""}`}>{label}</button>; })}<span className="self-center text-xs text-muted-foreground">No days selected means every day.</span></div></>}
         </div>
-        <ConditionTreeEditor node={draft.conditionTree} options={options} isRoot update={(conditionTree) => setDraft({ ...draft, conditionTree })} remove={() => {}} />
+        <ConditionTreeEditor node={draft.conditionTree} options={options} ruleTimeZone={draft.timeZone} isRoot update={(conditionTree) => setDraft({ ...draft, conditionTree })} remove={() => {}} />
         <div className="space-y-3"><h4 className="font-medium">Actions</h4>{draft.actions.map((action) => <ActionEditor key={action.key} action={action} options={options} update={(changes) => patchAction(action.key, changes)} remove={() => setDraft({ ...draft, actions: draft.actions.filter((entry) => entry.key !== action.key) })} />)}<Button type="button" variant="outline" onClick={() => setDraft({ ...draft, actions: [...draft.actions, defaultAction(options)] })}><Plus className="mr-1 h-4 w-4" />Add action</Button></div>
         <div className="flex flex-wrap items-center gap-3"><Button type="button" disabled={isPending} onClick={save}><Save className="mr-1 h-4 w-4" />{isPending ? "Working…" : "Save disabled draft"}</Button><p className="text-xs text-muted-foreground">Saving never activates delivery.</p></div>
       </div>
