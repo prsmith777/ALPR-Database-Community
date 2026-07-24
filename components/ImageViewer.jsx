@@ -62,6 +62,18 @@ const ImageViewer = ({
     return Math.max(1, Math.floor(fittedZoom * 10) / 10);
   }, [containerSize, image?.crop_coordinates, imageSize, plateZoom]);
 
+  const getSliderMax = useCallback(
+    () => Math.max(5, getPlateFitZoom()),
+    [getPlateFitZoom]
+  );
+
+  const getPlateZoom = useCallback(() => {
+    if (fitPlateOnOpen) return getPlateFitZoom();
+
+    const midpoint = (1 + getSliderMax()) / 2;
+    return Math.round(midpoint * 10) / 10;
+  }, [fitPlateOnOpen, getPlateFitZoom, getSliderMax]);
+
   useEffect(() => {
     setImageSize(null);
     const img = new Image();
@@ -74,16 +86,12 @@ const ImageViewer = ({
   useEffect(() => {
     setZoom(
       image?.crop_coordinates
-        ? fitPlateOnOpen
-          ? getPlateFitZoom()
-          : plateZoom
+        ? getPlateZoom()
         : 1
     );
   }, [
-    fitPlateOnOpen,
-    getPlateFitZoom,
+    getPlateZoom,
     image?.crop_coordinates,
-    plateZoom,
   ]);
 
   const getImageStyle = () => {
@@ -167,9 +175,7 @@ const ImageViewer = ({
             <Button
               variant="outline"
               className={compactControls ? "w-full" : undefined}
-              onClick={() =>
-                setZoom(fitPlateOnOpen ? getPlateFitZoom() : plateZoom)
-              }
+              onClick={() => setZoom(getPlateZoom())}
             >
               <ZoomIn className="mr-2 h-4 w-4" />
               Zoom to Plate
@@ -180,7 +186,7 @@ const ImageViewer = ({
               value={[zoom]}
               onValueChange={([newZoom]) => setZoom(newZoom)}
               min={1}
-              max={Math.max(5, getPlateFitZoom())}
+              max={getSliderMax()}
               step={0.1}
               className="w-full"
             />
