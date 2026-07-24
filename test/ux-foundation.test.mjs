@@ -28,10 +28,14 @@ test("failed login clears and refocuses the controlled password input", async ()
   );
 });
 
-test("an empty Known Plates list still renders its management table", async () => {
-  const knownPlatesPage = await source("app/known_plates/page.jsx");
+test("an empty Known Plates list still renders its management workspace", async () => {
+  const [knownPlatesPage, workspace] = await Promise.all([
+    source("app/known_plates/page.jsx"),
+    source("components/KnownPlatesWorkspace.jsx"),
+  ]);
 
-  assert.match(knownPlatesPage, /<KnownPlatesTable initialData=\{knownPlates\} \/>/);
+  assert.match(knownPlatesPage, /<KnownPlatesWorkspace/);
+  assert.match(workspace, /<KnownPlatesTable initialData=\{knownPlates\} \/>/);
   assert.equal(knownPlatesPage.includes("knownPlates.length > 0"), false);
   assert.match(knownPlatesPage, /response\.error \|\| "Unable to load known plates\."/);
   assert.match(knownPlatesPage, /<Alert variant="destructive">/);

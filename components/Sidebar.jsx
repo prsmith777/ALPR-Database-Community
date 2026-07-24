@@ -8,7 +8,6 @@ import {
   BookMarked,
   Cctv,
   Database,
-  Flag,
   LayoutDashboard,
   LogOut,
   Menu,
@@ -37,7 +36,6 @@ const allNavItems = [
   { icon: Database, label: "Database", href: "/database", permission: "plate.read" },
   { icon: ScanSearch, label: "Visual Search", href: "/visual_search", permission: "plate.read" },
   { icon: BookMarked, label: "Known Plates", href: "/known_plates", permission: "plate.read" },
-  { icon: Flag, label: "Watchlist", href: "/flagged", permission: "plate.read" },
   { icon: BellPlus, label: "Notifications", href: "/notifications", permission: "notification.manage" },
   { icon: Antenna, label: "MQTT", href: "/mqtt", permission: "mqtt.manage" },
 ];

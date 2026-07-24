@@ -1,11 +1,13 @@
 "use client";
 
-import { useState, useEffect, useTransition } from "react";
+import { useEffect, useState, useTransition } from "react";
 import Link from "next/link";
+import { BellRing, Eye, Pencil, Plus, X } from "lucide-react";
+
+import { addDBPlate, alterPlateFlag } from "@/app/actions";
+import { useAccess } from "@/components/auth/AccessProvider";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { Card, CardContent } from "@/components/ui/card";
 import {
   Dialog,
@@ -16,6 +18,8 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import {
   Table,
   TableBody,
@@ -24,72 +28,123 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { BellRing, Eye, Plus, X } from "lucide-react";
-import { addDBPlate, alterPlateFlag } from "@/app/actions";
-import { useAccess } from "@/components/auth/AccessProvider";
+import { Textarea } from "@/components/ui/textarea";
+
+const PRIORITIES = ["low", "normal", "high", "critical"];
+
+function priorityVariant(priority) {
+  return priority === "critical" ? "destructive" : "outline";
+}
 
 export function FlaggedPlatesTable({ initialData }) {
   const { can } = useAccess();
+  const canReview = can("plate.review");
   const [data, setData] = useState(initialData);
   const [open, setOpen] = useState(false);
+  const [editingPlate, setEditingPlate] = useState(null);
   const [plateNumber, setPlateNumber] = useState("");
+  const [monitorReason, setMonitorReason] = useState("");
+  const [monitorPriority, setMonitorPriority] = useState("normal");
+  const [message, setMessage] = useState(null);
   const [isPending, startTransition] = useTransition();
 
-  const formatLastSeen = (value) => {
-    if (!value) return "No reads yet";
-    return new Date(value).toLocaleString();
+  useEffect(() => setData(initialData), [initialData]);
+
+  const formatDate = (value, empty) =>
+    value ? new Date(value).toLocaleString() : empty;
+
+  const closeEditor = () => {
+    setOpen(false);
+    setEditingPlate(null);
+    setPlateNumber("");
+    setMonitorReason("");
+    setMonitorPriority("normal");
+    setMessage(null);
   };
 
-  // Update data when initialData prop changes (after revalidation)
-  useEffect(() => {
-    setData(initialData);
-  }, [initialData]);
+  const openEditor = (plate = null) => {
+    setEditingPlate(plate);
+    setPlateNumber(plate?.plate_number || "");
+    setMonitorReason(plate?.monitor_reason || "");
+    setMonitorPriority(plate?.monitor_priority || "normal");
+    setMessage(null);
+    setOpen(true);
+  };
 
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-
-    const trimmedPlate = plateNumber.trim();
-    if (!trimmedPlate) return;
-
-    if (trimmedPlate.length > 10) {
-      alert("Plate number cannot exceed 10 characters");
+  const handleSubmit = (event) => {
+    event.preventDefault();
+    const normalizedPlate = plateNumber.trim().toUpperCase();
+    if (!normalizedPlate || normalizedPlate.length > 10) {
+      setMessage("Enter a plate number of 10 characters or fewer.");
       return;
     }
 
     startTransition(async () => {
-      try {
-        const result = await addDBPlate(trimmedPlate.toUpperCase(), true);
-        if (result.success) {
-          setData((prev) => {
-            const normalizedPlate = trimmedPlate.toUpperCase();
-            if (prev.some((plate) => plate.plate_number === normalizedPlate)) {
-              return prev;
-            }
-            return [
-              {
-                plate_number: normalizedPlate,
-                name: null,
-                notes: null,
-                occurrence_count: 0,
-                last_seen_at: null,
-                tags: [],
-              },
-              ...prev,
-            ];
+      const result = editingPlate
+        ? await (async () => {
+            const formData = new FormData();
+            formData.set("plateNumber", editingPlate.plate_number);
+            formData.set("flagged", "true");
+            formData.set("monitorReason", monitorReason);
+            formData.set("monitorPriority", monitorPriority);
+            return alterPlateFlag(formData);
+          })()
+        : await addDBPlate(normalizedPlate, true, {
+            reason: monitorReason,
+            priority: monitorPriority,
           });
-          setPlateNumber("");
-          setOpen(false);
-        }
-      } catch (error) {
-        console.error("Error adding flagged plate:", error);
+
+      if (!result.success) {
+        setMessage(result.error || "Unable to save monitoring details.");
+        return;
       }
+
+      setData((current) => {
+        if (editingPlate) {
+          return current.map((plate) =>
+            plate.plate_number === editingPlate.plate_number
+              ? {
+                  ...plate,
+                  monitor_reason: monitorReason.trim() || null,
+                  monitor_priority: monitorPriority,
+                }
+              : plate
+          );
+        }
+        if (current.some((plate) => plate.plate_number === normalizedPlate)) {
+          return current.map((plate) =>
+            plate.plate_number === normalizedPlate
+              ? {
+                  ...plate,
+                  monitor_reason: monitorReason.trim() || null,
+                  monitor_priority: monitorPriority,
+                }
+              : plate
+          );
+        }
+        return [
+          {
+            plate_number: normalizedPlate,
+            name: null,
+            notes: null,
+            occurrence_count: 0,
+            last_seen_at: null,
+            tags: [],
+            monitor_reason: monitorReason.trim() || null,
+            monitor_priority: monitorPriority,
+            monitored_at: new Date().toISOString(),
+          },
+          ...current,
+        ];
+      });
+      closeEditor();
     });
   };
 
   const handleRemove = (plateNumberToRemove) => {
     const formData = new FormData();
-    formData.append("plateNumber", plateNumberToRemove);
-    formData.append("flagged", "false");
+    formData.set("plateNumber", plateNumberToRemove);
+    formData.set("flagged", "false");
 
     startTransition(async () => {
       const result = await alterPlateFlag(formData);
@@ -107,40 +162,46 @@ export function FlaggedPlatesTable({ initialData }) {
         <BellRing className="mt-0.5 h-5 w-5 shrink-0 text-blue-600 dark:text-blue-400" />
         <div>
           <p className="font-medium text-blue-700 dark:text-blue-300">
-            Watchlist is integrated with unified rules
+            Monitored Plates works with unified rules
           </p>
           <p className="mt-1 text-muted-foreground">
-            Adding a plate here marks it as watchlisted. A unified notification
-            rule with the Watchlist condition decides which cameras and delivery
-            channels should act when that plate is read.
+            Record why a vehicle matters and assign an operator-facing priority.
+            A unified rule using the monitored-plate condition controls cameras
+            and delivery channels. Review rule status in{" "}
+            <Link href="/notifications" className="underline underline-offset-4">
+              Notifications
+            </Link>
+            .
           </p>
         </div>
       </div>
 
-      <Card className="mt-4 sm:mt-0 dark:bg-[#0e0e10]">
-        <CardContent className="py-4 ">
+      <Card className="dark:bg-[#0e0e10]">
+        <CardContent className="py-4">
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>Plate Number</TableHead>
-                <TableHead>Known Name</TableHead>
+                <TableHead>Plate</TableHead>
+                <TableHead>Known Name / Tags</TableHead>
+                <TableHead>Priority</TableHead>
+                <TableHead>Reason</TableHead>
+                <TableHead>Monitoring Since</TableHead>
                 <TableHead>Last Seen</TableHead>
                 <TableHead className="text-right">Reads</TableHead>
-                <TableHead>Tags</TableHead>
                 <TableHead className="text-right">Actions</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {data.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={6} className="text-center py-8">
-                    No watchlist plates found
+                  <TableCell colSpan={8} className="py-8 text-center">
+                    No monitored plates found
                   </TableCell>
                 </TableRow>
               ) : (
                 data.map((plate) => (
                   <TableRow key={plate.plate_number}>
-                    <TableCell className="font-medium font-mono">
+                    <TableCell className="font-mono font-medium">
                       <Link
                         href={`/live_feed?search=${encodeURIComponent(plate.plate_number)}&matchMode=off`}
                         className="text-blue-600 underline-offset-4 hover:underline dark:text-blue-400"
@@ -148,35 +209,40 @@ export function FlaggedPlatesTable({ initialData }) {
                         {plate.plate_number}
                       </Link>
                     </TableCell>
-                    <TableCell>{plate.name || "—"}</TableCell>
+                    <TableCell>
+                      <div>{plate.name || "—"}</div>
+                      <div className="mt-1 flex flex-wrap gap-1">
+                        {plate.tags?.map((tag) => (
+                          <Badge
+                            key={tag.name}
+                            variant="secondary"
+                            className="px-2 py-0.5 text-xs"
+                            style={{ backgroundColor: tag.color, color: "#fff" }}
+                          >
+                            {tag.name}
+                          </Badge>
+                        ))}
+                      </div>
+                    </TableCell>
+                    <TableCell>
+                      <Badge
+                        variant={priorityVariant(plate.monitor_priority)}
+                        className="capitalize"
+                      >
+                        {plate.monitor_priority || "normal"}
+                      </Badge>
+                    </TableCell>
+                    <TableCell className="max-w-[260px] whitespace-normal text-sm text-muted-foreground">
+                      {plate.monitor_reason || "No reason recorded"}
+                    </TableCell>
                     <TableCell className="whitespace-nowrap text-sm text-muted-foreground">
-                      {formatLastSeen(plate.last_seen_at)}
+                      {formatDate(plate.monitored_at, "Previously monitored")}
+                    </TableCell>
+                    <TableCell className="whitespace-nowrap text-sm text-muted-foreground">
+                      {formatDate(plate.last_seen_at, "No reads yet")}
                     </TableCell>
                     <TableCell className="text-right tabular-nums">
                       {plate.occurrence_count || 0}
-                    </TableCell>
-                    <TableCell>
-                      <div className="flex flex-wrap items-center gap-1.5">
-                        {plate.tags?.length > 0 ? (
-                          plate.tags.map((tag) => (
-                            <Badge
-                              key={tag.name}
-                              variant="secondary"
-                              className="text-xs py-0.5 px-2"
-                              style={{
-                                backgroundColor: tag.color,
-                                color: "#fff",
-                              }}
-                            >
-                              {tag.name}
-                            </Badge>
-                          ))
-                        ) : (
-                          <div className="text-sm text-gray-500 dark:text-gray-400 italic">
-                            No tags
-                          </div>
-                        )}
-                      </div>
                     </TableCell>
                     <TableCell>
                       <div className="flex justify-end gap-2">
@@ -187,14 +253,24 @@ export function FlaggedPlatesTable({ initialData }) {
                             <Eye className="mr-2 h-4 w-4" /> Reads
                           </Link>
                         </Button>
-                        {can("plate.review") && (
+                        {canReview && (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => openEditor(plate)}
+                            disabled={isPending}
+                          >
+                            <Pencil className="mr-2 h-4 w-4" /> Edit
+                          </Button>
+                        )}
+                        {canReview && (
                           <Button
                             variant="ghost"
                             size="sm"
                             onClick={() => handleRemove(plate.plate_number)}
                             disabled={isPending}
                           >
-                            <X className="mr-2 h-4 w-4" /> Remove
+                            <X className="mr-2 h-4 w-4" /> Stop
                           </Button>
                         )}
                       </div>
@@ -207,59 +283,93 @@ export function FlaggedPlatesTable({ initialData }) {
         </CardContent>
       </Card>
 
-      {can("plate.review") && (
-      <div className="flex justify-end items-center mt-4">
-        <Dialog open={open} onOpenChange={setOpen}>
-          <DialogTrigger asChild>
-            <Button>
-              <Plus className="h-4 w-4 mr-2" />
-              Add to Watchlist
-            </Button>
-          </DialogTrigger>
-          <DialogContent className="sm:max-w-[425px]">
-            <DialogHeader>
-              <DialogTitle>Add to Watchlist</DialogTitle>
-              <DialogDescription>
-                Add a plate number for unified Watchlist rules to monitor.
-              </DialogDescription>
-            </DialogHeader>
-            <form onSubmit={handleSubmit}>
-              <div className="grid gap-4 py-4">
-                <div className="grid w-full items-center gap-2">
-                  <Label htmlFor="plate-number">Plate Number</Label>
-                  <Input
-                    id="plate-number"
-                    value={plateNumber}
-                    onChange={(e) => setPlateNumber(e.target.value)}
-                    onBlur={(e) => setPlateNumber(e.target.value.toUpperCase())}
-                    className="font-mono text-base p-2 h-10 w-full uppercase"
-                    placeholder="Enter Plate Number"
-                    maxLength={10}
-                    disabled={isPending}
-                    autoFocus
-                  />
+      {canReview && (
+        <div className="mt-4 flex items-center justify-end">
+          <Dialog
+            open={open}
+            onOpenChange={(nextOpen) => (nextOpen ? setOpen(true) : closeEditor())}
+          >
+            <DialogTrigger asChild>
+              <Button onClick={() => openEditor()}>
+                <Plus className="mr-2 h-4 w-4" /> Monitor a Plate
+              </Button>
+            </DialogTrigger>
+            <DialogContent className="sm:max-w-[480px]">
+              <DialogHeader>
+                <DialogTitle>
+                  {editingPlate ? "Edit Monitoring Details" : "Monitor a Plate"}
+                </DialogTitle>
+                <DialogDescription>
+                  Record why this plate matters and how prominently operators
+                  should see it.
+                </DialogDescription>
+              </DialogHeader>
+              <form onSubmit={handleSubmit}>
+                <div className="grid gap-4 py-4">
+                  <div className="grid gap-2">
+                    <Label htmlFor="monitored-plate-number">Plate Number</Label>
+                    <Input
+                      id="monitored-plate-number"
+                      value={plateNumber}
+                      onChange={(event) =>
+                        setPlateNumber(event.target.value.toUpperCase())
+                      }
+                      placeholder="ABC123"
+                      maxLength={10}
+                      disabled={isPending || Boolean(editingPlate)}
+                      autoFocus={!editingPlate}
+                    />
+                  </div>
+                  <div className="grid gap-2">
+                    <Label htmlFor="monitor-priority">Priority</Label>
+                    <select
+                      id="monitor-priority"
+                      value={monitorPriority}
+                      onChange={(event) => setMonitorPriority(event.target.value)}
+                      className="h-10 rounded-md border bg-background px-3 text-sm"
+                      disabled={isPending}
+                    >
+                      {PRIORITIES.map((priority) => (
+                        <option key={priority} value={priority}>
+                          {priority[0].toUpperCase() + priority.slice(1)}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="grid gap-2">
+                    <Label htmlFor="monitor-reason">Reason</Label>
+                    <Textarea
+                      id="monitor-reason"
+                      value={monitorReason}
+                      onChange={(event) => setMonitorReason(event.target.value)}
+                      placeholder="Why should operators monitor this vehicle?"
+                      maxLength={500}
+                      disabled={isPending}
+                    />
+                  </div>
+                  {message && <p className="text-sm text-destructive">{message}</p>}
                 </div>
-              </div>
-              <DialogFooter>
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={() => setOpen(false)}
-                  disabled={isPending}
-                >
-                  Cancel
-                </Button>
-                <Button
-                  type="submit"
-                  disabled={isPending || !plateNumber.trim()}
-                >
-                  {isPending ? "Adding..." : "Add to Watchlist"}
-                </Button>
-              </DialogFooter>
-            </form>
-          </DialogContent>
-        </Dialog>
-      </div>
+                <DialogFooter>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={closeEditor}
+                    disabled={isPending}
+                  >
+                    Cancel
+                  </Button>
+                  <Button type="submit" disabled={isPending || !plateNumber.trim()}>
+                    {isPending
+                      ? "Saving..."
+                      : editingPlate
+                        ? "Save Details"
+                        : "Monitor Plate"}
+                  </Button>
+                </DialogFooter>
+              </form>
+            </DialogContent>
+          </Dialog>
+        </div>
       )}
     </>
   );

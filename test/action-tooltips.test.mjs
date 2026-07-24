@@ -27,7 +27,7 @@ test("plate tables label icon-only row actions with accessible tooltips", async 
   assert.match(liveFeed, /<TooltipContent>Correct plate<\/TooltipContent>/);
   assert.match(liveFeed, /Confirm detected plate/);
   assert.match(plateDatabase, /<TooltipContent>View insights<\/TooltipContent>/);
-  assert.match(plateDatabase, /Flag plate/);
+  assert.match(plateDatabase, /Monitor plate/);
   assert.match(knownPlates, /<TooltipProvider delayDuration=\{250\}>/);
   assert.match(knownPlates, /<IconTooltip label="Add tag">/);
   assert.match(knownPlates, /<IconTooltip label="Edit plate details">/);

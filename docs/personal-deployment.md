@@ -35,6 +35,11 @@ release. Bump the manual version/date/baseline, describe changed user behavior,
 move newly delivered work out of planned-only guidance, and update the roadmap
 production baseline plus remaining work.
 
+Record the exact deployed SHA in the deployment result and runtime status. Do
+not place the candidate's own SHA in its source-controlled roadmap baseline;
+the documentation commit would immediately make that value stale. Use the
+release date/version and delivered behavior for the in-repository baseline.
+
 Then run:
 
 ```text

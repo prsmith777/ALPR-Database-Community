@@ -2360,7 +2360,7 @@ export default function PlateTable({
                       <p className="text-xs text-muted-foreground">
                         Future exact reads of {correction.observedPlate} will resolve to{" "}
                         {correction.newPlateNumber || "the corrected plate"} and inherit its
-                        known name, tags, watchlist state, and notification rules.
+                        known name, tags, monitored-plate state, and notification rules.
                       </p>
                     </div>
                   )}

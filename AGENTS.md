@@ -20,7 +20,9 @@ commit deployed to each server.
 2. For every production candidate, update `lib/help-manual.mjs` and
    `docs/COMMUNITY_PRODUCT_ROADMAP.md` in the same release. Bump the manual
    version/date/baseline, document changed behavior, and keep delivered versus
-   planned roadmap status accurate.
+   planned roadmap status accurate. Record exact deployed SHAs in release and
+   deployment status rather than embedding a self-referential candidate SHA in
+   the roadmap.
 3. Run `yarn test`, `yarn typecheck`, `yarn lint`, and `yarn build`.
 4. Commit and push the validated changes.
 5. Fast-forward the remote `staging` branch to the selected commit.

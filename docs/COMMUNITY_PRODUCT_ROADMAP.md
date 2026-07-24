@@ -18,25 +18,31 @@ reliable background processing.
 6. Audit sensitive searches, exports, corrections, rule changes, and
    destructive maintenance.
 
-## Production baseline — July 24, 2026
+## Release baseline — July 24, 2026
 
-- The current production release is `4166d78` (application `0.1.9`). Named
-  users and roles, evidence-preserving plate review, filter-respecting exports,
-  the Watchlist UI, the searchable help center, and local privacy controls are
-  available.
+- Application `0.1.9` includes named users and roles, evidence-preserving plate
+  review, filter-respecting exports, the searchable help center, local privacy
+  controls, and viewport-safe date/help navigation. Monitored Plates now lives
+  inside Known Plates with reason, priority, monitoring-since, and read-history
+  context; the former `/flagged` route redirects to that view.
 - Unified notifications now include migration preview, idempotent disabled
   copies, restricted disabled-rule editing, no-delivery simulation, shadow
   comparison, administrator approval evidence, atomic per-rule cutover, and
-  immediate rollback. Three migrated MQTT rules are active in the unified
-  runtime; both Delivery-tag rules remain on their legacy paths until a real
-  matching read supplies positive shadow evidence.
+  immediate rollback. A July 24 production audit confirmed three retained MQTT
+  rules active in the unified runtime with their legacy sources disabled. The
+  two deleted Delivery-tag sources left disabled orphaned copies; this release
+  adds audited retirement that preserves those rules and evidence while
+  removing them from active migration workflows.
 - Vehicle ReID visual search, uploaded-image queries, camera fallback profiles,
   calibration feedback, and the resumable safety-aware background index worker
   are available. Original captures remain unchanged.
 
 Every production candidate must update this baseline and the in-app help model
-in the same release. Roadmap items below describe the remaining product work,
-not an assertion that every item in a phase is already installed.
+in the same release. The exact deployed Git SHA belongs in deployment status
+and release records, not in this source-controlled baseline: embedding the
+candidate's own SHA would become stale as soon as the documentation commit is
+created. Roadmap items below describe remaining work, not an assertion that
+every item in a phase is already installed.
 
 ## Delivery phases
 
@@ -82,9 +88,11 @@ explainable evaluator. Production also has read-only migration preview,
 idempotently tracked disabled copies, restricted draft editing, no-delivery
 simulation, shadow comparison, administrator approval evidence, atomic
 per-rule cutover, and rollback. Existing Pushover or MQTT delivery stays on its
-legacy path until that individual copy has positive evidence and an explicit
-cutover. Remaining work is the general-purpose rule builder and the additional
-triggers, conditions, and channels below.
+  legacy path until that individual copy has positive evidence and an explicit
+  cutover. Disabled copies whose legacy source was intentionally removed can be
+  retired with an audited, non-deleting workflow. Remaining work is the
+  general-purpose rule builder and the additional triggers, conditions, and
+  channels below.
 
 Initial triggers and conditions:
 
@@ -92,7 +100,7 @@ Initial triggers and conditions:
 - plate seen at least X times within Y minutes;
 - no/fewer than X reads for a camera within Y minutes;
 - active weekdays and local-time windows, including overnight windows;
-- camera/site/direction, known-plate name, tag, and watchlist state;
+- camera/site/direction, known-plate name, tag, and monitored-plate state;
 - lifetime or period read-count thresholds;
 - exact, contains, wildcard, OCR-confusion, edit-distance, and OCR-candidate
   plate matching;
