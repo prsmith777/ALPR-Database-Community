@@ -59,7 +59,7 @@
     "lottie-react": "^2.4.1",
     "lucide-react": "^0.456.0",
     "mqtt": "5.15.2",
-    "next": "15.5.20",
+    "next": "15.5.21",
     "next-themes": "^0.4.3",
     "openvino-node": "2025.4.0",
     "perspective-transform": "^1.1.3",
@@ -92,7 +92,7 @@
     "@types/react": "19.0.14",
     "@types/react-dom": "19.0.6",
     "eslint": "^8",
-    "eslint-config-next": "15.5.20",
+    "eslint-config-next": "15.5.21",
     "postcss": "8.5.19",
     "tailwindcss": "3.4.19",
     "typescript": "5.6.3"
