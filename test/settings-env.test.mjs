@@ -70,6 +70,30 @@ test("Blue Iris host initialization uses its own environment setting", () => {
   assert.equal(config.blueiris.host, "http://192.168.0.10:81");
 });
 
+test("visual indexing starts automatically and accepts bounded environment pacing", () => {
+  const defaults = getInitialEnvConfig({});
+  assert.equal(defaults.visualIndex.enabled, true);
+  assert.equal(defaults.visualIndex.paused, false);
+  assert.equal(defaults.visualIndex.batchSize, 20);
+
+  const configured = getInitialEnvConfig({
+    VISUAL_INDEX_ENABLED: "true",
+    VISUAL_INDEX_PAUSED: "true",
+    VISUAL_INDEX_BATCH_SIZE: "40",
+    VISUAL_INDEX_INTERVAL_SECONDS: "15",
+    VISUAL_INDEX_MINIMUM_FREE_DISK_GB: "8",
+    VISUAL_INDEX_MAXIMUM_LOAD_PERCENT: "75",
+  });
+  assert.deepEqual(configured.visualIndex, {
+    enabled: true,
+    paused: true,
+    batchSize: 40,
+    intervalSeconds: 15,
+    minimumFreeDiskGb: 8,
+    maximumLoadPercent: 75,
+  });
+});
+
 test("runtime database passwords are not copied into persisted settings", () => {
   const config = getInitialEnvConfig({ DB_PASSWORD: "runtime-secret" });
   const persisted = removeRuntimeDatabaseSecret(config, {

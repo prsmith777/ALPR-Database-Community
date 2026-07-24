@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import NextImage from "next/image";
-import { Camera, Images, Loader2, Play, Save, Search, SlidersHorizontal, UploadCloud, X } from "lucide-react";
+import { Camera, Images, Loader2, Pause, Play, Save, Search, SlidersHorizontal, UploadCloud, X } from "lucide-react";
 
 import {
   findSimilarCaptures,
@@ -12,6 +12,7 @@ import {
   indexCameraCaptureAssetsBatch,
   indexCaptureAssetsBatch,
   saveCameraVisualProfile,
+  updateVisualIndexSettings,
 } from "@/app/actions";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -42,6 +43,16 @@ const MAX_UPLOAD_BYTES = 5 * 1024 * 1024;
 function formatTimestamp(value) {
   if (!value) return "Unknown time";
   return new Date(value).toLocaleString();
+}
+
+function formatDuration(seconds) {
+  if (!Number.isFinite(seconds) || seconds < 0) return "Calculating after the next batch";
+  if (seconds < 60) return "Less than a minute remaining";
+  const hours = Math.floor(seconds / 3600);
+  const minutes = Math.max(1, Math.round(seconds % 3600 / 60));
+  if (hours < 1) return `About ${minutes} minutes remaining`;
+  if (hours < 48) return `About ${hours} hr ${minutes} min remaining`;
+  return `About ${Math.round(hours / 24)} days remaining`;
 }
 
 function CaptureCard({ capture, source = false, onSearch }) {
@@ -285,6 +296,7 @@ export default function VisualSearch({ initialResult, initialReadId }) {
   const [bootstrap, setBootstrap] = useState(initialData);
   const [error, setError] = useState(initialResult?.success ? "" : initialResult?.error || "Unable to load visual search.");
   const [indexing, setIndexing] = useState(false);
+  const [indexSettingsSaving, setIndexSettingsSaving] = useState(false);
   const [searching, setSearching] = useState(false);
   const [searchResult, setSearchResult] = useState(null);
   const [selectedCameras, setSelectedCameras] = useState([]);
@@ -380,6 +392,14 @@ export default function VisualSearch({ initialResult, initialReadId }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initialReadId]);
 
+  useEffect(() => {
+    const interval = window.setInterval(async () => {
+      const result = await getVisualSearchBootstrap();
+      if (result.success) setBootstrap(result.data);
+    }, 15_000);
+    return () => window.clearInterval(interval);
+  }, []);
+
   const runIndexBatch = async () => {
     setIndexing(true);
     setError("");
@@ -395,6 +415,21 @@ export default function VisualSearch({ initialResult, initialReadId }) {
     }
   };
 
+  const changeAutomaticIndexing = async (changes) => {
+    setIndexSettingsSaving(true);
+    setError("");
+    try {
+      const result = await updateVisualIndexSettings(changes);
+      if (!result.success) {
+        setError(result.error);
+        return;
+      }
+      await refreshBootstrap();
+    } finally {
+      setIndexSettingsSaving(false);
+    }
+  };
+
   const toggleCamera = (camera, checked) => {
     setSelectedCameras((current) =>
       checked ? [...new Set([...current, camera])] : current.filter((item) => item !== camera)
@@ -403,6 +438,23 @@ export default function VisualSearch({ initialResult, initialReadId }) {
 
   const status = bootstrap?.status || { total: 0, ready: 0, failed: 0, retryable: 0, pending: 0 };
   const completion = status.total ? Math.round((status.ready / status.total) * 100) : 0;
+  const visualIndex = bootstrap?.visualIndex;
+  const worker = visualIndex?.runtime;
+  const automaticDisabled = visualIndex?.settings?.enabled === false;
+  const automaticPaused = visualIndex?.settings?.paused === true;
+  const workerState = automaticDisabled
+    ? "Disabled by server setting"
+    : automaticPaused
+    ? "Paused"
+    : worker?.phase === "throttled"
+      ? "Safety pause"
+      : worker?.phase === "indexing"
+        ? "Indexing now"
+        : worker?.phase === "idle"
+          ? "Caught up"
+          : worker?.phase === "error"
+            ? "Retrying"
+            : "Running automatically";
 
   return (
     <div className="mx-auto max-w-7xl space-y-6">
@@ -495,10 +547,62 @@ export default function VisualSearch({ initialResult, initialReadId }) {
                 {completion}% of {status.total.toLocaleString()} image captures
                 {status.failed ? ` · ${status.failed} need attention` : ""}
               </div>
+              {bootstrap?.canManageIndex && visualIndex && (
+                <div className="space-y-3 rounded-md border p-3">
+                  <div className="flex items-center justify-between gap-3">
+                    <div>
+                      <div className="text-sm font-medium">{workerState}</div>
+                      <div className="text-xs text-muted-foreground">
+                        {worker?.safetyReason || formatDuration(worker?.estimatedSecondsRemaining)}
+                      </div>
+                    </div>
+                    <Badge variant={automaticPaused || worker?.phase === "throttled" ? "outline" : "secondary"}>
+                      {worker?.itemsPerMinute ? `${worker.itemsPerMinute}/min` : visualIndex.pace}
+                    </Badge>
+                  </div>
+                  <div className="space-y-1">
+                    <Label htmlFor="visual-index-pace">Indexing pace</Label>
+                    <Select
+                      value={visualIndex.pace}
+                      disabled={indexSettingsSaving}
+                      onValueChange={(pace) => changeAutomaticIndexing({ pace })}
+                    >
+                      <SelectTrigger id="visual-index-pace"><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="gentle">Gentle · 5 every 60 sec</SelectItem>
+                        <SelectItem value="balanced">Balanced · 20 every 30 sec</SelectItem>
+                        <SelectItem value="fast">Fast · 40 every 15 sec</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <Button
+                    variant="outline"
+                    className="w-full"
+                    disabled={indexSettingsSaving || automaticDisabled}
+                    onClick={() => changeAutomaticIndexing({ paused: !automaticPaused })}
+                  >
+                    {indexSettingsSaving
+                      ? <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      : automaticPaused
+                        ? <Play className="mr-2 h-4 w-4" />
+                        : <Pause className="mr-2 h-4 w-4" />}
+                    {automaticDisabled
+                      ? "Automatic indexing is disabled"
+                      : automaticPaused
+                        ? "Resume automatic indexing"
+                        : "Pause automatic indexing"}
+                  </Button>
+                  {worker?.lastBatch && (
+                    <div className="text-xs text-muted-foreground">
+                      Last batch: {worker.lastBatch.succeeded} indexed, {worker.lastBatch.failed} failed · {formatTimestamp(worker.lastBatch.at)}
+                    </div>
+                  )}
+                </div>
+              )}
               {bootstrap?.canManageIndex && (
-                <Button className="w-full" onClick={runIndexBatch} disabled={indexing || (status.pending === 0 && status.retryable === 0)}>
+                <Button variant="secondary" className="w-full" onClick={runIndexBatch} disabled={indexing || (status.pending === 0 && status.retryable === 0)}>
                   {indexing ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Play className="mr-2 h-4 w-4" />}
-                  Index next 20
+                  Run one batch now
                 </Button>
               )}
             </CardContent>

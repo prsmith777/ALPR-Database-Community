@@ -5,7 +5,10 @@ import {
   mqttInstrumentationInternals,
   register,
 } from "../instrumentation.js";
-import { registerMqttNodeInstrumentation } from "../instrumentation.node.js";
+import {
+  registerMqttNodeInstrumentation,
+  registerNodeInstrumentation,
+} from "../instrumentation.node.js";
 import {
   mqttStartupInternals,
   startMqttRuntimeWithRetry,
@@ -152,7 +155,7 @@ test("Next.js Node instrumentation delegates through the Node-only adapter", asy
     logger,
     async loadNodeInstrumentation() {
       return {
-        async registerMqttNodeInstrumentation(options) {
+        async registerNodeInstrumentation(options) {
           receivedLogger = options.logger;
           return {
             status: "started",
@@ -165,6 +168,55 @@ test("Next.js Node instrumentation delegates through the Node-only adapter", asy
 
   assert.equal(result.status, "started");
   assert.equal(receivedLogger, logger);
+});
+
+test("Node instrumentation starts MQTT and automatic visual indexing together", async () => {
+  const { logger } = makeLogger();
+  let mqttCalls = 0;
+  let visualCalls = 0;
+  const result = await registerNodeInstrumentation({
+    logger,
+    async startMqtt(options) {
+      mqttCalls += 1;
+      assert.equal(options.logger, logger);
+      return { status: "started" };
+    },
+    async loadVisualStartup() {
+      return {
+        async startVisualIndexRuntimeWithRetry(options) {
+          visualCalls += 1;
+          assert.equal(options.logger, logger);
+          return { status: "started" };
+        },
+      };
+    },
+  });
+  assert.equal(result.status, "started");
+  assert.equal(result.mqtt.status, "started");
+  assert.equal(result.visualIndex.status, "started");
+  assert.equal(mqttCalls, 1);
+  assert.equal(visualCalls, 1);
+});
+
+test("a visual-index instrumentation import failure cannot prevent MQTT startup", async () => {
+  const { logger, entries } = makeLogger();
+  let mqttCalls = 0;
+  const result = await registerNodeInstrumentation({
+    logger,
+    async startMqtt() {
+      mqttCalls += 1;
+      return { status: "started" };
+    },
+    async loadVisualStartup() {
+      throw new Error("OpenVINO module is temporarily unavailable");
+    },
+  });
+  assert.equal(mqttCalls, 1);
+  assert.equal(result.status, "partial");
+  assert.equal(result.mqtt.status, "started");
+  assert.equal(result.visualIndex.status, "error");
+  assert.match(result.visualIndex.error.message, /OpenVINO/);
+  assert.match(entries.at(-1).message, /Visual index instrumentation startup failed/);
 });
 
 test("Node-only instrumentation loads the resilient MQTT startup wrapper", async () => {
