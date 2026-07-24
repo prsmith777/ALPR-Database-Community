@@ -5,6 +5,7 @@ import test from "node:test";
 import {
   acceptedPlateReadEffectsInternals,
   processAcceptedPlateReadEffects,
+  processUnifiedPushoverPlans,
 } from "../lib/accepted-plate-read-effects.mjs";
 
 function makeLogger() {
@@ -17,6 +18,21 @@ function makeLogger() {
   }
   return { logger, entries };
 }
+
+test("unified Pushover plans deliver with each rule's message and priority", async () => {
+  const calls = [];
+  const outcomes = await processUnifiedPushoverPlans({
+    plans: [{ actionId: 8, ruleId: 5, ruleName: "After hours", plateNumber: "ABC123", priority: 2, message: "Monitored arrival" }],
+    imageData: "data:image/jpeg;base64,AAAA",
+    sendPushover: async (...args) => { calls.push(args); return { success: true }; },
+    logger: { warn() {} },
+  });
+  assert.equal(outcomes[0].ok, true);
+  assert.equal(calls[0][0], "ABC123");
+  assert.equal(calls[0][1], "Monitored arrival");
+  assert.equal(calls[0][3].priority, 2);
+  assert.match(calls[0][3].title, /After hours/);
+});
 
 function makeRead(overrides = {}) {
   return {

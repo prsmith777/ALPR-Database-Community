@@ -33,6 +33,15 @@ reliable background processing.
   two deleted Delivery-tag sources left disabled orphaned copies; this release
   adds audited retirement that preserves those rules and evidence while
   removing them from active migration workflows.
+- A focused general-purpose notification builder is now available for new
+  rules. It supports disabled drafts and versioned edits, one nested All/Any
+  group, accepted-read, exact/shared-fuzzy plate, known-plate, tag, Monitored
+  Plate, camera, confidence, and local schedule conditions, MQTT and Pushover
+  actions, cooldowns, recent-read no-delivery preview, and separate audited
+  atomic activation/deactivation. Existing migrated copies cannot bypass their
+  guarded shadow-review and cutover workflow. MQTT continues through its
+  durable outbox; Pushover remains best-effort after the read transaction
+  commits.
 - Vehicle ReID visual search, uploaded-image queries, camera fallback profiles,
   calibration feedback, and the resumable safety-aware background index worker
   are available. Original captures remain unchanged.
@@ -90,9 +99,11 @@ simulation, shadow comparison, administrator approval evidence, atomic
 per-rule cutover, and rollback. Existing Pushover or MQTT delivery stays on its
   legacy path until that individual copy has positive evidence and an explicit
   cutover. Disabled copies whose legacy source was intentionally removed can be
-  retired with an audited, non-deleting workflow. Remaining work is the
-  general-purpose rule builder and the additional triggers, conditions, and
-  channels below.
+  retired with an audited, non-deleting workflow. The focused builder for new
+  rules now covers accepted reads, the principal plate/context filters,
+  schedules, MQTT/Pushover actions, cooldown, preview, and audited activation.
+  Remaining work is the advanced triggers, deeper visual composition,
+  durable channel-neutral delivery, and additional channels below.
 
 Initial triggers and conditions:
 
@@ -108,11 +119,13 @@ Initial triggers and conditions:
 
 Operational behavior:
 
-- nested AND/OR condition groups;
+- arbitrary-depth visual AND/OR composition beyond the focused builder's one
+  nested group;
 - explicit rule timezone and event-time evaluation;
-- cooldown, deduplication, quiet hours, delivery retries, and dead-letter state;
-- rule preview against recent reads;
-- alert history that explains why each condition matched.
+- quiet hours and channel-neutral delivery retries/dead-letter state (MQTT
+  already has durable retry and deduplication; Pushover is currently
+  best-effort after commit);
+- expanded alert history that exposes the stored condition trace in the UI;
 - account-wide Pushover monthly quota visibility so rule volume can be planned
   before the service rejects messages.
 
