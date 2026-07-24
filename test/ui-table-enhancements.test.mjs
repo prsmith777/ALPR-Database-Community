@@ -69,7 +69,9 @@ test("plate correction opens with an editable caret instead of selected text", a
   assert.match(plateTable, /compactControls\s+fitPlateOnOpen/);
   assert.match(imageViewer, /fitPlateOnOpen = false/);
   assert.match(imageViewer, /const margin = 0\.85/);
+  assert.match(imageViewer, /const MAX_PLATE_ZOOM = 12/);
   assert.match(imageViewer, /Math\.floor\(fittedZoom \* 10\) \/ 10/);
+  assert.match(imageViewer, /max=\{Math\.max\(5, getPlateFitZoom\(\)\)\}/);
   assert.match(imageViewer, /"grid grid-cols-2 gap-2 py-2"/);
   assert.match(imageViewer, /"col-span-2 px-1"/);
   assert.match(imageViewer, /<Slider/);

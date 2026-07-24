@@ -4,6 +4,8 @@ import { Button } from "@/components/ui/button";
 import { ZoomIn } from "lucide-react";
 import NextImage from "next/image";
 
+const MAX_PLATE_ZOOM = 12;
+
 const ImageViewer = ({
   image,
   compactControls = false,
@@ -51,7 +53,7 @@ const ImageViewer = ({
     const cropHeight = Math.max((yMax - yMin) * fitScale, 1);
     const margin = 0.85;
     const fittedZoom = Math.min(
-      5,
+      MAX_PLATE_ZOOM,
       (containerSize.width * margin) / cropWidth,
       (containerSize.height * margin) / cropHeight
     );
@@ -178,7 +180,7 @@ const ImageViewer = ({
               value={[zoom]}
               onValueChange={([newZoom]) => setZoom(newZoom)}
               min={1}
-              max={5}
+              max={Math.max(5, getPlateFitZoom())}
               step={0.1}
               className="w-full"
             />
