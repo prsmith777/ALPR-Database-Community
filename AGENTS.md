@@ -17,18 +17,22 @@ commit deployed to each server.
 ## Normal update workflow
 
 1. Make changes on a feature branch.
-2. Run `yarn test`, `yarn typecheck`, `yarn lint`, and `yarn build`.
-3. Commit and push the validated changes.
-4. Fast-forward the remote `staging` branch to the selected commit.
-5. With explicit staging approval, deploy to `alpr-staging` (`192.168.0.4`)
+2. For every production candidate, update `lib/help-manual.mjs` and
+   `docs/COMMUNITY_PRODUCT_ROADMAP.md` in the same release. Bump the manual
+   version/date/baseline, document changed behavior, and keep delivered versus
+   planned roadmap status accurate.
+3. Run `yarn test`, `yarn typecheck`, `yarn lint`, and `yarn build`.
+4. Commit and push the validated changes.
+5. Fast-forward the remote `staging` branch to the selected commit.
+6. With explicit staging approval, deploy to `alpr-staging` (`192.168.0.4`)
    using the existing restricted `alpr-staging-ssh` operations:
    `status`/`repo_status`/`stack_status`/`health`, then `sync`, `image_build`,
    `verify`, and `deploy`.
-6. Perform staging health and browser acceptance checks. Keep synthetic
+7. Perform staging health and browser acceptance checks. Keep synthetic
    fixtures separate from deployment and never load them automatically.
-7. After the owner accepts staging, merge or fast-forward the tested tree to
+8. After the owner accepts staging, merge or fast-forward the tested tree to
    `main`.
-8. Deploy production (`192.168.0.227`) only with a separate production tool
+9. Deploy production (`192.168.0.227`) only with a separate production tool
    and explicit production approval. Back up PostgreSQL, record the previous
    commit/image, update to the accepted source, build, migrate once, restart,
    and health-check.

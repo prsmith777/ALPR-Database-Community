@@ -18,6 +18,26 @@ reliable background processing.
 6. Audit sensitive searches, exports, corrections, rule changes, and
    destructive maintenance.
 
+## Production baseline — July 24, 2026
+
+- The current production release is `4166d78` (application `0.1.9`). Named
+  users and roles, evidence-preserving plate review, filter-respecting exports,
+  the Watchlist UI, the searchable help center, and local privacy controls are
+  available.
+- Unified notifications now include migration preview, idempotent disabled
+  copies, restricted disabled-rule editing, no-delivery simulation, shadow
+  comparison, administrator approval evidence, atomic per-rule cutover, and
+  immediate rollback. Three migrated MQTT rules are active in the unified
+  runtime; both Delivery-tag rules remain on their legacy paths until a real
+  matching read supplies positive shadow evidence.
+- Vehicle ReID visual search, uploaded-image queries, camera fallback profiles,
+  calibration feedback, and the resumable safety-aware background index worker
+  are available. Original captures remain unchanged.
+
+Every production candidate must update this baseline and the in-app help model
+in the same release. Roadmap items below describe the remaining product work,
+not an assertion that every item in a phase is already installed.
+
 ## Delivery phases
 
 ### Phase 1 — UX and fork baseline
@@ -56,16 +76,15 @@ Generalize the durable MQTT rule/outbox foundation into a channel-neutral
 event, condition, and action engine. Migrate Pushover and MQTT into the same
 model before adding email and webhooks.
 
-**In progress:** the first implementation slice adds the inert normalized rule,
-nested-condition, channel/action, execution, delivery, and attempt records plus
-a deterministic explainable evaluator. The second slice adds a read-only preview
-of how existing Pushover and MQTT rules map into that shared model, including any
-configuration blockers, while keeping every proposed rule disabled. The third
-slice can transactionally create idempotently tracked disabled copies after an
-administrator confirms the preview; it audits the operation and leaves every
-legacy delivery path unchanged. Existing Pushover and MQTT delivery remain
-unchanged until the copied rules are reviewed and a separate cutover is
-explicitly approved.
+**Partially delivered:** the normalized rule, nested-condition, channel/action,
+execution, delivery, and attempt records are implemented with a deterministic,
+explainable evaluator. Production also has read-only migration preview,
+idempotently tracked disabled copies, restricted draft editing, no-delivery
+simulation, shadow comparison, administrator approval evidence, atomic
+per-rule cutover, and rollback. Existing Pushover or MQTT delivery stays on its
+legacy path until that individual copy has positive evidence and an explicit
+cutover. Remaining work is the general-purpose rule builder and the additional
+triggers, conditions, and channels below.
 
 Initial triggers and conditions:
 
