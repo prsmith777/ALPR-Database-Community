@@ -5,6 +5,7 @@ import {
   getSettings,
 } from "@/app/actions";
 import { getAuthConfig } from "@/lib/auth";
+import { getStorageHealth } from "@/lib/storage-health-runtime.mjs";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -19,12 +20,13 @@ export default async function SettingsPage() {
     currentUser: access.currentUser,
     canManageUsers: false,
   };
-  const [settings, authConfig, identityState] = await Promise.all([
+  const [settings, authConfig, identityState, storageHealth] = await Promise.all([
     canManageSettings ? getSettings() : Promise.resolve(null),
     canManageSettings ? getAuthConfig() : Promise.resolve({ apiKey: "" }),
     canManageUsers
       ? getIdentityAdminState()
       : Promise.resolve(personalIdentityState),
+    canManageSettings ? getStorageHealth() : Promise.resolve(null),
   ]);
 
   if (canManageSettings && !settings) {
@@ -36,6 +38,7 @@ export default async function SettingsPage() {
       initialSettings={settings}
       initialApiKey={authConfig.apiKey || ""}
       initialIdentityState={identityState}
+      initialStorageHealth={storageHealth}
       canManageSettings={canManageSettings}
     />
   );

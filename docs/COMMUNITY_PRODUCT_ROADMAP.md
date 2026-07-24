@@ -45,6 +45,11 @@ reliable background processing.
 - Vehicle ReID visual search, uploaded-image queries, camera fallback profiles,
   calibration feedback, and the resumable safety-aware background index worker
   are available. Original captures remain unchanged.
+- Administrators now have a read-only Storage Health view in Data & Privacy.
+  It reports mounted-filesystem capacity, PostgreSQL and plate-read size,
+  record/image-path counts, recent ingestion, visual-index state,
+  index-confirmed missing sources, a bounded recent-file bytes/read sample,
+  and estimated 70/80/90% capacity dates. It performs no cleanup or mutation.
 
 Every production candidate must update this baseline and the in-app help model
 in the same release. The exact deployed Git SHA belongs in deployment status
@@ -131,11 +136,17 @@ Operational behavior:
 
 ### Phase 4 — Operations, storage, and updates
 
+**Partially delivered:** the administrator-only, read-only Storage Health view
+provides direct filesystem/database measurements, bounded count queries, a
+120-read asset-size sample, and clearly labeled growth projections. It reports
+index-confirmed missing sources and records without image paths separately.
+It does not recursively reconcile the filesystem or expose any maintenance
+action.
+
 - Move retention and record pruning out of ingest into a scheduled,
   single-flight maintenance worker.
-- Report mounted filesystem capacity, PostgreSQL size, record/image counts,
-  orphaned/missing files, reads/day, bytes/read, and projected exhaustion or
-  prune dates.
+- Add bounded, reviewable filesystem reconciliation for exact orphaned-file
+  inventory before any cleanup workflow is considered.
 - Add safe reconcile, prune, `VACUUM ANALYZE`, backup, restore-preflight, and
   backup-verification jobs. Do not expose an arbitrary SQL or shell console.
 - Display current version, git SHA, release channel, and release notes.

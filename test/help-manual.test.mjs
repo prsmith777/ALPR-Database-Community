@@ -14,7 +14,7 @@ async function source(path) {
 }
 
 test("the user guide is structured, searchable, and role-aware", () => {
-  assert.equal(HELP_MANUAL.manualVersion, "1.6");
+  assert.equal(HELP_MANUAL.manualVersion, "1.7");
   assert.ok(HELP_MANUAL.sections.length >= 14);
 
   const ids = HELP_MANUAL.sections.map((section) => section.id);
@@ -55,6 +55,8 @@ test("the guide covers required workflows and clearly labels planned features", 
     "matching real accepted read",
     "vehicle image similarity search",
     "configurable image overlays",
+    "read storage health safely",
+    "cannot delete or modify images",
   ]) {
     assert.match(text, new RegExp(required, "i"));
   }
