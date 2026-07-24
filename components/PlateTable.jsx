@@ -263,10 +263,11 @@ export default function PlateTable({
 
   // Cycle through images without clicking out with arrow keys
   const handleKeyPress = (e) => {
-    // Don't handle arrow keys if any input element is focused
+    // Leave arrow keys to editable controls and the zoom slider.
     if (
-      document.activeElement?.tagName === "INPUT" ||
-      document.activeElement?.tagName === "TEXTAREA"
+      document.activeElement?.matches(
+        'input, textarea, select, [role="slider"], [contenteditable="true"]'
+      )
     ) {
       return;
     }

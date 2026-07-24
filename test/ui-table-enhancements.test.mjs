@@ -40,6 +40,7 @@ test("live feed image review advances visibly and starts focused on the plate", 
   assert.match(plateTable, />Next read</);
   assert.match(plateTable, /className="flex shrink-0 gap-2"/);
   assert.match(plateTable, /Show next read \(Right Arrow\)/);
+  assert.match(plateTable, /\[role="slider"\]/);
   assert.match(plateTable, /sm:grid-rows-\[auto_auto_minmax\(0,1fr\)_auto\].*sm:overflow-hidden/);
   assert.match(plateTable, /className="contents"/);
   assert.match(plateTable, /className="ml-auto flex gap-2"/);
