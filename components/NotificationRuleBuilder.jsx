@@ -2,7 +2,7 @@
 
 import { BellRing, FlaskConical, Plus, Save, ShieldCheck, Trash2 } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { useMemo, useState, useTransition } from "react";
+import { useEffect, useMemo, useState, useTransition } from "react";
 
 import {
   previewNotificationRuleBuilderDraft,
@@ -14,6 +14,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
+import { preferredRuleTimeZone, syncQuietHoursTimeZone } from "@/lib/notification-rule-time-zone.mjs";
 
 const CONDITION_LABELS = {
   always: "Any accepted read",
@@ -276,6 +277,23 @@ export function NotificationRuleBuilder({ overview }) {
   const [isPending, startTransition] = useTransition();
   const editable = useMemo(() => rules.filter((rule) => !rule.managedByMigration), [rules]);
 
+  useEffect(() => {
+    const browserTimeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+    const preferred = preferredRuleTimeZone({ browserTimeZone, configuredTimeZone: options.localTimeZone });
+    setDraft((current) => {
+      if (current.ruleId || current.name || current.timeZone !== options.localTimeZone || current.timeZone === preferred) return current;
+      return {
+        ...current,
+        timeZone: preferred,
+        quietHours: syncQuietHoursTimeZone({
+          quietHours: current.quietHours,
+          priorRuleTimeZone: current.timeZone,
+          nextRuleTimeZone: preferred,
+        }),
+      };
+    });
+  }, [options.localTimeZone]);
+
   function patchAction(key, changes) {
     setDraft((current) => ({ ...current, actions: current.actions.map((action) => action.key === key ? { ...action, ...changes } : action) }));
   }
@@ -342,7 +360,7 @@ export function NotificationRuleBuilder({ overview }) {
         <Textarea value={draft.description} onChange={(event) => setDraft({ ...draft, description: event.target.value })} placeholder="Optional description" />
         <div className="grid gap-3 rounded-lg border p-3 md:grid-cols-3">
           <label className="space-y-1 text-sm"><span className="font-medium">Trigger</span><Select className="w-full" value={draft.eventType} onChange={(eventType) => setDraft({ ...draft, eventType, conditionTree: eventType === "camera.activity_check" ? defaultActivityGroup() : defaultGroup() })}><option value="plate_read.accepted">Accepted plate read</option><option value="camera.activity_check">Scheduled camera activity</option></Select></label>
-          <label className="space-y-1 text-sm"><span className="font-medium">Rule time zone</span><Input value={draft.timeZone} onChange={(event) => setDraft({ ...draft, timeZone: event.target.value })} placeholder="America/Denver" /></label>
+          <label className="space-y-1 text-sm"><span className="font-medium">Rule time zone</span><Input value={draft.timeZone} onChange={(event) => { const nextRuleTimeZone = event.target.value; setDraft({ ...draft, timeZone: nextRuleTimeZone, quietHours: syncQuietHoursTimeZone({ quietHours: draft.quietHours, priorRuleTimeZone: draft.timeZone, nextRuleTimeZone }) }); }} placeholder="America/Denver" /></label>
           {draft.eventType === "camera.activity_check" ? <label className="space-y-1 text-sm"><span className="font-medium">Check every (seconds)</span><Input type="number" min="60" max="86400" value={draft.evaluationIntervalSeconds} onChange={(event) => setDraft({ ...draft, evaluationIntervalSeconds: event.target.value })} /></label> : <div className="self-end text-xs text-muted-foreground">Conditions use the read&apos;s stored event time.</div>}
         </div>
         <div className="space-y-3 rounded-lg border p-3">

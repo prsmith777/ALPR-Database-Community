@@ -6,6 +6,7 @@ import {
   parseNotificationRuleDraft,
 } from "../lib/notification-rule-builder-shape.mjs";
 import { NotificationRuleBuilderRepository } from "../lib/notification-rule-builder-repository.mjs";
+import { preferredRuleTimeZone, syncQuietHoursTimeZone } from "../lib/notification-rule-time-zone.mjs";
 
 function validDraft(overrides = {}) {
   return {
@@ -133,4 +134,19 @@ test("scheduled camera drafts bind the event type consistently in PostgreSQL", a
   assert.equal(insert.values[2], "camera.activity_check");
   assert.match(insert.sql, /\$3::text/);
   assert.ok(calls.some(({ sql }) => sql === "COMMIT"));
+});
+
+test("new calendar rules prefer the browser clock and keep quiet hours aligned", () => {
+  assert.equal(preferredRuleTimeZone({ browserTimeZone: "America/Denver", configuredTimeZone: "UTC" }), "America/Denver");
+  assert.equal(preferredRuleTimeZone({ browserTimeZone: "invalid", configuredTimeZone: "America/Chicago" }), "America/Chicago");
+  assert.equal(syncQuietHoursTimeZone({
+    quietHours: { enabled: true, timeZone: "UTC" },
+    priorRuleTimeZone: "UTC",
+    nextRuleTimeZone: "America/Denver",
+  }).timeZone, "America/Denver");
+  assert.equal(syncQuietHoursTimeZone({
+    quietHours: { enabled: true, timeZone: "America/New_York" },
+    priorRuleTimeZone: "UTC",
+    nextRuleTimeZone: "America/Denver",
+  }).timeZone, "America/New_York");
 });
