@@ -80,6 +80,30 @@ test("plate conditions reuse the shared exact and fuzzy matching profiles", () =
   assert.equal(strict.evidence.method, "ocr");
 });
 
+test("plate conditions support contains, wildcard, OCR-only, and bounded edit-distance strategies", () => {
+  const contains = evaluateNotificationCondition(
+    condition("plate_match", "matches", { plate: "P0M", strategy: "contains" }),
+    { event: acceptedRead }
+  );
+  const wildcard = evaluateNotificationCondition(
+    condition("plate_match", "matches", { plate: "DP?M*", strategy: "wildcard" }),
+    { event: acceptedRead }
+  );
+  const ocr = evaluateNotificationCondition(
+    condition("plate_match", "matches", { plate: "DPOM90", strategy: "ocr_confusion" }),
+    { event: acceptedRead }
+  );
+  const edited = evaluateNotificationCondition(
+    condition("plate_match", "matches", { plate: "DP0M91", strategy: "edit_distance", maximumDistance: 1 }),
+    { event: acceptedRead }
+  );
+
+  assert.equal(contains.matched, true);
+  assert.equal(wildcard.matched, true);
+  assert.equal(ocr.evidence.method, "ocr");
+  assert.equal(edited.evidence.distance, 1);
+});
+
 test("known-name conditions preserve legacy MQTT name matching", () => {
   const matching = evaluateNotificationCondition(
     condition("known_name", "equals", { names: ["Liz's Lexus"] }),

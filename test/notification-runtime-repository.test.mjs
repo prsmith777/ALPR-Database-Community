@@ -38,3 +38,19 @@ test("cooldown history is loaded only for explicit enabled rule IDs", async () =
     4: "2026-07-24T12:00:00.000Z",
   });
 });
+
+test("read-count metrics are deduplicated and scoped to the event at evaluation time", async () => {
+  const calls = [];
+  const repository = new NotificationRuntimeRepository({ executor: {
+    async query(sql, values) {
+      calls.push({ sql, values });
+      return { rows: [{ count: values[2] === "plate" ? 4 : 9 }] };
+    },
+  } });
+  const count = (scope, windowSeconds) => ({ kind: "condition", conditionType: "read_count", value: { scope, windowSeconds } });
+  const rules = [{ conditionTree: { kind: "group", children: [count("plate", 600), count("plate", 600), count("global", 0)] } }];
+  const metrics = await repository.loadReadCountMetrics({ rules, event: { plateNumber: "ABC123", cameraName: "Gate", timestamp: "2026-07-24T12:00:00Z" } });
+  assert.equal(calls.length, 2);
+  assert.deepEqual(metrics.readCounts.map((metric) => metric.count), [4, 9]);
+  assert.match(calls[0].sql, /pr\.timestamp <= \$1::timestamptz/);
+});

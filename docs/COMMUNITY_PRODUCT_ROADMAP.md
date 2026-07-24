@@ -33,11 +33,11 @@ reliable background processing.
   two deleted Delivery-tag sources left disabled orphaned copies; this release
   adds audited retirement that preserves those rules and evidence while
   removing them from active migration workflows.
-- A focused general-purpose notification builder is now available for new
-  rules. It supports disabled drafts and versioned edits, one nested All/Any
-  group, accepted-read, exact/shared-fuzzy plate, known-plate, tag, Monitored
-  Plate, camera, confidence, and local schedule conditions, MQTT and Pushover
-  actions, cooldowns, recent-read no-delivery preview, and separate audited
+- A general-purpose notification builder is now available for new rules. It
+  supports disabled drafts and versioned edits, six-level AND/OR/NOT groups,
+  accepted-read, explicit/fuzzy plate, known-plate/name, tag, Monitored Plate,
+  camera, confidence, read-count, and local schedule conditions, MQTT and
+  Pushover actions, cooldowns, recent-read no-delivery preview with traces, and separate audited
   atomic activation/deactivation. Existing migrated copies cannot bypass their
   guarded shadow-review and cutover workflow. MQTT continues through its
   durable outbox; Pushover remains best-effort after the read transaction
@@ -111,30 +111,35 @@ per-rule cutover, and rollback. Existing Pushover or MQTT delivery stays on its
   retired with an audited, non-deleting workflow. The focused builder for new
   rules now covers accepted reads, the principal plate/context filters,
   schedules, MQTT/Pushover actions, cooldown, preview, and audited activation.
-  Remaining work is the advanced triggers, deeper visual composition,
+  The next builder increment adds persisted-event-time read-count metrics for
+  same-plate, same-camera, and global lifetime/period thresholds; explicit
+  exact, contains, wildcard, OCR-confusion, and bounded edit-distance plate
+  strategies; six-level AND/OR/NOT visual composition; and expandable
+  no-delivery preview traces. Remaining work is scheduled camera inactivity,
   durable channel-neutral delivery, and additional channels below.
 
 Initial triggers and conditions:
 
 - arrival and any accepted read;
-- plate seen at least X times within Y minutes;
+- plate seen at least X times within Y minutes (builder/runtime delivered);
 - no/fewer than X reads for a camera within Y minutes;
 - active weekdays and local-time windows, including overnight windows;
 - camera/site/direction, known-plate name, tag, and monitored-plate state;
-- lifetime or period read-count thresholds;
-- exact, contains, wildcard, OCR-confusion, edit-distance, and OCR-candidate
-  plate matching;
+- lifetime or period read-count thresholds (accepted-read builder/runtime delivered);
+- exact, contains, wildcard, OCR-confusion, and edit-distance plate matching
+  (delivered); OCR-candidate matching remains dependent on candidate data;
 - confidence thresholds and, when available, vehicle make/model/color/type.
 
 Operational behavior:
 
-- arbitrary-depth visual AND/OR composition beyond the focused builder's one
-  nested group;
+- deeper visual AND/OR/NOT composition beyond the focused builder's former one
+  nested group (delivered with a six-level safety bound);
 - explicit rule timezone and event-time evaluation;
 - quiet hours and channel-neutral delivery retries/dead-letter state (MQTT
   already has durable retry and deduplication; Pushover is currently
   best-effort after commit);
-- expanded alert history that exposes the stored condition trace in the UI;
+- expandable recent-read preview traces are delivered; full alert-history
+  trace presentation remains;
 - account-wide Pushover monthly quota visibility so rule volume can be planned
   before the service rejects messages.
 
