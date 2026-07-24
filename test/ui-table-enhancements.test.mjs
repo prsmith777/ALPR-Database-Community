@@ -38,10 +38,21 @@ test("live feed image review advances visibly and starts focused on the plate", 
   assert.match(plateTable, /const handleNextImage = \(\) =>/);
   assert.match(plateTable, /onClick=\{handleNextImage\}/);
   assert.match(plateTable, />Next read</);
+  assert.match(plateTable, /className="flex shrink-0 gap-2"/);
   assert.match(plateTable, /Show next read \(Right Arrow\)/);
+  assert.match(plateTable, /max-h-\[calc\(100vh-2rem\)\].*overflow-y-auto/);
   assert.match(imageViewer, /useState\(image\?\.crop_coordinates \? 3 : 1\)/);
   assert.match(imageViewer, /setZoom\(image\?\.crop_coordinates \? 3 : 1\)/);
   assert.match(imageViewer, />\s*Reset/);
+});
+
+test("plate correction opens with an editable caret instead of selected text", async () => {
+  const plateTable = await source("components/PlateTable.jsx");
+
+  assert.match(plateTable, /const correctionInputRef = useRef\(null\)/);
+  assert.match(plateTable, /onOpenAutoFocus=\{\(event\) => \{/);
+  assert.match(plateTable, /input\.setSelectionRange\(cursorPosition, cursorPosition\)/);
+  assert.match(plateTable, /ref=\{correctionInputRef\}/);
 });
 
 test("plate identifiers request a slashed-zero glyph throughout the interface", async () => {
