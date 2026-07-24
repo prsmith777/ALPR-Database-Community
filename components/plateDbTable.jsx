@@ -674,7 +674,7 @@ export default function PlateTable({ matchingSettings }) {
                               variant="ghost"
                               size="icon"
                               aria-label={`${
-                                plate.flagged ? "Remove flag from" : "Flag"
+                                plate.flagged ? "Stop monitoring" : "Monitor"
                               } ${plate.plate_number}`}
                               className={
                                 plate.flagged
@@ -694,12 +694,12 @@ export default function PlateTable({ matchingSettings }) {
                                 }`}
                               />
                               <span className="sr-only">
-                                {plate.flagged ? "Remove flag" : "Add flag"}
+                                {plate.flagged ? "Stop monitoring" : "Monitor plate"}
                               </span>
                             </Button>
                           </TooltipTrigger>
                           <TooltipContent>
-                            {plate.flagged ? "Remove flag" : "Flag plate"}
+                            {plate.flagged ? "Stop monitoring" : "Monitor plate"}
                           </TooltipContent>
                         </Tooltip>}
 
@@ -814,7 +814,7 @@ export default function PlateTable({ matchingSettings }) {
                                 plate.flagged ? "fill-current text-red-500" : ""
                               }`}
                             />
-                            {plate.flagged ? "Remove Flag" : "Add Flag"}
+                            {plate.flagged ? "Stop Monitoring" : "Monitor Plate"}
                           </DropdownMenuItem>}
 
                           {canDelete && <DropdownMenuItem

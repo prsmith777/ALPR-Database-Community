@@ -55,6 +55,7 @@ import {
 import {
   cutoverNotificationRule,
   getNotificationCutoverPreview as loadNotificationCutoverPreview,
+  retireOrphanedNotificationRule,
   rollbackNotificationRule,
 } from "@/lib/notification-cutover-runtime.mjs";
 import {
@@ -651,10 +652,20 @@ export async function alterPlateFlag(formData) {
   try {
     const plateNumber = formData.get("plateNumber");
     const flagged = formData.get("flagged") === "true";
+    const reason = formData.has("monitorReason")
+      ? formData.get("monitorReason")
+      : undefined;
+    const priority = formData.has("monitorPriority")
+      ? formData.get("monitorPriority")
+      : undefined;
 
-    const result = await togglePlateFlag(plateNumber, flagged);
+    const result = await togglePlateFlag(plateNumber, flagged, {
+      reason,
+      priority,
+    });
 
     revalidatePath("/flagged");
+    revalidatePath("/known_plates");
     revalidatePath("/database");
 
     return {
@@ -932,6 +943,41 @@ export async function rollbackUnifiedNotificationRule(formData) {
         error instanceof Error && CUTOVER_SAFE_MESSAGES.has(error.message)
           ? error.message
           : "Failed to roll back unified notification rule",
+    };
+  }
+}
+
+const RETIRE_ORPHAN_SAFE_MESSAGES = new Set([
+  "Select a valid orphaned unified rule to retire",
+  "The migrated unified rule was not found",
+  "Retirement requires a removed legacy source rule",
+  "Retirement requires the unified rule, channel, and actions to remain disabled",
+  "A migration with cutover history cannot be retired",
+]);
+
+export async function retireOrphanedUnifiedNotificationRule(formData) {
+  const principal = await requirePermission("notification.manage");
+  if (formData?.get("confirmation") !== "retire_orphaned_migration") {
+    return {
+      success: false,
+      error: "Confirm retirement of the disabled orphaned migration before continuing.",
+    };
+  }
+  try {
+    const data = await retireOrphanedNotificationRule({
+      ruleId: formData.get("ruleId"),
+      actor: principal,
+    });
+    revalidatePath("/notifications");
+    return { success: true, data };
+  } catch (error) {
+    console.error("Error retiring orphaned unified notification migration:", error);
+    return {
+      success: false,
+      error:
+        error instanceof Error && RETIRE_ORPHAN_SAFE_MESSAGES.has(error.message)
+          ? error.message
+          : "Failed to retire the orphaned notification migration",
     };
   }
 }
@@ -1753,11 +1799,12 @@ export async function validatePlateRecord(readId, value) {
   }
 }
 
-export async function addDBPlate(plate_number, flagged = false) {
+export async function addDBPlate(plate_number, flagged = false, monitoring = {}) {
   await requirePermission("plate.review");
   try {
-    await addUnseenPlate(plate_number, flagged);
+    await addUnseenPlate(plate_number, flagged, monitoring);
     revalidatePath("/flagged");
+    revalidatePath("/known_plates");
     return { success: true };
   } catch (error) {
     console.error("Error adding plate:", error);

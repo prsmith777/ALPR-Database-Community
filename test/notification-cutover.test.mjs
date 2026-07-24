@@ -89,6 +89,50 @@ function transactionalPool({ cutoverActive = false, shadowStatus = "approved", d
   };
 }
 
+function orphanedPool({ sourceExists = false, transitionCount = 0, deliveryEnabled = false } = {}) {
+  const calls = [];
+  const client = {
+    async query(sql, values = []) {
+      const normalized = String(sql).replace(/\s+/g, " ").trim();
+      calls.push({ sql: normalized, values });
+      if (
+        normalized.includes("AS source_exists") &&
+        normalized.includes("FOR UPDATE OF m, r")
+      ) {
+        return {
+          rows: [{
+            migration_id: 12,
+            source_type: "mqtt",
+            source_id: 99,
+            target_rule_id: 61,
+            name: "Removed delivery rule",
+            enabled: false,
+            version: 3,
+            source_exists: sourceExists,
+            transition_count: transitionCount,
+          }],
+        };
+      }
+      if (normalized.startsWith("SELECT a.id AS action_id")) {
+        return {
+          rows: [{
+            action_id: 71,
+            action_enabled: deliveryEnabled,
+            channel_id: 81,
+            channel_enabled: deliveryEnabled,
+          }],
+        };
+      }
+      return { rowCount: 1, rows: [] };
+    },
+    release() {},
+  };
+  return {
+    calls,
+    pool: { query: (...args) => client.query(...args), connect: async () => client },
+  };
+}
+
 test("guarded cutover atomically disables legacy before enabling the approved unified rule", async () => {
   const fixture = transactionalPool();
   const repository = new NotificationCutoverRepository({
@@ -175,6 +219,47 @@ test("rollback atomically disables unified delivery before restoring the legacy 
   ));
 });
 
+test("an orphaned disabled migration is retired without deleting its rule or evidence", async () => {
+  const fixture = orphanedPool();
+  const repository = new NotificationCutoverRepository({ pool: fixture.pool });
+  const result = await repository.retireOrphaned({
+    ruleId: 61,
+    actor: { id: 9 },
+  });
+
+  assert.deepEqual(result, {
+    ruleId: 61,
+    state: "retired",
+    targetRuleDeleted: false,
+    evidenceDeleted: false,
+    deliveryChanged: false,
+  });
+  assert.ok(fixture.calls.some(({ sql }) =>
+    sql.startsWith("UPDATE public.notification_rule_migrations") &&
+    sql.includes("retired_at = CURRENT_TIMESTAMP")
+  ));
+  assert.ok(fixture.calls.some(({ sql, values }) =>
+    sql.includes("INSERT INTO public.audit_events") &&
+    values[1] === "61"
+  ));
+  assert.ok(!fixture.calls.some(({ sql }) => /^DELETE /i.test(sql)));
+  assert.ok(fixture.calls.some(({ sql }) => sql === "COMMIT"));
+});
+
+test("orphan retirement refuses an existing source or prior cutover history", async () => {
+  for (const fixture of [
+    orphanedPool({ sourceExists: true }),
+    orphanedPool({ transitionCount: 1 }),
+  ]) {
+    const repository = new NotificationCutoverRepository({ pool: fixture.pool });
+    await assert.rejects(
+      repository.retireOrphaned({ ruleId: 61, actor: { id: 9 } }),
+      /removed legacy source|cutover history/
+    );
+    assert.ok(fixture.calls.some(({ sql }) => sql === "ROLLBACK"));
+  }
+});
+
 test("cutover state exposes runtime and approval blockers", () => {
   const mapped = notificationCutoverRepositoryInternals.mapState(
     {
@@ -201,6 +286,31 @@ test("cutover state exposes runtime and approval blockers", () => {
   assert.match(mapped.blockers.join(" "), /adapter is not available/i);
 });
 
+test("cutover state exposes safely disabled copies whose source was removed", () => {
+  const mapped = notificationCutoverRepositoryInternals.mapState({
+    migration_id: 12,
+    source_type: "mqtt",
+    source_id: 99,
+    target_rule_id: 61,
+    target_name: "Removed delivery rule",
+    target_version: 3,
+    source_enabled: null,
+    target_enabled: false,
+    action_count: 1,
+    all_delivery_disabled: true,
+    all_delivery_enabled: false,
+    runtime_supported: true,
+    target_cooldown_seconds: 0,
+    source_configuration: null,
+    delivery_configurations: [],
+    latest_direction: null,
+  });
+  assert.equal(mapped.state, "source_removed");
+  assert.equal(mapped.canRetire, true);
+  assert.equal(mapped.canCutover, false);
+  assert.match(mapped.blockers.join(" "), /can be retired/i);
+});
+
 test("cutover UI and schema preserve explicit confirmation, rollback, and audit boundaries", async () => {
   const [actions, component, page, migration, route] = await Promise.all([
     readFile(new URL("../app/actions.js", import.meta.url), "utf8"),
@@ -212,8 +322,11 @@ test("cutover UI and schema preserve explicit confirmation, rollback, and audit 
   assert.match(actions, /cutoverUnifiedNotificationRule[\s\S]*?requirePermission\("notification\.manage"\)/);
   assert.match(actions, /cutover_one_rule/);
   assert.match(actions, /rollback_one_rule/);
+  assert.match(actions, /retire_orphaned_migration/);
   assert.match(component, /atomically restores its legacy rule/);
+  assert.match(component, /Retire orphaned migration/);
   assert.match(page, /NotificationCutoverPanel/);
   assert.match(migration, /notification_rule_cutover_events is append-only/);
+  assert.match(migration, /retired_at TIMESTAMPTZ/);
   assert.match(route, /notificationService\.processAcceptedRead\(acceptedRead\)/);
 });

@@ -2,10 +2,11 @@
 
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
-import { ArrowLeftRight, RotateCcw, ShieldCheck } from "lucide-react";
+import { Archive, ArrowLeftRight, RotateCcw, ShieldCheck } from "lucide-react";
 
 import {
   cutoverUnifiedNotificationRule,
+  retireOrphanedUnifiedNotificationRule,
   rollbackUnifiedNotificationRule,
 } from "@/app/actions";
 import { Badge } from "@/components/ui/badge";
@@ -18,16 +19,26 @@ function RuleCutover({ rule }) {
   const [message, setMessage] = useState(null);
   const [isPending, startTransition] = useTransition();
   const active = rule.state === "unified_active";
+  const orphaned = rule.canRetire === true;
 
   function submit() {
     setMessage(null);
     startTransition(async () => {
       const formData = new FormData();
       formData.set("ruleId", String(rule.targetRuleId));
-      formData.set("confirmation", active ? "rollback_one_rule" : "cutover_one_rule");
-      const result = active
-        ? await rollbackUnifiedNotificationRule(formData)
-        : await cutoverUnifiedNotificationRule(formData);
+      formData.set(
+        "confirmation",
+        orphaned
+          ? "retire_orphaned_migration"
+          : active
+            ? "rollback_one_rule"
+            : "cutover_one_rule"
+      );
+      const result = orphaned
+        ? await retireOrphanedUnifiedNotificationRule(formData)
+        : active
+          ? await rollbackUnifiedNotificationRule(formData)
+          : await cutoverUnifiedNotificationRule(formData);
       if (!result.success) {
         setMessage({ kind: "error", text: result.error });
         return;
@@ -35,15 +46,17 @@ function RuleCutover({ rule }) {
       setConfirmed(false);
       setMessage({
         kind: "success",
-        text: active
-          ? "Rollback recorded. Legacy delivery is active and unified delivery is disabled."
-          : "Cutover recorded. Unified delivery is active and legacy delivery is disabled.",
+        text: orphaned
+          ? "Migration retired. Its unified rule and audit evidence remain stored and disabled."
+          : active
+            ? "Rollback recorded. Legacy delivery is active and unified delivery is disabled."
+            : "Cutover recorded. Unified delivery is active and legacy delivery is disabled.",
       });
       router.refresh();
     });
   }
 
-  const allowed = active ? rule.canRollback : rule.canCutover;
+  const allowed = orphaned || (active ? rule.canRollback : rule.canCutover);
   return (
     <div className="space-y-3 rounded-lg border p-4">
       <div className="flex flex-wrap items-start justify-between gap-3">
@@ -55,7 +68,7 @@ function RuleCutover({ rule }) {
         </div>
         <div className="flex flex-wrap gap-2">
           <Badge variant={rule.sourceEnabled ? "default" : "outline"}>
-            Legacy {rule.sourceEnabled ? "active" : "disabled"}
+            Legacy {rule.state === "source_removed" ? "removed" : rule.sourceEnabled ? "active" : "disabled"}
           </Badge>
           <Badge variant={rule.targetEnabled ? "default" : "secondary"}>
             Unified {rule.targetEnabled ? "active" : "disabled"}
@@ -84,16 +97,32 @@ function RuleCutover({ rule }) {
               className="mt-0.5 h-4 w-4"
             />
             <span>
-              {active
-                ? "I understand rollback disables this unified rule and atomically restores its legacy rule."
+              {orphaned
+                ? "I understand retirement removes this safely disabled copy from active migration workflows without deleting its rule, configuration, or audit evidence."
+                : active
+                  ? "I understand rollback disables this unified rule and atomically restores its legacy rule."
                 : rule.approvalMode === "intentional_expansion"
                   ? "I approve this intentional expansion and cutting over this one rule; legacy delivery will be disabled atomically before broader unified delivery becomes active."
                   : "I approve cutting over this one rule; legacy delivery will be disabled atomically before unified delivery becomes active."}
             </span>
           </label>
           <Button type="button" disabled={!confirmed || isPending} onClick={submit}>
-            {active ? <RotateCcw className="mr-2 h-4 w-4" aria-hidden="true" /> : <ArrowLeftRight className="mr-2 h-4 w-4" aria-hidden="true" />}
-            {isPending ? (active ? "Rolling back..." : "Cutting over...") : (active ? "Roll back this rule" : "Cut over this rule")}
+            {orphaned
+              ? <Archive className="mr-2 h-4 w-4" aria-hidden="true" />
+              : active
+                ? <RotateCcw className="mr-2 h-4 w-4" aria-hidden="true" />
+                : <ArrowLeftRight className="mr-2 h-4 w-4" aria-hidden="true" />}
+            {isPending
+              ? orphaned
+                ? "Retiring..."
+                : active
+                  ? "Rolling back..."
+                  : "Cutting over..."
+              : orphaned
+                ? "Retire orphaned migration"
+                : active
+                  ? "Roll back this rule"
+                  : "Cut over this rule"}
           </Button>
         </div>
       )}
@@ -123,7 +152,7 @@ export function NotificationCutoverPanel({ preview }) {
               Switch one approved rule at a time. The legacy source and unified target change in one transaction, and every active unified rule exposes an immediate rollback.
             </CardDescription>
           </div>
-          <div className="flex gap-2"><Badge variant="outline">{preview.eligibleCount} eligible</Badge><Badge variant="outline">{preview.activeCount} active</Badge></div>
+          <div className="flex flex-wrap gap-2"><Badge variant="outline">{preview.eligibleCount} eligible</Badge><Badge variant="outline">{preview.activeCount} active</Badge><Badge variant="outline">{preview.orphanedCount || 0} orphaned</Badge></div>
         </div>
       </CardHeader>
       <CardContent className="space-y-4">

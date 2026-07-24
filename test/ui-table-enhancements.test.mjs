@@ -60,16 +60,25 @@ test("live feed date picker remains within the visible viewport", async () => {
   assert.match(plateTable, /sticky="always"/);
 });
 
-test("Watchlist explains unified-rule behavior and provides exact-read actions", async () => {
-  const [page, table, database] = await Promise.all([
+test("Monitored Plates is integrated with Known Plates and preserves exact-read actions", async () => {
+  const [page, redirectPage, workspace, table, database, sidebar] = await Promise.all([
+    source("app/known_plates/page.jsx"),
     source("app/flagged/page.jsx"),
+    source("components/KnownPlatesWorkspace.jsx"),
     source("components/FlaggedPlatesTable.jsx"),
     source("lib/db.js"),
+    source("components/Sidebar.jsx"),
   ]);
 
-  assert.match(page, /title="Watchlist"/);
-  assert.match(table, /Watchlist is integrated with unified rules/);
+  assert.match(page, /KnownPlatesWorkspace/);
+  assert.match(redirectPage, /redirect\("\/known_plates\?view=monitored"\)/);
+  assert.match(workspace, /Monitored Plates/);
+  assert.match(table, /Monitored Plates works with unified rules/);
+  assert.match(table, /monitorReason/);
+  assert.match(table, /monitorPriority/);
   assert.match(table, /alterPlateFlag/);
   assert.match(table, /matchMode=off/);
   assert.match(database, /COUNT\(DISTINCT pr\.id\) as occurrence_count/);
+  assert.match(database, /monitor_reason/);
+  assert.doesNotMatch(sidebar, /label: "Watchlist"/);
 });
