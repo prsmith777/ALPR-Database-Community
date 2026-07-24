@@ -1512,3 +1512,39 @@ VALUES (
     'Default unconfigured cameras to full-image detector fallback while preserving explicit profiles.'
 )
 ON CONFLICT (version) DO NOTHING;
+
+-- Human calibration labels are stored against a canonical pair of immutable
+-- capture reads and the exact embedding model that produced the score. The
+-- row holds the current label while append-only audit_events preserve every
+-- label change and its previous value.
+CREATE TABLE IF NOT EXISTS public.vehicle_match_feedback (
+    id BIGSERIAL PRIMARY KEY,
+    read_id_low INTEGER NOT NULL
+        REFERENCES public.plate_reads(id) ON DELETE CASCADE,
+    read_id_high INTEGER NOT NULL
+        REFERENCES public.plate_reads(id) ON DELETE CASCADE,
+    embedding_model VARCHAR(80) NOT NULL,
+    similarity_score REAL NOT NULL
+        CHECK (similarity_score BETWEEN -1 AND 1),
+    label VARCHAR(30) NOT NULL
+        CHECK (label IN ('same_vehicle', 'different_vehicle')),
+    actor_user_id BIGINT REFERENCES public.users(id) ON DELETE SET NULL,
+    actor_username VARCHAR(64) NOT NULL,
+    actor_display_name VARCHAR(120) NOT NULL,
+    revision INTEGER NOT NULL DEFAULT 1 CHECK (revision > 0),
+    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT vehicle_match_feedback_distinct_pair
+        CHECK (read_id_low < read_id_high),
+    UNIQUE (read_id_low, read_id_high, embedding_model)
+);
+
+CREATE INDEX IF NOT EXISTS idx_vehicle_match_feedback_model_label
+    ON public.vehicle_match_feedback (embedding_model, label, updated_at DESC);
+
+INSERT INTO public.schema_migrations (version, description)
+VALUES (
+    '2026072401_vehicle_match_feedback',
+    'Add audited human same/different vehicle labels for local Vehicle ReID calibration.'
+)
+ON CONFLICT (version) DO NOTHING;

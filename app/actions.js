@@ -1775,6 +1775,10 @@ function visualSearchFailure(error, fallback) {
     "INVALID_VISUAL_UPLOAD",
     "SOURCE_IMAGE_MISSING",
     "UPLOAD_TOO_LARGE",
+    "INVALID_VEHICLE_MATCH_LABEL",
+    "INVALID_VEHICLE_MATCH_PAIR",
+    "VEHICLE_MATCH_ASSET_UNAVAILABLE",
+    "VEHICLE_MATCH_MODEL_MISMATCH",
   ]);
   if (safeCodes.has(error?.code)) return { success: false, error: error.message };
   console.error(fallback, { code: String(error?.code || "") });
@@ -1799,6 +1803,7 @@ export async function getVisualSearchBootstrap() {
       data: {
         ...data,
         canManageIndex,
+        canReviewMatches: hasPermission(principal, "plate.review"),
         ...(visualIndexSettings ? {
           visualIndex: {
             settings: visualIndexSettings,
@@ -1909,5 +1914,21 @@ export async function findSimilarUploadedCaptures(input = {}) {
     return { success: true, data };
   } catch (error) {
     return visualSearchFailure(error, "Unable to search the uploaded image.");
+  }
+}
+
+export async function submitVehicleMatchFeedback(input = {}) {
+  const principal = await requirePermission("plate.review");
+  try {
+    const data = await (await getCaptureAssetService()).recordMatchFeedback({
+      sourceReadId: input.sourceReadId,
+      candidateReadId: input.candidateReadId,
+      label: input.label,
+      actor: principal,
+    });
+    revalidatePath("/visual_search");
+    return { success: true, data };
+  } catch (error) {
+    return visualSearchFailure(error, "Unable to save vehicle match feedback.");
   }
 }

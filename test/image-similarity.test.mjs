@@ -209,6 +209,9 @@ test("migration keeps image similarity inert and source images immutable", async
   assert.match(section, /2026072303_vehicle_reid_embeddings/i);
   assert.match(section, /ALTER COLUMN crop_mode SET DEFAULT 'full_frame'/i);
   assert.match(section, /2026072304_vehicle_detector_fallbacks/i);
+  assert.match(section, /CREATE TABLE IF NOT EXISTS public\.vehicle_match_feedback/i);
+  assert.match(section, /CHECK \(read_id_low < read_id_high\)/i);
+  assert.match(section, /2026072401_vehicle_match_feedback/i);
   assert.equal(/UPDATE\s+public\.plate_reads/i.test(section), false);
   assert.equal(/INSERT\s+INTO\s+public\.capture_assets[\s\S]*SELECT/i.test(section), false);
 });
@@ -222,6 +225,7 @@ test("visual-search actions enforce read and maintenance permissions", async () 
   assert.match(actions, /saveCameraVisualProfile[\s\S]*?requirePermission\("maintenance\.manage"\)/);
   assert.match(actions, /indexCameraCaptureAssetsBatch[\s\S]*?requirePermission\("maintenance\.manage"\)/);
   assert.match(actions, /findSimilarUploadedCaptures[\s\S]*?requirePermission\("plate\.read"\)/);
+  assert.match(actions, /submitVehicleMatchFeedback[\s\S]*?requirePermission\("plate\.review"\)/);
 });
 
 test("camera fallback setup is advanced, measured, and version-aware", async () => {
@@ -242,6 +246,10 @@ test("camera fallback setup is advanced, measured, and version-aware", async () 
   assert.match(component, /Drop a vehicle image here, or choose a file/);
   assert.match(component, /processed transiently/);
   assert.match(component, /ranked only by learned Vehicle ReID image embeddings/);
+  assert.match(component, /Is this the same vehicle\?/);
+  assert.match(component, /Same vehicle/);
+  assert.match(component, /Match calibration/);
+  assert.match(component, /early estimate is analysis only/);
 });
 
 test("detector statistics recommend fallback review only after meaningful misses", () => {
