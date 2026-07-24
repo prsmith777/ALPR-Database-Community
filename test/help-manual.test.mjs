@@ -14,7 +14,7 @@ async function source(path) {
 }
 
 test("the user guide is structured, searchable, and role-aware", () => {
-  assert.equal(HELP_MANUAL.manualVersion, "1.3");
+  assert.equal(HELP_MANUAL.manualVersion, "1.4");
   assert.ok(HELP_MANUAL.sections.length >= 14);
 
   const ids = HELP_MANUAL.sections.map((section) => section.id);
@@ -49,7 +49,8 @@ test("the guide covers required workflows and clearly labels planned features", 
     "export the exact filtered investigation",
     "choose a role for a new user",
     "safely configure mqtt",
-    "advanced notification rules are still inactive",
+    "unified rules use guarded cutover",
+    "matching real accepted read",
     "vehicle image similarity search",
     "configurable image overlays",
   ]) {
@@ -71,6 +72,29 @@ test("the Help page and PDF download allow every signed-in system role", async (
   assert.match(route, /Content-Type": "application\/pdf"/);
   assert.match(route, /Content-Disposition/);
   assert.match(route, /Cache-Control": "private, no-store"/);
+});
+
+test("the desktop guide index scrolls independently", async () => {
+  const help = await source("components/help/HelpManual.jsx");
+
+  assert.match(help, /lg:max-h-\[calc\(100vh-2rem\)\]/);
+  assert.match(help, /lg:overflow-y-auto/);
+  assert.match(help, /lg:overscroll-contain/);
+});
+
+test("production releases require help and roadmap updates", async () => {
+  const [instructions, runbook, roadmap] = await Promise.all([
+    source("AGENTS.md"),
+    source("docs/personal-deployment.md"),
+    source("docs/COMMUNITY_PRODUCT_ROADMAP.md"),
+  ]);
+
+  for (const text of [instructions, runbook]) {
+    assert.match(text, /every production candidate/i);
+    assert.match(text, /lib\/help-manual\.mjs/);
+    assert.match(text, /docs\/COMMUNITY_PRODUCT_ROADMAP\.md/);
+  }
+  assert.match(roadmap, /Production baseline — July 24, 2026/);
 });
 
 test("dashboard places Help immediately after Roadmap", async () => {

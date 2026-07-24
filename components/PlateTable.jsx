@@ -1129,7 +1129,12 @@ export default function PlateTable({
                     )}
                   </Button>
                 </PopoverTrigger>
-                <PopoverContent className="w-auto p-0" align="start">
+                <PopoverContent
+                  className="max-h-[var(--radix-popover-content-available-height)] w-auto overflow-y-auto overscroll-contain p-0"
+                  align="start"
+                  collisionPadding={16}
+                  sticky="always"
+                >
                   <Calendar
                     initialFocus
                     mode="range"

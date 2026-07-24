@@ -29,7 +29,13 @@ and rollback procedure on staging before production.
 
 ### 1. Prepare the update
 
-Develop on a feature branch and run:
+Develop on a feature branch. For every production candidate, update
+`lib/help-manual.mjs` and `docs/COMMUNITY_PRODUCT_ROADMAP.md` in the same
+release. Bump the manual version/date/baseline, describe changed user behavior,
+move newly delivered work out of planned-only guidance, and update the roadmap
+production baseline plus remaining work.
+
+Then run:
 
 ```text
 yarn test
@@ -82,6 +88,8 @@ command. The production procedure must:
 6. Run the required migration exactly once.
 7. Restart the application and wait for health.
 8. Check key pages and recent logs.
+9. Confirm the deployed help version and roadmap baseline describe this
+   production release.
 
 Never load staging fixtures into production.
 

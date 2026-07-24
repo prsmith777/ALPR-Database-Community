@@ -216,7 +216,7 @@ export default function HelpManual({ manual }) {
       </section>
 
       <div className="mt-6 grid gap-6 lg:grid-cols-[260px_minmax(0,1fr)]">
-        <aside className="h-fit rounded-xl border bg-card p-4 lg:sticky lg:top-4">
+        <aside className="h-fit rounded-xl border bg-card p-4 lg:sticky lg:top-4 lg:max-h-[calc(100vh-2rem)] lg:overflow-y-auto lg:overscroll-contain">
           <h2 className="flex items-center gap-2 font-semibold">
             <ShieldCheck className="h-4 w-4 text-blue-500" aria-hidden="true" />
             In this guide

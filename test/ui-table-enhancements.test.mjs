@@ -51,6 +51,15 @@ test("live feed and plate database expose large and multi-select filters", async
   assert.match(exportRoute, /getAll\("camera"\)/);
 });
 
+test("live feed date picker remains within the visible viewport", async () => {
+  const plateTable = await source("components/PlateTable.jsx");
+
+  assert.match(plateTable, /--radix-popover-content-available-height/);
+  assert.match(plateTable, /overflow-y-auto overscroll-contain/);
+  assert.match(plateTable, /collisionPadding=\{16\}/);
+  assert.match(plateTable, /sticky="always"/);
+});
+
 test("Watchlist explains unified-rule behavior and provides exact-read actions", async () => {
   const [page, table, database] = await Promise.all([
     source("app/flagged/page.jsx"),
