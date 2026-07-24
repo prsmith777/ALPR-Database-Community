@@ -2231,36 +2231,56 @@ export default function PlateTable({
             </DialogHeader>
 
             <div className="grid gap-5 py-2">
-              <div className="grid gap-3 rounded-lg border p-4 sm:grid-cols-2">
-                <div>
-                  <div className="text-xs uppercase tracking-wide text-muted-foreground">
-                    Camera observed
+              <div
+                className={
+                  selectedImage?.id === correction?.id
+                    ? "grid gap-4 sm:grid-cols-[minmax(0,0.8fr)_minmax(0,1.2fr)]"
+                    : "grid gap-4"
+                }
+              >
+                {selectedImage?.id === correction?.id && (
+                  <div className="grid gap-2">
+                    <div className="text-xs uppercase tracking-wide text-muted-foreground">
+                      Plate image
+                    </div>
+                    <div className="relative h-56 overflow-hidden rounded-lg border bg-black p-2">
+                      <ImageViewer image={selectedImage} />
+                    </div>
                   </div>
-                  <div className="font-mono text-lg">{correction?.observedPlate}</div>
-                </div>
-                <div>
-                  <div className="text-xs uppercase tracking-wide text-muted-foreground">
-                    Current effective plate
+                )}
+                <div className="grid gap-4">
+                  <div className="grid gap-3 rounded-lg border p-4 sm:grid-cols-2">
+                    <div>
+                      <div className="text-xs uppercase tracking-wide text-muted-foreground">
+                        Camera observed
+                      </div>
+                      <div className="font-mono text-lg">{correction?.observedPlate}</div>
+                    </div>
+                    <div>
+                      <div className="text-xs uppercase tracking-wide text-muted-foreground">
+                        Current effective plate
+                      </div>
+                      <div className="font-mono text-lg">{correction?.plateNumber}</div>
+                    </div>
                   </div>
-                  <div className="font-mono text-lg">{correction?.plateNumber}</div>
-                </div>
-              </div>
 
-              <div className="grid gap-2">
-                <Label htmlFor="new-plate">Corrected effective plate</Label>
-                <Input
-                  ref={correctionInputRef}
-                  id="new-plate"
-                  value={correction?.newPlateNumber || ""}
-                  onChange={(event) =>
-                    setCorrection((current) => ({
-                      ...current,
-                      newPlateNumber: event.target.value.toUpperCase(),
-                    }))
-                  }
-                  className="h-10 font-mono text-base uppercase"
-                  placeholder="ENTER CORRECT PLATE"
-                />
+                  <div className="grid gap-2">
+                    <Label htmlFor="new-plate">Corrected effective plate</Label>
+                    <Input
+                      ref={correctionInputRef}
+                      id="new-plate"
+                      value={correction?.newPlateNumber || ""}
+                      onChange={(event) =>
+                        setCorrection((current) => ({
+                          ...current,
+                          newPlateNumber: event.target.value.toUpperCase(),
+                        }))
+                      }
+                      className="h-10 font-mono text-base uppercase"
+                      placeholder="ENTER CORRECT PLATE"
+                    />
+                  </div>
+                </div>
               </div>
 
               <div className="grid gap-2">

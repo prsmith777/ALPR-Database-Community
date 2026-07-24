@@ -49,12 +49,20 @@ test("live feed image review advances visibly and starts focused on the plate", 
 });
 
 test("plate correction opens with an editable caret instead of selected text", async () => {
-  const plateTable = await source("components/PlateTable.jsx");
+  const [plateTable, imageViewer] = await Promise.all([
+    source("components/PlateTable.jsx"),
+    source("components/ImageViewer.jsx"),
+  ]);
 
   assert.match(plateTable, /const correctionInputRef = useRef\(null\)/);
   assert.match(plateTable, /onOpenAutoFocus=\{\(event\) => \{/);
   assert.match(plateTable, /input\.setSelectionRange\(cursorPosition, cursorPosition\)/);
   assert.match(plateTable, /ref=\{correctionInputRef\}/);
+  assert.match(plateTable, /Plate image/);
+  assert.match(plateTable, /<ImageViewer image=\{selectedImage\} \/>/);
+  assert.match(imageViewer, /<Slider/);
+  assert.match(imageViewer, />\s*Reset/);
+  assert.match(imageViewer, />\s*Zoom to Plate/);
 });
 
 test("plate identifiers request a slashed-zero glyph throughout the interface", async () => {
