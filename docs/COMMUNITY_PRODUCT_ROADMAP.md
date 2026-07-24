@@ -128,12 +128,17 @@ Operational behavior:
   gentle/balanced/fast pacing and pause/resume controls, reports throughput and
   estimated completion, and yields when disk-space or CPU-load safety limits
   are reached.
+- Calibration feedback foundation implemented: authorized reviewers can label
+  stored capture pairs as the same or a different vehicle. Labels are bound to
+  canonical read pairs and the exact embedding model, changes are audited, and
+  a local accuracy summary can recommend—but does not automatically apply—an
+  interpretation threshold after both classes have enough examples.
 - Add asynchronous vehicle observations with per-field confidence,
   provider/model/version provenance, raw result, status, and error.
 - Store plate jurisdiction/region, make, model, color, body type, year range,
   orientation, alternate OCR candidates, and bounding boxes.
-- Calibrate Vehicle ReID interpretation thresholds against labeled local
-  same-vehicle and different-vehicle examples before making stronger labels.
+- Expand Vehicle ReID calibration with larger labeled local samples and
+  camera-pair reporting before making stronger labels or applying thresholds.
 - Consider pgvector only when the bounded in-process cosine scan no longer
   meets latency targets.
 - Render configurable overlays at view/export time and cache derived assets;

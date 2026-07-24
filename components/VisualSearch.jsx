@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import NextImage from "next/image";
-import { Camera, Images, Loader2, Pause, Play, Save, Search, SlidersHorizontal, UploadCloud, X } from "lucide-react";
+import { Camera, CheckCircle2, Gauge, Images, Loader2, Pause, Play, Save, Search, SlidersHorizontal, UploadCloud, X, XCircle } from "lucide-react";
 
 import {
   findSimilarCaptures,
@@ -12,6 +12,7 @@ import {
   indexCameraCaptureAssetsBatch,
   indexCaptureAssetsBatch,
   saveCameraVisualProfile,
+  submitVehicleMatchFeedback,
   updateVisualIndexSettings,
 } from "@/app/actions";
 import { Badge } from "@/components/ui/badge";
@@ -55,7 +56,16 @@ function formatDuration(seconds) {
   return `About ${Math.round(hours / 24)} days remaining`;
 }
 
-function CaptureCard({ capture, source = false, onSearch }) {
+function CaptureCard({
+  capture,
+  source = false,
+  onSearch,
+  sourceReadId = null,
+  canReviewMatch = false,
+  onFeedback = null,
+  feedbackSaving = false,
+  feedbackSavingLabel = null,
+}) {
   return (
     <Card className={source ? "border-blue-500/50" : "overflow-hidden"}>
       <div className="relative aspect-video overflow-hidden bg-muted">
@@ -104,6 +114,76 @@ function CaptureCard({ capture, source = false, onSearch }) {
             </Button>
           )}
         </div>
+        {!source && !capture.exact && sourceReadId && canReviewMatch && onFeedback && (
+          <div className="space-y-2 border-t pt-3">
+            <div className="text-xs font-medium">Is this the same vehicle?</div>
+            <div className="grid grid-cols-2 gap-2">
+              <Button
+                size="sm"
+                variant={capture.feedback?.label === "same_vehicle" ? "default" : "outline"}
+                aria-pressed={capture.feedback?.label === "same_vehicle"}
+                disabled={feedbackSaving}
+                onClick={() => onFeedback(capture, "same_vehicle")}
+              >
+                {feedbackSaving && feedbackSavingLabel === "same_vehicle"
+                  ? <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  : <CheckCircle2 className="mr-2 h-4 w-4" />}
+                Same vehicle
+              </Button>
+              <Button
+                size="sm"
+                variant={capture.feedback?.label === "different_vehicle" ? "default" : "outline"}
+                aria-pressed={capture.feedback?.label === "different_vehicle"}
+                disabled={feedbackSaving}
+                onClick={() => onFeedback(capture, "different_vehicle")}
+              >
+                {feedbackSaving && feedbackSavingLabel === "different_vehicle"
+                  ? <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  : <XCircle className="mr-2 h-4 w-4" />}
+                Different
+              </Button>
+            </div>
+            <p className="text-xs text-muted-foreground">
+              {capture.feedback
+                ? `Saved as ${capture.feedback.label === "same_vehicle" ? "same vehicle" : "different vehicle"}. Select the other choice to correct it.`
+                : "Your label calibrates interpretation only; it does not change this ranking."}
+            </p>
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+function CalibrationSummary({ summary }) {
+  if (!summary) return null;
+  return (
+    <Card>
+      <CardHeader className="pb-3">
+        <CardTitle className="flex items-center gap-2 text-base">
+          <Gauge className="h-4 w-4" /> Match calibration
+        </CardTitle>
+        <CardDescription>Human labels for the current Vehicle ReID model.</CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        <div className="grid grid-cols-3 gap-2 text-center text-xs">
+          <div className="rounded-md border p-2"><div className="text-lg font-semibold">{summary.total}</div>labels</div>
+          <div className="rounded-md border p-2"><div className="text-lg font-semibold">{summary.sameVehicle}</div>same</div>
+          <div className="rounded-md border p-2"><div className="text-lg font-semibold">{summary.differentVehicle}</div>different</div>
+        </div>
+        {summary.recommendation ? (
+          <div className="space-y-1 rounded-md border p-3 text-sm">
+            <div className="font-medium">Initial candidate threshold: {summary.recommendation.thresholdPercent}%</div>
+            <div className="text-xs text-muted-foreground">
+              {summary.recommendation.balancedAccuracyPercent}% balanced accuracy on {summary.total} local labels.
+              This early estimate is analysis only, is not proof of identity, and is not applied to result ranking.
+            </div>
+          </div>
+        ) : (
+          <p className="text-xs text-muted-foreground">
+            Label {summary.neededSameVehicle} more same-vehicle and {summary.neededDifferentVehicle} more different-vehicle pairs to calculate an initial threshold.
+          </p>
+        )}
       </CardContent>
     </Card>
   );
@@ -304,6 +384,7 @@ export default function VisualSearch({ initialResult, initialReadId }) {
   const [endDate, setEndDate] = useState("");
   const [uploadedQuery, setUploadedQuery] = useState(null);
   const [draggingUpload, setDraggingUpload] = useState(false);
+  const [feedbackSaving, setFeedbackSaving] = useState(null);
   const initialSearchStarted = useRef(false);
   const uploadInputRef = useRef(null);
 
@@ -427,6 +508,35 @@ export default function VisualSearch({ initialResult, initialReadId }) {
       await refreshBootstrap();
     } finally {
       setIndexSettingsSaving(false);
+    }
+  };
+
+  const saveMatchFeedback = async (capture, label) => {
+    const sourceReadId = searchResult?.source?.readId;
+    if (!sourceReadId || !capture?.readId) return;
+    setFeedbackSaving({ readId: capture.readId, label });
+    setError("");
+    try {
+      const result = await submitVehicleMatchFeedback({
+        sourceReadId,
+        candidateReadId: capture.readId,
+        label,
+      });
+      if (!result.success) {
+        setError(result.error);
+        return;
+      }
+      setSearchResult((current) => current ? {
+        ...current,
+        matches: current.matches.map((match) => match.readId === capture.readId
+          ? { ...match, feedback: result.data.feedback }
+          : match),
+      } : current);
+      setBootstrap((current) => current
+        ? { ...current, calibration: result.data.calibration }
+        : current);
+    } finally {
+      setFeedbackSaving(null);
     }
   };
 
@@ -608,6 +718,10 @@ export default function VisualSearch({ initialResult, initialReadId }) {
             </CardContent>
           </Card>
 
+          {bootstrap?.canReviewMatches && (
+            <CalibrationSummary summary={bootstrap.calibration} />
+          )}
+
           <Card>
             <CardHeader className="pb-3">
               <CardTitle className="flex items-center gap-2 text-base">
@@ -667,7 +781,18 @@ export default function VisualSearch({ initialResult, initialReadId }) {
           </div>
           {searchResult.matches.length ? (
             <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-              {searchResult.matches.map((capture) => <CaptureCard key={capture.readId} capture={capture} onSearch={runSearch} />)}
+              {searchResult.matches.map((capture) => (
+                <CaptureCard
+                  key={capture.readId}
+                  capture={capture}
+                  onSearch={runSearch}
+                  sourceReadId={searchResult.source.readId}
+                  canReviewMatch={bootstrap?.canReviewMatches === true}
+                  onFeedback={saveMatchFeedback}
+                  feedbackSaving={feedbackSaving?.readId === capture.readId}
+                  feedbackSavingLabel={feedbackSaving?.label || null}
+                />
+              ))}
             </div>
           ) : (
             <div className="rounded-lg border border-dashed p-8 text-center text-sm text-muted-foreground">
