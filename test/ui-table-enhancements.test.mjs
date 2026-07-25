@@ -167,6 +167,21 @@ test("the image viewer applies review results even when filtering removes the re
   assert.match(table, /border-green-500\/60 bg-green-500\/10 text-green-500/);
 });
 
+test("the image viewer summarizes known-plate and tag associations", async () => {
+  const [table, wrapper] = await Promise.all([
+    source("components/PlateTable.jsx"),
+    source("components/PlateTableWrapper.jsx"),
+  ]);
+
+  assert.match(table, />Known plate</);
+  assert.match(table, /selectedImage\.knownName \|\| "Not known"/);
+  assert.match(table, />Tags</);
+  assert.match(table, /selectedImage\.tags\.map\(\(tag\)/);
+  assert.match(table, /handleSelectedImageAddTag\(tag\)/);
+  assert.match(wrapper, /const handleAddTag[\s\S]*?return result;/);
+  assert.match(wrapper, /const handleAddKnownPlate[\s\S]*?return result;/);
+});
+
 test("Monitored Plates is integrated with Known Plates and preserves exact-read actions", async () => {
   const [page, redirectPage, workspace, table, database, sidebar] = await Promise.all([
     source("app/known_plates/page.jsx"),

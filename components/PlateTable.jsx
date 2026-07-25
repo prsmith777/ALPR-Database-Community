@@ -338,6 +338,8 @@ export default function PlateTable({
       reviewRevision: plate.review_revision || 0,
       appliedAliasId: plate.applied_alias_id || null,
       cameraName: plate.camera_name || "",
+      knownName: plate.known_name || "",
+      tags: Array.isArray(plate.tags) ? plate.tags : [],
       id: plate.id,
       validated: plate.validated,
       bi_path: bi_url,
@@ -463,23 +465,36 @@ export default function PlateTable({
   useEffect(() => {
     if (selectedImage && data && data.length > 0) {
       const currentPlate = data.find((plate) => plate.id === selectedImage.id);
+      const currentReviewStatus = currentPlate
+        ? currentPlate.review_status ||
+          (currentPlate.validated ? "confirmed" : "unreviewed")
+        : null;
+      const currentKnownName = currentPlate?.known_name || "";
+      const currentTags = Array.isArray(currentPlate?.tags) ? currentPlate.tags : [];
+      const selectedImageTags = Array.isArray(selectedImage.tags)
+        ? selectedImage.tags
+        : [];
+      const currentTagSignature = JSON.stringify(currentTags);
+      const selectedTagSignature = JSON.stringify(selectedImageTags);
 
       if (
         currentPlate &&
         (currentPlate.validated !== selectedImage.validated ||
           currentPlate.plate_number !== selectedImage.plateNumber ||
-          currentPlate.review_status !== selectedImage.reviewStatus ||
-          currentPlate.review_revision !== selectedImage.reviewRevision)
+          currentReviewStatus !== selectedImage.reviewStatus ||
+          currentPlate.review_revision !== selectedImage.reviewRevision ||
+          currentKnownName !== selectedImage.knownName ||
+          currentTagSignature !== selectedTagSignature)
       ) {
         setSelectedImage((previous) => ({
           ...previous,
           validated: currentPlate.validated,
           plateNumber: currentPlate.plate_number,
           observedPlate: currentPlate.observed_plate || currentPlate.plate_number,
-          reviewStatus:
-            currentPlate.review_status ||
-            (currentPlate.validated ? "confirmed" : "unreviewed"),
+          reviewStatus: currentReviewStatus,
           reviewRevision: currentPlate.review_revision || 0,
+          knownName: currentKnownName,
+          tags: currentTags,
         }));
       }
     }
@@ -644,13 +659,35 @@ export default function PlateTable({
 
   const handleAddKnownPlateSubmit = async () => {
     if (!activePlate) return;
-    await onAddKnownPlate(
+    const result = await onAddKnownPlate(
       activePlate.plate_number,
       newKnownPlate.name,
       newKnownPlate.notes
     );
+    if (!result?.success) return;
+    setSelectedImage((previous) =>
+      previous?.plateNumber === activePlate.plate_number
+        ? { ...previous, knownName: newKnownPlate.name }
+        : previous
+    );
     setIsAddKnownPlateOpen(false);
     setNewKnownPlate({ name: "", notes: "" });
+  };
+
+  const handleSelectedImageAddTag = async (tag) => {
+    if (!selectedImage) return;
+    const plateNumber = selectedImage.plateNumber;
+    const result = await onAddTag(plateNumber, tag.name);
+    if (!result?.success) return;
+
+    setSelectedImage((previous) => {
+      if (!previous || previous.plateNumber !== plateNumber) return previous;
+      const currentTags = Array.isArray(previous.tags) ? previous.tags : [];
+      if (currentTags.some((currentTag) => currentTag.name === tag.name)) {
+        return previous;
+      }
+      return { ...previous, tags: [...currentTags, tag] };
+    });
   };
 
   const handleDeleteSubmit = async () => {
@@ -2103,7 +2140,7 @@ export default function PlateTable({
               </DialogTitle>
             </DialogHeader>
             {selectedImage && (
-              <div className="grid gap-3 rounded-lg border p-3 text-sm sm:grid-cols-3">
+              <div className="grid gap-3 rounded-lg border p-3 text-sm sm:grid-cols-2 lg:grid-cols-5">
                 <div>
                   <div className="text-xs uppercase text-muted-foreground">Observed</div>
                   <div className="font-mono">{selectedImage.observedPlate}</div>
@@ -2115,6 +2152,31 @@ export default function PlateTable({
                 <div>
                   <div className="text-xs uppercase text-muted-foreground">Review status</div>
                   <div>{REVIEW_STATUS_LABELS[selectedImage.reviewStatus] || selectedImage.reviewStatus}</div>
+                </div>
+                <div>
+                  <div className="text-xs uppercase text-muted-foreground">Known plate</div>
+                  <div className={selectedImage.knownName ? "" : "text-muted-foreground"}>
+                    {selectedImage.knownName || "Not known"}
+                  </div>
+                </div>
+                <div>
+                  <div className="text-xs uppercase text-muted-foreground">Tags</div>
+                  {selectedImage.tags?.length > 0 ? (
+                    <div className="flex flex-wrap gap-1">
+                      {selectedImage.tags.map((tag) => (
+                        <Badge
+                          key={tag.name}
+                          variant="secondary"
+                          className="px-2 py-0 text-xs text-white"
+                          style={{ backgroundColor: tag.color }}
+                        >
+                          {tag.name}
+                        </Badge>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="text-muted-foreground">No tags</div>
+                  )}
                 </div>
               </div>
             )}
@@ -2203,9 +2265,7 @@ export default function PlateTable({
                       {availableTags.map((tag) => (
                         <DropdownMenuItem
                           key={tag.name}
-                          onClick={() =>
-                            onAddTag(selectedImage.plateNumber, tag.name)
-                          }
+                          onClick={() => handleSelectedImageAddTag(tag)}
                         >
                           <div className="flex items-center">
                             <div
