@@ -2,7 +2,21 @@
 
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { BellRing, CheckCircle2, MailCheck, Save, Send, Webhook } from "lucide-react";
+import {
+  BellRing,
+  CheckCircle2,
+  Gauge,
+  KeyRound,
+  MailCheck,
+  Save,
+  Send,
+  Server,
+  Settings2,
+  ShieldCheck,
+  TestTube2,
+  UserRound,
+  Webhook,
+} from "lucide-react";
 
 import { updateSettings } from "@/app/actions";
 import PushoverUsageCard from "@/app/settings/PushoverUsageCard";
@@ -13,6 +27,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { PasswordInput } from "@/components/ui/password-input";
 import { Switch } from "@/components/ui/switch";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
 function ResultMessage({ message }) {
   if (!message) return null;
@@ -127,13 +142,19 @@ export function PushoverSettings({ settings }) {
   }
 
   return (
-    <div className="space-y-6">
+    <Tabs defaultValue="connection" className="space-y-6">
+      <TabsList className="grid h-auto w-full grid-cols-2 gap-1 p-1 sm:grid-cols-4">
+        <TabsTrigger value="connection" className="gap-2 py-2"><KeyRound className="h-4 w-4" />Connection</TabsTrigger>
+        <TabsTrigger value="defaults" className="gap-2 py-2"><Settings2 className="h-4 w-4" />Defaults</TabsTrigger>
+        <TabsTrigger value="usage" className="gap-2 py-2"><Gauge className="h-4 w-4" />Usage</TabsTrigger>
+        <TabsTrigger value="test" className="gap-2 py-2"><TestTube2 className="h-4 w-4" />Test</TabsTrigger>
+      </TabsList>
       <StatusCard enabled={config.enabled} configured={configured} detail="Pushover can deliver short, high-visibility alerts from notification rules." />
-      <div className="grid items-start gap-6 xl:grid-cols-[minmax(0,1fr)_24rem]">
-        <form onSubmit={submit} className="space-y-6">
+      <form onSubmit={submit}>
+        <TabsContent value="connection" forceMount className="mt-0 space-y-6 data-[state=inactive]:hidden">
           <Card>
             <CardHeader>
-              <CardTitle>1. Connection and credentials</CardTitle>
+              <CardTitle>Connection and credentials</CardTitle>
               <CardDescription>Enable Pushover and enter the application token and user key from your Pushover account.</CardDescription>
             </CardHeader>
             <CardContent className="space-y-5">
@@ -157,9 +178,11 @@ export function PushoverSettings({ settings }) {
               </div>
             </CardContent>
           </Card>
-
+          <SaveMessage message={message} pending={isPending} />
+        </TabsContent>
+        <TabsContent value="defaults" forceMount className="mt-0 space-y-6 data-[state=inactive]:hidden">
           <Card>
-            <CardHeader><CardTitle>2. Delivery defaults</CardTitle><CardDescription>These defaults apply when a rule does not override the presentation.</CardDescription></CardHeader>
+            <CardHeader><CardTitle>Delivery defaults</CardTitle><CardDescription>These defaults apply when a rule does not override the presentation.</CardDescription></CardHeader>
             <CardContent className="grid gap-5 md:grid-cols-3">
               <div className="space-y-2"><Label htmlFor="pushoverTitle">Title</Label><Input id="pushoverTitle" name="pushoverTitle" defaultValue={config.title || "ALPR Alert"} /></div>
               <div className="space-y-2"><Label htmlFor="pushoverPriority">Priority</Label><Input id="pushoverPriority" name="pushoverPriority" type="number" min="-2" max="2" defaultValue={config.priority ?? 1} /></div>
@@ -167,14 +190,13 @@ export function PushoverSettings({ settings }) {
             </CardContent>
           </Card>
           <SaveMessage message={message} pending={isPending} />
-        </form>
-
-        <div className="space-y-6">
-          <PushoverUsageCard />
-          <TestCard channelType="pushover" ready={config.enabled && configured} value={samplePlate} setValue={setSamplePlate} label="Sample plate" placeholder="TEST123" icon={BellRing} />
-        </div>
-      </div>
-    </div>
+        </TabsContent>
+      </form>
+      <TabsContent value="usage" className="mt-0"><PushoverUsageCard /></TabsContent>
+      <TabsContent value="test" className="mt-0">
+        <TestCard channelType="pushover" ready={config.enabled && configured} value={samplePlate} setValue={setSamplePlate} label="Sample plate" placeholder="TEST123" icon={BellRing} />
+      </TabsContent>
+    </Tabs>
   );
 }
 
@@ -202,12 +224,17 @@ export function EmailSettings({ settings }) {
   }
 
   return (
-    <div className="space-y-6">
+    <Tabs defaultValue="connection" className="space-y-6">
+      <TabsList className="grid h-auto w-full grid-cols-1 gap-1 p-1 sm:grid-cols-3">
+        <TabsTrigger value="connection" className="gap-2 py-2"><Server className="h-4 w-4" />SMTP Connection</TabsTrigger>
+        <TabsTrigger value="sender" className="gap-2 py-2"><UserRound className="h-4 w-4" />Sender Identity</TabsTrigger>
+        <TabsTrigger value="test" className="gap-2 py-2"><TestTube2 className="h-4 w-4" />Test</TabsTrigger>
+      </TabsList>
       <StatusCard enabled={config.enabled} configured={configured} detail="Email rules send through your SMTP server or trusted relay." />
-      <div className="grid items-start gap-6 xl:grid-cols-[minmax(0,1fr)_24rem]">
-        <form onSubmit={submit} className="space-y-6">
+      <form onSubmit={submit}>
+        <TabsContent value="connection" forceMount className="mt-0 space-y-6 data-[state=inactive]:hidden">
           <Card>
-            <CardHeader><CardTitle>1. SMTP connection</CardTitle><CardDescription>Configure the server, transport security, and optional authentication.</CardDescription></CardHeader>
+            <CardHeader><CardTitle>SMTP connection</CardTitle><CardDescription>Configure the server, transport security, and optional authentication.</CardDescription></CardHeader>
             <CardContent className="space-y-5">
               <div className="flex items-center justify-between rounded-lg border p-4"><div><Label htmlFor="emailEnabled">Enable email</Label><p className="mt-1 text-xs text-muted-foreground">Rules can send email only while this is enabled.</p></div><Switch id="emailEnabled" name="emailEnabled" defaultChecked={config.enabled} /></div>
               <div className="grid gap-5 md:grid-cols-2">
@@ -227,18 +254,23 @@ export function EmailSettings({ settings }) {
               </div>
             </CardContent>
           </Card>
+          <SaveMessage message={message} pending={isPending} />
+        </TabsContent>
+        <TabsContent value="sender" forceMount className="mt-0 space-y-6 data-[state=inactive]:hidden">
           <Card>
-            <CardHeader><CardTitle>2. Sender identity</CardTitle><CardDescription>Recipients see this address and display name.</CardDescription></CardHeader>
+            <CardHeader><CardTitle>Sender identity</CardTitle><CardDescription>Recipients see this address and display name.</CardDescription></CardHeader>
             <CardContent className="grid gap-5 md:grid-cols-2">
               <div className="space-y-2"><Label htmlFor="emailFromAddress">From address</Label><Input id="emailFromAddress" name="emailFromAddress" type="email" defaultValue={config.from_address} placeholder="alpr@example.com" /></div>
               <div className="space-y-2"><Label htmlFor="emailFromName">From name</Label><Input id="emailFromName" name="emailFromName" defaultValue={config.from_name || "ALPR Database"} /></div>
             </CardContent>
           </Card>
           <SaveMessage message={message} pending={isPending} />
-        </form>
+        </TabsContent>
+      </form>
+      <TabsContent value="test" className="mt-0">
         <TestCard channelType="email" ready={config.enabled && configured} value={recipient} setValue={setRecipient} label="Recipient" placeholder="recipient@example.com" inputType="email" icon={MailCheck} />
-      </div>
-    </div>
+      </TabsContent>
+    </Tabs>
   );
 }
 
@@ -266,12 +298,17 @@ export function WebhookSettings({ settings }) {
   }
 
   return (
-    <div className="space-y-6">
+    <Tabs defaultValue="delivery" className="space-y-6">
+      <TabsList className="grid h-auto w-full grid-cols-1 gap-1 p-1 sm:grid-cols-3">
+        <TabsTrigger value="delivery" className="gap-2 py-2"><KeyRound className="h-4 w-4" />Signing & Delivery</TabsTrigger>
+        <TabsTrigger value="safety" className="gap-2 py-2"><ShieldCheck className="h-4 w-4" />Network Safety</TabsTrigger>
+        <TabsTrigger value="test" className="gap-2 py-2"><TestTube2 className="h-4 w-4" />Test</TabsTrigger>
+      </TabsList>
       <StatusCard enabled={config.enabled} configured={configured} detail="Webhook rules send signed JSON events to an HTTPS endpoint." />
-      <div className="grid items-start gap-6 xl:grid-cols-[minmax(0,1fr)_24rem]">
-        <form onSubmit={submit} className="space-y-6">
+      <form onSubmit={submit}>
+        <TabsContent value="delivery" forceMount className="mt-0 space-y-6 data-[state=inactive]:hidden">
           <Card>
-            <CardHeader><CardTitle>1. Signing and delivery</CardTitle><CardDescription>Every request includes an HMAC-SHA256 signature, event ID, and idempotency key.</CardDescription></CardHeader>
+            <CardHeader><CardTitle>Signing and delivery</CardTitle><CardDescription>Every request includes an HMAC-SHA256 signature, event ID, and idempotency key.</CardDescription></CardHeader>
             <CardContent className="space-y-5">
               <div className="flex items-center justify-between rounded-lg border p-4"><div><Label htmlFor="webhookEnabled">Enable webhooks</Label><p className="mt-1 text-xs text-muted-foreground">Rules can call webhook targets only while this is enabled.</p></div><Switch id="webhookEnabled" name="webhookEnabled" defaultChecked={config.enabled} /></div>
               <div className="grid gap-5 md:grid-cols-2">
@@ -285,17 +322,22 @@ export function WebhookSettings({ settings }) {
               </div>
             </CardContent>
           </Card>
+          <SaveMessage message={message} pending={isPending} />
+        </TabsContent>
+        <TabsContent value="safety" forceMount className="mt-0 space-y-6 data-[state=inactive]:hidden">
           <Card>
-            <CardHeader><CardTitle>2. Network safety</CardTitle><CardDescription>Secure defaults block unsafe targets. Relax them only for a trusted local integration.</CardDescription></CardHeader>
+            <CardHeader><CardTitle>Network safety</CardTitle><CardDescription>Secure defaults block unsafe targets. Relax them only for a trusted local integration.</CardDescription></CardHeader>
             <CardContent className="space-y-4 text-sm">
               <label className="flex items-start gap-3 rounded-lg border p-4"><input type="checkbox" name="webhookAllowHttp" defaultChecked={config.allow_http} className="mt-1" /><span><span className="font-medium">Allow unencrypted HTTP</span><span className="mt-1 block text-xs text-muted-foreground">Use only on a network you control.</span></span></label>
               <label className="flex items-start gap-3 rounded-lg border p-4"><input type="checkbox" name="webhookAllowPrivateNetworks" defaultChecked={config.allow_private_networks} className="mt-1" /><span><span className="font-medium">Allow private-network targets</span><span className="mt-1 block text-xs text-muted-foreground">Permits 10.x, 172.16–31.x, and 192.168.x targets. Loopback and other special-use addresses remain blocked.</span></span></label>
             </CardContent>
           </Card>
           <SaveMessage message={message} pending={isPending} />
-        </form>
+        </TabsContent>
+      </form>
+      <TabsContent value="test" className="mt-0">
         <TestCard channelType="webhook" ready={config.enabled && configured} value={target} setValue={setTarget} label="Destination URL" placeholder="https://automation.example.com/alpr" inputType="url" icon={Webhook} />
-      </div>
-    </div>
+      </TabsContent>
+    </Tabs>
   );
 }

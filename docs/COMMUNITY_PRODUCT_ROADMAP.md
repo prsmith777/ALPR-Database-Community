@@ -49,9 +49,11 @@ reliable background processing.
   durable unified Pushover/email/webhook retries and dead-letter state, full recent alert traces,
   direct channel tests, webhook HMAC signing and target safety controls,
   and Pushover quota visibility. Notification Rules is now a focused Rules and
-  Activity workspace; channel status links to dedicated Settings > Integrations
-  pages for MQTT, Pushover, SMTP email, and Webhook. The Pushover page separates
-  credentials, delivery defaults, account usage, and direct testing. The former
+  Activity workspace without channel-setup shortcuts. Settings links directly
+  to MQTT, Pushover, SMTP email, and Webhook instead of using a separate
+  Integrations overview. Every channel page uses functional header tabs; the
+  Pushover Usage tab exposes monthly allowance and remaining-message metrics
+  separately from credentials, defaults, and direct testing. The former
   `/mqtt` address redirects to Settings > Integrations > MQTT, and MQTT no longer
   occupies a primary-sidebar slot. Migrated MQTT and Pushover
   copies use the same shadow approval, atomic cutover, rollback, and verified

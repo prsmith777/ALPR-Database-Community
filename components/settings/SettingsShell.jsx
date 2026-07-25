@@ -9,7 +9,6 @@ import {
   Home,
   Lock,
   Mail,
-  Network,
   ScanSearch,
   Server,
   Settings2,
@@ -43,7 +42,6 @@ const navigationSections = [
   {
     title: "Integrations",
     items: [
-      { title: "Overview", id: "integrations", href: "/settings/integrations", icon: Network, permission: "system.manage_settings" },
       { title: "MQTT", id: "mqtt", href: "/settings/integrations/mqtt", icon: Antenna, permission: "mqtt.manage" },
       { title: "Pushover", id: "pushover", href: "/settings/integrations/pushover", icon: Bell, permission: "system.manage_settings" },
       { title: "Email", id: "email", href: "/settings/integrations/email", icon: Mail, permission: "system.manage_settings" },

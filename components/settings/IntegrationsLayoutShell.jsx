@@ -5,11 +5,6 @@ import { usePathname } from "next/navigation";
 import { SettingsShell } from "@/components/settings/SettingsShell";
 
 const pageDetails = {
-  "/settings/integrations": {
-    id: "integrations",
-    title: "Integrations",
-    description: "Connect ALPR Database to the services that deliver alerts and automation events.",
-  },
   "/settings/integrations/mqtt": {
     id: "mqtt",
     title: "MQTT",
@@ -34,6 +29,6 @@ const pageDetails = {
 
 export function IntegrationsLayoutShell({ children }) {
   const pathname = usePathname();
-  const details = pageDetails[pathname] || pageDetails["/settings/integrations"];
+  const details = pageDetails[pathname] || pageDetails["/settings/integrations/mqtt"];
   return <SettingsShell activeId={details.id} title={details.title} description={details.description}>{children}</SettingsShell>;
 }

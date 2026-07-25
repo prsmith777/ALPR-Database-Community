@@ -16,7 +16,8 @@ test("notification rules separate rule work from channel configuration", async (
   assert.match(page, /NotificationRulesWorkspace/);
   assert.match(workspace, />Rules</);
   assert.match(workspace, /Activity & delivery/);
-  assert.match(workspace, /settings\/integrations\/pushover/);
+  assert.doesNotMatch(workspace, /settings\/integrations/);
+  assert.doesNotMatch(workspace, /Needs setup|channel\.ready/);
   assert.match(builder, /Create rule/);
   assert.match(builder, /Back to rules/);
   assert.doesNotMatch(operations, /PushoverUsageCard/);
@@ -29,13 +30,30 @@ test("channel integrations have dedicated configuration and test pages", async (
     source("app/settings/integrations/email/page.jsx"),
     source("app/settings/integrations/webhook/page.jsx"),
   ]);
-  assert.match(component, /Connection and credentials/);
-  assert.match(component, /Delivery defaults/);
+  assert.match(component, /TabsTrigger value="connection"/);
+  assert.match(component, /TabsTrigger value="defaults"/);
+  assert.match(component, /TabsTrigger value="sender"/);
+  assert.match(component, /TabsTrigger value="safety"/);
+  assert.match(component, /TabsTrigger value="test"/);
+  assert.match(component, /forceMount/);
+  assert.match(component, /data-\[state=inactive\]:hidden/);
   assert.match(component, /Monthly message allowance|PushoverUsageCard/);
+  assert.match(component, /TabsTrigger value="usage"/);
   assert.match(component, /Test this integration/);
   assert.match(pushoverPage, /PushoverSettings/);
   assert.match(emailPage, /EmailSettings/);
   assert.match(webhookPage, /WebhookSettings/);
+});
+
+test("Integrations has no overview menu or landing-page cards", async () => {
+  const [landingPage, shell] = await Promise.all([
+    source("app/settings/integrations/page.jsx"),
+    source("components/settings/SettingsShell.jsx"),
+  ]);
+
+  assert.match(landingPage, /redirect\("\/settings\/integrations\/mqtt"\)/);
+  assert.doesNotMatch(landingPage, /Configure MQTT|Open Notification Rules/);
+  assert.doesNotMatch(shell, /title: "Overview"/);
 });
 
 test("settings updates revalidate dedicated channel pages", async () => {
