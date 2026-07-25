@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Fixed finalized and retired notification migration targets remaining hidden
+  from the normal Notification Rules list after their guarded legacy workflow
+  ended. Preserved unified rules now reappear without restoring legacy rows.
 - Fixed Create rule resetting the rule, quiet-hours, and Schedule time zones to
   the configured MQTT fallback after the browser-local timezone had already
   been resolved.
