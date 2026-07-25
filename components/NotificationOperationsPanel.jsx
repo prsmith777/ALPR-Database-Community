@@ -1,4 +1,3 @@
-import PushoverUsageCard from "@/app/settings/PushoverUsageCard";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 
@@ -9,7 +8,6 @@ function statusVariant(value) {
 export function NotificationOperationsPanel({ overview }) {
   const history = overview?.history || [];
   return <div className="space-y-4">
-    <PushoverUsageCard />
     <Card>
       <CardHeader>
         <CardTitle>Notification operations</CardTitle>

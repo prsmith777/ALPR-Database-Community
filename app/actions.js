@@ -1547,6 +1547,10 @@ export async function updateSettings(formData) {
     }
 
     revalidatePath("/settings");
+    revalidatePath("/settings/integrations");
+    revalidatePath("/settings/integrations/pushover");
+    revalidatePath("/settings/integrations/email");
+    revalidatePath("/settings/integrations/webhook");
     return { success: true };
   } catch (error) {
     console.error("Error updating settings:", error);

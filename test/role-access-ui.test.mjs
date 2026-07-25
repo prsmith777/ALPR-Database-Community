@@ -26,9 +26,12 @@ test("plate-reading pages use limited view settings instead of administrator set
 });
 
 test("navigation and direct management pages enforce role permissions", async () => {
-  const sidebar = await source("components/Sidebar.jsx");
+  const [sidebar, settingsShell] = await Promise.all([
+    source("components/Sidebar.jsx"),
+    source("components/settings/SettingsShell.jsx"),
+  ]);
   assert.match(sidebar, /permission: "notification\.manage"/);
-  assert.match(sidebar, /permission: "mqtt\.manage"/);
+  assert.match(settingsShell, /permission: "mqtt\.manage"/);
   assert.match(sidebar, /canViewAudit/);
 
   const expectedGuards = new Map([
@@ -41,6 +44,11 @@ test("navigation and direct management pages enforce role permissions", async ()
     ["app/download/page.jsx", "export.create"],
     ["app/logs/page.jsx", "system.view_audit"],
     ["app/mqtt/page.jsx", "mqtt.manage"],
+    ["app/settings/integrations/mqtt/page.jsx", "mqtt.manage"],
+    ["app/settings/integrations/page.jsx", "system.manage_settings"],
+    ["app/settings/integrations/pushover/page.jsx", "system.manage_settings"],
+    ["app/settings/integrations/email/page.jsx", "system.manage_settings"],
+    ["app/settings/integrations/webhook/page.jsx", "system.manage_settings"],
     ["app/notifications/page.jsx", "notification.manage"],
     ["app/backfill/page.jsx", "maintenance.manage"],
     ["app/jpeg_migration/layout.jsx", "maintenance.manage"],

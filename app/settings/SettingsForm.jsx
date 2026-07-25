@@ -1,19 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useTransition, useOptimistic } from "react";
-import {
-  Settings2,
-  X,
-  Database,
-  Bell,
-  Home,
-  Shield,
-  Lock,
-  Server,
-  ScanSearch,
-  ShieldCheck,
-} from "lucide-react";
+import { X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { PasswordInput } from "@/components/ui/password-input";
@@ -36,7 +25,7 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
-import DashboardLayout from "@/components/layout/MainLayout";
+import { SettingsShell } from "@/components/settings/SettingsShell";
 import {
   updateSettings,
   updatePassword,
@@ -58,49 +47,23 @@ import PlateReviewSettings from "./PlateReviewSettings";
 import PushoverUsageCard from "./PushoverUsageCard";
 import StorageHealthCard from "./StorageHealthCard";
 
-const administratorNavigationSections = [
-  {
-    title: "System",
-    items: [
-      { title: "General", id: "general", icon: Settings2 },
-      { title: "Database", id: "database", icon: Database },
-      { title: "Plate Matching", id: "plateMatching", icon: ScanSearch },
-      { title: "Review & Corrections", id: "plateReview", icon: ShieldCheck },
-      { title: "Security", id: "security", icon: Lock },
-      { title: "Data & Privacy", id: "privacy", icon: Shield },
-    ],
-  },
-  {
-    title: "Integrations",
-    items: [
-      { title: "Notifications", id: "push", icon: Bell },
-      { title: "Blue Iris", id: "blueiris", icon: Server },
-      { title: "HomeAssistant", id: "homeassistant", icon: Home },
-    ],
-  },
-];
-
 export default function SettingsForm({
   initialSettings,
   initialApiKey,
   initialIdentityState,
   initialStorageHealth,
   canManageSettings,
+  initialSection,
 }) {
-  const navigationSections = canManageSettings
-    ? administratorNavigationSections
-    : [
-        {
-          title: "Account",
-          items: [{ title: "Security", id: "security", icon: Lock }],
-        },
-      ];
   const [isPending, startTransition] = useTransition(); // For general settings
   const [error, setError] = useState(""); // General error for main form
   const [success, setSuccess] = useState(false); // General success for main form
   const [activeSection, setActiveSection] = useState(
-    canManageSettings ? "general" : "security"
+    initialSection || (canManageSettings ? "general" : "security")
   );
+  useEffect(() => {
+    setActiveSection(initialSection || (canManageSettings ? "general" : "security"));
+  }, [canManageSettings, initialSection]);
   const [showApiKey, setShowApiKey] = useState(false); // This is local state for general form (will be managed by SecuritySettings itself now)
   const [showDialog, setShowDialog] = useState(false); // This is local state for general form (will be managed by SecuritySettings itself now)
 
@@ -778,72 +741,13 @@ export default function SettingsForm({
     }
   };
 
-  const currentNavItem = navigationSections
-    .flatMap((section) => section.items)
-    .find((item) => item.id === activeSection);
-
   return (
-    <DashboardLayout>
-      <div className="flex h-full bg-background">
-        {/* Left Sidebar Navigation */}
-        <div className="w-64 bg-background border-r border-border flex-shrink-0">
-          <div className="p-6 border-b border-border">
-            <div className="flex items-center gap-3">
-              <Settings2 className="h-6 w-6 text-primary" />
-              <h1 className="text-xl font-semibold text-foreground">
-                Settings
-              </h1>
-            </div>
-          </div>
-          <nav className="p-4">
-            <div className="space-y-6">
-              {navigationSections.map((section) => (
-                <div key={section.title} className="space-y-2">
-                  <h3 className="px-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider">
-                    {section.title}
-                  </h3>
-                  <div className="space-y-1">
-                    {section.items.map((item) => {
-                      const Icon = item.icon;
-                      return (
-                        <button
-                          key={item.id}
-                          onClick={() => setActiveSection(item.id)}
-                          className={`w-full flex items-center gap-3 px-3 py-2 rounded-md text-sm font-medium transition-colors text-left ${
-                            item.id === activeSection
-                              ? "bg-blue-500/10 text-blue-600 border border-blue-500/20"
-                              : "text-muted-foreground hover:text-foreground hover:bg-muted/50"
-                          }`}
-                        >
-                          <Icon className="h-4 w-4 flex-shrink-0" />
-                          {item.title}
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-              ))}
-            </div>
-          </nav>
-        </div>
-
-        {/* Main Content Area */}
-        <div className="flex-1 flex flex-col min-h-0">
-          {/* Content Header */}
-          <div className="border-b border-border bg-background px-8 py-6">
-            <div className="flex items-center gap-3">
-              {currentNavItem && (
-                <currentNavItem.icon className="h-5 w-5 text-muted-foreground" />
-              )}
-              <h2 className="text-lg font-medium text-foreground">
-                {currentNavItem?.title}
-              </h2>
-            </div>
-          </div>
-
-          {/* Scrollable Content */}
-          <div className="flex-1 overflow-y-auto">
-            <div className="p-8">
+    <SettingsShell
+      activeId={activeSection}
+      title="Settings"
+      description="Application, security, privacy, and integration settings."
+      onSelect={setActiveSection}
+    >
               {/* Error/Success Messages */}
               {error && (
                 <div className="mb-6 rounded-lg border border-destructive/20 bg-destructive/10 p-4 text-destructive max-w-2xl">
@@ -863,7 +767,7 @@ export default function SettingsForm({
                     {renderSection()}
 
                     {/* Save Button */}
-                    <div className="sticky bottom-0 z-10 -mx-8 -mb-8 flex justify-start border-t border-border bg-background/95 px-8 py-4 shadow-[0_-8px_24px_-18px_rgba(0,0,0,0.45)] backdrop-blur">
+                    <div className="sticky bottom-0 z-10 -mx-4 -mb-4 flex justify-start border-t border-border bg-background/95 px-4 py-4 shadow-[0_-8px_24px_-18px_rgba(0,0,0,0.45)] backdrop-blur sm:-mx-8 sm:-mb-8 sm:px-8">
                       <Button
                         type="submit"
                         disabled={isPending}
@@ -877,11 +781,7 @@ export default function SettingsForm({
               ) : (
                 renderSection()
               )}
-            </div>
-          </div>
-        </div>
-      </div>
-    </DashboardLayout>
+    </SettingsShell>
   );
 }
 
