@@ -9,6 +9,7 @@ import {
   Home,
   Lock,
   Mail,
+  PackageOpen,
   ScanSearch,
   Server,
   Settings2,
@@ -31,6 +32,7 @@ const navigationSections = [
       { title: "Plate Matching", id: "plateMatching", href: "/settings?section=plateMatching", icon: ScanSearch },
       { title: "Review & Corrections", id: "plateReview", href: "/settings?section=plateReview", icon: ShieldCheck },
       { title: "Data & Privacy", id: "privacy", href: "/settings?section=privacy", icon: Shield },
+      { title: "Release", id: "release", href: "/settings?section=release", icon: PackageOpen },
     ],
   },
   {

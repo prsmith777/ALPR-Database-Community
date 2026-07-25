@@ -74,6 +74,10 @@ reliable background processing.
   record/image-path counts, recent ingestion, visual-index state,
   index-confirmed missing sources, a bounded recent-file bytes/read sample,
   and estimated 70/80/90% capacity dates. It performs no cleanup or mutation.
+- Administrators can now open Settings > Release to identify the installed
+  application version, deployment-provided Git SHA, release channel, and local
+  release notes. The view is read-only and does not fetch source, run Git or
+  Docker, apply migrations, restart services, or install updates.
 - Read review now keeps operators in the Live Feed image dialog with a visible
   next-read action, continues across paginated results without wrapping to the
   first visible read, and opens image-backed reads focused on the detected
@@ -190,7 +194,10 @@ rows and files remain untouched. Bounded, resumable filesystem reconciliation
 now inventories the approved image, thumbnail, and derived roots; records exact
 orphaned-file and missing-reference paths; defers post-snapshot files; and
 reports progress, totals, bytes, errors, and a review sample in Storage Health.
-It exposes no destructive maintenance action.
+It exposes no destructive maintenance action. Settings now also includes a
+read-only Release view for the application version, deployment-provided Git
+SHA, release channel, and local release notes. Updates remain externally
+orchestrated.
 
 - Delivered foundation: move retention and record planning out of ingest into
   a scheduled, single-flight, dry-run-only maintenance worker with durable
@@ -199,7 +206,8 @@ It exposes no destructive maintenance action.
   reconciliation with durable exact orphan/missing-reference inventory.
 - Add safe reconcile, prune, `VACUUM ANALYZE`, backup, restore-preflight, and
   backup-verification jobs. Do not expose an arbitrary SQL or shell console.
-- Display current version, git SHA, release channel, and release notes.
+- Delivered foundation: display the current version, deployment-provided Git
+  SHA, release channel, and local release notes without host-control actions.
 - Keep updates externally orchestrated: back up the database, sync an approved
   commit, build the application, preview/apply migrations, health-check, and
   roll back. The app should observe this process rather than controlling
