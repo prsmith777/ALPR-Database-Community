@@ -6,7 +6,7 @@ async function source(path) {
   return readFile(new URL(`../${path}`, import.meta.url), "utf8");
 }
 
-test("MQTT has a dedicated application page with the four agreed sections", async () => {
+test("MQTT keeps operational tools while unified rules live on Notifications", async () => {
   const [page, admin] = await Promise.all([
     source("app/mqtt/page.jsx"),
     source("components/mqtt/MqttAdmin.jsx"),
@@ -16,8 +16,9 @@ test("MQTT has a dedicated application page with the four agreed sections", asyn
   assert.match(page, /<MqttAdmin/);
   assert.match(admin, />\s*Brokers\s*</);
   assert.match(admin, />\s*Cameras & Topics\s*</);
-  assert.match(admin, />\s*Rules\s*</);
   assert.match(admin, />\s*Test & Activity\s*</);
+  assert.doesNotMatch(admin, />\s*Rules\s*</);
+  assert.match(page, /Notification rules are managed on Notifications/);
 });
 
 test("primary desktop and mobile navigation expose the dedicated MQTT page", async () => {
@@ -34,7 +35,8 @@ test("notifications host the unified builder without embedding MQTT broker admin
   assert.equal(notifications.includes("MqttNotificationsTable"), false);
   assert.equal(notifications.includes("getMqttNotificationsAction"), false);
   assert.match(notifications, /NotificationRuleBuilder/);
-  assert.match(notifications, /Legacy exact-plate Pushover rules/);
+  assert.match(notifications, /NotificationLegacyFinalizationPanel/);
+  assert.doesNotMatch(notifications, /Legacy exact-plate Pushover rules|NotificationsTable/);
 });
 
 test("general Settings no longer embeds the obsolete MQTT broker manager", async () => {

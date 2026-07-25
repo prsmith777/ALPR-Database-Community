@@ -33,7 +33,7 @@ This project serves as a complement to a CodeProject Blue Iris setup, giving you
 - Traffic Analytics
 - Categorization and filtering
 - Store information on known vehicles
-- Push notifications
+- Unified MQTT, Pushover, email, and signed webhook notifications
 - Automation rules
 - Customizable tagging
 - Configurable retention

@@ -23,7 +23,6 @@ import {
   removePlateRead,
   getPool,
   resetPool,
-  updateNotificationPriorityDB,
   getTagsForPlate,
   correctAllPlateReads,
   getDistinctCameraNames,
@@ -59,6 +58,10 @@ import {
   rollbackNotificationRule,
 } from "@/lib/notification-cutover-runtime.mjs";
 import {
+  finalizeNotificationLegacyMigration,
+  getNotificationLegacyFinalizationPreview as loadNotificationLegacyFinalizationPreview,
+} from "@/lib/notification-mqtt-finalization-runtime.mjs";
+import {
   simulateNotificationRuleDraft,
   updateNotificationRuleDraft,
 } from "@/lib/notification-rule-draft-runtime.mjs";
@@ -81,13 +84,6 @@ import {
   normalizeVisualIndexSettings,
   visualIndexPace,
 } from "@/lib/visual-index-settings.mjs";
-import {
-  getNotificationPlates as getNotificationPlatesDB,
-  addNotificationPlate as addNotificationPlateDB,
-  toggleNotification as toggleNotificationDB,
-  deleteNotification as deleteNotificationDB,
-} from "@/lib/db";
-
 import { revalidatePath, revalidateTag, unstable_noStore } from "next/cache";
 import { cookies, headers } from "next/headers";
 import { redirect } from "next/navigation";
@@ -704,18 +700,6 @@ export async function getFlagged() {
   }
 }
 
-export async function getNotificationPlates() {
-  await requirePermission("plate.read");
-  console.log("Checking notification plates");
-  try {
-    const plates = await getNotificationPlatesDB();
-    return { success: true, data: plates };
-  } catch (error) {
-    console.error("Error in getNotificationPlates action:", error);
-    return { success: false, error: "Failed to fetch notification plates" };
-  }
-}
-
 export async function getNotificationRuleMigrationPreview() {
   await requirePermission("notification.manage");
   try {
@@ -1020,6 +1004,43 @@ export async function getUnifiedNotificationCutoverPreview() {
   }
 }
 
+export async function getNotificationLegacyFinalizationPreview() {
+  await requirePermission("notification.manage");
+  try {
+    return { success: true, data: await loadNotificationLegacyFinalizationPreview() };
+  } catch (error) {
+    console.error("Error building legacy notification finalization preview:", error);
+    return { success: false, error: "Failed to verify legacy notification finalization readiness" };
+  }
+}
+
+const LEGACY_FINALIZATION_SAFE_MESSAGES = new Set([
+  "No cutover legacy notification rules are available to finalize",
+  "Every legacy replacement must be active with a verified post-cutover delivery before finalization",
+  "A legacy notification source changed during finalization",
+]);
+
+export async function finalizeLegacyNotificationMigration(formData) {
+  const principal = await requirePermission("notification.manage");
+  if (formData?.get("confirmation") !== "finalize_legacy_notification_migration") {
+    return { success: false, error: "Confirm permanent legacy notification finalization before continuing." };
+  }
+  try {
+    const data = await finalizeNotificationLegacyMigration({ actor: principal });
+    revalidatePath("/notifications");
+    revalidatePath("/mqtt");
+    return { success: true, data };
+  } catch (error) {
+    console.error("Error finalizing legacy notification migration:", error);
+    return {
+      success: false,
+      error: error instanceof Error && LEGACY_FINALIZATION_SAFE_MESSAGES.has(error.message)
+        ? error.message
+        : "Failed to finalize the legacy notification migration",
+    };
+  }
+}
+
 const CUTOVER_SAFE_MESSAGES = new Set([
   "Select a valid unified rule to cut over",
   "Select a valid unified rule to roll back",
@@ -1030,6 +1051,7 @@ const CUTOVER_SAFE_MESSAGES = new Set([
   "Rollback requires an active unified rule and a disabled legacy rule",
   "A live unified delivery adapter is not available for this channel",
   "Unified MQTT destination no longer matches the legacy source rule",
+  "Unified Pushover priority no longer matches the legacy source rule",
   "Cutover requires current administrator-approved shadow evidence",
   "Cutover requires zero mismatches and at least one positive match",
   "Cutover requires an approved expansion with no lost legacy matches",
@@ -1117,65 +1139,6 @@ export async function retireOrphanedUnifiedNotificationRule(formData) {
     };
   }
 }
-
-export async function addNotificationPlate(formData) {
-  await requirePermission("notification.manage");
-  console.log("Adding notification plate");
-  const plateNumber = formData.get("plateNumber");
-  const result = await addNotificationPlateDB(plateNumber);
-  revalidatePath("/notifications");
-  return result;
-}
-
-export async function toggleNotification(formData) {
-  await requirePermission("notification.manage");
-  console.log("Toggling notification");
-  const plateNumber = formData.get("plateNumber");
-  const enabled = formData.get("enabled") === "true";
-  const result = await toggleNotificationDB(plateNumber, enabled);
-  revalidatePath("/notifications");
-  return result;
-}
-
-export async function deleteNotification(formData) {
-  await requirePermission("notification.manage");
-  console.log("Deleting notification");
-  try {
-    const plateNumber = formData.get("plateNumber");
-    console.log("Server action received plateNumber:", plateNumber);
-    await deleteNotificationDB(plateNumber);
-    revalidatePath("/notifications");
-    return { success: true };
-  } catch (error) {
-    console.error("Error deleting notification:", error);
-    return { success: false, error: "Failed to delete notification" };
-  }
-}
-
-export async function updateNotificationPriority(formData) {
-  await requirePermission("notification.manage");
-  console.log("Updating notification priority");
-  try {
-    // When using Select component, the values come directly as arguments
-    // not as FormData
-    const plateNumber = formData.plateNumber;
-    const priority = parseInt(formData.priority);
-
-    if (isNaN(priority) || priority < -2 || priority > 2) {
-      return { success: false, error: "Invalid priority value" };
-    }
-
-    const result = await updateNotificationPriorityDB(plateNumber, priority);
-    if (!result) {
-      return { success: false, error: "Notification not found" };
-    }
-    return { success: true, data: result };
-  } catch (error) {
-    console.error("Error updating notification priority:", error);
-    return { success: false, error: "Failed to update notification priority" };
-  }
-}
-
 
 export async function loginAction(formData) {
   console.log("Attempting login...");
@@ -1506,6 +1469,54 @@ export async function updateSettings(formData) {
           sound:
             formData.get("pushoverSound") ??
             currentConfig.notifications?.pushover?.sound,
+        },
+      };
+    }
+
+    if (updateIfExists("emailEnabled")) {
+      const smtpPort = Number(formData.get("emailPort") || currentConfig.notifications?.email?.port || 587);
+      if (!Number.isInteger(smtpPort) || smtpPort < 1 || smtpPort > 65535) {
+        throw new Error("SMTP port must be between 1 and 65535");
+      }
+      newConfig.notifications = {
+        ...newConfig.notifications,
+        email: {
+          ...currentConfig.notifications?.email,
+          enabled: formData.get("emailEnabled") === "true",
+          host: String(formData.get("emailHost") ?? currentConfig.notifications?.email?.host ?? "").trim(),
+          port: smtpPort,
+          secure: formData.get("emailSecure") === "true",
+          verify_tls: formData.get("emailVerifyTls") !== "false",
+          username: String(formData.get("emailUsername") ?? currentConfig.notifications?.email?.username ?? "").trim(),
+          password: resolveStoredSecretUpdate({
+            currentValue: currentConfig.notifications?.email?.password,
+            replacement: formData.get("emailPassword"),
+            clear: formData.get("clearEmailPassword"),
+          }),
+          from_address: String(formData.get("emailFromAddress") ?? currentConfig.notifications?.email?.from_address ?? "").trim(),
+          from_name: String(formData.get("emailFromName") ?? currentConfig.notifications?.email?.from_name ?? "").trim(),
+        },
+      };
+    }
+
+    if (updateIfExists("webhookEnabled")) {
+      const timeoutSeconds = Number(formData.get("webhookTimeoutSeconds") || currentConfig.notifications?.webhook?.timeout_seconds || 10);
+      if (!Number.isInteger(timeoutSeconds) || timeoutSeconds < 2 || timeoutSeconds > 30) {
+        throw new Error("Webhook timeout must be between 2 and 30 seconds");
+      }
+      newConfig.notifications = {
+        ...newConfig.notifications,
+        webhook: {
+          ...currentConfig.notifications?.webhook,
+          enabled: formData.get("webhookEnabled") === "true",
+          signing_secret: resolveStoredSecretUpdate({
+            currentValue: currentConfig.notifications?.webhook?.signing_secret,
+            replacement: formData.get("webhookSigningSecret"),
+            clear: formData.get("clearWebhookSigningSecret"),
+          }),
+          timeout_seconds: timeoutSeconds,
+          allow_http: formData.get("webhookAllowHttp") === "true",
+          allow_private_networks: formData.get("webhookAllowPrivateNetworks") === "true",
         },
       };
     }

@@ -1,5 +1,19 @@
 # Changelog
 
+## Unreleased
+
+- Extended verified migration finalization to both MQTT and Pushover. Disabled
+  legacy sources are deleted only after successful unified post-cutover delivery,
+  while immutable credential-free snapshots and audit evidence remain.
+- Removed the remaining legacy Pushover rule editor and write endpoints. MQTT,
+  Pushover, email, and webhook rules are now managed only by the unified
+  Notifications builder, with all direct channel tests in one panel.
+- Added unified SMTP email and HMAC-signed webhook rule actions with protected
+  settings, direct channel tests, durable retries, delivery attempts, and
+  dead-letter visibility.
+- Added conservative webhook destination controls, redirect blocking,
+  idempotency keys, and optional capture attachments for email alerts.
+
 ## [0.1.9] - 08-15-2025
 
 - Support for MQTT as plate notification for HA

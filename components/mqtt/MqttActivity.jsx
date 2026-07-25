@@ -346,7 +346,7 @@ export function MqttActivity() {
                   <TableCell colSpan={7} className="h-40 text-center">
                     <div className="font-medium">No MQTT activity yet</div>
                     <div className="mt-1 text-sm text-muted-foreground">
-                      Queue a test or enable matching rules to create activity.
+                      Queue a test or activate an MQTT action on Notifications to create activity.
                     </div>
                   </TableCell>
                 </TableRow>
