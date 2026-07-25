@@ -30,6 +30,7 @@ test("Recognition Feed exposes every supported server-side sort control", async 
     ["Plate Number", "plate_number"],
     ["%", "confidence"],
     ["Occurrences", "occurrence_count"],
+    ["Tags", "tags"],
     ["Camera", "camera_name"],
     ["Timestamp", "timestamp"],
   ];

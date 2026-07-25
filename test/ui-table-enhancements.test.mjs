@@ -40,6 +40,10 @@ test("live feed image review advances visibly and starts focused on the plate", 
   assert.match(plateTable, /onViewerPageChange/);
   assert.doesNotMatch(plateTable, /\(selectedIndex \+ 1\) % data\.length/);
   assert.match(plateTable, />Next read</);
+  assert.match(plateTable, /Delete this read/);
+  assert.match(plateTable, /setIsDeleteConfirmOpen\(true\)/);
+  assert.match(plateTable, /<DialogTitle>Confirm Deletion<\/DialogTitle>/);
+  assert.match(plateTable, /selectedImage\?\.id === activePlate\.id/);
   assert.match(plateTable, /className="flex shrink-0 gap-2"/);
   assert.match(plateTable, /Show next read \(Right Arrow\)/);
   assert.match(plateTable, /\[role="slider"\]/);

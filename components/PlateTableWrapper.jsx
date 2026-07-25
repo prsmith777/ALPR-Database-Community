@@ -302,6 +302,7 @@ export default function PlateTableWrapper({
     if (result.success) {
       router.refresh();
     }
+    return result;
   };
 
   const handleCorrectPlate = async (formData) => {

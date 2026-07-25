@@ -608,8 +608,16 @@ export default function PlateTable({
 
   const handleDeleteSubmit = async () => {
     if (!activePlate) return;
-    await onDeleteRecord(activePlate.id); //fix use id
+    const deletingSelectedRead = selectedImage?.id === activePlate.id;
+    const result = await onDeleteRecord(activePlate.id);
+    if (result?.success === false) return;
     setIsDeleteConfirmOpen(false);
+    setActivePlate(null);
+    if (deletingSelectedRead) {
+      setSelectedImage(null);
+      setSelectedIndex(-1);
+      setPendingViewerNavigation(null);
+    }
   };
 
   const correctionFormData = () => {
@@ -1384,7 +1392,14 @@ export default function PlateTable({
                       onSort={onSort}
                     />
                   </TableHead>
-                  <TableHead className="w-18 sm:w-40">Tags</TableHead>
+                  <TableHead className="w-18 sm:w-40">
+                    <SortButton
+                      label="Tags"
+                      field="tags"
+                      sort={sort}
+                      onSort={onSort}
+                    />
+                  </TableHead>
                   <TableHead className="w-32 hidden sm:table-cell">
                     <SortButton
                       label="Camera"
@@ -2151,6 +2166,23 @@ export default function PlateTable({
                       <span className="whitespace-nowrap">Next read</span>
                       <ChevronRight className="ml-1 h-3 w-3 sm:ml-2 sm:h-4 sm:w-4" />
                     </Button>
+                    {canDelete && <Button
+                      variant="outline"
+                      size="sm"
+                      className="text-xs text-red-500 hover:text-red-700 sm:text-sm"
+                      onClick={() => {
+                        setActivePlate({
+                          ...selectedImage,
+                          plate_number: selectedImage.plateNumber,
+                        });
+                        setIsDeleteConfirmOpen(true);
+                      }}
+                      aria-label={`Delete read for ${selectedImage?.plateNumber}`}
+                      title="Delete this read"
+                    >
+                      <Trash2 className="mr-1 h-3 w-3 sm:mr-2 sm:h-4 sm:w-4" />
+                      <span className="whitespace-nowrap">Delete</span>
+                    </Button>}
                   </div>
                 </div>
                 <div className="ml-auto flex gap-2">
