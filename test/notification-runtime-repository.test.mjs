@@ -22,6 +22,7 @@ test("the unified runtime loads every supported notification action without cred
   assert.equal(rules[0].actions[0].channelType, "pushover");
   assert.equal(rules[0].actions[0].configuration.priority, 1);
   assert.equal(queries.every((query) => !query.sql.includes("app_token") && !query.sql.includes("user_key")), true);
+  assert.equal(queries.every((query) => query.sql.includes("deleted_at IS NULL")), true);
   assert.match(queries[0].sql, /channel_type IN \('mqtt', 'pushover', 'email', 'webhook'\)/);
 });
 
