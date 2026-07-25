@@ -147,13 +147,14 @@ test("live feed review status filtering is multi-select, URL-backed, and server-
 
   assert.match(table, /ariaLabel="Filter by review status"/);
   assert.match(table, /allLabel="All review statuses"/);
-  for (const status of ["unreviewed", "confirmed", "corrected"]) {
+  for (const status of ["unreviewed", "confirmed", "corrected", "alias_resolved"]) {
     assert.match(table, new RegExp(`value: "${status}"`));
   }
   assert.match(wrapper, /params\.getAll\("reviewStatus"\)/);
   assert.match(page, /searchParamList\(searchParams\?\.reviewStatus\)/);
   assert.match(actions, /reviewStatuses: Array\.isArray\(reviewStatuses\)/);
   assert.match(database, /FILTERABLE_REVIEW_STATUSES/);
+  assert.match(database, /"alias_resolved"/);
   assert.match(database, /pr\.review_status = ANY\(\$\{reviewStatusParameter\}::text\[\]\)/);
   assert.match(table, /reviewStatus: null/);
 });

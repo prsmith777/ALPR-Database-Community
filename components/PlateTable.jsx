@@ -235,6 +235,7 @@ export default function PlateTable({
     { value: "unreviewed", label: "Unreviewed", color: "#F59E0B" },
     { value: "confirmed", label: "Confirmed", color: "#22C55E" },
     { value: "corrected", label: "Corrected", color: "#3B82F6" },
+    { value: "alias_resolved", label: "Alias resolved", color: "#A78BFA" },
   ];
 
   // Only keep state for modals and temporary form data
