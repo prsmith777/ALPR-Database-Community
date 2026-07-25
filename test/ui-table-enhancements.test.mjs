@@ -161,6 +161,13 @@ test("live feed review status filtering is multi-select, URL-backed, and server-
 test("the image viewer applies review results even when filtering removes the read", async () => {
   const table = await source("components/PlateTable.jsx");
 
+  const optimisticUpdate = table.indexOf("setPendingReviewTargetValidated(nextValidated)");
+  const serverUpdate = table.indexOf("await onValidate(readId, nextValidated)");
+  assert.ok(optimisticUpdate >= 0 && optimisticUpdate < serverUpdate);
+  assert.match(table, /reviewStatus: nextValidated \? "confirmed" : "unreviewed"/);
+  assert.match(table, /pendingReviewTargetValidated\s*\? "Confirming\.\.\."/);
+  assert.match(table, /if \(pendingReviewReadId === selectedImage\.id\) return/);
+  assert.match(table, /currentReviewRevision >= selectedReviewRevision/);
   assert.match(table, /const result = await onValidate\(readId, nextValidated\)/);
   assert.match(table, /reviewStatus:\s*result\.data\?\.reviewStatus/);
   assert.match(table, /pendingReviewReadId === selectedImage\?\.id/);

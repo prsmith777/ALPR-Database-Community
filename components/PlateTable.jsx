@@ -256,6 +256,7 @@ export default function PlateTable({
   const [selectedImage, setSelectedImage] = useState(null);
   const [selectedIndex, setSelectedIndex] = useState(-1);
   const [pendingReviewReadId, setPendingReviewReadId] = useState(null);
+  const [pendingReviewTargetValidated, setPendingReviewTargetValidated] = useState(null);
   const [pendingViewerNavigation, setPendingViewerNavigation] = useState(null);
   const [searchInput, setSearchInput] = useState(filters.search || "");
   const [isLive, setIsLive] = useState(true);
@@ -465,10 +466,14 @@ export default function PlateTable({
   useEffect(() => {
     if (selectedImage && data && data.length > 0) {
       const currentPlate = data.find((plate) => plate.id === selectedImage.id);
+      if (pendingReviewReadId === selectedImage.id) return;
       const currentReviewStatus = currentPlate
         ? currentPlate.review_status ||
           (currentPlate.validated ? "confirmed" : "unreviewed")
         : null;
+      const currentReviewRevision = Number(currentPlate?.review_revision || 0);
+      const selectedReviewRevision = Number(selectedImage.reviewRevision || 0);
+      const canSyncReview = currentReviewRevision >= selectedReviewRevision;
       const currentKnownName = currentPlate?.known_name || "";
       const currentTags = Array.isArray(currentPlate?.tags) ? currentPlate.tags : [];
       const selectedImageTags = Array.isArray(selectedImage.tags)
@@ -479,36 +484,69 @@ export default function PlateTable({
 
       if (
         currentPlate &&
-        (currentPlate.validated !== selectedImage.validated ||
-          currentPlate.plate_number !== selectedImage.plateNumber ||
-          currentReviewStatus !== selectedImage.reviewStatus ||
-          currentPlate.review_revision !== selectedImage.reviewRevision ||
+        ((canSyncReview &&
+          (currentPlate.validated !== selectedImage.validated ||
+            currentPlate.plate_number !== selectedImage.plateNumber ||
+            currentReviewStatus !== selectedImage.reviewStatus ||
+            currentReviewRevision !== selectedReviewRevision)) ||
           currentKnownName !== selectedImage.knownName ||
           currentTagSignature !== selectedTagSignature)
       ) {
         setSelectedImage((previous) => ({
           ...previous,
-          validated: currentPlate.validated,
-          plateNumber: currentPlate.plate_number,
-          observedPlate: currentPlate.observed_plate || currentPlate.plate_number,
-          reviewStatus: currentReviewStatus,
-          reviewRevision: currentPlate.review_revision || 0,
+          ...(canSyncReview
+            ? {
+                validated: currentPlate.validated,
+                plateNumber: currentPlate.plate_number,
+                observedPlate:
+                  currentPlate.observed_plate || currentPlate.plate_number,
+                reviewStatus: currentReviewStatus,
+                reviewRevision: currentReviewRevision,
+              }
+            : {}),
           knownName: currentKnownName,
           tags: currentTags,
         }));
       }
     }
-  }, [data, selectedImage]);
+  }, [data, pendingReviewReadId, selectedImage]);
 
   const handleSelectedImageValidation = async () => {
     if (!selectedImage || pendingReviewReadId === selectedImage.id) return;
 
     const readId = selectedImage.id;
     const nextValidated = !selectedImage.validated;
+    const previousReviewState = {
+      validated: selectedImage.validated,
+      plateNumber: selectedImage.plateNumber,
+      reviewStatus: selectedImage.reviewStatus,
+      reviewRevision: selectedImage.reviewRevision,
+    };
+    const rollbackReviewState = () => {
+      setSelectedImage((previous) =>
+        previous?.id === readId
+          ? { ...previous, ...previousReviewState }
+          : previous
+      );
+    };
     setPendingReviewReadId(readId);
+    setPendingReviewTargetValidated(nextValidated);
+    setSelectedImage((previous) =>
+      previous?.id === readId
+        ? {
+            ...previous,
+            validated: nextValidated,
+            reviewStatus: nextValidated ? "confirmed" : "unreviewed",
+            reviewRevision: Number(previous.reviewRevision || 0) + 1,
+          }
+        : previous
+    );
     try {
       const result = await onValidate(readId, nextValidated);
-      if (!result?.success) return;
+      if (!result?.success) {
+        rollbackReviewState();
+        return;
+      }
 
       setSelectedImage((previous) => {
         if (!previous || previous.id !== readId) return previous;
@@ -523,8 +561,12 @@ export default function PlateTable({
             result.data?.reviewRevision ?? previous.reviewRevision,
         };
       });
+    } catch (error) {
+      rollbackReviewState();
+      console.error("Failed to update plate review:", error);
     } finally {
       setPendingReviewReadId((current) => (current === readId ? null : current));
+      setPendingReviewTargetValidated(null);
     }
   };
 
@@ -2297,9 +2339,9 @@ export default function PlateTable({
                       )}
                       <span className="whitespace-nowrap">
                         {pendingReviewReadId === selectedImage?.id
-                          ? selectedImage.validated
-                            ? "Reopening..."
-                            : "Confirming..."
+                          ? pendingReviewTargetValidated
+                            ? "Confirming..."
+                            : "Reopening..."
                           : selectedImage?.validated
                             ? "Reopen review"
                             : "Confirm detected plate"}
