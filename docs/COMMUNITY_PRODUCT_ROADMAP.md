@@ -32,7 +32,8 @@ reliable background processing.
   active in the unified runtime with their legacy sources disabled. This
   release adds verified finalization: after a successful post-cutover delivery,
   credential-free source snapshots and audit evidence are retained while the
-  legacy MQTT rows and their separate rule-management surface are removed. The
+  legacy MQTT or Pushover rows are removed. Both separate legacy rule-management
+  surfaces are gone; all new rules are created in Notifications. The
   two deleted Delivery-tag sources left disabled orphaned copies; this release
   adds audited retirement that preserves those rules and evidence while
   removing them from active migration workflows.
@@ -47,8 +48,9 @@ reliable background processing.
   explicit rule time zones and persisted event-time evaluation, quiet hours,
   durable unified Pushover/email/webhook retries and dead-letter state, full recent alert traces,
   direct channel tests, webhook HMAC signing and target safety controls,
-  and Pushover quota visibility on Notifications. Legacy Pushover rows remain
-  best-effort only until their individual unified-rule cutover.
+  and Pushover quota visibility on Notifications. Migrated MQTT and Pushover
+  copies use the same shadow approval, atomic cutover, rollback, and verified
+  finalization workflow.
 - Vehicle ReID visual search, uploaded-image queries, camera fallback profiles,
   calibration feedback, and the resumable safety-aware background index worker
   are available. Original captures remain unchanged.
@@ -116,11 +118,11 @@ execution, delivery, and attempt records are implemented with a deterministic,
 explainable evaluator. Production also has read-only migration preview,
 idempotently tracked disabled copies, restricted draft editing, no-delivery
   simulation, shadow comparison, administrator approval evidence, atomic
-  per-rule cutover, rollback, and verified MQTT finalization. Existing Pushover or MQTT delivery stays on its
+  per-rule cutover, rollback, and verified MQTT/Pushover finalization. Existing Pushover or MQTT delivery stays on its
   legacy path until that individual copy has positive evidence and an explicit
-  cutover. After verified unified MQTT delivery, finalization archives the
+  cutover. After verified unified delivery, finalization archives the
   credential-free source configuration and deletes the legacy rule so
-  Notifications is the only MQTT rule-management system. Disabled copies whose legacy source was intentionally removed can be
+  Notifications is the only notification rule-management system. Disabled copies whose legacy source was intentionally removed can be
   retired with an audited, non-deleting workflow. The focused builder for new
   rules now covers accepted reads, the principal plate/context filters,
   schedules, MQTT/Pushover/email/webhook actions, cooldown, preview, and audited activation.
@@ -150,7 +152,8 @@ Operational behavior:
   nested group (delivered with a six-level safety bound);
 - explicit rule timezone and event-time evaluation (delivered);
 - quiet hours and durable delivery retries/dead-letter state for unified MQTT,
-  Pushover, SMTP email, and signed webhook actions (delivered; legacy Pushover remains best-effort until cutover);
+  Pushover, SMTP email, and signed webhook actions (delivered; migrated legacy
+  sources use guarded cutover and verified finalization);
 - expandable recent-read previews and full recent alert-history traces with
   per-attempt delivery detail (delivered);
 - account-wide Pushover monthly quota visibility on Settings and Notifications

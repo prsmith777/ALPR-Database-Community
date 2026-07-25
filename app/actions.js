@@ -23,7 +23,6 @@ import {
   removePlateRead,
   getPool,
   resetPool,
-  updateNotificationPriorityDB,
   getTagsForPlate,
   correctAllPlateReads,
   getDistinctCameraNames,
@@ -59,8 +58,8 @@ import {
   rollbackNotificationRule,
 } from "@/lib/notification-cutover-runtime.mjs";
 import {
-  finalizeNotificationMqttMigration,
-  getNotificationMqttFinalizationPreview as loadNotificationMqttFinalizationPreview,
+  finalizeNotificationLegacyMigration,
+  getNotificationLegacyFinalizationPreview as loadNotificationLegacyFinalizationPreview,
 } from "@/lib/notification-mqtt-finalization-runtime.mjs";
 import {
   simulateNotificationRuleDraft,
@@ -85,13 +84,6 @@ import {
   normalizeVisualIndexSettings,
   visualIndexPace,
 } from "@/lib/visual-index-settings.mjs";
-import {
-  getNotificationPlates as getNotificationPlatesDB,
-  addNotificationPlate as addNotificationPlateDB,
-  toggleNotification as toggleNotificationDB,
-  deleteNotification as deleteNotificationDB,
-} from "@/lib/db";
-
 import { revalidatePath, revalidateTag, unstable_noStore } from "next/cache";
 import { cookies, headers } from "next/headers";
 import { redirect } from "next/navigation";
@@ -708,18 +700,6 @@ export async function getFlagged() {
   }
 }
 
-export async function getNotificationPlates() {
-  await requirePermission("plate.read");
-  console.log("Checking notification plates");
-  try {
-    const plates = await getNotificationPlatesDB();
-    return { success: true, data: plates };
-  } catch (error) {
-    console.error("Error in getNotificationPlates action:", error);
-    return { success: false, error: "Failed to fetch notification plates" };
-  }
-}
-
 export async function getNotificationRuleMigrationPreview() {
   await requirePermission("notification.manage");
   try {
@@ -1024,39 +1004,39 @@ export async function getUnifiedNotificationCutoverPreview() {
   }
 }
 
-export async function getNotificationMqttFinalizationPreview() {
+export async function getNotificationLegacyFinalizationPreview() {
   await requirePermission("notification.manage");
   try {
-    return { success: true, data: await loadNotificationMqttFinalizationPreview() };
+    return { success: true, data: await loadNotificationLegacyFinalizationPreview() };
   } catch (error) {
-    console.error("Error building MQTT migration finalization preview:", error);
-    return { success: false, error: "Failed to verify MQTT migration finalization readiness" };
+    console.error("Error building legacy notification finalization preview:", error);
+    return { success: false, error: "Failed to verify legacy notification finalization readiness" };
   }
 }
 
-const MQTT_FINALIZATION_SAFE_MESSAGES = new Set([
-  "No cutover MQTT rules are available to finalize",
-  "Every MQTT replacement must be active with a verified post-cutover delivery before finalization",
-  "A legacy MQTT source changed during finalization",
+const LEGACY_FINALIZATION_SAFE_MESSAGES = new Set([
+  "No cutover legacy notification rules are available to finalize",
+  "Every legacy replacement must be active with a verified post-cutover delivery before finalization",
+  "A legacy notification source changed during finalization",
 ]);
 
-export async function finalizeMqttNotificationMigration(formData) {
+export async function finalizeLegacyNotificationMigration(formData) {
   const principal = await requirePermission("notification.manage");
-  if (formData?.get("confirmation") !== "finalize_mqtt_migration") {
-    return { success: false, error: "Confirm permanent MQTT migration finalization before continuing." };
+  if (formData?.get("confirmation") !== "finalize_legacy_notification_migration") {
+    return { success: false, error: "Confirm permanent legacy notification finalization before continuing." };
   }
   try {
-    const data = await finalizeNotificationMqttMigration({ actor: principal });
+    const data = await finalizeNotificationLegacyMigration({ actor: principal });
     revalidatePath("/notifications");
     revalidatePath("/mqtt");
     return { success: true, data };
   } catch (error) {
-    console.error("Error finalizing legacy MQTT notification migration:", error);
+    console.error("Error finalizing legacy notification migration:", error);
     return {
       success: false,
-      error: error instanceof Error && MQTT_FINALIZATION_SAFE_MESSAGES.has(error.message)
+      error: error instanceof Error && LEGACY_FINALIZATION_SAFE_MESSAGES.has(error.message)
         ? error.message
-        : "Failed to finalize the MQTT notification migration",
+        : "Failed to finalize the legacy notification migration",
     };
   }
 }
@@ -1071,6 +1051,7 @@ const CUTOVER_SAFE_MESSAGES = new Set([
   "Rollback requires an active unified rule and a disabled legacy rule",
   "A live unified delivery adapter is not available for this channel",
   "Unified MQTT destination no longer matches the legacy source rule",
+  "Unified Pushover priority no longer matches the legacy source rule",
   "Cutover requires current administrator-approved shadow evidence",
   "Cutover requires zero mismatches and at least one positive match",
   "Cutover requires an approved expansion with no lost legacy matches",
@@ -1158,65 +1139,6 @@ export async function retireOrphanedUnifiedNotificationRule(formData) {
     };
   }
 }
-
-export async function addNotificationPlate(formData) {
-  await requirePermission("notification.manage");
-  console.log("Adding notification plate");
-  const plateNumber = formData.get("plateNumber");
-  const result = await addNotificationPlateDB(plateNumber);
-  revalidatePath("/notifications");
-  return result;
-}
-
-export async function toggleNotification(formData) {
-  await requirePermission("notification.manage");
-  console.log("Toggling notification");
-  const plateNumber = formData.get("plateNumber");
-  const enabled = formData.get("enabled") === "true";
-  const result = await toggleNotificationDB(plateNumber, enabled);
-  revalidatePath("/notifications");
-  return result;
-}
-
-export async function deleteNotification(formData) {
-  await requirePermission("notification.manage");
-  console.log("Deleting notification");
-  try {
-    const plateNumber = formData.get("plateNumber");
-    console.log("Server action received plateNumber:", plateNumber);
-    await deleteNotificationDB(plateNumber);
-    revalidatePath("/notifications");
-    return { success: true };
-  } catch (error) {
-    console.error("Error deleting notification:", error);
-    return { success: false, error: "Failed to delete notification" };
-  }
-}
-
-export async function updateNotificationPriority(formData) {
-  await requirePermission("notification.manage");
-  console.log("Updating notification priority");
-  try {
-    // When using Select component, the values come directly as arguments
-    // not as FormData
-    const plateNumber = formData.plateNumber;
-    const priority = parseInt(formData.priority);
-
-    if (isNaN(priority) || priority < -2 || priority > 2) {
-      return { success: false, error: "Invalid priority value" };
-    }
-
-    const result = await updateNotificationPriorityDB(plateNumber, priority);
-    if (!result) {
-      return { success: false, error: "Notification not found" };
-    }
-    return { success: true, data: result };
-  } catch (error) {
-    console.error("Error updating notification priority:", error);
-    return { success: false, error: "Failed to update notification priority" };
-  }
-}
-
 
 export async function loginAction(formData) {
   console.log("Attempting login...");

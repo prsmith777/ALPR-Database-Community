@@ -1,20 +1,18 @@
 import {
-  getNotificationPlates,
   getNotificationRuleBuilderOverview,
   getNotificationOperationsOverview,
-  getNotificationMqttFinalizationPreview,
+  getNotificationLegacyFinalizationPreview,
   getNotificationRuleMigrationPreview,
   getUnifiedNotificationCutoverPreview,
   getUnifiedNotificationRuleReview,
 } from "@/app/actions";
 import { NotificationCutoverPanel } from "@/components/NotificationCutoverPanel";
 import { NotificationMigrationPreview } from "@/components/NotificationMigrationPreview";
-import { NotificationMqttFinalizationPanel } from "@/components/NotificationMqttFinalizationPanel";
+import { NotificationLegacyFinalizationPanel } from "@/components/NotificationLegacyFinalizationPanel";
 import { NotificationRuleDraftEditor } from "@/components/NotificationRuleDraftEditor";
 import { NotificationRuleBuilder } from "@/components/NotificationRuleBuilder";
 import { NotificationChannelTestPanel } from "@/components/NotificationChannelTestPanel";
 import { NotificationOperationsPanel } from "@/components/NotificationOperationsPanel";
-import { NotificationsTable } from "@/components/NotificationsTable";
 import { UnifiedRuleShadowReview } from "@/components/UnifiedRuleShadowReview";
 import DashboardLayout from "@/components/layout/MainLayout";
 import BasicTitle from "@/components/layout/BasicTitle";
@@ -24,16 +22,14 @@ export const dynamic = "force-dynamic";
 
 export default async function NotificationsPage() {
   await requirePagePermission("notification.manage");
-  const [response, builderResponse, operationsResponse, migrationPreviewResponse, shadowReviewResponse, cutoverPreviewResponse, finalizationResponse] = await Promise.all([
-    getNotificationPlates(),
+  const [builderResponse, operationsResponse, migrationPreviewResponse, shadowReviewResponse, cutoverPreviewResponse, finalizationResponse] = await Promise.all([
     getNotificationRuleBuilderOverview(),
     getNotificationOperationsOverview(),
     getNotificationRuleMigrationPreview(),
     getUnifiedNotificationRuleReview(),
     getUnifiedNotificationCutoverPreview(),
-    getNotificationMqttFinalizationPreview(),
+    getNotificationLegacyFinalizationPreview(),
   ]);
-  const notificationPlates = response.success ? response.data : [];
   const builderOverview = builderResponse.success ? builderResponse.data : null;
   const operationsOverview = operationsResponse.success ? operationsResponse.data : null;
   const migrationPreview = migrationPreviewResponse.success
@@ -58,10 +54,6 @@ export default async function NotificationsPage() {
         <div className="my-8">
           <NotificationOperationsPanel overview={operationsOverview} />
         </div>
-        <h2 className="my-4 ml-1 text-2xl font-medium text-zinc">
-          Legacy exact-plate Pushover rules
-        </h2>
-        <NotificationsTable initialData={notificationPlates} />
         <div className="mt-8">
           <NotificationMigrationPreview preview={migrationPreview} />
         </div>
@@ -75,7 +67,7 @@ export default async function NotificationsPage() {
           <NotificationCutoverPanel preview={cutoverPreview} />
         </div>
         <div className="mt-8">
-          <NotificationMqttFinalizationPanel preview={finalizationPreview} />
+          <NotificationLegacyFinalizationPanel preview={finalizationPreview} />
         </div>
       </BasicTitle>
     </DashboardLayout>

@@ -38,21 +38,21 @@ test("plate tables label icon-only row actions with accessible tooltips", async 
   assert.match(databaseFilters, /htmlFor="plate-database-page-size"/);
 });
 
-test("notification and MQTT broker action icons expose hover and focus labels", async () => {
+test("notification channel tests and MQTT broker action icons expose accessible labels", async () => {
   const [notifications, brokers] = await Promise.all([
-    source("components/NotificationsTable.jsx"),
+    source("components/NotificationChannelTestPanel.jsx"),
     source("components/mqtt/MqttBrokers.jsx"),
   ]);
 
-  assert.match(notifications, /Send test notification/);
-  assert.match(notifications, /Remove from notifications/);
+  assert.match(notifications, /aria-label="Pushover sample plate"/);
+  assert.match(notifications, /Send test Pushover/);
+  assert.match(notifications, /aria-label="Test email recipient"/);
+  assert.match(notifications, /aria-label="Test webhook URL"/);
   assert.match(brokers, /<TooltipContent>Edit broker<\/TooltipContent>/);
   assert.match(brokers, /<TooltipContent>Delete broker<\/TooltipContent>/);
 
-  for (const component of [notifications, brokers]) {
-    assert.match(component, /TooltipTrigger asChild/);
-    assert.match(component, /aria-label=/);
-  }
+  assert.match(brokers, /TooltipTrigger asChild/);
+  assert.match(brokers, /aria-label=/);
 });
 
 test("the desktop theme toggle uses the same accessible tooltip contract", async () => {

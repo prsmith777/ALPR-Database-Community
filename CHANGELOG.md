@@ -2,9 +2,12 @@
 
 ## Unreleased
 
-- Added verified MQTT migration finalization that archives immutable source
-  snapshots and audit evidence before transactionally deleting disabled legacy
-  rules; MQTT rule creation and editing now live only on Notifications.
+- Extended verified migration finalization to both MQTT and Pushover. Disabled
+  legacy sources are deleted only after successful unified post-cutover delivery,
+  while immutable credential-free snapshots and audit evidence remain.
+- Removed the remaining legacy Pushover rule editor and write endpoints. MQTT,
+  Pushover, email, and webhook rules are now managed only by the unified
+  Notifications builder, with all direct channel tests in one panel.
 - Added unified SMTP email and HMAC-signed webhook rule actions with protected
   settings, direct channel tests, durable retries, delivery attempts, and
   dead-letter visibility.

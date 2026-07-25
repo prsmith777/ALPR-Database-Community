@@ -30,7 +30,7 @@ function approvedShadow(status = "approved") {
   };
 }
 
-function transactionalPool({ cutoverActive = false, shadowStatus = "approved", destinationMismatch = false } = {}) {
+function transactionalPool({ cutoverActive = false, shadowStatus = "approved", destinationMismatch = false, sourceType = "mqtt" } = {}) {
   const calls = [];
   const client = {
     async query(sql, values = []) {
@@ -40,7 +40,7 @@ function transactionalPool({ cutoverActive = false, shadowStatus = "approved", d
         return {
           rows: [{
             migration_id: 10,
-            source_type: "mqtt",
+            source_type: sourceType,
             source_id: 7,
             target_rule_id: 51,
             name: "Family arrival",
@@ -60,6 +60,9 @@ function transactionalPool({ cutoverActive = false, shadowStatus = "approved", d
           message: "Family arrived",
         }] };
       }
+      if (normalized.includes("FROM public.plate_notifications") && normalized.endsWith("FOR UPDATE")) {
+        return { rows: [{ id: 7, enabled: !cutoverActive, priority: 1 }] };
+      }
       if (normalized.startsWith("SELECT a.id AS action_id")) {
         return {
           rows: [{
@@ -67,14 +70,14 @@ function transactionalPool({ cutoverActive = false, shadowStatus = "approved", d
             action_enabled: cutoverActive,
             channel_id: 81,
             channel_enabled: cutoverActive,
-            channel_type: "mqtt",
-            credential_reference: "mqtt-broker:2",
-            configuration: {
+            channel_type: sourceType,
+            credential_reference: sourceType === "mqtt" ? "mqtt-broker:2" : "settings:notifications.pushover",
+            configuration: sourceType === "mqtt" ? {
               brokerId: 2,
               destinationMode: "fixed_topic",
               fixedTopic: destinationMismatch ? "wrong/topic" : "Blue Iris/ALPR/family",
               message: "Family arrived",
-            },
+            } : { priority: destinationMismatch ? 0 : 1 },
           }],
         };
       }
@@ -147,7 +150,7 @@ test("guarded cutover atomically disables legacy before enabling the approved un
     legacyEnabled: false,
     unifiedEnabled: true,
   });
-  const legacyOff = fixture.calls.findIndex(({ sql }) => sql.startsWith("UPDATE public.mqtt_rules SET enabled = FALSE"));
+  const legacyOff = fixture.calls.findIndex(({ sql, values }) => sql.startsWith("UPDATE public.mqtt_rules SET enabled = $2") && values[1] === false);
   const unifiedOn = fixture.calls.findIndex(({ sql }) => sql.startsWith("UPDATE public.notification_rules SET enabled = TRUE"));
   assert.ok(legacyOff >= 0 && unifiedOn > legacyOff);
   assert.ok(fixture.calls.some(({ sql }) => sql.includes("INSERT INTO public.notification_rule_cutover_events")));
@@ -186,7 +189,7 @@ test("cutover is refused when positive evidence is not currently approved", asyn
     /current administrator-approved shadow evidence/
   );
   assert.ok(fixture.calls.some(({ sql }) => sql === "ROLLBACK"));
-  assert.ok(!fixture.calls.some(({ sql }) => sql.startsWith("UPDATE public.mqtt_rules SET enabled = FALSE")));
+  assert.ok(!fixture.calls.some(({ sql, values }) => sql.startsWith("UPDATE public.mqtt_rules SET enabled = $2") && values[1] === false));
 });
 
 test("cutover is refused when the disabled unified destination drifted from legacy", async () => {
@@ -200,7 +203,7 @@ test("cutover is refused when the disabled unified destination drifted from lega
     /destination no longer matches the legacy source rule/
   );
   assert.ok(fixture.calls.some(({ sql }) => sql === "ROLLBACK"));
-  assert.ok(!fixture.calls.some(({ sql }) => sql.startsWith("UPDATE public.mqtt_rules SET enabled = FALSE")));
+  assert.ok(!fixture.calls.some(({ sql, values }) => sql.startsWith("UPDATE public.mqtt_rules SET enabled = $2") && values[1] === false));
 });
 
 test("rollback atomically disables unified delivery before restoring the legacy rule", async () => {
@@ -212,7 +215,7 @@ test("rollback atomically disables unified delivery before restoring the legacy 
   const result = await repository.rollback({ ruleId: 51, actor: { id: 9 } });
   assert.equal(result.state, "legacy_active");
   const unifiedOff = fixture.calls.findIndex(({ sql }) => sql.startsWith("UPDATE public.notification_rules SET enabled = FALSE"));
-  const legacyOn = fixture.calls.findIndex(({ sql }) => sql.startsWith("UPDATE public.mqtt_rules SET enabled = TRUE"));
+  const legacyOn = fixture.calls.findIndex(({ sql, values }) => sql.startsWith("UPDATE public.mqtt_rules SET enabled = $2") && values[1] === true);
   assert.ok(unifiedOff >= 0 && legacyOn > unifiedOff);
   assert.ok(fixture.calls.some(({ sql, values }) =>
     sql.includes("INSERT INTO public.audit_events") && values[1] === "notification.rule_rollback"
@@ -260,7 +263,20 @@ test("orphan retirement refuses an existing source or prior cutover history", as
   }
 });
 
-test("cutover state exposes runtime and approval blockers", () => {
+test("Pushover is a supported guarded cutover with matching priority", async () => {
+  const fixture = transactionalPool({ sourceType: "pushover" });
+  const repository = new NotificationCutoverRepository({
+    pool: fixture.pool,
+    shadowRepositoryFactory: fixture.shadowRepositoryFactory,
+  });
+  const result = await repository.cutover({ ruleId: 51, actor: { id: 9 } });
+  assert.equal(result.state, "unified_active");
+  assert.ok(fixture.calls.some(({ sql, values }) =>
+    sql.startsWith("UPDATE public.plate_notifications SET enabled = $2") && values[1] === false
+  ));
+});
+
+test("cutover state recognizes supported Pushover runtime and matching priority", () => {
   const mapped = notificationCutoverRepositoryInternals.mapState(
     {
       migration_id: 10,
@@ -274,16 +290,21 @@ test("cutover state exposes runtime and approval blockers", () => {
       action_count: 1,
       all_delivery_disabled: true,
       all_delivery_enabled: false,
-      runtime_supported: false,
+      runtime_supported: true,
       target_cooldown_seconds: 0,
-      source_configuration: null,
-      delivery_configurations: [],
+      source_configuration: { priority: 1 },
+      delivery_configurations: [{
+        channelType: "pushover",
+        credentialReference: "settings:notifications.pushover",
+        configuration: { priority: 1 },
+      }],
     },
     { status: "approved", latestReview: { current: true }, positiveMatchCount: 1, mismatchCount: 0 }
   );
   assert.equal(mapped.state, "legacy_active");
-  assert.equal(mapped.canCutover, false);
-  assert.match(mapped.blockers.join(" "), /adapter is not available/i);
+  assert.equal(mapped.canCutover, true);
+  assert.equal(mapped.configurationMatches, true);
+  assert.equal(mapped.blockers.length, 0);
 });
 
 test("cutover state exposes safely disabled copies whose source was removed", () => {

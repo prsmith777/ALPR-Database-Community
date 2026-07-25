@@ -1307,7 +1307,7 @@ VALUES (
 )
 ON CONFLICT (version) DO NOTHING;
 
--- Finalization is the deliberate end of the legacy MQTT rule runtime. Preserve
+-- Finalization is the deliberate end of a legacy notification rule runtime. Preserve
 -- an immutable, credential-free copy of each source rule before deleting it,
 -- then remove the mapping from active migration/cutover workflows. Unified
 -- rule delivery and its append-only cutover evidence remain authoritative.
@@ -1343,6 +1343,15 @@ INSERT INTO public.schema_migrations (version, description)
 VALUES (
     '2026072403_finalize_legacy_mqtt_rules',
     'Archive verified cutover MQTT source rules and remove their legacy runtime rows.'
+)
+ON CONFLICT (version) DO NOTHING;
+
+-- The same verified-delivery boundary now retires legacy exact-plate Pushover
+-- rows. No credentials are copied into the immutable source snapshot.
+INSERT INTO public.schema_migrations (version, description)
+VALUES (
+    '2026072404_finalize_legacy_pushover_rules',
+    'Extend verified legacy finalization and immutable snapshots to migrated Pushover rules.'
 )
 ON CONFLICT (version) DO NOTHING;
 

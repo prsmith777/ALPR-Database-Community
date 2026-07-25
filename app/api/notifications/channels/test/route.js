@@ -4,6 +4,7 @@ import { denyUnlessRoutePermission } from "@/lib/route-permission.mjs";
 import { getConfig } from "@/lib/settings";
 import { sendEmailNotification } from "@/lib/email-notifications.mjs";
 import { sendWebhookNotification } from "@/lib/webhook-notifications.mjs";
+import { sendPushoverNotification } from "@/lib/notifications";
 
 export async function POST(request) {
   const denied = await denyUnlessRoutePermission("notification.manage");
@@ -14,6 +15,18 @@ export async function POST(request) {
     const destination = String(body?.destination || "").trim();
     const config = await getConfig();
     const eventId = `manual-test-${Date.now()}`;
+    if (channelType === "pushover") {
+      const plateNumber = destination.toUpperCase().replace(/[^A-Z0-9-]/g, "").slice(0, 16);
+      if (!plateNumber) {
+        return NextResponse.json({ success: false, error: "Enter a sample plate number" }, { status: 400 });
+      }
+      const result = await sendPushoverNotification(
+        plateNumber,
+        `This is a test Pushover notification from ALPR Database Community for sample plate ${plateNumber}. No plate read triggered this message.`
+      );
+      if (!result.success) throw new Error(result.error || "Pushover test delivery failed");
+      return NextResponse.json({ success: true, message: "Test Pushover notification delivered", data: result.data });
+    }
     if (channelType === "email") {
       const result = await sendEmailNotification({
         config: config.notifications?.email || {},
@@ -47,7 +60,7 @@ export async function POST(request) {
       });
       return NextResponse.json({ success: true, message: "Test webhook delivered", data: result });
     }
-    return NextResponse.json({ success: false, error: "Select Email or Webhook" }, { status: 400 });
+    return NextResponse.json({ success: false, error: "Select Pushover, Email, or Webhook" }, { status: 400 });
   } catch (error) {
     console.error("Notification channel test failed", {
       error: String(error?.message || error).slice(0, 1000),

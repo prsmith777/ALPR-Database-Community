@@ -1,52 +1,35 @@
-import { sendPushoverNotification } from "@/lib/notifications";
 import { NextResponse } from "next/server";
+
+import { sendPushoverNotification } from "@/lib/notifications";
 import { denyUnlessRoutePermission } from "@/lib/route-permission.mjs";
 
+// Compatibility endpoint for older clients. The current Notifications page
+// uses /api/notifications/channels/test for all channel tests.
 export async function POST(request) {
   const denied = await denyUnlessRoutePermission("notification.manage");
   if (denied) return denied;
   try {
     const formData = await request.formData();
-    const plateNumber = formData.get("plateNumber");
-
+    const plateNumber = String(formData.get("plateNumber") || "")
+      .trim()
+      .toUpperCase()
+      .replace(/[^A-Z0-9-]/g, "")
+      .slice(0, 16);
     if (!plateNumber) {
-      return NextResponse.json(
-        { success: false, error: "Plate number is required" },
-        { status: 400 }
-      );
+      return NextResponse.json({ success: false, error: "Plate number is required" }, { status: 400 });
     }
-
-    // Create a test message that makes it clear this is a test
-    const testMessage = `🔔 TEST NOTIFICATION:\nPlate number ${plateNumber} detected\n\nThis is a test notification sent from the ALPR Database settings panel.`;
-
-    const result = await sendPushoverNotification(plateNumber, testMessage);
-
-    if (result.success) {
-      return NextResponse.json({
-        success: true,
-        message: "Test notification sent successfully",
-        data: result.data,
-      });
-    } else {
-      // If there's a specific error from Pushover, pass it through
-      return NextResponse.json(
-        {
-          success: false,
-          error: result.error || "Failed to send test notification",
-          details: result.data,
-        },
-        { status: 500 }
-      );
+    const result = await sendPushoverNotification(
+      plateNumber,
+      `This is a test Pushover notification from ALPR Database Community for sample plate ${plateNumber}. No plate read triggered this message.`
+    );
+    if (!result.success) {
+      return NextResponse.json({ success: false, error: result.error || "Pushover test delivery failed" }, { status: 400 });
     }
+    return NextResponse.json({ success: true, message: "Test Pushover notification delivered", data: result.data });
   } catch (error) {
-    console.error("Test notification error:", error);
     return NextResponse.json(
-      {
-        success: false,
-        error: "Failed to send test notification",
-        details: error.message,
-      },
-      { status: 500 }
+      { success: false, error: String(error?.message || "Pushover test delivery failed").slice(0, 1000) },
+      { status: 400 }
     );
   }
 }

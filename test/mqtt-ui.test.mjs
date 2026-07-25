@@ -35,7 +35,8 @@ test("notifications host the unified builder without embedding MQTT broker admin
   assert.equal(notifications.includes("MqttNotificationsTable"), false);
   assert.equal(notifications.includes("getMqttNotificationsAction"), false);
   assert.match(notifications, /NotificationRuleBuilder/);
-  assert.match(notifications, /Legacy exact-plate Pushover rules/);
+  assert.match(notifications, /NotificationLegacyFinalizationPanel/);
+  assert.doesNotMatch(notifications, /Legacy exact-plate Pushover rules|NotificationsTable/);
 });
 
 test("general Settings no longer embeds the obsolete MQTT broker manager", async () => {
