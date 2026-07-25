@@ -528,6 +528,7 @@ export async function getLatestPlateReads({
   hourRange = null,
   cameraName = "",
   cameraNames = [],
+  reviewStatuses = [],
   sortField = "",
   sortDirection = "",
 } = {}) {
@@ -557,6 +558,7 @@ export async function getLatestPlateReads({
             : cameraName
               ? [cameraName]
               : [],
+        reviewStatuses: Array.isArray(reviewStatuses) ? reviewStatuses : [],
       },
       sort: {
         field: sortField,

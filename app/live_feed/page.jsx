@@ -52,6 +52,7 @@ export default async function LivePlates(props) {
           }
         : null,
     cameraNames: searchParamList(searchParams?.camera),
+    reviewStatuses: searchParamList(searchParams?.reviewStatus),
     sortField: searchParams?.sortField,
     sortDirection: searchParams?.sortDirection,
   };
