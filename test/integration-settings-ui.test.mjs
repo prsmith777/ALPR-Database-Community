@@ -22,6 +22,11 @@ test("notification rules separate rule work from channel configuration", async (
   assert.match(builder, /setDraft\(browserDraft\(options\)\)/);
   assert.doesNotMatch(builder, /setDraft\(emptyDraft\(options\)\)/);
   assert.match(builder, /Back to rules/);
+  assert.match(builder, /Delete notification rule\?/);
+  assert.match(builder, /delete_disabled_notification_rule/);
+  assert.match(builder, /disabled=\{isPending \|\| rule\.enabled\}/);
+  assert.match(builder, /rule\.migratedFromLegacy && storedTimeZone === "UTC"/);
+  assert.match(builder, /draftFromRule\(rule, options\)/);
   assert.doesNotMatch(operations, /PushoverUsageCard/);
 });
 

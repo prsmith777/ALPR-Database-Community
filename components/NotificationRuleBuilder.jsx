@@ -5,10 +5,21 @@ import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState, useTransition } from "react";
 
 import {
+  deleteNotificationRuleBuilder,
   previewNotificationRuleBuilderDraft,
   saveNotificationRuleBuilderDraft,
   toggleNotificationRuleBuilder,
 } from "@/app/actions";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -103,26 +114,38 @@ function browserDraft(options) {
   return emptyDraft({ ...options, localTimeZone });
 }
 
-function nodeFromStored(node) {
+function nodeFromStored(node, { priorTimeZone, nextTimeZone } = {}) {
   if (node.kind === "group") {
-    return { ...node, key: token(), children: (node.children || []).map(nodeFromStored) };
+    return { ...node, key: token(), children: (node.children || []).map((child) => nodeFromStored(child, { priorTimeZone, nextTimeZone })) };
   }
-  return { ...node, key: token(), value: { ...(node.value || {}) } };
+  const value = { ...(node.value || {}) };
+  if (node.conditionType === "local_time_window" && value.timeZone === priorTimeZone) {
+    value.timeZone = nextTimeZone;
+  }
+  return { ...node, key: token(), value };
 }
 
-function draftFromRule(rule) {
+function draftFromRule(rule, options) {
   const root = rule.conditionTree;
   if (!root || root.kind !== "group") return null;
+  const storedTimeZone = rule.timeZone || "UTC";
+  const timeZone = rule.migratedFromLegacy && storedTimeZone === "UTC"
+    ? preferredRuleTimeZone({ browserTimeZone: resolvedBrowserTimeZone(), configuredTimeZone: options.localTimeZone })
+    : storedTimeZone;
   return {
     ruleId: rule.id,
     name: rule.name,
     description: rule.description || "",
     eventType: rule.eventType || "plate_read.accepted",
-    timeZone: rule.timeZone || "UTC",
+    timeZone,
     evaluationIntervalSeconds: rule.evaluationIntervalSeconds || 300,
-    quietHours: { enabled: false, start: "22:00", end: "06:00", weekdays: [], timeZone: rule.timeZone || "UTC", ...(rule.quietHours || {}) },
+    quietHours: syncQuietHoursTimeZone({
+      quietHours: { enabled: false, start: "22:00", end: "06:00", weekdays: [], timeZone: storedTimeZone, ...(rule.quietHours || {}) },
+      priorRuleTimeZone: storedTimeZone,
+      nextRuleTimeZone: timeZone,
+    }),
     cooldownSeconds: rule.cooldownSeconds,
-    conditionTree: nodeFromStored(root),
+    conditionTree: nodeFromStored(root, { priorTimeZone: storedTimeZone, nextTimeZone: timeZone }),
     actions: rule.actions.map((action) => ({
       key: token(),
       channelType: action.channelType,
@@ -306,6 +329,7 @@ export function NotificationRuleBuilder({ overview }) {
   const [draft, setDraft] = useState(() => emptyDraft(options));
   const [message, setMessage] = useState(null);
   const [preview, setPreview] = useState(null);
+  const [deleteCandidate, setDeleteCandidate] = useState(null);
   const [view, setView] = useState("list");
   const [isPending, startTransition] = useTransition();
   const editable = useMemo(() => rules.filter((rule) => !rule.managedByMigration), [rules]);
@@ -367,6 +391,22 @@ export function NotificationRuleBuilder({ overview }) {
       router.refresh();
     });
   }
+  function confirmDelete() {
+    if (!deleteCandidate) return;
+    const rule = deleteCandidate;
+    setMessage(null);
+    startTransition(async () => {
+      const formData = new FormData();
+      formData.set("ruleId", String(rule.id));
+      formData.set("ruleName", rule.name);
+      formData.set("confirmation", "delete_disabled_notification_rule");
+      const result = await deleteNotificationRuleBuilder(formData);
+      if (!result.success) return setMessage({ kind: "error", text: result.error });
+      setDeleteCandidate(null);
+      setMessage({ kind: "success", text: `${rule.name} was deleted.` });
+      router.refresh();
+    });
+  }
 
   if (!overview) {
     return <Card><CardHeader><CardTitle>Unified notification rules</CardTitle><CardDescription>The rule builder could not be loaded. No rule changes are available from this view.</CardDescription></CardHeader></Card>;
@@ -389,7 +429,21 @@ export function NotificationRuleBuilder({ overview }) {
         <Button type="button" onClick={() => { setDraft(browserDraft(options)); setPreview(null); setMessage(null); setView("editor"); }}><Plus className="mr-2 h-4 w-4" />Create rule</Button>
       </div>
 
-      {view === "list" && editable.length > 0 && <div className="space-y-2"><h3 className="font-medium">Your rules</h3>{editable.map((rule) => <div key={rule.id} className="flex flex-wrap items-center justify-between gap-3 rounded-lg border p-3"><div><div className="flex items-center gap-2"><span className="font-medium">{rule.name}</span><Badge variant={rule.enabled ? "default" : "secondary"}>{rule.enabled ? "Active" : "Disabled"}</Badge><Badge variant="outline">v{rule.version}</Badge></div><p className="mt-1 text-xs text-muted-foreground">{rule.actions.map((action) => action.channelType.toUpperCase()).join(" + ")} · {rule.cooldownSeconds ? `${rule.cooldownSeconds}s cooldown` : "No cooldown"}</p></div><div className="flex flex-wrap gap-2"><Button type="button" variant="outline" size="sm" disabled={isPending || rule.enabled} onClick={() => { const next = draftFromRule(rule); if (next) { setDraft(next); setPreview(null); setMessage(null); setView("editor"); } else setMessage({ kind: "error", text: "This rule does not have a valid editable condition tree." }); }}>Edit</Button><Button type="button" variant="outline" size="sm" disabled={isPending} onClick={() => runPreview(rule.id)}><FlaskConical className="mr-1 h-4 w-4" />Preview</Button><Button type="button" size="sm" variant={rule.enabled ? "destructive" : "default"} disabled={isPending} onClick={() => toggle(rule)}>{rule.enabled ? "Deactivate" : "Activate"}</Button></div></div>)}</div>}
+      {view === "list" && editable.length > 0 && <div className="space-y-2">
+        <h3 className="font-medium">Your rules</h3>
+        {editable.map((rule) => <div key={rule.id} className="flex flex-wrap items-center justify-between gap-3 rounded-lg border p-3">
+          <div>
+            <div className="flex items-center gap-2"><span className="font-medium">{rule.name}</span><Badge variant={rule.enabled ? "default" : "secondary"}>{rule.enabled ? "Active" : "Disabled"}</Badge><Badge variant="outline">v{rule.version}</Badge></div>
+            <p className="mt-1 text-xs text-muted-foreground">{rule.actions.map((action) => action.channelType.toUpperCase()).join(" + ")} · {rule.cooldownSeconds ? `${rule.cooldownSeconds}s cooldown` : "No cooldown"}</p>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <Button type="button" variant="outline" size="sm" disabled={isPending || rule.enabled} onClick={() => { const next = draftFromRule(rule, options); if (next) { setDraft(next); setPreview(null); setMessage(null); setView("editor"); } else setMessage({ kind: "error", text: "This rule does not have a valid editable condition tree." }); }}>Edit</Button>
+            <Button type="button" variant="outline" size="sm" disabled={isPending} onClick={() => runPreview(rule.id)}><FlaskConical className="mr-1 h-4 w-4" />Preview</Button>
+            <Button type="button" size="sm" variant={rule.enabled ? "destructive" : "default"} disabled={isPending} onClick={() => toggle(rule)}>{rule.enabled ? "Deactivate" : "Activate"}</Button>
+            <Button type="button" variant="outline" size="sm" className="text-destructive hover:text-destructive" disabled={isPending || rule.enabled} onClick={() => setDeleteCandidate(rule)}><Trash2 className="mr-1 h-4 w-4" />Delete</Button>
+          </div>
+        </div>)}
+      </div>}
       {view === "list" && editable.length === 0 && <div className="rounded-lg border border-dashed p-8 text-center"><p className="font-medium">No notification rules yet</p><p className="mt-1 text-sm text-muted-foreground">Create your first rule, preview it, then activate it when ready.</p></div>}
 
       {view === "editor" && <div className="space-y-4 rounded-xl border p-4">
@@ -412,6 +466,23 @@ export function NotificationRuleBuilder({ overview }) {
 
       {message && <p className={`rounded-md border p-3 text-sm ${message.kind === "error" ? "border-destructive/50 text-destructive" : "border-emerald-500/50 text-emerald-700 dark:text-emerald-300"}`}>{message.text}</p>}
       {preview && <div className="rounded-lg border p-4"><div className="flex flex-wrap items-center justify-between gap-2"><h3 className="font-medium">Recent-read preview</h3><Badge variant="outline">{preview.matchCount} of {preview.sampleCount} matched</Badge></div><p className="mt-1 text-xs text-muted-foreground">Rule v{preview.ruleVersion}; {preview.deliveryAttempts} delivery attempts. Expand a row to inspect the condition trace.</p><div className="mt-3 max-h-96 space-y-2 overflow-y-auto pr-1">{preview.samples.map((sample) => <details key={sample.readId} className="rounded border p-2 text-sm"><summary className="flex cursor-pointer items-center justify-between gap-3"><span>{sample.plateNumber} · {sample.cameraName}</span><Badge variant={sample.matched ? "default" : "secondary"}>{sample.matched ? "Match" : "No match"}</Badge></summary><pre className="mt-2 overflow-x-auto rounded bg-muted p-2 text-xs">{JSON.stringify(sample.trace, null, 2)}</pre></details>)}</div></div>}
+
+      <AlertDialog open={Boolean(deleteCandidate)} onOpenChange={(open) => { if (!open && !isPending) setDeleteCandidate(null); }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete notification rule?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Delete <strong>“{deleteCandidate?.name}”</strong> (version {deleteCandidate?.version})? It will disappear from Notification Rules and cannot evaluate or deliver again. Historical activity remains available. This cannot be undone from the interface.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={isPending}>Cancel</AlertDialogCancel>
+            <AlertDialogAction className="bg-destructive text-destructive-foreground hover:bg-destructive/90" disabled={isPending} onClick={confirmDelete}>
+              {isPending ? "Deleting…" : "Delete rule"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
     </CardContent>
   </Card>;

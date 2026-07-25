@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- Added guarded deletion for disabled notification rules. The confirmation
+  identifies the exact rule and version, removes it from the active workspace,
+  cancels queued deliveries, and preserves historical activity and audit links.
+- Fixed legacy-migrated notification rules retaining the old UTC schema default.
+  Existing migration targets now inherit the configured local timezone across
+  the rule, quiet hours, and schedule conditions without changing intentional
+  UTC rules created independently in the unified builder.
 - Fixed finalized and retired notification migration targets remaining hidden
   from the normal Notification Rules list after their guarded legacy workflow
   ended. Preserved unified rules now reappear without restoring legacy rows.

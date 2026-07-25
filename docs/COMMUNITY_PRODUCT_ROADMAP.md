@@ -18,7 +18,7 @@ reliable background processing.
 6. Audit sensitive searches, exports, corrections, rule changes, and
    destructive maintenance.
 
-## Release baseline — July 24, 2026
+## Release baseline — July 25, 2026
 
 - Application `0.1.9` includes named users and roles, evidence-preserving plate
   review, filter-respecting exports, the searchable help center, local privacy
@@ -44,7 +44,11 @@ reliable background processing.
   accepted-read, explicit/fuzzy plate, known-plate/name, tag, Monitored Plate,
   camera, confidence, read-count, and local schedule conditions, MQTT,
   Pushover, SMTP email, and signed webhook actions, cooldowns, recent-read no-delivery preview with traces, and separate audited
-  atomic activation/deactivation. Existing migrated copies cannot bypass their
+  atomic activation/deactivation. Disabled rules can now be deleted from the active workspace
+  through an exact-name/version confirmation while immutable delivery and audit
+  history remains available. Legacy-migrated copies that inherited UTC are
+  normalized to the configured local timezone across rule, quiet-hours, and
+  schedule settings. Existing migrated copies cannot bypass their
   guarded shadow-review, cutover, and finalization workflow. MQTT continues through its
   durable outbox. This release adds scheduled camera inactivity checks,
   explicit rule time zones and persisted event-time evaluation, quiet hours,

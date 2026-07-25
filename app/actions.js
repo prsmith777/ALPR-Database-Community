@@ -67,6 +67,7 @@ import {
 } from "@/lib/notification-rule-draft-runtime.mjs";
 import {
   createNotificationRuleDraft,
+  deleteNotificationRuleBuilderRule,
   getNotificationRuleBuilderOverview as loadNotificationRuleBuilderOverview,
   getNotificationOperationsOverview as loadNotificationOperationsOverview,
   previewNotificationRuleBuilder,
@@ -786,6 +787,8 @@ const RULE_BUILDER_SAFE_MESSAGES = new Set([
   "The notification rule was not found",
   "Migrated rules must use the guarded migration workflow",
   "Disable the rule before editing it",
+  "Rule name confirmation does not match",
+  "Wait for the in-progress delivery before deleting this rule",
   "The rule needs conditions and an action before activation",
   "Enable and configure Pushover before activating this rule",
   "Enable MQTT and every selected broker before activating this rule",
@@ -868,6 +871,24 @@ export async function toggleNotificationRuleBuilder(formData) {
     return { success: true, data };
   } catch (error) {
     return notificationRuleBuilderFailure(error, `Failed to ${enabled ? "activate" : "deactivate"} the notification rule`);
+  }
+}
+
+export async function deleteNotificationRuleBuilder(formData) {
+  const principal = await requirePermission("notification.manage");
+  if (formData?.get("confirmation") !== "delete_disabled_notification_rule") {
+    return { success: false, error: "Confirm that you want to delete this disabled rule." };
+  }
+  try {
+    const data = await deleteNotificationRuleBuilderRule({
+      id: formData.get("ruleId"),
+      expectedName: formData.get("ruleName"),
+      actor: principal,
+    });
+    revalidatePath("/notifications");
+    return { success: true, data };
+  } catch (error) {
+    return notificationRuleBuilderFailure(error, "Failed to delete the notification rule");
   }
 }
 

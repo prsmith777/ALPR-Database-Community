@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
 import test from "node:test";
 
 import {
@@ -173,4 +174,87 @@ test("finalized and retired migration targets return to the normal rule builder"
   assert.match(ruleQuery, /m\.target_rule_id = r\.id/);
   assert.match(ruleQuery, /m\.retired_at IS NULL/);
   assert.match(ruleQuery, /m\.finalized_at IS NULL/);
+  assert.match(ruleQuery, /AS migrated_from_legacy/);
+  assert.match(ruleQuery, /r\.deleted_at IS NULL/);
+});
+
+test("legacy UTC repair is limited to tracked migrated rules", async () => {
+  const migrations = await readFile(new URL("../migrations.sql", import.meta.url), "utf8");
+  const repair = migrations.match(/-- Legacy copies predate explicit rule clocks[\s\S]*?(?=INSERT INTO public\.schema_migrations)/)?.[0];
+  assert.ok(repair);
+  assert.match(repair, /rule\.time_zone = 'UTC'/);
+  assert.match(repair, /notification_rule_migrations migration/);
+  assert.match(repair, /migration\.target_rule_id = rule\.id/);
+  assert.match(repair, /settings\.local_timezone/);
+  assert.match(repair, /condition\.condition_type = 'local_time_window'/);
+});
+
+test("deleting a disabled rule hides it atomically while preserving history", async () => {
+  const calls = [];
+  const client = {
+    async query(sql, values = []) {
+      const normalized = String(sql).replace(/\s+/g, " ").trim();
+      calls.push({ sql: normalized, values });
+      if (normalized.includes("SELECT r.*")) {
+        return { rows: [{
+          id: 44,
+          name: "Entry LPR 1 Match Delivery Tag",
+          description: "",
+          enabled: false,
+          event_type: "plate_read.accepted",
+          time_zone: "America/Denver",
+          quiet_hours: { enabled: false },
+          cooldown_seconds: 0,
+          version: 3,
+          managed_by_migration: false,
+        }] };
+      }
+      if (normalized.includes("SELECT g.*")) {
+        return { rows: [{ id: 51, rule_id: 44, parent_group_id: null, combinator: "all", position: 0 }] };
+      }
+      if (normalized.includes("SELECT c.*")) return { rows: [] };
+      if (normalized.includes("SELECT a.*")) {
+        return { rows: [{
+          id: 61,
+          rule_id: 44,
+          channel_id: 71,
+          enabled: false,
+          position: 0,
+          configuration: {},
+          channel_name: "Delivery MQTT",
+          channel_type: "mqtt",
+          channel_enabled: false,
+          channel_configuration: {},
+        }] };
+      }
+      if (normalized.startsWith("SELECT COUNT(*)::integer AS count")) return { rows: [{ count: 0 }] };
+      if (normalized.startsWith("UPDATE public.notification_deliveries")) return { rows: [], rowCount: 2 };
+      if (normalized.startsWith("UPDATE public.notification_rules")) {
+        return { rows: [{ id: 44, name: "Entry LPR 1 Match Delivery Tag", version: 3 }], rowCount: 1 };
+      }
+      return { rows: [], rowCount: 1 };
+    },
+    release() {},
+  };
+  const repository = new NotificationRuleBuilderRepository({
+    pool: { query: (...args) => client.query(...args), connect: async () => client },
+  });
+
+  const result = await repository.deleteRule({
+    id: 44,
+    expectedName: "Entry LPR 1 Match Delivery Tag",
+    actor: { id: 9 },
+  });
+
+  assert.deepEqual(result, {
+    ruleId: 44,
+    name: "Entry LPR 1 Match Delivery Tag",
+    version: 3,
+    deleted: true,
+    cancelledDeliveries: 2,
+  });
+  assert.ok(calls.some(({ sql }) => sql.includes("status = 'cancelled'")));
+  assert.ok(calls.some(({ sql }) => sql.includes("deleted_at = CURRENT_TIMESTAMP")));
+  assert.ok(calls.some(({ sql, values }) => sql.startsWith("INSERT INTO public.audit_events") && values[0] === 9 && values[1] === "notification.rule_deleted"));
+  assert.equal(calls.at(-1).sql, "COMMIT");
 });
