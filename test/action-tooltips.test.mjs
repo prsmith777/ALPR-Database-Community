@@ -38,21 +38,18 @@ test("plate tables label icon-only row actions with accessible tooltips", async 
   assert.match(databaseFilters, /htmlFor="plate-database-page-size"/);
 });
 
-test("notification and MQTT action icons expose hover and focus labels", async () => {
-  const [notifications, brokers, rules] = await Promise.all([
+test("notification and MQTT broker action icons expose hover and focus labels", async () => {
+  const [notifications, brokers] = await Promise.all([
     source("components/NotificationsTable.jsx"),
     source("components/mqtt/MqttBrokers.jsx"),
-    source("components/mqtt/MqttRules.jsx"),
   ]);
 
   assert.match(notifications, /Send test notification/);
   assert.match(notifications, /Remove from notifications/);
   assert.match(brokers, /<TooltipContent>Edit broker<\/TooltipContent>/);
   assert.match(brokers, /<TooltipContent>Delete broker<\/TooltipContent>/);
-  assert.match(rules, /<TooltipContent>Edit rule<\/TooltipContent>/);
-  assert.match(rules, /<TooltipContent>Delete rule<\/TooltipContent>/);
 
-  for (const component of [notifications, brokers, rules]) {
+  for (const component of [notifications, brokers]) {
     assert.match(component, /TooltipTrigger asChild/);
     assert.match(component, /aria-label=/);
   }

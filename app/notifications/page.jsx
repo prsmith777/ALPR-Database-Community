@@ -2,12 +2,14 @@ import {
   getNotificationPlates,
   getNotificationRuleBuilderOverview,
   getNotificationOperationsOverview,
+  getNotificationMqttFinalizationPreview,
   getNotificationRuleMigrationPreview,
   getUnifiedNotificationCutoverPreview,
   getUnifiedNotificationRuleReview,
 } from "@/app/actions";
 import { NotificationCutoverPanel } from "@/components/NotificationCutoverPanel";
 import { NotificationMigrationPreview } from "@/components/NotificationMigrationPreview";
+import { NotificationMqttFinalizationPanel } from "@/components/NotificationMqttFinalizationPanel";
 import { NotificationRuleDraftEditor } from "@/components/NotificationRuleDraftEditor";
 import { NotificationRuleBuilder } from "@/components/NotificationRuleBuilder";
 import { NotificationChannelTestPanel } from "@/components/NotificationChannelTestPanel";
@@ -22,13 +24,14 @@ export const dynamic = "force-dynamic";
 
 export default async function NotificationsPage() {
   await requirePagePermission("notification.manage");
-  const [response, builderResponse, operationsResponse, migrationPreviewResponse, shadowReviewResponse, cutoverPreviewResponse] = await Promise.all([
+  const [response, builderResponse, operationsResponse, migrationPreviewResponse, shadowReviewResponse, cutoverPreviewResponse, finalizationResponse] = await Promise.all([
     getNotificationPlates(),
     getNotificationRuleBuilderOverview(),
     getNotificationOperationsOverview(),
     getNotificationRuleMigrationPreview(),
     getUnifiedNotificationRuleReview(),
     getUnifiedNotificationCutoverPreview(),
+    getNotificationMqttFinalizationPreview(),
   ]);
   const notificationPlates = response.success ? response.data : [];
   const builderOverview = builderResponse.success ? builderResponse.data : null;
@@ -38,6 +41,7 @@ export default async function NotificationsPage() {
     : null;
   const shadowReview = shadowReviewResponse.success ? shadowReviewResponse.data : null;
   const cutoverPreview = cutoverPreviewResponse.success ? cutoverPreviewResponse.data : null;
+  const finalizationPreview = finalizationResponse.success ? finalizationResponse.data : null;
 
   return (
     <DashboardLayout>
@@ -69,6 +73,9 @@ export default async function NotificationsPage() {
         </div>
         <div className="mt-8">
           <NotificationCutoverPanel preview={cutoverPreview} />
+        </div>
+        <div className="mt-8">
+          <NotificationMqttFinalizationPanel preview={finalizationPreview} />
         </div>
       </BasicTitle>
     </DashboardLayout>

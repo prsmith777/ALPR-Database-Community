@@ -59,6 +59,10 @@ import {
   rollbackNotificationRule,
 } from "@/lib/notification-cutover-runtime.mjs";
 import {
+  finalizeNotificationMqttMigration,
+  getNotificationMqttFinalizationPreview as loadNotificationMqttFinalizationPreview,
+} from "@/lib/notification-mqtt-finalization-runtime.mjs";
+import {
   simulateNotificationRuleDraft,
   updateNotificationRuleDraft,
 } from "@/lib/notification-rule-draft-runtime.mjs";
@@ -1017,6 +1021,43 @@ export async function getUnifiedNotificationCutoverPreview() {
   } catch (error) {
     console.error("Error building unified notification cutover preview:", error);
     return { success: false, error: "Failed to build unified notification cutover preview" };
+  }
+}
+
+export async function getNotificationMqttFinalizationPreview() {
+  await requirePermission("notification.manage");
+  try {
+    return { success: true, data: await loadNotificationMqttFinalizationPreview() };
+  } catch (error) {
+    console.error("Error building MQTT migration finalization preview:", error);
+    return { success: false, error: "Failed to verify MQTT migration finalization readiness" };
+  }
+}
+
+const MQTT_FINALIZATION_SAFE_MESSAGES = new Set([
+  "No cutover MQTT rules are available to finalize",
+  "Every MQTT replacement must be active with a verified post-cutover delivery before finalization",
+  "A legacy MQTT source changed during finalization",
+]);
+
+export async function finalizeMqttNotificationMigration(formData) {
+  const principal = await requirePermission("notification.manage");
+  if (formData?.get("confirmation") !== "finalize_mqtt_migration") {
+    return { success: false, error: "Confirm permanent MQTT migration finalization before continuing." };
+  }
+  try {
+    const data = await finalizeNotificationMqttMigration({ actor: principal });
+    revalidatePath("/notifications");
+    revalidatePath("/mqtt");
+    return { success: true, data };
+  } catch (error) {
+    console.error("Error finalizing legacy MQTT notification migration:", error);
+    return {
+      success: false,
+      error: error instanceof Error && MQTT_FINALIZATION_SAFE_MESSAGES.has(error.message)
+        ? error.message
+        : "Failed to finalize the MQTT notification migration",
+    };
   }
 }
 

@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { readFile } from "node:fs/promises";
+import { access, readFile } from "node:fs/promises";
 import test from "node:test";
 
 import {
@@ -237,25 +237,13 @@ test("creating a rule saves selected camera links in one transaction", async () 
   assert.equal(calls.at(-1).sql, "RELEASE");
 });
 
-test("rule routes expose collection and item CRUD through the rule repository", async () => {
-  const collection = await readFile(
-    new URL("../app/api/mqtt/rules/route.js", import.meta.url),
-    "utf8"
-  );
-  const item = await readFile(
-    new URL("../app/api/mqtt/rules/[id]/route.js", import.meta.url),
-    "utf8"
-  );
-  const runtime = await readFile(
-    new URL("../lib/mqtt/admin-runtime.mjs", import.meta.url),
-    "utf8"
-  );
-
-  assert.match(collection, /repository\.listRules\(\)/);
-  assert.match(collection, /repository\.listOptions\(\)/);
-  assert.match(collection, /repository\.createRule\(data\)/);
-  assert.match(item, /repository\.getRule/);
-  assert.match(item, /repository\.updateRule/);
-  assert.match(item, /repository\.deleteRule/);
-  assert.match(runtime, /getMqttRuleAdminRepository/);
+test("legacy MQTT rule management is absent from the application surface", async () => {
+  const admin = await readFile(new URL("../components/mqtt/MqttAdmin.jsx", import.meta.url), "utf8");
+  const collection = await readFile(new URL("../app/api/mqtt/rules/route.js", import.meta.url), "utf8");
+  const item = await readFile(new URL("../app/api/mqtt/rules/[id]/route.js", import.meta.url), "utf8");
+  assert.doesNotMatch(admin, /MqttRules|value="rules"|>\s*Rules\s*</);
+  await assert.rejects(access(new URL("../components/mqtt/MqttRules.jsx", import.meta.url)), { code: "ENOENT" });
+  assert.match(collection, /status: 410/);
+  assert.match(item, /status: 410/);
+  assert.doesNotMatch(`${collection}\n${item}`, /createRule|updateRule|deleteRule|listRules/);
 });

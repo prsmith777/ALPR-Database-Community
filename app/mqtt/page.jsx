@@ -12,7 +12,7 @@ export default async function MqttPage() {
     <DashboardLayout>
       <BasicTitle
         title="MQTT"
-        subtitle="Configure brokers, per-camera topics, matching rules, tests, and delivery activity."
+        subtitle="Configure brokers and per-camera topics, then test and review MQTT delivery activity. Notification rules are managed on Notifications."
       >
         <MqttAdmin />
       </BasicTitle>

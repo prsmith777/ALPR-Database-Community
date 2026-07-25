@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Added verified MQTT migration finalization that archives immutable source
+  snapshots and audit evidence before transactionally deleting disabled legacy
+  rules; MQTT rule creation and editing now live only on Notifications.
 - Added unified SMTP email and HMAC-signed webhook rule actions with protected
   settings, direct channel tests, durable retries, delivery attempts, and
   dead-letter visibility.
