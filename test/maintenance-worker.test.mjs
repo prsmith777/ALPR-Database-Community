@@ -64,6 +64,7 @@ test("maintenance runtime schedules a dry-run worker and prevents in-process ove
       MAINTENANCE_PREVIEW_INITIAL_DELAY_SECONDS: "10",
       MAINTENANCE_PREVIEW_POLL_SECONDS: "10",
       MAINTENANCE_PREVIEW_INTERVAL_SECONDS: "3600",
+      STORAGE_RECONCILIATION_ENABLED: "false",
     },
     schedule(callback, delay) {
       callbacks.push({ callback, delay });
@@ -109,6 +110,9 @@ test("maintenance runtime configuration remains dry-run only", () => {
   assert.equal(config.enabled, false);
   assert.equal(config.mode, "dry-run");
   assert.equal(config.intervalSeconds, 3_600);
+  assert.equal(config.reconciliationEnabled, true);
+  assert.equal(config.reconciliationIntervalSeconds, 604_800);
+  assert.equal(config.reconciliationBatchSize, 250);
 });
 
 test("database advisory locking makes the durable preview single-flight", async () => {

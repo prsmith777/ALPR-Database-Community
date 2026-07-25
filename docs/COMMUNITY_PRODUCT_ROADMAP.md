@@ -186,14 +186,17 @@ index-confirmed missing sources and records without image paths separately.
 Retention and record-limit planning now runs outside ingestion in a scheduled,
 PostgreSQL-lock-protected single-flight worker. The first rollout is strictly
 dry-run: Storage Health reports the last result and next run, while database
-rows and files remain untouched. It does not recursively reconcile the
-filesystem or expose any destructive maintenance action.
+rows and files remain untouched. Bounded, resumable filesystem reconciliation
+now inventories the approved image, thumbnail, and derived roots; records exact
+orphaned-file and missing-reference paths; defers post-snapshot files; and
+reports progress, totals, bytes, errors, and a review sample in Storage Health.
+It exposes no destructive maintenance action.
 
 - Delivered foundation: move retention and record planning out of ingest into
   a scheduled, single-flight, dry-run-only maintenance worker with durable
   status reporting.
-- Add bounded, reviewable filesystem reconciliation for exact orphaned-file
-  inventory before any cleanup workflow is considered.
+- Delivered foundation: bounded, reviewable, read-only filesystem
+  reconciliation with durable exact orphan/missing-reference inventory.
 - Add safe reconcile, prune, `VACUUM ANALYZE`, backup, restore-preflight, and
   backup-verification jobs. Do not expose an arbitrary SQL or shell console.
 - Display current version, git SHA, release channel, and release notes.

@@ -10,6 +10,7 @@ import {
   HardDrive,
   Image as ImageIcon,
   RefreshCw,
+  ScanSearch,
   ShieldCheck,
   TimerReset,
 } from "lucide-react";
@@ -83,6 +84,8 @@ export default function StorageHealthCard({ snapshot }) {
   const growth = snapshot?.growth;
   const maintenance = snapshot?.maintenance;
   const preview = maintenance?.lastResult;
+  const reconciliation = snapshot?.reconciliation;
+  const reconciliationRun = reconciliation?.run;
   const indexedTotal = assets
     ? assets.readyCount + assets.failedCount + assets.pendingCount
     : 0;
@@ -263,6 +266,83 @@ export default function StorageHealthCard({ snapshot }) {
           )}
           <p className="mt-3 text-xs text-muted-foreground">
             Candidate totals use database references only. No recursive filesystem reconciliation is performed yet.
+          </p>
+        </section>
+
+        <section aria-labelledby="storage-reconciliation-title" className="rounded-lg border p-4">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <h3 id="storage-reconciliation-title" className="flex items-center gap-2 font-semibold">
+                <ScanSearch className="h-4 w-4 text-primary" aria-hidden="true" />
+                Read-only storage reconciliation
+              </h3>
+              <p className="mt-1 text-sm text-muted-foreground">
+                A resumable bounded scan compares approved storage roots with database references without changing either one.
+              </p>
+            </div>
+            <Badge variant={reconciliation?.status === "failed" ? "destructive" : "secondary"}>
+              {reconciliationRun
+                ? `${reconciliationRun.status} - ${reconciliationRun.phase}`
+                : reconciliation ? `${reconciliation.status} - read-only` : "Not available"}
+            </Badge>
+          </div>
+          <dl className="mt-4 grid gap-3 text-sm sm:grid-cols-2 xl:grid-cols-4">
+            <div>
+              <dt className="text-muted-foreground">Files inspected</dt>
+              <dd className="mt-1 font-medium">{formatCount(reconciliationRun?.filesScanned)}</dd>
+            </div>
+            <div>
+              <dt className="text-muted-foreground">Database paths checked</dt>
+              <dd className="mt-1 font-medium">{formatCount(reconciliationRun?.referencesChecked)}</dd>
+            </div>
+            <div>
+              <dt className="text-muted-foreground">Orphaned files</dt>
+              <dd className="mt-1 font-medium">
+                {formatCount(reconciliationRun?.orphanFiles)} ({formatBytes(reconciliationRun?.orphanBytes)})
+              </dd>
+            </div>
+            <div>
+              <dt className="text-muted-foreground">Missing referenced paths</dt>
+              <dd className="mt-1 font-medium">{formatCount(reconciliationRun?.missingReferencePaths)}</dd>
+            </div>
+            <div>
+              <dt className="text-muted-foreground">Started</dt>
+              <dd className="mt-1 font-medium">{formatDate(reconciliationRun?.scanStartedAt)}</dd>
+            </div>
+            <div>
+              <dt className="text-muted-foreground">Completed</dt>
+              <dd className="mt-1 font-medium">{formatDate(reconciliationRun?.completedAt)}</dd>
+            </div>
+            <div>
+              <dt className="text-muted-foreground">Recent files deferred</dt>
+              <dd className="mt-1 font-medium">{formatCount(reconciliationRun?.recentFilesSkipped)}</dd>
+            </div>
+            <div>
+              <dt className="text-muted-foreground">Skipped/errors</dt>
+              <dd className="mt-1 font-medium">
+                {formatCount(reconciliationRun?.skippedEntries)} / {formatCount(reconciliationRun?.errorCount)}
+              </dd>
+            </div>
+          </dl>
+          {reconciliation?.findings?.length > 0 && (
+            <div className="mt-4 rounded-md border p-3">
+              <p className="text-sm font-medium">Finding sample (up to 25)</p>
+              <ul className="mt-2 max-h-52 space-y-2 overflow-y-auto text-xs">
+                {reconciliation.findings.map((finding) => (
+                  <li key={`${finding.findingType}:${finding.relativePath}`} className="flex flex-wrap gap-x-2">
+                    <Badge variant="outline">{finding.findingType}</Badge>
+                    <code className="break-all">{finding.relativePath}</code>
+                    {finding.sizeBytes != null && <span className="text-muted-foreground">{formatBytes(finding.sizeBytes)}</span>}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+          {reconciliation?.lastError && (
+            <p className="mt-3 text-sm text-destructive">Last scan error: {reconciliation.lastError}</p>
+          )}
+          <p className="mt-3 text-xs text-muted-foreground">
+            The complete finding inventory is stored durably for review. Files created after a scan starts are deferred to the next run to avoid false orphan classifications.
           </p>
         </section>
 

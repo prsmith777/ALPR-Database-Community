@@ -673,8 +673,9 @@ export default function SettingsForm({
           <p className="mt-2 text-sm text-muted-foreground">
             Pushover, MQTT, Blue Iris, Home Assistant, and AI-agent connections
             communicate only when you configure and use those integrations.
-            Local retention, export, audit, and deletion controls remain future
-            operations work and require separate safety design and approval.
+            Local retention planning and storage reconciliation are read-only.
+            No automated deletion is enabled; future destructive maintenance
+            requires separate safety design and approval.
           </p>
         </div>
       </div>
