@@ -1739,3 +1739,130 @@ VALUES (
     'Allow guarded deletion of disabled notification rules and repair inherited UTC defaults on legacy-migrated rules.'
 )
 ON CONFLICT (version) DO NOTHING;
+
+-- Retention planning now runs outside ingestion. The initial maintenance job
+-- is deliberately dry-run only: it records bounded database candidate counts
+-- and never deletes rows or files.
+CREATE TABLE IF NOT EXISTS public.maintenance_job_state (
+    job_name VARCHAR(100) PRIMARY KEY,
+    enabled BOOLEAN NOT NULL DEFAULT TRUE,
+    mode VARCHAR(20) NOT NULL DEFAULT 'dry-run',
+    status VARCHAR(20) NOT NULL DEFAULT 'idle',
+    interval_seconds INTEGER NOT NULL DEFAULT 86400,
+    next_run_at TIMESTAMPTZ,
+    last_started_at TIMESTAMPTZ,
+    last_completed_at TIMESTAMPTZ,
+    last_result JSONB,
+    last_error TEXT,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT maintenance_job_mode CHECK (mode = 'dry-run'),
+    CONSTRAINT maintenance_job_status CHECK (status IN ('idle', 'running', 'failed')),
+    CONSTRAINT maintenance_job_interval CHECK (interval_seconds BETWEEN 3600 AND 604800),
+    CONSTRAINT maintenance_job_result_object CHECK (
+        last_result IS NULL OR jsonb_typeof(last_result) = 'object'
+    )
+);
+
+CREATE INDEX IF NOT EXISTS idx_maintenance_job_due
+    ON public.maintenance_job_state (next_run_at, job_name)
+    WHERE enabled = TRUE;
+
+INSERT INTO public.schema_migrations (version, description)
+VALUES (
+    '2026072502_retention_maintenance_preview',
+    'Move retention planning out of ingestion into a scheduled, single-flight, dry-run-only maintenance worker.'
+)
+ON CONFLICT (version) DO NOTHING;
+
+-- Read-only storage reconciliation persists resumable traversal state and an
+-- exact finding inventory. These tables do not provide any deletion action.
+CREATE TABLE IF NOT EXISTS public.storage_reconciliation_runs (
+    id BIGSERIAL PRIMARY KEY,
+    status VARCHAR(20) NOT NULL DEFAULT 'running',
+    phase VARCHAR(30) NOT NULL DEFAULT 'filesystem',
+    scan_started_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    completed_at TIMESTAMPTZ,
+    max_plate_read_id BIGINT NOT NULL DEFAULT 0,
+    max_capture_asset_id BIGINT NOT NULL DEFAULT 0,
+    plate_read_cursor BIGINT NOT NULL DEFAULT 0,
+    capture_asset_cursor BIGINT NOT NULL DEFAULT 0,
+    files_scanned BIGINT NOT NULL DEFAULT 0,
+    bytes_scanned BIGINT NOT NULL DEFAULT 0,
+    references_checked BIGINT NOT NULL DEFAULT 0,
+    recent_files_skipped BIGINT NOT NULL DEFAULT 0,
+    skipped_entries BIGINT NOT NULL DEFAULT 0,
+    error_count BIGINT NOT NULL DEFAULT 0,
+    orphan_files BIGINT NOT NULL DEFAULT 0,
+    orphan_bytes BIGINT NOT NULL DEFAULT 0,
+    missing_reference_paths BIGINT NOT NULL DEFAULT 0,
+    last_error TEXT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT storage_reconciliation_status CHECK (status IN ('running', 'completed', 'failed')),
+    CONSTRAINT storage_reconciliation_phase CHECK (
+        phase IN ('filesystem', 'plate-reads', 'capture-assets', 'completed')
+    ),
+    CONSTRAINT storage_reconciliation_counts CHECK (
+        max_plate_read_id >= 0 AND max_capture_asset_id >= 0 AND
+        plate_read_cursor >= 0 AND capture_asset_cursor >= 0 AND
+        files_scanned >= 0 AND bytes_scanned >= 0 AND references_checked >= 0 AND
+        recent_files_skipped >= 0 AND skipped_entries >= 0 AND error_count >= 0 AND
+        orphan_files >= 0 AND orphan_bytes >= 0 AND missing_reference_paths >= 0
+    )
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS uq_storage_reconciliation_running
+    ON public.storage_reconciliation_runs (status)
+    WHERE status = 'running';
+
+CREATE TABLE IF NOT EXISTS public.storage_reconciliation_directories (
+    id BIGSERIAL PRIMARY KEY,
+    run_id BIGINT NOT NULL REFERENCES public.storage_reconciliation_runs(id) ON DELETE CASCADE,
+    relative_path VARCHAR(2048) NOT NULL,
+    cursor_name VARCHAR(255),
+    completed BOOLEAN NOT NULL DEFAULT FALSE,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE (run_id, relative_path)
+);
+
+CREATE INDEX IF NOT EXISTS idx_storage_reconciliation_directories_due
+    ON public.storage_reconciliation_directories (run_id, completed, relative_path);
+
+CREATE TABLE IF NOT EXISTS public.storage_reconciliation_items (
+    id BIGSERIAL PRIMARY KEY,
+    run_id BIGINT NOT NULL REFERENCES public.storage_reconciliation_runs(id) ON DELETE CASCADE,
+    finding_type VARCHAR(30) NOT NULL,
+    relative_path VARCHAR(2048) NOT NULL,
+    size_bytes BIGINT,
+    modified_at TIMESTAMPTZ,
+    reference_type VARCHAR(80),
+    owner_id BIGINT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT storage_reconciliation_finding_type CHECK (
+        finding_type IN ('orphan-file', 'missing-reference')
+    ),
+    CONSTRAINT storage_reconciliation_item_size CHECK (size_bytes IS NULL OR size_bytes >= 0),
+    UNIQUE (run_id, finding_type, relative_path)
+);
+
+CREATE INDEX IF NOT EXISTS idx_storage_reconciliation_items_review
+    ON public.storage_reconciliation_items (run_id, finding_type, relative_path);
+
+INSERT INTO public.schema_migrations (version, description)
+VALUES (
+    '2026072503_storage_reconciliation',
+    'Add bounded resumable read-only storage reconciliation runs and durable orphan/missing-reference inventory.'
+)
+ON CONFLICT (version) DO NOTHING;
+
+-- Recover a reconciliation run that failed before automatic retry scheduling
+-- was available. Future failures set this bounded retry directly at runtime.
+UPDATE public.maintenance_job_state
+SET next_run_at = LEAST(
+        COALESCE(next_run_at, CURRENT_TIMESTAMP + INTERVAL '1 minute'),
+        CURRENT_TIMESTAMP + INTERVAL '1 minute'
+    ),
+    updated_at = CURRENT_TIMESTAMP
+WHERE job_name = 'storage-reconciliation'
+  AND status = 'failed';

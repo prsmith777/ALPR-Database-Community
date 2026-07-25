@@ -45,6 +45,7 @@ import { SecuritySettings } from "./SecuritySettings";
 import PlateMatchingSettings from "./PlateMatchingSettings";
 import PlateReviewSettings from "./PlateReviewSettings";
 import PushoverUsageCard from "./PushoverUsageCard";
+import ReleaseInformationCard from "./ReleaseInformationCard";
 import StorageHealthCard from "./StorageHealthCard";
 
 export default function SettingsForm({
@@ -52,6 +53,7 @@ export default function SettingsForm({
   initialApiKey,
   initialIdentityState,
   initialStorageHealth,
+  initialReleaseInfo,
   canManageSettings,
   initialSection,
 }) {
@@ -673,11 +675,26 @@ export default function SettingsForm({
           <p className="mt-2 text-sm text-muted-foreground">
             Pushover, MQTT, Blue Iris, Home Assistant, and AI-agent connections
             communicate only when you configure and use those integrations.
-            Local retention, export, audit, and deletion controls remain future
-            operations work and require separate safety design and approval.
+            Local retention planning and storage reconciliation are read-only.
+            No automated deletion is enabled; future destructive maintenance
+            requires separate safety design and approval.
           </p>
         </div>
       </div>
+    </div>
+  );
+
+  const renderReleaseSection = () => (
+    <div key="release-section" className="space-y-6">
+      <div>
+        <h2 className="mb-2 text-2xl font-semibold text-foreground">
+          Release information
+        </h2>
+        <p className="text-muted-foreground">
+          Identify the installed application build and review its release notes.
+        </p>
+      </div>
+      <ReleaseInformationCard release={initialReleaseInfo} />
     </div>
   );
 
@@ -734,6 +751,8 @@ export default function SettingsForm({
         return renderSecuritySection();
       case "privacy":
         return renderPrivacySection();
+      case "release":
+        return renderReleaseSection();
       case "blueiris":
         return renderBlueirisSection();
       default:
@@ -761,7 +780,7 @@ export default function SettingsForm({
               )}
 
               {/* Form Content */}
-              {!["security", "privacy", "plateReview"].includes(activeSection) ? (
+              {!["security", "privacy", "release", "plateReview"].includes(activeSection) ? (
                 <form action={handleSettingsSubmit}>
                   <div className="space-y-8">
                     {renderSection()}

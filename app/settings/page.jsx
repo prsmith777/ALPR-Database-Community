@@ -5,6 +5,7 @@ import {
   getSettings,
 } from "@/app/actions";
 import { getAuthConfig } from "@/lib/auth";
+import { getReleaseInfo } from "@/lib/release-info.mjs";
 import { getStorageHealth } from "@/lib/storage-health-runtime.mjs";
 
 export const dynamic = "force-dynamic";
@@ -17,6 +18,7 @@ const ADMIN_SECTIONS = new Set([
   "plateReview",
   "security",
   "privacy",
+  "release",
   "blueiris",
   "homeassistant",
 ]);
@@ -55,6 +57,7 @@ export default async function SettingsPage({ searchParams }) {
       initialApiKey={authConfig.apiKey || ""}
       initialIdentityState={identityState}
       initialStorageHealth={storageHealth}
+      initialReleaseInfo={getReleaseInfo()}
       canManageSettings={canManageSettings}
       initialSection={initialSection}
     />

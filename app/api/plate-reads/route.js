@@ -1,6 +1,5 @@
 import {
   checkPlateForNotification,
-  cleanupOldRecords,
   getPool,
   isPlateIgnored,
 } from "@/lib/db";
@@ -459,14 +458,6 @@ async function processPlateRead(data) {
         console.error("Accepted plate notification processing failed");
       }
     }
-
-    cleanupOldRecords(config.general.maxRecords).catch(() =>
-      console.error("Database pruning failed")
-    );
-
-    fileStorage.cleanupOldFiles(config.general.retention).catch(() => {
-      console.error("JPEG pruning failed");
-    });
 
     // if (processedPlates.length > 0) {
     //   console.log("New plate(s) processed, notifying clients");
