@@ -73,7 +73,7 @@ const administratorNavigationSections = [
   {
     title: "Integrations",
     items: [
-      { title: "Push Notifications", id: "push", icon: Bell },
+      { title: "Notifications", id: "push", icon: Bell },
       { title: "Blue Iris", id: "blueiris", icon: Server },
       { title: "HomeAssistant", id: "homeassistant", icon: Home },
     ],
@@ -157,6 +157,22 @@ export default function SettingsForm({
           formData.get("pushoverPriority")
         );
         newFormData.append("pushoverSound", formData.get("pushoverSound"));
+        newFormData.append("emailEnabled", formData.get("emailEnabled") === "on");
+        newFormData.append("emailHost", formData.get("emailHost"));
+        newFormData.append("emailPort", formData.get("emailPort"));
+        newFormData.append("emailSecure", formData.get("emailSecure") === "on");
+        newFormData.append("emailVerifyTls", formData.get("emailVerifyTls") === "on");
+        newFormData.append("emailUsername", formData.get("emailUsername"));
+        newFormData.append("emailPassword", formData.get("emailPassword"));
+        newFormData.append("clearEmailPassword", formData.get("clearEmailPassword") === "on");
+        newFormData.append("emailFromAddress", formData.get("emailFromAddress"));
+        newFormData.append("emailFromName", formData.get("emailFromName"));
+        newFormData.append("webhookEnabled", formData.get("webhookEnabled") === "on");
+        newFormData.append("webhookSigningSecret", formData.get("webhookSigningSecret"));
+        newFormData.append("clearWebhookSigningSecret", formData.get("clearWebhookSigningSecret") === "on");
+        newFormData.append("webhookTimeoutSeconds", formData.get("webhookTimeoutSeconds"));
+        newFormData.append("webhookAllowHttp", formData.get("webhookAllowHttp") === "on");
+        newFormData.append("webhookAllowPrivateNetworks", formData.get("webhookAllowPrivateNetworks") === "on");
         break;
       case "homeassistant":
         newFormData.append("haEnabled", formData.get("haEnabled") === "on");
@@ -394,10 +410,10 @@ export default function SettingsForm({
     <div key="push-section" className="space-y-6">
       <div>
         <h2 className="text-2xl font-semibold text-foreground mb-2">
-          Pushover Configuration
+          Notification Channels
         </h2>
         <p className="text-muted-foreground">
-          Configure push notifications for plate detection events.
+          Configure credentials and transport safety for Pushover, email, and signed webhooks.
         </p>
       </div>
       <div className="space-y-6">
@@ -544,6 +560,63 @@ export default function SettingsForm({
               data-form-type="other"
               {...{ "data-lpignore": "true" }}
             />
+          </div>
+        </div>
+
+        <div className="max-w-4xl space-y-5 rounded-lg border p-4">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <h3 className="text-lg font-semibold">Email (SMTP)</h3>
+              <p className="text-sm text-muted-foreground">Send rule actions through an authenticated or trusted SMTP relay.</p>
+            </div>
+            <div className="flex items-center gap-3">
+              <Label htmlFor="emailEnabled">Enable email</Label>
+              <Switch id="emailEnabled" name="emailEnabled" defaultChecked={initialSettings.notifications?.email?.enabled} />
+            </div>
+          </div>
+          <div className="grid gap-4 md:grid-cols-2">
+            <label className="space-y-2 text-sm"><span className="font-medium">SMTP host</span><Input id="emailHost" name="emailHost" defaultValue={initialSettings.notifications?.email?.host} placeholder="smtp.example.com" autoComplete="off" /></label>
+            <label className="space-y-2 text-sm"><span className="font-medium">SMTP port</span><Input id="emailPort" name="emailPort" type="number" min="1" max="65535" defaultValue={initialSettings.notifications?.email?.port ?? 587} /></label>
+            <label className="space-y-2 text-sm"><span className="font-medium">Username</span><Input id="emailUsername" name="emailUsername" defaultValue={initialSettings.notifications?.email?.username} autoComplete="off" /></label>
+            <div className="space-y-2">
+              <div className="flex items-center justify-between gap-2"><Label htmlFor="emailPassword">Password</Label><Badge variant="outline">{initialSettings.notifications?.email?.passwordConfigured ? "Configured" : "Not configured"}</Badge></div>
+              <PasswordInput id="emailPassword" name="emailPassword" visibilityLabel="SMTP password" placeholder="Enter a replacement password" autoComplete="new-password" />
+              <p className="text-xs text-muted-foreground">Leave blank to keep the saved password. SMTP can also be used without authentication when both username and password are blank.</p>
+              {initialSettings.notifications?.email?.passwordConfigured && <label className="flex items-center gap-2 text-xs text-muted-foreground"><input type="checkbox" name="clearEmailPassword" className="h-4 w-4 rounded border-input" />Clear the saved SMTP password</label>}
+            </div>
+            <label className="space-y-2 text-sm"><span className="font-medium">From address</span><Input id="emailFromAddress" name="emailFromAddress" type="email" defaultValue={initialSettings.notifications?.email?.from_address} placeholder="alpr@example.com" autoComplete="off" /></label>
+            <label className="space-y-2 text-sm"><span className="font-medium">From name</span><Input id="emailFromName" name="emailFromName" defaultValue={initialSettings.notifications?.email?.from_name ?? "ALPR Database"} autoComplete="off" /></label>
+          </div>
+          <div className="flex flex-wrap gap-6 text-sm">
+            <label className="flex items-center gap-2"><input type="checkbox" name="emailSecure" defaultChecked={initialSettings.notifications?.email?.secure} className="h-4 w-4 rounded border-input" />Use implicit TLS (usually port 465)</label>
+            <label className="flex items-center gap-2"><input type="checkbox" name="emailVerifyTls" defaultChecked={initialSettings.notifications?.email?.verify_tls !== false} className="h-4 w-4 rounded border-input" />Verify the SMTP TLS certificate</label>
+          </div>
+        </div>
+
+        <div className="max-w-4xl space-y-5 rounded-lg border p-4">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <h3 className="text-lg font-semibold">Signed webhooks</h3>
+              <p className="text-sm text-muted-foreground">POST JSON with an HMAC-SHA256 signature, event ID, and idempotency key.</p>
+            </div>
+            <div className="flex items-center gap-3">
+              <Label htmlFor="webhookEnabled">Enable webhooks</Label>
+              <Switch id="webhookEnabled" name="webhookEnabled" defaultChecked={initialSettings.notifications?.webhook?.enabled} />
+            </div>
+          </div>
+          <div className="grid gap-4 md:grid-cols-2">
+            <div className="space-y-2">
+              <div className="flex items-center justify-between gap-2"><Label htmlFor="webhookSigningSecret">Signing secret</Label><Badge variant="outline">{initialSettings.notifications?.webhook?.signingSecretConfigured ? "Configured" : "Not configured"}</Badge></div>
+              <PasswordInput id="webhookSigningSecret" name="webhookSigningSecret" visibilityLabel="webhook signing secret" placeholder="Enter a replacement secret" autoComplete="new-password" />
+              <p className="text-xs text-muted-foreground">Receivers verify the raw JSON body using the X-ALPR-Signature header.</p>
+              {initialSettings.notifications?.webhook?.signingSecretConfigured && <label className="flex items-center gap-2 text-xs text-muted-foreground"><input type="checkbox" name="clearWebhookSigningSecret" className="h-4 w-4 rounded border-input" />Clear the saved signing secret</label>}
+            </div>
+            <label className="space-y-2 text-sm"><span className="font-medium">Request timeout (seconds)</span><Input id="webhookTimeoutSeconds" name="webhookTimeoutSeconds" type="number" min="2" max="30" defaultValue={initialSettings.notifications?.webhook?.timeout_seconds ?? 10} /></label>
+          </div>
+          <div className="space-y-3 text-sm">
+            <label className="flex items-center gap-2"><input type="checkbox" name="webhookAllowHttp" defaultChecked={initialSettings.notifications?.webhook?.allow_http} className="h-4 w-4 rounded border-input" />Allow unencrypted HTTP webhook targets</label>
+            <label className="flex items-center gap-2"><input type="checkbox" name="webhookAllowPrivateNetworks" defaultChecked={initialSettings.notifications?.webhook?.allow_private_networks} className="h-4 w-4 rounded border-input" />Allow private-network targets (10.x, 172.16–31.x, and 192.168.x)</label>
+            <p className="text-xs text-muted-foreground">Loopback, link-local, multicast, URL credentials, redirects, and special-use targets remain blocked even when these options are enabled.</p>
           </div>
         </div>
       </div>

@@ -1510,6 +1510,54 @@ export async function updateSettings(formData) {
       };
     }
 
+    if (updateIfExists("emailEnabled")) {
+      const smtpPort = Number(formData.get("emailPort") || currentConfig.notifications?.email?.port || 587);
+      if (!Number.isInteger(smtpPort) || smtpPort < 1 || smtpPort > 65535) {
+        throw new Error("SMTP port must be between 1 and 65535");
+      }
+      newConfig.notifications = {
+        ...newConfig.notifications,
+        email: {
+          ...currentConfig.notifications?.email,
+          enabled: formData.get("emailEnabled") === "true",
+          host: String(formData.get("emailHost") ?? currentConfig.notifications?.email?.host ?? "").trim(),
+          port: smtpPort,
+          secure: formData.get("emailSecure") === "true",
+          verify_tls: formData.get("emailVerifyTls") !== "false",
+          username: String(formData.get("emailUsername") ?? currentConfig.notifications?.email?.username ?? "").trim(),
+          password: resolveStoredSecretUpdate({
+            currentValue: currentConfig.notifications?.email?.password,
+            replacement: formData.get("emailPassword"),
+            clear: formData.get("clearEmailPassword"),
+          }),
+          from_address: String(formData.get("emailFromAddress") ?? currentConfig.notifications?.email?.from_address ?? "").trim(),
+          from_name: String(formData.get("emailFromName") ?? currentConfig.notifications?.email?.from_name ?? "").trim(),
+        },
+      };
+    }
+
+    if (updateIfExists("webhookEnabled")) {
+      const timeoutSeconds = Number(formData.get("webhookTimeoutSeconds") || currentConfig.notifications?.webhook?.timeout_seconds || 10);
+      if (!Number.isInteger(timeoutSeconds) || timeoutSeconds < 2 || timeoutSeconds > 30) {
+        throw new Error("Webhook timeout must be between 2 and 30 seconds");
+      }
+      newConfig.notifications = {
+        ...newConfig.notifications,
+        webhook: {
+          ...currentConfig.notifications?.webhook,
+          enabled: formData.get("webhookEnabled") === "true",
+          signing_secret: resolveStoredSecretUpdate({
+            currentValue: currentConfig.notifications?.webhook?.signing_secret,
+            replacement: formData.get("webhookSigningSecret"),
+            clear: formData.get("clearWebhookSigningSecret"),
+          }),
+          timeout_seconds: timeoutSeconds,
+          allow_http: formData.get("webhookAllowHttp") === "true",
+          allow_private_networks: formData.get("webhookAllowPrivateNetworks") === "true",
+        },
+      };
+    }
+
     if (updateIfExists("haEnabled") || updateIfExists("haWhitelist")) {
       newConfig.homeassistant = {
         ...currentConfig.homeassistant,

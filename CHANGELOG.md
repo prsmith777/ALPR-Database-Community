@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+- Added unified SMTP email and HMAC-signed webhook rule actions with protected
+  settings, direct channel tests, durable retries, delivery attempts, and
+  dead-letter visibility.
+- Added conservative webhook destination controls, redirect blocking,
+  idempotency keys, and optional capture attachments for email alerts.
+
 ## [0.1.9] - 08-15-2025
 
 - Support for MQTT as plate notification for HA

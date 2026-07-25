@@ -58,10 +58,17 @@ function defaultActivityGroup() {
 
 function defaultAction(options) {
   const broker = options.brokers.find((candidate) => candidate.enabled) || options.brokers[0];
+  const channelType = broker
+    ? "mqtt"
+    : options.pushoverEnabled && options.pushoverConfigured
+      ? "pushover"
+      : options.emailEnabled && options.emailConfigured
+        ? "email"
+        : options.webhookEnabled && options.webhookConfigured ? "webhook" : "pushover";
   return {
     key: token(),
-    channelType: broker ? "mqtt" : "pushover",
-    configuration: { brokerId: broker?.id || "", destinationMode: "per_camera", fixedTopic: "", message: "", priority: 1 },
+    channelType,
+    configuration: { brokerId: broker?.id || "", destinationMode: "per_camera", fixedTopic: "", message: "", priority: 1, recipients: [], subject: "", attachImage: true, url: "" },
   };
 }
 
@@ -248,7 +255,7 @@ function ActionEditor({ action, update, remove, options }) {
   const config = action.configuration || {};
   return <div className="space-y-3 rounded-lg border p-3">
     <div className="flex items-center gap-2">
-      <Select value={action.channelType} onChange={(channelType) => update({ channelType })} className="flex-1"><option value="mqtt">MQTT</option><option value="pushover">Pushover</option></Select>
+      <Select value={action.channelType} onChange={(channelType) => update({ channelType })} className="flex-1"><option value="mqtt">MQTT</option><option value="pushover">Pushover</option><option value="email">Email</option><option value="webhook">Webhook</option></Select>
       <Button type="button" variant="ghost" size="icon" onClick={remove} aria-label="Remove action"><Trash2 className="h-4 w-4" /></Button>
     </div>
     {action.channelType === "mqtt" ? <>
@@ -260,9 +267,18 @@ function ActionEditor({ action, update, remove, options }) {
       </div>
       {config.destinationMode === "fixed_topic" && <Input value={config.fixedTopic || ""} onChange={(event) => update({ configuration: { ...config, fixedTopic: event.target.value } })} placeholder="alpr/alerts" />}
       <Input value={config.message || ""} onChange={(event) => update({ configuration: { ...config, message: event.target.value } })} placeholder="Optional MQTT message" />
-    </> : <>
+    </> : action.channelType === "pushover" ? <>
       <Select value={String(config.priority ?? 1)} onChange={(priority) => update({ configuration: { ...config, priority: Number(priority) } })}><option value="-2">Lowest priority</option><option value="-1">Low priority</option><option value="0">Normal priority</option><option value="1">High priority</option><option value="2">Emergency priority</option></Select>
       <Input value={config.message || ""} onChange={(event) => update({ configuration: { ...config, message: event.target.value } })} placeholder="Optional Pushover message" />
+    </> : action.channelType === "email" ? <>
+      <Input value={(config.recipients || []).join?.(", ") || config.recipients || ""} onChange={(event) => update({ configuration: { ...config, recipients: event.target.value.split(/[;,]/).map((entry) => entry.trim()).filter(Boolean) } })} placeholder="recipient@example.com, another@example.com" aria-label="Email recipients" />
+      <Input value={config.subject || ""} onChange={(event) => update({ configuration: { ...config, subject: event.target.value } })} placeholder="Optional email subject" />
+      <Textarea value={config.message || ""} onChange={(event) => update({ configuration: { ...config, message: event.target.value } })} placeholder="Optional email message" />
+      <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={config.attachImage !== false} onChange={(event) => update({ configuration: { ...config, attachImage: event.target.checked } })} />Attach the captured image when available</label>
+    </> : <>
+      <Input type="url" value={config.url || ""} onChange={(event) => update({ configuration: { ...config, url: event.target.value } })} placeholder="https://automation.example.com/alpr" aria-label="Webhook URL" />
+      <Textarea value={config.message || ""} onChange={(event) => update({ configuration: { ...config, message: event.target.value } })} placeholder="Optional webhook message" />
+      <p className="text-xs text-muted-foreground">JSON is signed in X-ALPR-Signature and sent without following redirects.</p>
     </>}
   </div>;
 }
@@ -341,15 +357,17 @@ export function NotificationRuleBuilder({ overview }) {
   return <Card>
     <CardHeader>
       <div className="flex flex-wrap items-start justify-between gap-3">
-        <div><CardTitle className="flex items-center gap-2"><BellRing className="h-5 w-5" />Unified notification rules</CardTitle><CardDescription className="mt-1 max-w-3xl">Build MQTT and Pushover rules from accepted reads or scheduled camera-activity checks. Saving always creates a disabled draft; preview never sends a notification; activation is separate and audited.</CardDescription></div>
+        <div><CardTitle className="flex items-center gap-2"><BellRing className="h-5 w-5" />Unified notification rules</CardTitle><CardDescription className="mt-1 max-w-3xl">Build MQTT, Pushover, email, and signed webhook rules from accepted reads or scheduled camera-activity checks. Saving always creates a disabled draft; preview never sends a notification; activation is separate and audited.</CardDescription></div>
         <Badge variant="outline"><ShieldCheck className="mr-1 h-3 w-3" />Safe draft workflow</Badge>
       </div>
     </CardHeader>
     <CardContent className="space-y-6">
-      <div className="grid gap-3 md:grid-cols-3">
+      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
         <div className="rounded-md border p-3"><p className="text-xs uppercase text-muted-foreground">Rules</p><p className="text-2xl font-semibold">{rules.length}</p></div>
         <div className="rounded-md border p-3"><p className="text-xs uppercase text-muted-foreground">MQTT</p><p className="text-sm font-medium">{options.mqttEnabled ? "Ready" : "Disabled"}</p></div>
         <div className="rounded-md border p-3"><p className="text-xs uppercase text-muted-foreground">Pushover</p><p className="text-sm font-medium">{options.pushoverEnabled && options.pushoverConfigured ? "Ready" : "Not ready"}</p></div>
+        <div className="rounded-md border p-3"><p className="text-xs uppercase text-muted-foreground">Email</p><p className="text-sm font-medium">{options.emailEnabled && options.emailConfigured ? "Ready" : "Not ready"}</p></div>
+        <div className="rounded-md border p-3"><p className="text-xs uppercase text-muted-foreground">Webhooks</p><p className="text-sm font-medium">{options.webhookEnabled && options.webhookConfigured ? "Ready" : "Not ready"}</p></div>
       </div>
 
       {editable.length > 0 && <div className="space-y-2"><h3 className="font-medium">Your rules</h3>{editable.map((rule) => <div key={rule.id} className="flex flex-wrap items-center justify-between gap-3 rounded-lg border p-3"><div><div className="flex items-center gap-2"><span className="font-medium">{rule.name}</span><Badge variant={rule.enabled ? "default" : "secondary"}>{rule.enabled ? "Active" : "Disabled"}</Badge><Badge variant="outline">v{rule.version}</Badge></div><p className="mt-1 text-xs text-muted-foreground">{rule.actions.map((action) => action.channelType.toUpperCase()).join(" + ")} · {rule.cooldownSeconds ? `${rule.cooldownSeconds}s cooldown` : "No cooldown"}</p></div><div className="flex flex-wrap gap-2"><Button type="button" variant="outline" size="sm" disabled={isPending || rule.enabled} onClick={() => { const next = draftFromRule(rule); if (next) { setDraft(next); setPreview(null); setMessage(null); } else setMessage({ kind: "error", text: "This rule does not have a valid editable condition tree." }); }}>Edit</Button><Button type="button" variant="outline" size="sm" disabled={isPending} onClick={() => runPreview(rule.id)}><FlaskConical className="mr-1 h-4 w-4" />Preview</Button><Button type="button" size="sm" variant={rule.enabled ? "destructive" : "default"} disabled={isPending} onClick={() => toggle(rule)}>{rule.enabled ? "Deactivate" : "Activate"}</Button></div></div>)}</div>}

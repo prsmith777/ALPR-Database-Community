@@ -10,6 +10,7 @@ import { NotificationCutoverPanel } from "@/components/NotificationCutoverPanel"
 import { NotificationMigrationPreview } from "@/components/NotificationMigrationPreview";
 import { NotificationRuleDraftEditor } from "@/components/NotificationRuleDraftEditor";
 import { NotificationRuleBuilder } from "@/components/NotificationRuleBuilder";
+import { NotificationChannelTestPanel } from "@/components/NotificationChannelTestPanel";
 import { NotificationOperationsPanel } from "@/components/NotificationOperationsPanel";
 import { NotificationsTable } from "@/components/NotificationsTable";
 import { UnifiedRuleShadowReview } from "@/components/UnifiedRuleShadowReview";
@@ -42,10 +43,13 @@ export default async function NotificationsPage() {
     <DashboardLayout>
       <BasicTitle
         title="Notification Rules"
-        subtitle="Create unified MQTT and Pushover automations, preview them safely, and control activation from one place."
+        subtitle="Create unified MQTT, Pushover, email, and signed webhook automations, preview them safely, and control activation from one place."
       >
         <div className="my-4">
           <NotificationRuleBuilder overview={builderOverview} />
+        </div>
+        <div className="my-8">
+          <NotificationChannelTestPanel options={builderOverview?.options} />
         </div>
         <div className="my-8">
           <NotificationOperationsPanel overview={operationsOverview} />
