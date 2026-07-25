@@ -147,15 +147,60 @@ test("live feed review status filtering is multi-select, URL-backed, and server-
 
   assert.match(table, /ariaLabel="Filter by review status"/);
   assert.match(table, /allLabel="All review statuses"/);
-  for (const status of ["unreviewed", "confirmed", "corrected"]) {
+  for (const status of ["unreviewed", "confirmed", "corrected", "alias_resolved"]) {
     assert.match(table, new RegExp(`value: "${status}"`));
   }
   assert.match(wrapper, /params\.getAll\("reviewStatus"\)/);
   assert.match(page, /searchParamList\(searchParams\?\.reviewStatus\)/);
   assert.match(actions, /reviewStatuses: Array\.isArray\(reviewStatuses\)/);
   assert.match(database, /FILTERABLE_REVIEW_STATUSES/);
+  assert.match(database, /"alias_resolved"/);
   assert.match(database, /pr\.review_status = ANY\(\$\{reviewStatusParameter\}::text\[\]\)/);
   assert.match(table, /reviewStatus: null/);
+});
+
+test("the image viewer applies review results even when filtering removes the read", async () => {
+  const table = await source("components/PlateTable.jsx");
+
+  const optimisticUpdate = table.indexOf("setPendingReviewTargetValidated(nextValidated)");
+  const serverUpdate = table.indexOf("await onValidate(readId, nextValidated)");
+  assert.ok(optimisticUpdate >= 0 && optimisticUpdate < serverUpdate);
+  assert.match(table, /reviewStatus: nextValidated \? "confirmed" : "unreviewed"/);
+  assert.match(table, /pendingReviewTargetValidated\s*\? "Confirming\.\.\."/);
+  assert.match(table, /if \(pendingReviewReadId === selectedImage\.id\) return/);
+  assert.match(table, /currentReviewRevision >= selectedReviewRevision/);
+  assert.match(table, /const result = await onValidate\(readId, nextValidated\)/);
+  assert.match(table, /reviewStatus:\s*result\.data\?\.reviewStatus/);
+  assert.match(table, /pendingReviewReadId === selectedImage\?\.id/);
+  assert.match(table, /border-green-500\/60 bg-green-500\/10 text-green-500/);
+});
+
+test("the closed image viewer does not dereference a missing selected read", async () => {
+  const plateTableSource = await source("components/PlateTable.jsx");
+
+  assert.match(
+    plateTableSource,
+    /disabled=\{pendingReviewReadId === selectedImage\?\.id\}/
+  );
+  assert.match(
+    plateTableSource,
+    /\{pendingReviewReadId === selectedImage\?\.id/
+  );
+});
+
+test("the image viewer summarizes known-plate and tag associations", async () => {
+  const [table, wrapper] = await Promise.all([
+    source("components/PlateTable.jsx"),
+    source("components/PlateTableWrapper.jsx"),
+  ]);
+
+  assert.match(table, />Known plate</);
+  assert.match(table, /selectedImage\.knownName \|\| "Not known"/);
+  assert.match(table, />Tags</);
+  assert.match(table, /selectedImage\.tags\.map\(\(tag\)/);
+  assert.match(table, /handleSelectedImageAddTag\(tag\)/);
+  assert.match(wrapper, /const handleAddTag[\s\S]*?return result;/);
+  assert.match(wrapper, /const handleAddKnownPlate[\s\S]*?return result;/);
 });
 
 test("Monitored Plates is integrated with Known Plates and preserves exact-read actions", async () => {

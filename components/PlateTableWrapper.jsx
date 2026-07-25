@@ -272,6 +272,7 @@ export default function PlateTableWrapper({
     if (result.success) {
       router.refresh();
     }
+    return result;
   };
 
   const handleRemoveTag = async (plateNumber, tagName) => {
@@ -282,6 +283,7 @@ export default function PlateTableWrapper({
     if (result.success) {
       router.refresh();
     }
+    return result;
   };
 
   const handleAddKnownPlate = async (plateNumber, name, notes) => {
@@ -293,6 +295,7 @@ export default function PlateTableWrapper({
     if (result.success) {
       router.refresh();
     }
+    return result;
   };
 
   const handleDeleteRecord = async (id) => {

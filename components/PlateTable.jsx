@@ -235,6 +235,7 @@ export default function PlateTable({
     { value: "unreviewed", label: "Unreviewed", color: "#F59E0B" },
     { value: "confirmed", label: "Confirmed", color: "#22C55E" },
     { value: "corrected", label: "Corrected", color: "#3B82F6" },
+    { value: "alias_resolved", label: "Alias resolved", color: "#A78BFA" },
   ];
 
   // Only keep state for modals and temporary form data
@@ -255,6 +256,8 @@ export default function PlateTable({
   });
   const [selectedImage, setSelectedImage] = useState(null);
   const [selectedIndex, setSelectedIndex] = useState(-1);
+  const [pendingReviewReadId, setPendingReviewReadId] = useState(null);
+  const [pendingReviewTargetValidated, setPendingReviewTargetValidated] = useState(null);
   const [pendingViewerNavigation, setPendingViewerNavigation] = useState(null);
   const [searchInput, setSearchInput] = useState(filters.search || "");
   const [isLive, setIsLive] = useState(true);
@@ -337,6 +340,8 @@ export default function PlateTable({
       reviewRevision: plate.review_revision || 0,
       appliedAliasId: plate.applied_alias_id || null,
       cameraName: plate.camera_name || "",
+      knownName: plate.known_name || "",
+      tags: Array.isArray(plate.tags) ? plate.tags : [],
       id: plate.id,
       validated: plate.validated,
       bi_path: bi_url,
@@ -349,20 +354,26 @@ export default function PlateTable({
   }, [data]);
 
   const getViewerNavigation = useCallback(
-    (direction) =>
-      resolveReadViewerNavigation({
+    (direction) => {
+      const currentDataIndex = selectedImage
+        ? data.findIndex((plate) => plate.id === selectedImage.id)
+        : selectedIndex;
+      return resolveReadViewerNavigation({
         direction,
-        selectedIndex,
+        selectedIndex: currentDataIndex >= 0 ? currentDataIndex : selectedIndex,
+        selectedPresent: currentDataIndex >= 0,
         itemCount: data.length,
         page: pagination.page,
         pageSize: pagination.pageSize,
         total: pagination.total,
-      }),
+      });
+    },
     [
-      data.length,
+      data,
       pagination.page,
       pagination.pageSize,
       pagination.total,
+      selectedImage,
       selectedIndex,
     ]
   );
@@ -456,27 +467,109 @@ export default function PlateTable({
   useEffect(() => {
     if (selectedImage && data && data.length > 0) {
       const currentPlate = data.find((plate) => plate.id === selectedImage.id);
+      if (pendingReviewReadId === selectedImage.id) return;
+      const currentReviewStatus = currentPlate
+        ? currentPlate.review_status ||
+          (currentPlate.validated ? "confirmed" : "unreviewed")
+        : null;
+      const currentReviewRevision = Number(currentPlate?.review_revision || 0);
+      const selectedReviewRevision = Number(selectedImage.reviewRevision || 0);
+      const canSyncReview = currentReviewRevision >= selectedReviewRevision;
+      const currentKnownName = currentPlate?.known_name || "";
+      const currentTags = Array.isArray(currentPlate?.tags) ? currentPlate.tags : [];
+      const selectedImageTags = Array.isArray(selectedImage.tags)
+        ? selectedImage.tags
+        : [];
+      const currentTagSignature = JSON.stringify(currentTags);
+      const selectedTagSignature = JSON.stringify(selectedImageTags);
 
       if (
         currentPlate &&
-        (currentPlate.validated !== selectedImage.validated ||
-          currentPlate.plate_number !== selectedImage.plateNumber ||
-          currentPlate.review_status !== selectedImage.reviewStatus ||
-          currentPlate.review_revision !== selectedImage.reviewRevision)
+        ((canSyncReview &&
+          (currentPlate.validated !== selectedImage.validated ||
+            currentPlate.plate_number !== selectedImage.plateNumber ||
+            currentReviewStatus !== selectedImage.reviewStatus ||
+            currentReviewRevision !== selectedReviewRevision)) ||
+          currentKnownName !== selectedImage.knownName ||
+          currentTagSignature !== selectedTagSignature)
       ) {
         setSelectedImage((previous) => ({
           ...previous,
-          validated: currentPlate.validated,
-          plateNumber: currentPlate.plate_number,
-          observedPlate: currentPlate.observed_plate || currentPlate.plate_number,
-          reviewStatus:
-            currentPlate.review_status ||
-            (currentPlate.validated ? "confirmed" : "unreviewed"),
-          reviewRevision: currentPlate.review_revision || 0,
+          ...(canSyncReview
+            ? {
+                validated: currentPlate.validated,
+                plateNumber: currentPlate.plate_number,
+                observedPlate:
+                  currentPlate.observed_plate || currentPlate.plate_number,
+                reviewStatus: currentReviewStatus,
+                reviewRevision: currentReviewRevision,
+              }
+            : {}),
+          knownName: currentKnownName,
+          tags: currentTags,
         }));
       }
     }
-  }, [data, selectedImage]);
+  }, [data, pendingReviewReadId, selectedImage]);
+
+  const handleSelectedImageValidation = async () => {
+    if (!selectedImage || pendingReviewReadId === selectedImage.id) return;
+
+    const readId = selectedImage.id;
+    const nextValidated = !selectedImage.validated;
+    const previousReviewState = {
+      validated: selectedImage.validated,
+      plateNumber: selectedImage.plateNumber,
+      reviewStatus: selectedImage.reviewStatus,
+      reviewRevision: selectedImage.reviewRevision,
+    };
+    const rollbackReviewState = () => {
+      setSelectedImage((previous) =>
+        previous?.id === readId
+          ? { ...previous, ...previousReviewState }
+          : previous
+      );
+    };
+    setPendingReviewReadId(readId);
+    setPendingReviewTargetValidated(nextValidated);
+    setSelectedImage((previous) =>
+      previous?.id === readId
+        ? {
+            ...previous,
+            validated: nextValidated,
+            reviewStatus: nextValidated ? "confirmed" : "unreviewed",
+            reviewRevision: Number(previous.reviewRevision || 0) + 1,
+          }
+        : previous
+    );
+    try {
+      const result = await onValidate(readId, nextValidated);
+      if (!result?.success) {
+        rollbackReviewState();
+        return;
+      }
+
+      setSelectedImage((previous) => {
+        if (!previous || previous.id !== readId) return previous;
+        return {
+          ...previous,
+          validated: nextValidated,
+          plateNumber: result.data?.effectivePlate || previous.plateNumber,
+          reviewStatus:
+            result.data?.reviewStatus ||
+            (nextValidated ? "confirmed" : "unreviewed"),
+          reviewRevision:
+            result.data?.reviewRevision ?? previous.reviewRevision,
+        };
+      });
+    } catch (error) {
+      rollbackReviewState();
+      console.error("Failed to update plate review:", error);
+    } finally {
+      setPendingReviewReadId((current) => (current === readId ? null : current));
+      setPendingReviewTargetValidated(null);
+    }
+  };
 
   const handleDownloadImage = async () => {
     if (!selectedImage) return;
@@ -609,13 +702,35 @@ export default function PlateTable({
 
   const handleAddKnownPlateSubmit = async () => {
     if (!activePlate) return;
-    await onAddKnownPlate(
+    const result = await onAddKnownPlate(
       activePlate.plate_number,
       newKnownPlate.name,
       newKnownPlate.notes
     );
+    if (!result?.success) return;
+    setSelectedImage((previous) =>
+      previous?.plateNumber === activePlate.plate_number
+        ? { ...previous, knownName: newKnownPlate.name }
+        : previous
+    );
     setIsAddKnownPlateOpen(false);
     setNewKnownPlate({ name: "", notes: "" });
+  };
+
+  const handleSelectedImageAddTag = async (tag) => {
+    if (!selectedImage) return;
+    const plateNumber = selectedImage.plateNumber;
+    const result = await onAddTag(plateNumber, tag.name);
+    if (!result?.success) return;
+
+    setSelectedImage((previous) => {
+      if (!previous || previous.plateNumber !== plateNumber) return previous;
+      const currentTags = Array.isArray(previous.tags) ? previous.tags : [];
+      if (currentTags.some((currentTag) => currentTag.name === tag.name)) {
+        return previous;
+      }
+      return { ...previous, tags: [...currentTags, tag] };
+    });
   };
 
   const handleDeleteSubmit = async () => {
@@ -2068,7 +2183,7 @@ export default function PlateTable({
               </DialogTitle>
             </DialogHeader>
             {selectedImage && (
-              <div className="grid gap-3 rounded-lg border p-3 text-sm sm:grid-cols-3">
+              <div className="grid gap-3 rounded-lg border p-3 text-sm sm:grid-cols-2 lg:grid-cols-5">
                 <div>
                   <div className="text-xs uppercase text-muted-foreground">Observed</div>
                   <div className="font-mono">{selectedImage.observedPlate}</div>
@@ -2080,6 +2195,31 @@ export default function PlateTable({
                 <div>
                   <div className="text-xs uppercase text-muted-foreground">Review status</div>
                   <div>{REVIEW_STATUS_LABELS[selectedImage.reviewStatus] || selectedImage.reviewStatus}</div>
+                </div>
+                <div>
+                  <div className="text-xs uppercase text-muted-foreground">Known plate</div>
+                  <div className={selectedImage.knownName ? "" : "text-muted-foreground"}>
+                    {selectedImage.knownName || "Not known"}
+                  </div>
+                </div>
+                <div>
+                  <div className="text-xs uppercase text-muted-foreground">Tags</div>
+                  {selectedImage.tags?.length > 0 ? (
+                    <div className="flex flex-wrap gap-1">
+                      {selectedImage.tags.map((tag) => (
+                        <Badge
+                          key={tag.name}
+                          variant="secondary"
+                          className="px-2 py-0 text-xs text-white"
+                          style={{ backgroundColor: tag.color }}
+                        >
+                          {tag.name}
+                        </Badge>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="text-muted-foreground">No tags</div>
+                  )}
                 </div>
               </div>
             )}
@@ -2168,9 +2308,7 @@ export default function PlateTable({
                       {availableTags.map((tag) => (
                         <DropdownMenuItem
                           key={tag.name}
-                          onClick={() =>
-                            onAddTag(selectedImage.plateNumber, tag.name)
-                          }
+                          onClick={() => handleSelectedImageAddTag(tag)}
                         >
                           <div className="flex items-center">
                             <div
@@ -2189,15 +2327,26 @@ export default function PlateTable({
                       size="sm"
                       className={
                         selectedImage?.validated
-                          ? "text-xs sm:text-sm text-green-500"
+                          ? "text-xs sm:text-sm border-green-500/60 bg-green-500/10 text-green-500 hover:bg-green-500/20 hover:text-green-400"
                           : "text-xs sm:text-sm"
                       }
-                      onClick={() => {
-                        onValidate(selectedImage.id, !selectedImage.validated);
-                      }}
+                      onClick={handleSelectedImageValidation}
+                      disabled={pendingReviewReadId === selectedImage?.id}
                     >
-                      <Check className="h-3 w-3 sm:h-4 sm:w-4 mr-1 sm:mr-2" />
-                      <span className="whitespace-nowrap">{selectedImage?.validated ? "Reopen review" : "Confirm detected plate"}</span>
+                      {selectedImage?.validated ? (
+                        <CircleCheck className="h-3 w-3 sm:h-4 sm:w-4 mr-1 sm:mr-2" />
+                      ) : (
+                        <Check className="h-3 w-3 sm:h-4 sm:w-4 mr-1 sm:mr-2" />
+                      )}
+                      <span className="whitespace-nowrap">
+                        {pendingReviewReadId === selectedImage?.id
+                          ? pendingReviewTargetValidated
+                            ? "Confirming..."
+                            : "Reopening..."
+                          : selectedImage?.validated
+                            ? "Reopen review"
+                            : "Confirm detected plate"}
+                      </span>
                     </Button>}
                     <Button
                       variant="outline"
