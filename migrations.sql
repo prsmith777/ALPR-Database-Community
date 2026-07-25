@@ -1855,3 +1855,14 @@ VALUES (
     'Add bounded resumable read-only storage reconciliation runs and durable orphan/missing-reference inventory.'
 )
 ON CONFLICT (version) DO NOTHING;
+
+-- Recover a reconciliation run that failed before automatic retry scheduling
+-- was available. Future failures set this bounded retry directly at runtime.
+UPDATE public.maintenance_job_state
+SET next_run_at = LEAST(
+        COALESCE(next_run_at, CURRENT_TIMESTAMP + INTERVAL '1 minute'),
+        CURRENT_TIMESTAMP + INTERVAL '1 minute'
+    ),
+    updated_at = CURRENT_TIMESTAMP
+WHERE job_name = 'storage-reconciliation'
+  AND status = 'failed';
