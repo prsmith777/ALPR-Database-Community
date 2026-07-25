@@ -10,7 +10,11 @@ pnpm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 .next
-.git
+.git/*
+!.git/HEAD
+!.git/packed-refs
+!.git/refs
+!.git/refs/**
 
 config/*
 logs/*

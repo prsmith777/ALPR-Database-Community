@@ -7,6 +7,10 @@ import {
   normalizeReleaseSha,
   releaseShaFromImage,
 } from "../lib/release-info.mjs";
+import {
+  readGitBuildMetadata,
+  serializeReleaseMetadata,
+} from "../scripts/write-release-metadata.mjs";
 
 async function source(path) {
   return readFile(new URL(`../${path}`, import.meta.url), "utf8");
@@ -53,13 +57,29 @@ test("invalid release metadata is rejected or safely bounded", () => {
   assert.equal(release.source, "not provided");
 });
 
+test("Docker-baked metadata supplies the exact commit and branch channel", () => {
+  const sha = "fedcba9876543210fedcba9876543210fedcba98";
+  const release = getReleaseInfo({}, { gitSha: sha, channel: "staging" });
+
+  assert.equal(release.gitSha, sha);
+  assert.equal(release.channel, "staging");
+  assert.equal(release.source, "built commit");
+  assert.match(
+    serializeReleaseMetadata({ gitSha: sha, channel: "staging" }),
+    /fedcba98/
+  );
+  assert.equal(typeof readGitBuildMetadata, "function");
+});
+
 test("the administrator Release page remains read-only", async () => {
-  const [card, form, page, shell, compose, module] = await Promise.all([
+  const [card, form, page, shell, compose, dockerfile, dockerignore, module] = await Promise.all([
     source("app/settings/ReleaseInformationCard.jsx"),
     source("app/settings/SettingsForm.jsx"),
     source("app/settings/page.jsx"),
     source("components/settings/SettingsShell.jsx"),
     source("docker-compose.yml"),
+    source("Dockerfile"),
+    source(".dockerignore"),
     source("lib/release-info.mjs"),
   ]);
 
@@ -75,4 +95,7 @@ test("the administrator Release page remains read-only", async () => {
   assert.match(compose, /ALPR_RELEASE_IMAGE/);
   assert.match(compose, /ALPR_RELEASE_SHA/);
   assert.match(compose, /ALPR_RELEASE_CHANNEL/);
+  assert.match(dockerfile, /write-release-metadata\.mjs/);
+  assert.match(dockerfile, /rm -rf \.git/);
+  assert.match(dockerignore, /!\.git\/HEAD/);
 });

@@ -13,7 +13,9 @@ RUN (cd node_modules/bcrypt && PREBUILDS_ONLY=1 node ../node-gyp-build/build-tes
     && node scripts/install-openvino-runtime.mjs
 
 COPY . .
-RUN yarn build
+RUN node scripts/write-release-metadata.mjs \
+    && rm -rf .git \
+    && yarn build
 
 FROM node:24-bookworm-slim
 WORKDIR /app
