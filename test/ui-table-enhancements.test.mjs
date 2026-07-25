@@ -136,6 +136,28 @@ test("live feed date picker remains within the visible viewport", async () => {
   assert.match(plateTable, /sticky="always"/);
 });
 
+test("live feed review status filtering is multi-select, URL-backed, and server-side", async () => {
+  const [table, wrapper, page, actions, database] = await Promise.all([
+    source("components/PlateTable.jsx"),
+    source("components/PlateTableWrapper.jsx"),
+    source("app/live_feed/page.jsx"),
+    source("app/actions.js"),
+    source("lib/db.js"),
+  ]);
+
+  assert.match(table, /ariaLabel="Filter by review status"/);
+  assert.match(table, /allLabel="All review statuses"/);
+  for (const status of ["unreviewed", "confirmed", "corrected"]) {
+    assert.match(table, new RegExp(`value: "${status}"`));
+  }
+  assert.match(wrapper, /params\.getAll\("reviewStatus"\)/);
+  assert.match(page, /searchParamList\(searchParams\?\.reviewStatus\)/);
+  assert.match(actions, /reviewStatuses: Array\.isArray\(reviewStatuses\)/);
+  assert.match(database, /FILTERABLE_REVIEW_STATUSES/);
+  assert.match(database, /pr\.review_status = ANY\(\$\{reviewStatusParameter\}::text\[\]\)/);
+  assert.match(table, /reviewStatus: null/);
+});
+
 test("Monitored Plates is integrated with Known Plates and preserves exact-read actions", async () => {
   const [page, redirectPage, workspace, table, database, sidebar] = await Promise.all([
     source("app/known_plates/page.jsx"),

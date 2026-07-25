@@ -216,6 +216,9 @@ export default function PlateTable({
     : filters.cameraName
       ? [filters.cameraName]
       : [];
+  const selectedReviewStatuses = Array.isArray(filters.reviewStatuses)
+    ? filters.reviewStatuses
+    : [];
   const tagFilterOptions = [
     { value: "untagged", label: "Untagged", color: "#6B7280" },
     ...availableTags.map((tag) => ({
@@ -228,6 +231,11 @@ export default function PlateTable({
     value: camera,
     label: camera,
   }));
+  const reviewStatusFilterOptions = [
+    { value: "unreviewed", label: "Unreviewed", color: "#F59E0B" },
+    { value: "confirmed", label: "Confirmed", color: "#22C55E" },
+    { value: "corrected", label: "Corrected", color: "#3B82F6" },
+  ];
 
   // Only keep state for modals and temporary form data
   const [isAddKnownPlateOpen, setIsAddKnownPlateOpen] = useState(false);
@@ -584,6 +592,10 @@ export default function PlateTable({
     onUpdateFilters({ camera: values });
   };
 
+  const handleReviewStatusChange = (values) => {
+    onUpdateFilters({ reviewStatus: values });
+  };
+
   const handleDateRangeSelect = (range) => {
     onUpdateFilters({
       dateFrom: range.from ? range.from.toDateString() : null,
@@ -705,6 +717,7 @@ export default function PlateTable({
       hourFrom: null,
       hourTo: null,
       camera: null,
+      reviewStatus: null,
     });
   };
 
@@ -919,6 +932,18 @@ export default function PlateTable({
           value={selectedCameras}
           options={cameraFilterOptions}
           onChange={handleCameraChange}
+          className="w-full"
+        />
+      </div>
+
+      <div className="space-y-2">
+        <h4 className="text-sm font-medium">Filter by Review Status</h4>
+        <MultiSelectFilter
+          ariaLabel="Filter by review status"
+          allLabel="All review statuses"
+          value={selectedReviewStatuses}
+          options={reviewStatusFilterOptions}
+          onChange={handleReviewStatusChange}
           className="w-full"
         />
       </div>
@@ -1190,6 +1215,14 @@ export default function PlateTable({
                 onChange={handleCameraChange}
                 className="h-9 w-[180px] dark:bg-[#161618]"
               />
+              <MultiSelectFilter
+                ariaLabel="Filter by review status"
+                allLabel="All review statuses"
+                value={selectedReviewStatuses}
+                options={reviewStatusFilterOptions}
+                onChange={handleReviewStatusChange}
+                className="h-9 w-[210px] dark:bg-[#161618]"
+              />
 
               <Popover>
                 <PopoverTrigger asChild>
@@ -1303,6 +1336,7 @@ export default function PlateTable({
           selectedTags.length > 0 ||
           filters.dateRange.from ||
           selectedCameras.length > 0 ||
+          selectedReviewStatuses.length > 0 ||
           (filters.hourRange?.from !== undefined &&
             filters.hourRange?.to !== undefined)) && (
           <div className="flex sm:hidden items-center gap-2 mb-4 overflow-x-auto pb-2">
@@ -1334,6 +1368,17 @@ export default function PlateTable({
                 className="text-xs h-6 whitespace-nowrap"
               >
                 Cameras: {selectedCameras.join(", ")}
+              </Badge>
+            )}
+
+            {selectedReviewStatuses.length > 0 && (
+              <Badge
+                variant="outline"
+                className="text-xs h-6 whitespace-nowrap"
+              >
+                Review: {selectedReviewStatuses
+                  .map((status) => REVIEW_STATUS_LABELS[status] || status)
+                  .join(", ")}
               </Badge>
             )}
 

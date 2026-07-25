@@ -398,6 +398,7 @@ export default function PlateTableWrapper({
               }
             : null,
         cameraNames: params.getAll("camera").filter(Boolean),
+        reviewStatuses: params.getAll("reviewStatus").filter(Boolean),
       }}
       sort={{
         field: params.get("sortField") || "timestamp",
