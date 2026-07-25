@@ -151,6 +151,9 @@ test("reconciliation schema and UI expose inventory without cleanup controls", a
   assert.match(migrations, /CREATE TABLE IF NOT EXISTS public\.storage_reconciliation_runs/);
   assert.match(migrations, /CREATE TABLE IF NOT EXISTS public\.storage_reconciliation_items/);
   assert.match(repository, /LIMIT 25/);
+  assert.match(repository, /\) referenced_paths/);
+  assert.doesNotMatch(repository, /\) references\s/);
+  assert.match(repository, /next_run_at = CURRENT_TIMESTAMP \+ INTERVAL '1 minute'/);
   assert.doesNotMatch(repository, /rm\(|rmdir\(|unlink\(|DELETE\s+FROM|TRUNCATE/i);
   assert.match(card, /Read-only storage reconciliation/);
   assert.match(card, /Finding sample \(up to 25\)/);
