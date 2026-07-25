@@ -214,7 +214,7 @@ test("shadow review classifies tag-only behavior as a safe intentional expansion
   assert.equal(report.deliveryAttempts, 0);
 });
 
-test("editor UI and server actions preserve disabled-only and no-delivery boundaries", async () => {
+test("retired migration editor keeps its safety boundaries without appearing in Notification Rules", async () => {
   const [actions, editor, page, migration] = await Promise.all([
     readFile(new URL("../app/actions.js", import.meta.url), "utf8"),
     readFile(new URL("../components/NotificationRuleDraftEditor.jsx", import.meta.url), "utf8"),
@@ -226,6 +226,7 @@ test("editor UI and server actions preserve disabled-only and no-delivery bounda
   assert.match(actions, /save_disabled_rule_draft/);
   assert.match(editor, /No-delivery simulator/);
   assert.match(editor, /Clear this for a true tag-only rule/);
-  assert.match(page, /NotificationRuleDraftEditor/);
+  assert.doesNotMatch(page, /NotificationRuleDraftEditor/);
+  assert.match(page, /NotificationRulesWorkspace/);
   assert.match(migration, /intentional_expansion/);
 });

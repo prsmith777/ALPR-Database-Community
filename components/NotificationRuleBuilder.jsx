@@ -87,6 +87,22 @@ function emptyDraft(options) {
   };
 }
 
+function resolvedBrowserTimeZone() {
+  try {
+    return Intl.DateTimeFormat().resolvedOptions().timeZone;
+  } catch {
+    return "";
+  }
+}
+
+function browserDraft(options) {
+  const localTimeZone = preferredRuleTimeZone({
+    browserTimeZone: resolvedBrowserTimeZone(),
+    configuredTimeZone: options.localTimeZone,
+  });
+  return emptyDraft({ ...options, localTimeZone });
+}
+
 function nodeFromStored(node) {
   if (node.kind === "group") {
     return { ...node, key: token(), children: (node.children || []).map(nodeFromStored) };
@@ -290,11 +306,12 @@ export function NotificationRuleBuilder({ overview }) {
   const [draft, setDraft] = useState(() => emptyDraft(options));
   const [message, setMessage] = useState(null);
   const [preview, setPreview] = useState(null);
+  const [view, setView] = useState("list");
   const [isPending, startTransition] = useTransition();
   const editable = useMemo(() => rules.filter((rule) => !rule.managedByMigration), [rules]);
 
   useEffect(() => {
-    const browserTimeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+    const browserTimeZone = resolvedBrowserTimeZone();
     const preferred = preferredRuleTimeZone({ browserTimeZone, configuredTimeZone: options.localTimeZone });
     setDraft((current) => {
       if (current.ruleId || current.name || current.timeZone !== options.localTimeZone || current.timeZone === preferred) return current;
@@ -323,6 +340,7 @@ export function NotificationRuleBuilder({ overview }) {
       const result = await saveNotificationRuleBuilderDraft(formData);
       if (!result.success) return setMessage({ kind: "error", text: result.error });
       setMessage({ kind: "success", text: `Saved rule #${result.data.ruleId} as disabled version ${result.data.version}.` });
+      setView("list");
       router.refresh();
     });
   }
@@ -357,23 +375,25 @@ export function NotificationRuleBuilder({ overview }) {
   return <Card>
     <CardHeader>
       <div className="flex flex-wrap items-start justify-between gap-3">
-        <div><CardTitle className="flex items-center gap-2"><BellRing className="h-5 w-5" />Unified notification rules</CardTitle><CardDescription className="mt-1 max-w-3xl">Build MQTT, Pushover, email, and signed webhook rules from accepted reads or scheduled camera-activity checks. Saving always creates a disabled draft; preview never sends a notification; activation is separate and audited.</CardDescription></div>
+        <div><CardTitle className="flex items-center gap-2"><BellRing className="h-5 w-5" />Rules</CardTitle><CardDescription className="mt-1 max-w-3xl">Create a disabled draft, preview it against recent reads, and activate it when the result is correct.</CardDescription></div>
         <Badge variant="outline"><ShieldCheck className="mr-1 h-3 w-3" />Safe draft workflow</Badge>
       </div>
     </CardHeader>
     <CardContent className="space-y-6">
-      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
-        <div className="rounded-md border p-3"><p className="text-xs uppercase text-muted-foreground">Rules</p><p className="text-2xl font-semibold">{rules.length}</p></div>
-        <div className="rounded-md border p-3"><p className="text-xs uppercase text-muted-foreground">MQTT</p><p className="text-sm font-medium">{options.mqttEnabled ? "Ready" : "Disabled"}</p></div>
-        <div className="rounded-md border p-3"><p className="text-xs uppercase text-muted-foreground">Pushover</p><p className="text-sm font-medium">{options.pushoverEnabled && options.pushoverConfigured ? "Ready" : "Not ready"}</p></div>
-        <div className="rounded-md border p-3"><p className="text-xs uppercase text-muted-foreground">Email</p><p className="text-sm font-medium">{options.emailEnabled && options.emailConfigured ? "Ready" : "Not ready"}</p></div>
-        <div className="rounded-md border p-3"><p className="text-xs uppercase text-muted-foreground">Webhooks</p><p className="text-sm font-medium">{options.webhookEnabled && options.webhookConfigured ? "Ready" : "Not ready"}</p></div>
+      <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border bg-muted/20 p-4">
+        <div className="flex gap-6">
+          <div><p className="text-xs uppercase text-muted-foreground">Total</p><p className="text-xl font-semibold">{editable.length}</p></div>
+          <div><p className="text-xs uppercase text-muted-foreground">Active</p><p className="text-xl font-semibold">{editable.filter((rule) => rule.enabled).length}</p></div>
+          <div><p className="text-xs uppercase text-muted-foreground">Disabled</p><p className="text-xl font-semibold">{editable.filter((rule) => !rule.enabled).length}</p></div>
+        </div>
+        <Button type="button" onClick={() => { setDraft(browserDraft(options)); setPreview(null); setMessage(null); setView("editor"); }}><Plus className="mr-2 h-4 w-4" />Create rule</Button>
       </div>
 
-      {editable.length > 0 && <div className="space-y-2"><h3 className="font-medium">Your rules</h3>{editable.map((rule) => <div key={rule.id} className="flex flex-wrap items-center justify-between gap-3 rounded-lg border p-3"><div><div className="flex items-center gap-2"><span className="font-medium">{rule.name}</span><Badge variant={rule.enabled ? "default" : "secondary"}>{rule.enabled ? "Active" : "Disabled"}</Badge><Badge variant="outline">v{rule.version}</Badge></div><p className="mt-1 text-xs text-muted-foreground">{rule.actions.map((action) => action.channelType.toUpperCase()).join(" + ")} · {rule.cooldownSeconds ? `${rule.cooldownSeconds}s cooldown` : "No cooldown"}</p></div><div className="flex flex-wrap gap-2"><Button type="button" variant="outline" size="sm" disabled={isPending || rule.enabled} onClick={() => { const next = draftFromRule(rule); if (next) { setDraft(next); setPreview(null); setMessage(null); } else setMessage({ kind: "error", text: "This rule does not have a valid editable condition tree." }); }}>Edit</Button><Button type="button" variant="outline" size="sm" disabled={isPending} onClick={() => runPreview(rule.id)}><FlaskConical className="mr-1 h-4 w-4" />Preview</Button><Button type="button" size="sm" variant={rule.enabled ? "destructive" : "default"} disabled={isPending} onClick={() => toggle(rule)}>{rule.enabled ? "Deactivate" : "Activate"}</Button></div></div>)}</div>}
+      {view === "list" && editable.length > 0 && <div className="space-y-2"><h3 className="font-medium">Your rules</h3>{editable.map((rule) => <div key={rule.id} className="flex flex-wrap items-center justify-between gap-3 rounded-lg border p-3"><div><div className="flex items-center gap-2"><span className="font-medium">{rule.name}</span><Badge variant={rule.enabled ? "default" : "secondary"}>{rule.enabled ? "Active" : "Disabled"}</Badge><Badge variant="outline">v{rule.version}</Badge></div><p className="mt-1 text-xs text-muted-foreground">{rule.actions.map((action) => action.channelType.toUpperCase()).join(" + ")} · {rule.cooldownSeconds ? `${rule.cooldownSeconds}s cooldown` : "No cooldown"}</p></div><div className="flex flex-wrap gap-2"><Button type="button" variant="outline" size="sm" disabled={isPending || rule.enabled} onClick={() => { const next = draftFromRule(rule); if (next) { setDraft(next); setPreview(null); setMessage(null); setView("editor"); } else setMessage({ kind: "error", text: "This rule does not have a valid editable condition tree." }); }}>Edit</Button><Button type="button" variant="outline" size="sm" disabled={isPending} onClick={() => runPreview(rule.id)}><FlaskConical className="mr-1 h-4 w-4" />Preview</Button><Button type="button" size="sm" variant={rule.enabled ? "destructive" : "default"} disabled={isPending} onClick={() => toggle(rule)}>{rule.enabled ? "Deactivate" : "Activate"}</Button></div></div>)}</div>}
+      {view === "list" && editable.length === 0 && <div className="rounded-lg border border-dashed p-8 text-center"><p className="font-medium">No notification rules yet</p><p className="mt-1 text-sm text-muted-foreground">Create your first rule, preview it, then activate it when ready.</p></div>}
 
-      <div className="space-y-4 rounded-xl border p-4">
-        <div className="flex items-center justify-between"><div><h3 className="font-semibold">{draft.ruleId ? `Edit disabled rule #${draft.ruleId}` : "New disabled rule"}</h3><p className="text-sm text-muted-foreground">Combine AND, OR, and NOT groups up to six levels deep.</p></div>{draft.ruleId && <Button type="button" variant="ghost" onClick={() => setDraft(emptyDraft(options))}>New rule</Button>}</div>
+      {view === "editor" && <div className="space-y-4 rounded-xl border p-4">
+        <div className="flex flex-wrap items-center justify-between gap-3"><div><h3 className="font-semibold">{draft.ruleId ? `Edit disabled rule #${draft.ruleId}` : "Create a notification rule"}</h3><p className="text-sm text-muted-foreground">Name it, choose when it matches, then select one or more delivery actions.</p></div><Button type="button" variant="outline" onClick={() => { setView("list"); setMessage(null); }}>Back to rules</Button></div>
         <div className="grid gap-3 md:grid-cols-2"><Input value={draft.name} onChange={(event) => setDraft({ ...draft, name: event.target.value })} placeholder="Rule name" /><Input type="number" min="0" max="2678400" value={draft.cooldownSeconds} onChange={(event) => setDraft({ ...draft, cooldownSeconds: event.target.value })} placeholder="Cooldown seconds" /></div>
         <Textarea value={draft.description} onChange={(event) => setDraft({ ...draft, description: event.target.value })} placeholder="Optional description" />
         <div className="grid gap-3 rounded-lg border p-3 md:grid-cols-3">
@@ -388,14 +408,13 @@ export function NotificationRuleBuilder({ overview }) {
         <ConditionTreeEditor node={draft.conditionTree} options={options} ruleTimeZone={draft.timeZone} isRoot update={(conditionTree) => setDraft({ ...draft, conditionTree })} remove={() => {}} />
         <div className="space-y-3"><h4 className="font-medium">Actions</h4>{draft.actions.map((action) => <ActionEditor key={action.key} action={action} options={options} update={(changes) => patchAction(action.key, changes)} remove={() => setDraft({ ...draft, actions: draft.actions.filter((entry) => entry.key !== action.key) })} />)}<Button type="button" variant="outline" onClick={() => setDraft({ ...draft, actions: [...draft.actions, defaultAction(options)] })}><Plus className="mr-1 h-4 w-4" />Add action</Button></div>
         <div className="flex flex-wrap items-center gap-3"><Button type="button" disabled={isPending} onClick={save}><Save className="mr-1 h-4 w-4" />{isPending ? "Working…" : "Save disabled draft"}</Button><p className="text-xs text-muted-foreground">Saving never activates delivery.</p></div>
-      </div>
+      </div>}
 
       {message && <p className={`rounded-md border p-3 text-sm ${message.kind === "error" ? "border-destructive/50 text-destructive" : "border-emerald-500/50 text-emerald-700 dark:text-emerald-300"}`}>{message.text}</p>}
       {preview && <div className="rounded-lg border p-4"><div className="flex flex-wrap items-center justify-between gap-2"><h3 className="font-medium">Recent-read preview</h3><Badge variant="outline">{preview.matchCount} of {preview.sampleCount} matched</Badge></div><p className="mt-1 text-xs text-muted-foreground">Rule v{preview.ruleVersion}; {preview.deliveryAttempts} delivery attempts. Expand a row to inspect the condition trace.</p><div className="mt-3 max-h-96 space-y-2 overflow-y-auto pr-1">{preview.samples.map((sample) => <details key={sample.readId} className="rounded border p-2 text-sm"><summary className="flex cursor-pointer items-center justify-between gap-3"><span>{sample.plateNumber} · {sample.cameraName}</span><Badge variant={sample.matched ? "default" : "secondary"}>{sample.matched ? "Match" : "No match"}</Badge></summary><pre className="mt-2 overflow-x-auto rounded bg-muted p-2 text-xs">{JSON.stringify(sample.trace, null, 2)}</pre></details>)}</div></div>}
 
-      {rules.some((rule) => rule.managedByMigration) && <p className="rounded-md border bg-muted/30 p-3 text-sm text-muted-foreground">Migrated rules remain below in the migration review and guarded cutover sections. This builder cannot bypass those protections.</p>}
     </CardContent>
   </Card>;
 }
 
-export const notificationRuleBuilderUiInternals = Object.freeze({ cleanCondition, cleanNode, draftFromRule, payloadFor, removeFromTree, updateTree });
+export const notificationRuleBuilderUiInternals = Object.freeze({ browserDraft, cleanCondition, cleanNode, draftFromRule, payloadFor, removeFromTree, updateTree });

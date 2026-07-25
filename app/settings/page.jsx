@@ -10,7 +10,18 @@ import { getStorageHealth } from "@/lib/storage-health-runtime.mjs";
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
-export default async function SettingsPage() {
+const ADMIN_SECTIONS = new Set([
+  "general",
+  "database",
+  "plateMatching",
+  "plateReview",
+  "security",
+  "privacy",
+  "blueiris",
+  "homeassistant",
+]);
+
+export default async function SettingsPage({ searchParams }) {
   const access = await getCurrentAccess();
   const canManageSettings = access.permissions.includes("system.manage_settings");
   const canManageUsers = access.permissions.includes("system.manage_users");
@@ -33,6 +44,11 @@ export default async function SettingsPage() {
     throw new Error("Failed to load settings");
   }
 
+  const requestedSection = String((await searchParams)?.section || "");
+  const initialSection = canManageSettings && ADMIN_SECTIONS.has(requestedSection)
+    ? requestedSection
+    : canManageSettings ? "general" : "security";
+
   return (
     <SettingsForm
       initialSettings={settings}
@@ -40,6 +56,7 @@ export default async function SettingsPage() {
       initialIdentityState={identityState}
       initialStorageHealth={storageHealth}
       canManageSettings={canManageSettings}
+      initialSection={initialSection}
     />
   );
 }

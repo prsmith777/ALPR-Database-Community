@@ -332,7 +332,7 @@ test("cutover state exposes safely disabled copies whose source was removed", ()
   assert.match(mapped.blockers.join(" "), /can be retired/i);
 });
 
-test("cutover UI and schema preserve explicit confirmation, rollback, and audit boundaries", async () => {
+test("retired cutover UI code preserves safeguards without cluttering Notification Rules", async () => {
   const [actions, component, page, migration, route] = await Promise.all([
     readFile(new URL("../app/actions.js", import.meta.url), "utf8"),
     readFile(new URL("../components/NotificationCutoverPanel.jsx", import.meta.url), "utf8"),
@@ -346,7 +346,8 @@ test("cutover UI and schema preserve explicit confirmation, rollback, and audit 
   assert.match(actions, /retire_orphaned_migration/);
   assert.match(component, /atomically restores its legacy rule/);
   assert.match(component, /Retire orphaned migration/);
-  assert.match(page, /NotificationCutoverPanel/);
+  assert.doesNotMatch(page, /NotificationCutoverPanel/);
+  assert.match(page, /NotificationRulesWorkspace/);
   assert.match(migration, /notification_rule_cutover_events is append-only/);
   assert.match(migration, /retired_at TIMESTAMPTZ/);
   assert.match(route, /notificationService\.processAcceptedRead\(acceptedRead\)/);

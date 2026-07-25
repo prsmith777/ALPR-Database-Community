@@ -386,7 +386,7 @@ test("condition rows hydrate into the nested evaluator tree", () => {
   assert.equal(root.children[1].children[0].value.tags[0], "visitor");
 });
 
-test("shadow review UI and approval action preserve permission and no-delivery boundaries", async () => {
+test("retired shadow-review UI keeps safeguards without appearing in Notification Rules", async () => {
   const [actions, page, component, migration] = await Promise.all([
     readFile(new URL("../app/actions.js", import.meta.url), "utf8"),
     readFile(new URL("../app/notifications/page.jsx", import.meta.url), "utf8"),
@@ -396,7 +396,8 @@ test("shadow review UI and approval action preserve permission and no-delivery b
   assert.match(actions, /getUnifiedNotificationRuleReview[\s\S]*?requirePermission\("notification\.manage"\)/);
   assert.match(actions, /approveUnifiedNotificationRuleReview[\s\S]*?requirePermission\("notification\.manage"\)/);
   assert.match(actions, /approve_disabled_shadow_review/);
-  assert.match(page, /UnifiedRuleShadowReview/);
+  assert.doesNotMatch(page, /UnifiedRuleShadowReview/);
+  assert.match(page, /NotificationRulesWorkspace/);
   assert.match(component, /writes no executions, publishes no messages, and attempts no delivery/);
   assert.match(migration, /notification_rule_shadow_reviews is append-only/);
   assert.match(migration, /mismatch_count INTEGER NOT NULL DEFAULT 0 CHECK \(mismatch_count = 0\)/);

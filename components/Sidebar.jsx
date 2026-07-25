@@ -3,7 +3,6 @@
 import { useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import {
-  Antenna,
   BellPlus,
   BookMarked,
   Cctv,
@@ -36,8 +35,7 @@ const allNavItems = [
   { icon: Database, label: "Database", href: "/database", permission: "plate.read" },
   { icon: ScanSearch, label: "Visual Search", href: "/visual_search", permission: "plate.read" },
   { icon: BookMarked, label: "Known Plates", href: "/known_plates", permission: "plate.read" },
-  { icon: BellPlus, label: "Notifications", href: "/notifications", permission: "notification.manage" },
-  { icon: Antenna, label: "MQTT", href: "/mqtt", permission: "mqtt.manage" },
+  { icon: BellPlus, label: "Notification Rules", href: "/notifications", permission: "notification.manage" },
 ];
 
 const mobileNavItems = [

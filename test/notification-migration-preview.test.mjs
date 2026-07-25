@@ -228,15 +228,16 @@ test("MQTT match types that need a value are blocked when it is missing", () => 
   }
 });
 
-test("Notifications exposes an explicitly confirmed disabled-only migration without cutover", async () => {
+test("retired migration tooling remains safe without appearing in Notification Rules", async () => {
   const [page, component, applyComponent] = await Promise.all([
     readFile(new URL("../app/notifications/page.jsx", import.meta.url), "utf8"),
     readFile(new URL("../components/NotificationMigrationPreview.jsx", import.meta.url), "utf8"),
     readFile(new URL("../components/ApplyNotificationMigrationButton.jsx", import.meta.url), "utf8"),
   ]);
 
-  assert.match(page, /getNotificationRuleMigrationPreview/);
-  assert.match(page, /<NotificationMigrationPreview preview={migrationPreview}/);
+  assert.doesNotMatch(page, /getNotificationRuleMigrationPreview/);
+  assert.doesNotMatch(page, /NotificationMigrationPreview/);
+  assert.match(page, /NotificationRulesWorkspace/);
   assert.match(component, /Unified rules migration preview/);
   assert.match(component, /performs no writes/);
   assert.match(component, /ApplyNotificationMigrationButton/);

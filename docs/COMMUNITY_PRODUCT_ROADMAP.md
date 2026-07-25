@@ -48,7 +48,16 @@ reliable background processing.
   explicit rule time zones and persisted event-time evaluation, quiet hours,
   durable unified Pushover/email/webhook retries and dead-letter state, full recent alert traces,
   direct channel tests, webhook HMAC signing and target safety controls,
-  and Pushover quota visibility on Notifications. Migrated MQTT and Pushover
+  and Pushover quota visibility. Notification Rules is now a focused Rules and
+  Activity workspace without channel-setup shortcuts. Settings links directly
+  to MQTT, Pushover, SMTP email, and Webhook instead of using a separate
+  Integrations overview. Every channel page uses functional header tabs; the
+  Pushover Usage tab exposes monthly allowance and remaining-message metrics
+  separately from credentials, defaults, and direct testing. New notification
+  drafts resolve the browser-local time zone on every Create rule action so
+  rule, quiet-hours, and Schedule clocks stay aligned. The former
+  `/mqtt` address redirects to Settings > Integrations > MQTT, and MQTT no longer
+  occupies a primary-sidebar slot. Migrated MQTT and Pushover
   copies use the same shadow approval, atomic cutover, rollback, and verified
   finalization workflow.
 - Vehicle ReID visual search, uploaded-image queries, camera fallback profiles,
