@@ -1,6 +1,7 @@
 import {
   getNotificationPlates,
   getNotificationRuleBuilderOverview,
+  getNotificationOperationsOverview,
   getNotificationRuleMigrationPreview,
   getUnifiedNotificationCutoverPreview,
   getUnifiedNotificationRuleReview,
@@ -9,6 +10,7 @@ import { NotificationCutoverPanel } from "@/components/NotificationCutoverPanel"
 import { NotificationMigrationPreview } from "@/components/NotificationMigrationPreview";
 import { NotificationRuleDraftEditor } from "@/components/NotificationRuleDraftEditor";
 import { NotificationRuleBuilder } from "@/components/NotificationRuleBuilder";
+import { NotificationOperationsPanel } from "@/components/NotificationOperationsPanel";
 import { NotificationsTable } from "@/components/NotificationsTable";
 import { UnifiedRuleShadowReview } from "@/components/UnifiedRuleShadowReview";
 import DashboardLayout from "@/components/layout/MainLayout";
@@ -19,15 +21,17 @@ export const dynamic = "force-dynamic";
 
 export default async function NotificationsPage() {
   await requirePagePermission("notification.manage");
-  const [response, builderResponse, migrationPreviewResponse, shadowReviewResponse, cutoverPreviewResponse] = await Promise.all([
+  const [response, builderResponse, operationsResponse, migrationPreviewResponse, shadowReviewResponse, cutoverPreviewResponse] = await Promise.all([
     getNotificationPlates(),
     getNotificationRuleBuilderOverview(),
+    getNotificationOperationsOverview(),
     getNotificationRuleMigrationPreview(),
     getUnifiedNotificationRuleReview(),
     getUnifiedNotificationCutoverPreview(),
   ]);
   const notificationPlates = response.success ? response.data : [];
   const builderOverview = builderResponse.success ? builderResponse.data : null;
+  const operationsOverview = operationsResponse.success ? operationsResponse.data : null;
   const migrationPreview = migrationPreviewResponse.success
     ? migrationPreviewResponse.data
     : null;
@@ -42,6 +46,9 @@ export default async function NotificationsPage() {
       >
         <div className="my-4">
           <NotificationRuleBuilder overview={builderOverview} />
+        </div>
+        <div className="my-8">
+          <NotificationOperationsPanel overview={operationsOverview} />
         </div>
         <h2 className="my-4 ml-1 text-2xl font-medium text-zinc">
           Legacy exact-plate Pushover rules

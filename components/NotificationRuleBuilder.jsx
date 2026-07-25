@@ -2,7 +2,7 @@
 
 import { BellRing, FlaskConical, Plus, Save, ShieldCheck, Trash2 } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { useMemo, useState, useTransition } from "react";
+import { useEffect, useMemo, useState, useTransition } from "react";
 
 import {
   previewNotificationRuleBuilderDraft,
@@ -14,6 +14,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
+import { preferredRuleTimeZone, scheduleConditionTimeZone, syncQuietHoursTimeZone } from "@/lib/notification-rule-time-zone.mjs";
 
 const CONDITION_LABELS = {
   always: "Any accepted read",
@@ -43,6 +44,18 @@ function defaultGroup(combinator = "all") {
   return { kind: "group", key: token(), combinator, children: [defaultCondition()] };
 }
 
+function defaultActivityGroup() {
+  return {
+    kind: "group",
+    key: token(),
+    combinator: "all",
+    children: [
+      { kind: "condition", key: token(), conditionType: "camera", operator: "in", value: { names: [] } },
+      { kind: "condition", key: token(), conditionType: "read_count", operator: "at_most", value: { scope: "camera", count: 0, windowSeconds: 900 } },
+    ],
+  };
+}
+
 function defaultAction(options) {
   const broker = options.brokers.find((candidate) => candidate.enabled) || options.brokers[0];
   return {
@@ -57,6 +70,10 @@ function emptyDraft(options) {
     ruleId: null,
     name: "",
     description: "",
+    eventType: "plate_read.accepted",
+    timeZone: options.localTimeZone,
+    evaluationIntervalSeconds: 300,
+    quietHours: { enabled: false, start: "22:00", end: "06:00", weekdays: [], timeZone: options.localTimeZone },
     cooldownSeconds: 0,
     conditionTree: defaultGroup(),
     actions: [defaultAction(options)],
@@ -77,6 +94,10 @@ function draftFromRule(rule) {
     ruleId: rule.id,
     name: rule.name,
     description: rule.description || "",
+    eventType: rule.eventType || "plate_read.accepted",
+    timeZone: rule.timeZone || "UTC",
+    evaluationIntervalSeconds: rule.evaluationIntervalSeconds || 300,
+    quietHours: { enabled: false, start: "22:00", end: "06:00", weekdays: [], timeZone: rule.timeZone || "UTC", ...(rule.quietHours || {}) },
     cooldownSeconds: rule.cooldownSeconds,
     conditionTree: nodeFromStored(root),
     actions: rule.actions.map((action) => ({
@@ -119,6 +140,10 @@ function payloadFor(draft) {
   return {
     name: draft.name,
     description: draft.description,
+    eventType: draft.eventType,
+    timeZone: draft.timeZone,
+    evaluationIntervalSeconds: Number(draft.evaluationIntervalSeconds),
+    quietHours: draft.quietHours,
     cooldownSeconds: Number(draft.cooldownSeconds),
     conditionTree: cleanNode(draft.conditionTree),
     actions: draft.actions.map(({ channelType, configuration }) => ({ channelType, configuration })),
@@ -129,7 +154,7 @@ function Select({ value, onChange, children, className = "" }) {
   return <select value={value} onChange={(event) => onChange(event.target.value)} className={`h-9 rounded-md border bg-background px-3 text-sm ${className}`}>{children}</select>;
 }
 
-function ConditionValue({ condition, update, options }) {
+function ConditionValue({ condition, update, options, ruleTimeZone }) {
   const value = condition.value || {};
   if (["always", "known_plate", "watchlist"].includes(condition.conditionType)) {
     return <p className="text-sm text-muted-foreground">No additional value needed.</p>;
@@ -185,7 +210,7 @@ function ConditionValue({ condition, update, options }) {
     <div className="grid gap-2 sm:grid-cols-3">
       <Input type="time" value={value.start || "00:00"} onChange={(event) => update({ value: { ...value, start: event.target.value } })} />
       <Input type="time" value={value.end || "23:59"} onChange={(event) => update({ value: { ...value, end: event.target.value } })} />
-      <Input value={value.timeZone || options.localTimeZone} onChange={(event) => update({ value: { ...value, timeZone: event.target.value } })} placeholder="America/Denver" />
+      <Input value={value.timeZone || ruleTimeZone || options.localTimeZone} onChange={(event) => update({ value: { ...value, timeZone: event.target.value } })} placeholder="America/Denver" />
     </div>
     <div className="flex flex-wrap gap-2">{WEEKDAYS.map(([day, label]) => {
       const selected = (value.weekdays || []).includes(day);
@@ -205,16 +230,16 @@ function removeFromTree(node, key) {
   return { ...node, children: node.children.filter((child) => child.key !== key).map((child) => removeFromTree(child, key)) };
 }
 
-function ConditionTreeEditor({ node, depth = 1, options, update, remove, isRoot = false }) {
+function ConditionTreeEditor({ node, depth = 1, options, ruleTimeZone, update, remove, isRoot = false }) {
   if (node.kind === "condition") {
     return <div className="space-y-3 rounded-lg border p-3">
-      <div className="grid gap-2 sm:grid-cols-[1fr_auto]"><Select value={node.conditionType} onChange={(conditionType) => update({ ...node, conditionType, operator: "", value: conditionType === "local_time_window" ? { start: "00:00", end: "23:59", weekdays: [], timeZone: options.localTimeZone } : {} })}>{Object.entries(CONDITION_LABELS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</Select><Button type="button" variant="ghost" size="icon" onClick={remove} aria-label="Remove condition"><Trash2 className="h-4 w-4" /></Button></div>
-      <ConditionValue condition={node} update={(changes) => update({ ...node, ...changes })} options={options} />
+      <div className="grid gap-2 sm:grid-cols-[1fr_auto]"><Select value={node.conditionType} onChange={(conditionType) => update({ ...node, conditionType, operator: "", value: conditionType === "local_time_window" ? { start: "00:00", end: "23:59", weekdays: [], timeZone: scheduleConditionTimeZone({ ruleTimeZone, configuredTimeZone: options.localTimeZone }) } : {} })}>{Object.entries(CONDITION_LABELS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</Select><Button type="button" variant="ghost" size="icon" onClick={remove} aria-label="Remove condition"><Trash2 className="h-4 w-4" /></Button></div>
+      <ConditionValue condition={node} update={(changes) => update({ ...node, ...changes })} options={options} ruleTimeZone={ruleTimeZone} />
     </div>;
   }
   return <div className={`space-y-3 rounded-lg border p-3 ${depth > 1 ? "ml-3 border-l-4" : ""}`}>
     <div className="flex flex-wrap items-center gap-2"><span className="text-sm font-medium">{isRoot ? "Root" : `Nested level ${depth}`}</span><Select value={node.combinator} onChange={(combinator) => update({ ...node, combinator, children: combinator === "not" ? node.children.slice(0, 1) : node.children })}><option value="all">All (AND)</option><option value="any">Any (OR)</option><option value="not">Not</option></Select><span className="text-xs text-muted-foreground">{node.combinator === "not" ? "matches when its single child does not" : "of the following must match"}</span>{!isRoot && <Button type="button" variant="ghost" size="icon" onClick={remove} aria-label="Remove group"><Trash2 className="h-4 w-4" /></Button>}</div>
-    <div className="space-y-3">{node.children.map((child) => <ConditionTreeEditor key={child.key} node={child} depth={depth + 1} options={options} update={(next) => update(updateTree(node, child.key, () => next))} remove={() => update(removeFromTree(node, child.key))} />)}</div>
+    <div className="space-y-3">{node.children.map((child) => <ConditionTreeEditor key={child.key} node={child} depth={depth + 1} options={options} ruleTimeZone={ruleTimeZone} update={(next) => update(updateTree(node, child.key, () => next))} remove={() => update(removeFromTree(node, child.key))} />)}</div>
     <div className="flex flex-wrap gap-2"><Button type="button" size="sm" variant="outline" disabled={node.combinator === "not" && node.children.length >= 1} onClick={() => update({ ...node, children: [...node.children, defaultCondition()] })}><Plus className="mr-1 h-4 w-4" />Condition</Button><Button type="button" size="sm" variant="outline" disabled={depth >= 6 || (node.combinator === "not" && node.children.length >= 1)} onClick={() => update({ ...node, children: [...node.children, defaultGroup("any")] })}><Plus className="mr-1 h-4 w-4" />Nested group</Button></div>
   </div>;
 }
@@ -251,6 +276,23 @@ export function NotificationRuleBuilder({ overview }) {
   const [preview, setPreview] = useState(null);
   const [isPending, startTransition] = useTransition();
   const editable = useMemo(() => rules.filter((rule) => !rule.managedByMigration), [rules]);
+
+  useEffect(() => {
+    const browserTimeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+    const preferred = preferredRuleTimeZone({ browserTimeZone, configuredTimeZone: options.localTimeZone });
+    setDraft((current) => {
+      if (current.ruleId || current.name || current.timeZone !== options.localTimeZone || current.timeZone === preferred) return current;
+      return {
+        ...current,
+        timeZone: preferred,
+        quietHours: syncQuietHoursTimeZone({
+          quietHours: current.quietHours,
+          priorRuleTimeZone: current.timeZone,
+          nextRuleTimeZone: preferred,
+        }),
+      };
+    });
+  }, [options.localTimeZone]);
 
   function patchAction(key, changes) {
     setDraft((current) => ({ ...current, actions: current.actions.map((action) => action.key === key ? { ...action, ...changes } : action) }));
@@ -299,7 +341,7 @@ export function NotificationRuleBuilder({ overview }) {
   return <Card>
     <CardHeader>
       <div className="flex flex-wrap items-start justify-between gap-3">
-        <div><CardTitle className="flex items-center gap-2"><BellRing className="h-5 w-5" />Unified notification rules</CardTitle><CardDescription className="mt-1 max-w-3xl">Build MQTT and Pushover rules from accepted reads. Saving always creates a disabled draft; preview never sends a notification; activation is separate and audited.</CardDescription></div>
+        <div><CardTitle className="flex items-center gap-2"><BellRing className="h-5 w-5" />Unified notification rules</CardTitle><CardDescription className="mt-1 max-w-3xl">Build MQTT and Pushover rules from accepted reads or scheduled camera-activity checks. Saving always creates a disabled draft; preview never sends a notification; activation is separate and audited.</CardDescription></div>
         <Badge variant="outline"><ShieldCheck className="mr-1 h-3 w-3" />Safe draft workflow</Badge>
       </div>
     </CardHeader>
@@ -316,7 +358,16 @@ export function NotificationRuleBuilder({ overview }) {
         <div className="flex items-center justify-between"><div><h3 className="font-semibold">{draft.ruleId ? `Edit disabled rule #${draft.ruleId}` : "New disabled rule"}</h3><p className="text-sm text-muted-foreground">Combine AND, OR, and NOT groups up to six levels deep.</p></div>{draft.ruleId && <Button type="button" variant="ghost" onClick={() => setDraft(emptyDraft(options))}>New rule</Button>}</div>
         <div className="grid gap-3 md:grid-cols-2"><Input value={draft.name} onChange={(event) => setDraft({ ...draft, name: event.target.value })} placeholder="Rule name" /><Input type="number" min="0" max="2678400" value={draft.cooldownSeconds} onChange={(event) => setDraft({ ...draft, cooldownSeconds: event.target.value })} placeholder="Cooldown seconds" /></div>
         <Textarea value={draft.description} onChange={(event) => setDraft({ ...draft, description: event.target.value })} placeholder="Optional description" />
-        <ConditionTreeEditor node={draft.conditionTree} options={options} isRoot update={(conditionTree) => setDraft({ ...draft, conditionTree })} remove={() => {}} />
+        <div className="grid gap-3 rounded-lg border p-3 md:grid-cols-3">
+          <label className="space-y-1 text-sm"><span className="font-medium">Trigger</span><Select className="w-full" value={draft.eventType} onChange={(eventType) => setDraft({ ...draft, eventType, conditionTree: eventType === "camera.activity_check" ? defaultActivityGroup() : defaultGroup() })}><option value="plate_read.accepted">Accepted plate read</option><option value="camera.activity_check">Scheduled camera activity</option></Select></label>
+          <label className="space-y-1 text-sm"><span className="font-medium">Rule time zone</span><Input value={draft.timeZone} onChange={(event) => { const nextRuleTimeZone = event.target.value; setDraft({ ...draft, timeZone: nextRuleTimeZone, quietHours: syncQuietHoursTimeZone({ quietHours: draft.quietHours, priorRuleTimeZone: draft.timeZone, nextRuleTimeZone }) }); }} placeholder="America/Denver" /></label>
+          {draft.eventType === "camera.activity_check" ? <label className="space-y-1 text-sm"><span className="font-medium">Check every (seconds)</span><Input type="number" min="60" max="86400" value={draft.evaluationIntervalSeconds} onChange={(event) => setDraft({ ...draft, evaluationIntervalSeconds: event.target.value })} /></label> : <div className="self-end text-xs text-muted-foreground">Conditions use the read&apos;s stored event time.</div>}
+        </div>
+        <div className="space-y-3 rounded-lg border p-3">
+          <label className="flex items-center gap-2 text-sm font-medium"><input type="checkbox" checked={Boolean(draft.quietHours?.enabled)} onChange={(event) => setDraft({ ...draft, quietHours: { ...draft.quietHours, enabled: event.target.checked } })} />Quiet hours</label>
+          {draft.quietHours?.enabled && <><div className="grid gap-2 sm:grid-cols-3"><Input type="time" value={draft.quietHours.start} onChange={(event) => setDraft({ ...draft, quietHours: { ...draft.quietHours, start: event.target.value } })} /><Input type="time" value={draft.quietHours.end} onChange={(event) => setDraft({ ...draft, quietHours: { ...draft.quietHours, end: event.target.value } })} /><Input value={draft.quietHours.timeZone || draft.timeZone} onChange={(event) => setDraft({ ...draft, quietHours: { ...draft.quietHours, timeZone: event.target.value } })} /></div><div className="flex flex-wrap gap-2">{WEEKDAYS.map(([day, label]) => { const selected = (draft.quietHours.weekdays || []).includes(day); return <button type="button" key={day} onClick={() => setDraft({ ...draft, quietHours: { ...draft.quietHours, weekdays: selected ? draft.quietHours.weekdays.filter((entry) => entry !== day) : [...(draft.quietHours.weekdays || []), day] } })} className={`rounded border px-2 py-1 text-xs ${selected ? "bg-primary text-primary-foreground" : ""}`}>{label}</button>; })}<span className="self-center text-xs text-muted-foreground">No days selected means every day.</span></div></>}
+        </div>
+        <ConditionTreeEditor node={draft.conditionTree} options={options} ruleTimeZone={draft.timeZone} isRoot update={(conditionTree) => setDraft({ ...draft, conditionTree })} remove={() => {}} />
         <div className="space-y-3"><h4 className="font-medium">Actions</h4>{draft.actions.map((action) => <ActionEditor key={action.key} action={action} options={options} update={(changes) => patchAction(action.key, changes)} remove={() => setDraft({ ...draft, actions: draft.actions.filter((entry) => entry.key !== action.key) })} />)}<Button type="button" variant="outline" onClick={() => setDraft({ ...draft, actions: [...draft.actions, defaultAction(options)] })}><Plus className="mr-1 h-4 w-4" />Add action</Button></div>
         <div className="flex flex-wrap items-center gap-3"><Button type="button" disabled={isPending} onClick={save}><Save className="mr-1 h-4 w-4" />{isPending ? "Working…" : "Save disabled draft"}</Button><p className="text-xs text-muted-foreground">Saving never activates delivery.</p></div>
       </div>

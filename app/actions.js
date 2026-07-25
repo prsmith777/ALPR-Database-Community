@@ -65,6 +65,7 @@ import {
 import {
   createNotificationRuleDraft,
   getNotificationRuleBuilderOverview as loadNotificationRuleBuilderOverview,
+  getNotificationOperationsOverview as loadNotificationOperationsOverview,
   previewNotificationRuleBuilder,
   setNotificationRuleBuilderEnabled,
   updateNotificationRuleBuilderDraft,
@@ -775,9 +776,21 @@ const RULE_BUILDER_SAFE_MESSAGES = new Set([
   "Plate number is required",
   "Confidence must be between 0 and 100",
   "Schedule start and end times are required",
+  "Schedule start is required",
+  "Schedule end is required",
   "Select valid schedule weekdays",
   "Schedule time zone is required",
   "Select a valid schedule time zone",
+  "Rule time zone is required",
+  "Select a valid rule time zone",
+  "Quiet-hours start is required",
+  "Quiet-hours end is required",
+  "Select valid quiet-hour weekdays",
+  "Quiet-hours time zone is required",
+  "Select a valid quiet-hours time zone",
+  "Evaluation interval must be between 60 and 86400",
+  "Camera activity rules must select at least one camera",
+  "Camera activity rules need a camera read-count condition with a time period",
   "Select MQTT or Pushover for each action",
   "MQTT broker must be between 1 and 2147483647",
   "MQTT fixed topic is required",
@@ -808,6 +821,16 @@ export async function getNotificationRuleBuilderOverview() {
     return { success: true, data: await loadNotificationRuleBuilderOverview() };
   } catch (error) {
     return notificationRuleBuilderFailure(error, "Failed to load the notification rule builder");
+  }
+}
+
+export async function getNotificationOperationsOverview() {
+  await requirePermission("notification.manage");
+  try {
+    return { success: true, data: await loadNotificationOperationsOverview() };
+  } catch (error) {
+    console.error("Failed to load notification operations", error);
+    return { success: false, error: "Failed to load notification operations" };
   }
 }
 

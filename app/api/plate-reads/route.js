@@ -7,7 +7,6 @@ import {
 import { sendPushoverNotification } from "@/lib/notifications";
 import {
   processAcceptedPlateReadEffects,
-  processUnifiedPushoverPlans,
 } from "@/lib/accepted-plate-read-effects.mjs";
 import { NotificationAcceptedReadService } from "@/lib/notification-accepted-read-service.mjs";
 import { NotificationRuntimeRepository } from "@/lib/notification-runtime-repository.mjs";
@@ -444,8 +443,8 @@ async function processPlateRead(data) {
     await dbClient.query("COMMIT");
     transactionOpen = false;
 
-    // The durable MQTT handoff committed with each read. Remote Pushover
-    // delivery remains best-effort and runs only after the transaction commits.
+    // Unified MQTT and Pushover handoffs committed with each read. The legacy
+    // Pushover path remains post-commit until every migrated rule is cut over.
     for (const effect of pendingEffects) {
       try {
         await processAcceptedPlateReadEffects({
@@ -454,12 +453,6 @@ async function processPlateRead(data) {
           shouldSendPushover: checkPlateForNotification,
           sendPushover: sendPushoverNotification,
           processMqtt: async () => effect.mqttResult,
-          logger: console,
-        });
-        await processUnifiedPushoverPlans({
-          plans: effect.unifiedResult?.pushoverPlans || [],
-          imageData: effect.imageData,
-          sendPushover: sendPushoverNotification,
           logger: console,
         });
       } catch {

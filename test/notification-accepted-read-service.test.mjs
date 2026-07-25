@@ -188,3 +188,38 @@ test("accepted-read evaluation supplies repository count metrics", async () => {
   assert.equal(result.status, "queued");
   assert.equal(state.executions[0].decisions[0].trace.children[0].actual, 3);
 });
+
+test("unified Pushover actions enter the durable notification outbox inside ingestion", async () => {
+  const state = fixture({
+    rules: [unifiedRule({
+      actions: [{ id: 72, channelId: 82, enabled: true, channelType: "pushover", configuration: { priority: 1, message: "Delivery arrived" } }],
+    })],
+  });
+  const notificationDeliveries = [];
+  state.repository.loadEnabledRules = state.repository.loadEnabledMqttRules;
+  state.repository.recordExecutions = async (value) => {
+    state.executions.push(value);
+    return value.decisions.map((decision) => ({ ...decision, executionId: 500 }));
+  };
+  state.repository.enqueueDelivery = async (value) => {
+    notificationDeliveries.push(value);
+    return { id: 600, inserted: true };
+  };
+  const service = new NotificationAcceptedReadService({
+    repository: state.repository,
+    mqttRepository: state.mqttRepository,
+  });
+  const result = await service.processAcceptedRead({
+    id: 36461,
+    plate_number: "069YQZ",
+    camera_name: "Entry LPR 1",
+    timestamp: "2026-07-22T20:00:00.000Z",
+    image_path: "images/069YQZ.jpg",
+  });
+  assert.equal(result.status, "queued");
+  assert.equal(result.queued, 1);
+  assert.equal(result.pushoverPlans.length, 0);
+  assert.equal(notificationDeliveries[0].executionId, 500);
+  assert.equal(notificationDeliveries[0].action.channelId, 82);
+  assert.equal(notificationDeliveries[0].payload.imagePath, "images/069YQZ.jpg");
+});
