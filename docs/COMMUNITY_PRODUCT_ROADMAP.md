@@ -183,11 +183,15 @@ Operational behavior:
 provides direct filesystem/database measurements, bounded count queries, a
 120-read asset-size sample, and clearly labeled growth projections. It reports
 index-confirmed missing sources and records without image paths separately.
-It does not recursively reconcile the filesystem or expose any maintenance
-action.
+Retention and record-limit planning now runs outside ingestion in a scheduled,
+PostgreSQL-lock-protected single-flight worker. The first rollout is strictly
+dry-run: Storage Health reports the last result and next run, while database
+rows and files remain untouched. It does not recursively reconcile the
+filesystem or expose any destructive maintenance action.
 
-- Move retention and record pruning out of ingest into a scheduled,
-  single-flight maintenance worker.
+- Delivered foundation: move retention and record planning out of ingest into
+  a scheduled, single-flight, dry-run-only maintenance worker with durable
+  status reporting.
 - Add bounded, reviewable filesystem reconciliation for exact orphaned-file
   inventory before any cleanup workflow is considered.
 - Add safe reconcile, prune, `VACUUM ANALYZE`, backup, restore-preflight, and
