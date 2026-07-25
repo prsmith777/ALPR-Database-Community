@@ -163,8 +163,21 @@ test("the image viewer applies review results even when filtering removes the re
 
   assert.match(table, /const result = await onValidate\(readId, nextValidated\)/);
   assert.match(table, /reviewStatus:\s*result\.data\?\.reviewStatus/);
-  assert.match(table, /pendingReviewReadId === selectedImage\.id/);
+  assert.match(table, /pendingReviewReadId === selectedImage\?\.id/);
   assert.match(table, /border-green-500\/60 bg-green-500\/10 text-green-500/);
+});
+
+test("the closed image viewer does not dereference a missing selected read", async () => {
+  const plateTableSource = await source("components/PlateTable.jsx");
+
+  assert.match(
+    plateTableSource,
+    /disabled=\{pendingReviewReadId === selectedImage\?\.id\}/
+  );
+  assert.match(
+    plateTableSource,
+    /\{pendingReviewReadId === selectedImage\?\.id/
+  );
 });
 
 test("the image viewer summarizes known-plate and tag associations", async () => {

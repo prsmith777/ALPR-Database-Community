@@ -2288,7 +2288,7 @@ export default function PlateTable({
                           : "text-xs sm:text-sm"
                       }
                       onClick={handleSelectedImageValidation}
-                      disabled={pendingReviewReadId === selectedImage.id}
+                      disabled={pendingReviewReadId === selectedImage?.id}
                     >
                       {selectedImage?.validated ? (
                         <CircleCheck className="h-3 w-3 sm:h-4 sm:w-4 mr-1 sm:mr-2" />
@@ -2296,7 +2296,7 @@ export default function PlateTable({
                         <Check className="h-3 w-3 sm:h-4 sm:w-4 mr-1 sm:mr-2" />
                       )}
                       <span className="whitespace-nowrap">
-                        {pendingReviewReadId === selectedImage.id
+                        {pendingReviewReadId === selectedImage?.id
                           ? selectedImage.validated
                             ? "Reopening..."
                             : "Confirming..."
