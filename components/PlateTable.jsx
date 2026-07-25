@@ -255,6 +255,7 @@ export default function PlateTable({
   });
   const [selectedImage, setSelectedImage] = useState(null);
   const [selectedIndex, setSelectedIndex] = useState(-1);
+  const [pendingReviewReadId, setPendingReviewReadId] = useState(null);
   const [pendingViewerNavigation, setPendingViewerNavigation] = useState(null);
   const [searchInput, setSearchInput] = useState(filters.search || "");
   const [isLive, setIsLive] = useState(true);
@@ -349,20 +350,26 @@ export default function PlateTable({
   }, [data]);
 
   const getViewerNavigation = useCallback(
-    (direction) =>
-      resolveReadViewerNavigation({
+    (direction) => {
+      const currentDataIndex = selectedImage
+        ? data.findIndex((plate) => plate.id === selectedImage.id)
+        : selectedIndex;
+      return resolveReadViewerNavigation({
         direction,
-        selectedIndex,
+        selectedIndex: currentDataIndex >= 0 ? currentDataIndex : selectedIndex,
+        selectedPresent: currentDataIndex >= 0,
         itemCount: data.length,
         page: pagination.page,
         pageSize: pagination.pageSize,
         total: pagination.total,
-      }),
+      });
+    },
     [
-      data.length,
+      data,
       pagination.page,
       pagination.pageSize,
       pagination.total,
+      selectedImage,
       selectedIndex,
     ]
   );
@@ -477,6 +484,34 @@ export default function PlateTable({
       }
     }
   }, [data, selectedImage]);
+
+  const handleSelectedImageValidation = async () => {
+    if (!selectedImage || pendingReviewReadId === selectedImage.id) return;
+
+    const readId = selectedImage.id;
+    const nextValidated = !selectedImage.validated;
+    setPendingReviewReadId(readId);
+    try {
+      const result = await onValidate(readId, nextValidated);
+      if (!result?.success) return;
+
+      setSelectedImage((previous) => {
+        if (!previous || previous.id !== readId) return previous;
+        return {
+          ...previous,
+          validated: nextValidated,
+          plateNumber: result.data?.effectivePlate || previous.plateNumber,
+          reviewStatus:
+            result.data?.reviewStatus ||
+            (nextValidated ? "confirmed" : "unreviewed"),
+          reviewRevision:
+            result.data?.reviewRevision ?? previous.reviewRevision,
+        };
+      });
+    } finally {
+      setPendingReviewReadId((current) => (current === readId ? null : current));
+    }
+  };
 
   const handleDownloadImage = async () => {
     if (!selectedImage) return;
@@ -2189,15 +2224,26 @@ export default function PlateTable({
                       size="sm"
                       className={
                         selectedImage?.validated
-                          ? "text-xs sm:text-sm text-green-500"
+                          ? "text-xs sm:text-sm border-green-500/60 bg-green-500/10 text-green-500 hover:bg-green-500/20 hover:text-green-400"
                           : "text-xs sm:text-sm"
                       }
-                      onClick={() => {
-                        onValidate(selectedImage.id, !selectedImage.validated);
-                      }}
+                      onClick={handleSelectedImageValidation}
+                      disabled={pendingReviewReadId === selectedImage.id}
                     >
-                      <Check className="h-3 w-3 sm:h-4 sm:w-4 mr-1 sm:mr-2" />
-                      <span className="whitespace-nowrap">{selectedImage?.validated ? "Reopen review" : "Confirm detected plate"}</span>
+                      {selectedImage?.validated ? (
+                        <CircleCheck className="h-3 w-3 sm:h-4 sm:w-4 mr-1 sm:mr-2" />
+                      ) : (
+                        <Check className="h-3 w-3 sm:h-4 sm:w-4 mr-1 sm:mr-2" />
+                      )}
+                      <span className="whitespace-nowrap">
+                        {pendingReviewReadId === selectedImage.id
+                          ? selectedImage.validated
+                            ? "Reopening..."
+                            : "Confirming..."
+                          : selectedImage?.validated
+                            ? "Reopen review"
+                            : "Confirm detected plate"}
+                      </span>
                     </Button>}
                     <Button
                       variant="outline"

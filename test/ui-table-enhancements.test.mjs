@@ -158,6 +158,15 @@ test("live feed review status filtering is multi-select, URL-backed, and server-
   assert.match(table, /reviewStatus: null/);
 });
 
+test("the image viewer applies review results even when filtering removes the read", async () => {
+  const table = await source("components/PlateTable.jsx");
+
+  assert.match(table, /const result = await onValidate\(readId, nextValidated\)/);
+  assert.match(table, /reviewStatus:\s*result\.data\?\.reviewStatus/);
+  assert.match(table, /pendingReviewReadId === selectedImage\.id/);
+  assert.match(table, /border-green-500\/60 bg-green-500\/10 text-green-500/);
+});
+
 test("Monitored Plates is integrated with Known Plates and preserves exact-read actions", async () => {
   const [page, redirectPage, workspace, table, database, sidebar] = await Promise.all([
     source("app/known_plates/page.jsx"),

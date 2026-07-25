@@ -43,3 +43,22 @@ test("previous read crosses to the final read of the previous result page", () =
     { kind: "page", page: 1, index: -1 }
   );
 });
+
+test("next read does not skip an item after the selected read leaves a filtered page", () => {
+  assert.deepEqual(
+    resolve({ selectedIndex: 10, itemCount: 24, selectedPresent: false }),
+    { kind: "item", index: 10 }
+  );
+});
+
+test("previous read still selects the prior item after the selected read leaves a filtered page", () => {
+  assert.deepEqual(
+    resolve({
+      direction: "previous",
+      selectedIndex: 10,
+      itemCount: 24,
+      selectedPresent: false,
+    }),
+    { kind: "item", index: 9 }
+  );
+});
