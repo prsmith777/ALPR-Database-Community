@@ -53,7 +53,9 @@ reliable background processing.
   to MQTT, Pushover, SMTP email, and Webhook instead of using a separate
   Integrations overview. Every channel page uses functional header tabs; the
   Pushover Usage tab exposes monthly allowance and remaining-message metrics
-  separately from credentials, defaults, and direct testing. The former
+  separately from credentials, defaults, and direct testing. New notification
+  drafts resolve the browser-local time zone on every Create rule action so
+  rule, quiet-hours, and Schedule clocks stay aligned. The former
   `/mqtt` address redirects to Settings > Integrations > MQTT, and MQTT no longer
   occupies a primary-sidebar slot. Migrated MQTT and Pushover
   copies use the same shadow approval, atomic cutover, rollback, and verified

@@ -19,6 +19,8 @@ test("notification rules separate rule work from channel configuration", async (
   assert.doesNotMatch(workspace, /settings\/integrations/);
   assert.doesNotMatch(workspace, /Needs setup|channel\.ready/);
   assert.match(builder, /Create rule/);
+  assert.match(builder, /setDraft\(browserDraft\(options\)\)/);
+  assert.doesNotMatch(builder, /setDraft\(emptyDraft\(options\)\)/);
   assert.match(builder, /Back to rules/);
   assert.doesNotMatch(operations, /PushoverUsageCard/);
 });

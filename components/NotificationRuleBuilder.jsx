@@ -87,6 +87,22 @@ function emptyDraft(options) {
   };
 }
 
+function resolvedBrowserTimeZone() {
+  try {
+    return Intl.DateTimeFormat().resolvedOptions().timeZone;
+  } catch {
+    return "";
+  }
+}
+
+function browserDraft(options) {
+  const localTimeZone = preferredRuleTimeZone({
+    browserTimeZone: resolvedBrowserTimeZone(),
+    configuredTimeZone: options.localTimeZone,
+  });
+  return emptyDraft({ ...options, localTimeZone });
+}
+
 function nodeFromStored(node) {
   if (node.kind === "group") {
     return { ...node, key: token(), children: (node.children || []).map(nodeFromStored) };
@@ -295,7 +311,7 @@ export function NotificationRuleBuilder({ overview }) {
   const editable = useMemo(() => rules.filter((rule) => !rule.managedByMigration), [rules]);
 
   useEffect(() => {
-    const browserTimeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+    const browserTimeZone = resolvedBrowserTimeZone();
     const preferred = preferredRuleTimeZone({ browserTimeZone, configuredTimeZone: options.localTimeZone });
     setDraft((current) => {
       if (current.ruleId || current.name || current.timeZone !== options.localTimeZone || current.timeZone === preferred) return current;
@@ -370,7 +386,7 @@ export function NotificationRuleBuilder({ overview }) {
           <div><p className="text-xs uppercase text-muted-foreground">Active</p><p className="text-xl font-semibold">{editable.filter((rule) => rule.enabled).length}</p></div>
           <div><p className="text-xs uppercase text-muted-foreground">Disabled</p><p className="text-xl font-semibold">{editable.filter((rule) => !rule.enabled).length}</p></div>
         </div>
-        <Button type="button" onClick={() => { setDraft(emptyDraft(options)); setPreview(null); setMessage(null); setView("editor"); }}><Plus className="mr-2 h-4 w-4" />Create rule</Button>
+        <Button type="button" onClick={() => { setDraft(browserDraft(options)); setPreview(null); setMessage(null); setView("editor"); }}><Plus className="mr-2 h-4 w-4" />Create rule</Button>
       </div>
 
       {view === "list" && editable.length > 0 && <div className="space-y-2"><h3 className="font-medium">Your rules</h3>{editable.map((rule) => <div key={rule.id} className="flex flex-wrap items-center justify-between gap-3 rounded-lg border p-3"><div><div className="flex items-center gap-2"><span className="font-medium">{rule.name}</span><Badge variant={rule.enabled ? "default" : "secondary"}>{rule.enabled ? "Active" : "Disabled"}</Badge><Badge variant="outline">v{rule.version}</Badge></div><p className="mt-1 text-xs text-muted-foreground">{rule.actions.map((action) => action.channelType.toUpperCase()).join(" + ")} · {rule.cooldownSeconds ? `${rule.cooldownSeconds}s cooldown` : "No cooldown"}</p></div><div className="flex flex-wrap gap-2"><Button type="button" variant="outline" size="sm" disabled={isPending || rule.enabled} onClick={() => { const next = draftFromRule(rule); if (next) { setDraft(next); setPreview(null); setMessage(null); setView("editor"); } else setMessage({ kind: "error", text: "This rule does not have a valid editable condition tree." }); }}>Edit</Button><Button type="button" variant="outline" size="sm" disabled={isPending} onClick={() => runPreview(rule.id)}><FlaskConical className="mr-1 h-4 w-4" />Preview</Button><Button type="button" size="sm" variant={rule.enabled ? "destructive" : "default"} disabled={isPending} onClick={() => toggle(rule)}>{rule.enabled ? "Deactivate" : "Activate"}</Button></div></div>)}</div>}
@@ -401,4 +417,4 @@ export function NotificationRuleBuilder({ overview }) {
   </Card>;
 }
 
-export const notificationRuleBuilderUiInternals = Object.freeze({ cleanCondition, cleanNode, draftFromRule, payloadFor, removeFromTree, updateTree });
+export const notificationRuleBuilderUiInternals = Object.freeze({ browserDraft, cleanCondition, cleanNode, draftFromRule, payloadFor, removeFromTree, updateTree });

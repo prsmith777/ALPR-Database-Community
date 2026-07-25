@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Fixed Create rule resetting the rule, quiet-hours, and Schedule time zones to
+  the configured MQTT fallback after the browser-local timezone had already
+  been resolved.
 - Simplified notification administration: Notification Rules no longer shows
   channel setup cards, Settings links directly to each integration, and MQTT,
   Pushover, email, and webhook use consistent functional header tabs. Pushover
