@@ -32,7 +32,9 @@ reliable background processing.
   active in the unified runtime with their legacy sources disabled. This
   release adds verified finalization: after a successful post-cutover delivery,
   credential-free source snapshots and audit evidence are retained while the
-  legacy MQTT or Pushover rows are removed. Both separate legacy rule-management
+  legacy MQTT or Pushover rows are removed. Finalized or retired unified targets
+  then return to the normal Notification Rules list instead of remaining hidden
+  behind the completed migration workflow. Both separate legacy rule-management
   surfaces are gone; all new rules are created in Notifications. The
   two deleted Delivery-tag sources left disabled orphaned copies; this release
   adds audited retirement that preserves those rules and evidence while

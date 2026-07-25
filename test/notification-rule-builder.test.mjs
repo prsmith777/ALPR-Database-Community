@@ -155,3 +155,22 @@ test("new schedule conditions inherit the rule clock instead of the server clock
   assert.equal(scheduleConditionTimeZone({ ruleTimeZone: "America/Denver", configuredTimeZone: "UTC" }), "America/Denver");
   assert.equal(scheduleConditionTimeZone({ ruleTimeZone: "invalid", configuredTimeZone: "America/Chicago" }), "America/Chicago");
 });
+
+test("finalized and retired migration targets return to the normal rule builder", async () => {
+  const queries = [];
+  const pool = {
+    async query(sql) {
+      const normalized = String(sql).replace(/\s+/g, " ").trim();
+      queries.push(normalized);
+      return { rows: [] };
+    },
+  };
+
+  await new NotificationRuleBuilderRepository({ pool }).overview();
+
+  const ruleQuery = queries.find((sql) => sql.includes("FROM public.notification_rules r"));
+  assert.ok(ruleQuery);
+  assert.match(ruleQuery, /m\.target_rule_id = r\.id/);
+  assert.match(ruleQuery, /m\.retired_at IS NULL/);
+  assert.match(ruleQuery, /m\.finalized_at IS NULL/);
+});
