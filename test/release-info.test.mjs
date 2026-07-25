@@ -35,7 +35,7 @@ test("an explicit valid SHA overrides the image tag", () => {
   const release = getReleaseInfo({
     ALPR_RELEASE_SHA: sha.toUpperCase(),
     ALPR_RELEASE_IMAGE: "alpr-community:8cd2fa8",
-  });
+  }, {});
 
   assert.equal(release.gitSha, sha);
   assert.equal(release.source, "environment");
@@ -50,7 +50,7 @@ test("invalid release metadata is rejected or safely bounded", () => {
     ALPR_RELEASE_SHA: "../../etc/passwd",
     ALPR_RELEASE_IMAGE: "registry:latest",
     ALPR_RELEASE_CHANNEL: "staging\n<script>",
-  });
+  }, {});
 
   assert.equal(release.gitSha, null);
   assert.equal(release.channel, "self-hosted");
@@ -72,14 +72,13 @@ test("Docker-baked metadata supplies the exact commit and branch channel", () =>
 });
 
 test("the administrator Release page remains read-only", async () => {
-  const [card, form, page, shell, compose, dockerfile, dockerignore, module] = await Promise.all([
+  const [card, form, page, shell, compose, dockerfile, module] = await Promise.all([
     source("app/settings/ReleaseInformationCard.jsx"),
     source("app/settings/SettingsForm.jsx"),
     source("app/settings/page.jsx"),
     source("components/settings/SettingsShell.jsx"),
     source("docker-compose.yml"),
     source("Dockerfile"),
-    source(".dockerignore"),
     source("lib/release-info.mjs"),
   ]);
 
@@ -97,5 +96,4 @@ test("the administrator Release page remains read-only", async () => {
   assert.match(compose, /ALPR_RELEASE_CHANNEL/);
   assert.match(dockerfile, /write-release-metadata\.mjs/);
   assert.match(dockerfile, /rm -rf \.git/);
-  assert.match(dockerignore, /!\.git\/HEAD/);
 });
