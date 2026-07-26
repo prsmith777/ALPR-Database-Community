@@ -112,6 +112,29 @@ test("unknown plates emit every standard field with empty scalar identity values
   }
 });
 
+test("unknown tagged plates preserve event tags without becoming known plates", () => {
+  const payload = buildMqttPlateReadPayload({
+    read: {
+      id: 45,
+      plate_number: "3MP894",
+      timestamp: "2026-07-25T20:07:07.000Z",
+      camera_name: "Entry LPR 1",
+    },
+    publication: {
+      tags: ["Delivery"],
+      matchMethods: ["rule"],
+      matchedBy: ["unified_rule"],
+      ruleNames: ["Entry LPR 1 Match Delivery Tag"],
+    },
+    settings: DENVER_SETTINGS,
+  });
+
+  assert.equal(payload.known_plate, 0);
+  assert.equal(payload.plate_name, "");
+  assert.equal(payload.matched_plate_number, "");
+  assert.equal(payload.tags, "Delivery");
+});
+
 test("identity conflicts never attach a known name, tags, or canonical plate", () => {
   const payload = buildMqttPlateReadPayload({
     read: {

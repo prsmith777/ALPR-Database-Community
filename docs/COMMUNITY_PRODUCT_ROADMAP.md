@@ -18,7 +18,7 @@ reliable background processing.
 6. Audit sensitive searches, exports, corrections, rule changes, and
    destructive maintenance.
 
-## Release baseline — July 25, 2026
+## Release baseline — July 26, 2026
 
 - Application `0.1.9` includes named users and roles, evidence-preserving plate
   review, filter-respecting exports, the searchable help center, local privacy
@@ -61,7 +61,11 @@ reliable background processing.
   Pushover Usage tab exposes monthly allowance and remaining-message metrics
   separately from credentials, defaults, and direct testing. New notification
   drafts resolve the browser-local time zone on every Create rule action so
-  rule, quiet-hours, and Schedule clocks stay aligned. The former
+  rule, quiet-hours, and Schedule clocks stay aligned. Live accepted-read
+  evaluation now resolves tag membership independently from Known Plates,
+  matching preview and historical-review semantics; MQTT, email, and webhook
+  payloads preserve those event tags without falsely marking the plate as
+  known. The former
   `/mqtt` address redirects to Settings > Integrations > MQTT, and MQTT no longer
   occupies a primary-sidebar slot. Migrated MQTT and Pushover
   copies use the same shadow approval, atomic cutover, rollback, and verified
@@ -151,7 +155,10 @@ idempotently tracked disabled copies, restricted draft editing, no-delivery
   strategies; six-level AND/OR/NOT visual composition; and expandable
   no-delivery preview traces. Scheduled camera checks, explicit rule clocks,
   quiet hours, durable Pushover/email/webhook delivery, and operations history
-  are delivered. Remaining work is the additional conditions below.
+  are delivered. Live evaluation now shares the same independent tag versus
+  Known Plate semantics as preview and shadow review, including delivery
+  payloads for tagged plates that are not known. Remaining work is the
+  additional conditions below.
 
 Initial triggers and conditions:
 

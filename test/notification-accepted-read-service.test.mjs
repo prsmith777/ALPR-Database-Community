@@ -36,15 +36,31 @@ function unifiedRule(overrides = {}) {
   };
 }
 
-function fixture({ rules = [unifiedRule()], tags = ["Delivery"] } = {}) {
+function fixture({
+  rules = [unifiedRule()],
+  tags = ["Delivery"],
+  knownPlate = true,
+  knownName = "Test car",
+} = {}) {
   const executions = [];
   const envelopes = [];
+  const notificationDeliveries = [];
   return {
     executions,
     envelopes,
+    notificationDeliveries,
     repository: {
       async loadEnabledMqttRules() {
         return rules;
+      },
+      async loadPlateContext({ plateNumber }) {
+        return {
+          plateNumber,
+          knownPlate,
+          knownName: knownPlate ? knownName : "",
+          tags,
+          watchlisted: false,
+        };
       },
       async recordExecutions(value) {
         executions.push(value);
@@ -65,7 +81,9 @@ function fixture({ rules = [unifiedRule()], tags = ["Delivery"] } = {}) {
             localTimezone: "America/Denver",
             hourFormat: 12,
           },
-          knownPlates: [{ plateNumber: "069YQZ", name: "Test car", tags, flagged: false }],
+          knownPlates: knownPlate
+            ? [{ plateNumber: "069YQZ", name: knownName, tags, flagged: false }]
+            : [],
         };
       },
       async enqueueDelivery(envelope) {
@@ -122,6 +140,58 @@ test("unified tag rules do not queue for a known plate without the current tag",
   assert.equal(result.planned, 0);
   assert.equal(state.executions[0].decisions[0].outcome, "not_matched");
   assert.equal(state.envelopes.length, 0);
+});
+
+test("a tagged plate does not need to be a known plate for live multi-channel rules", async () => {
+  const state = fixture({
+    knownPlate: false,
+    tags: ["Delivery"],
+    rules: [unifiedRule({
+      conditionTree: {
+        kind: "group",
+        combinator: "all",
+        children: [
+          { kind: "condition", conditionType: "tag", operator: "any", value: { tags: ["Delivery"] } },
+          { kind: "condition", conditionType: "camera", operator: "in", value: { names: ["Entry LPR 1"] } },
+        ],
+      },
+      actions: [
+        { id: 71, channelId: 81, enabled: true, channelType: "mqtt", configuration: { brokerId: 2, destinationMode: "per_camera" } },
+        { id: 72, channelId: 82, enabled: true, channelType: "email", configuration: { recipients: ["owner@example.com"] } },
+        { id: 73, channelId: 83, enabled: true, channelType: "webhook", configuration: { url: "https://automation.example.com/alpr" } },
+      ],
+    })],
+  });
+  state.repository.loadEnabledRules = state.repository.loadEnabledMqttRules;
+  state.repository.recordExecutions = async (value) => {
+    state.executions.push(value);
+    return value.decisions.map((decision) => ({ ...decision, executionId: 500 }));
+  };
+  state.repository.enqueueDelivery = async (value) => {
+    state.notificationDeliveries.push(value);
+    return { id: 600 + state.notificationDeliveries.length, inserted: true };
+  };
+  const service = new NotificationAcceptedReadService({
+    repository: state.repository,
+    mqttRepository: state.mqttRepository,
+  });
+
+  const result = await service.processAcceptedRead({
+    id: 36462,
+    plate_number: "3MP894",
+    camera_name: "Entry LPR 1",
+    timestamp: "2026-07-25T20:07:07.000Z",
+  });
+
+  assert.equal(result.status, "queued");
+  assert.equal(result.queued, 3);
+  assert.equal(state.executions[0].decisions[0].outcome, "matched");
+  assert.equal(state.envelopes.length, 1);
+  assert.equal(state.envelopes[0].payload.known_plate, 0);
+  assert.equal(state.envelopes[0].payload.tags, "Delivery");
+  assert.equal(state.notificationDeliveries.length, 2);
+  assert.deepEqual(state.notificationDeliveries[0].payload.tags, ["Delivery"]);
+  assert.deepEqual(state.notificationDeliveries[1].payload.body.tags, ["Delivery"]);
 });
 
 test("the unified runtime remains inert when no unified rules are enabled", async () => {

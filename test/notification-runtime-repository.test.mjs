@@ -88,6 +88,36 @@ test("cooldown history is loaded only for explicit enabled rule IDs", async () =
   });
 });
 
+test("plate context keeps tag membership independent from known-plate membership", async () => {
+  const calls = [];
+  const repository = new NotificationRuntimeRepository({ executor: {
+    async query(sql, values) {
+      calls.push({ sql, values });
+      return { rows: [{
+        plate_number: "3MP894",
+        known_plate: false,
+        known_name: "",
+        watchlisted: false,
+        tags: ["Delivery"],
+      }] };
+    },
+  } });
+
+  const context = await repository.loadPlateContext({ plateNumber: "3mp894" });
+
+  assert.deepEqual(context, {
+    plateNumber: "3MP894",
+    knownPlate: false,
+    knownName: "",
+    tags: ["Delivery"],
+    watchlisted: false,
+  });
+  assert.deepEqual(calls[0].values, ["3MP894"]);
+  assert.match(calls[0].sql, /LEFT JOIN public\.known_plates kp/);
+  assert.match(calls[0].sql, /LEFT JOIN public\.plate_tags pt/);
+  assert.doesNotMatch(calls[0].sql, /plate_tags pt ON pt\.plate_number = kp\.plate_number/);
+});
+
 test("read-count metrics are deduplicated and scoped to the event at evaluation time", async () => {
   const calls = [];
   const repository = new NotificationRuntimeRepository({ executor: {
