@@ -171,9 +171,9 @@ test("live feed direction is visible, correctable, and filterable by semantic ca
   assert.match(table, /<DirectionBadge plate=\{plate\}/);
   assert.match(table, /label="Direction"[\s\S]*?field="direction"/);
   assert.match(table, /aria-label="Review vehicle direction"/);
-  assert.match(table, /className="h-6 w-6 shrink-0 rounded-full"/);
-  assert.match(table, /<Pencil className="h-3 w-3"/);
-  assert.match(table, /<PopoverContent align="center" className="w-64 p-3">/);
+  assert.match(table, /className="h-4 w-4 shrink-0 p-0 text-muted-foreground hover:text-foreground"/);
+  assert.match(table, /<Pencil className="h-2\.5 w-2\.5"/);
+  assert.match(table, /<PopoverContent align="start" className="w-64 p-3">/);
   assert.match(table, /Front view/);
   assert.match(table, /Rear view/);
   assert.match(wrapper, /params\.getAll\("direction"\)/);
