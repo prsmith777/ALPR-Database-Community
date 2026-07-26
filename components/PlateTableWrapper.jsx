@@ -48,6 +48,7 @@ export default function PlateTableWrapper({
   // This will be updated by SSE.
   const [liveData, setLiveData] = useState(data);
   const [liveTotal, setLiveTotal] = useState(total);
+  const [directionOverrides, setDirectionOverrides] = useState({});
 
   // State to control if live updates are active (toggled by user)
   const [isLiveModeActive, setIsLiveModeActive] = useState(true);
@@ -84,6 +85,27 @@ export default function PlateTableWrapper({
     // or be replaced by the fetched 'data' if `router.refresh()` brings filtered data.
     // The conditional merge logic below handles this.
   }, [data, total, hasActiveFilters]);
+
+  useEffect(() => {
+    setDirectionOverrides((current) => {
+      let changed = false;
+      const next = { ...current };
+      data.forEach((plate) => {
+        const override = current[plate.id];
+        if (!override) return;
+        if (
+          plate.direction_status === override.direction_status &&
+          plate.vehicle_orientation === override.vehicle_orientation &&
+          plate.orientation_confidence === override.orientation_confidence &&
+          plate.direction_label === override.direction_label
+        ) {
+          delete next[plate.id];
+          changed = true;
+        }
+      });
+      return changed ? next : current;
+    });
+  }, [data]);
 
   // Effect to manage SSE connection and data merging
   // useEffect(() => {
@@ -342,7 +364,21 @@ export default function PlateTableWrapper({
 
   const handleReviewDirection = async (readId, orientation) => {
     const result = await reviewVehicleDirection({ readId, orientation });
-    if (result.success) router.refresh();
+    if (result.success) {
+      const observation = result.data?.observation;
+      if (observation) {
+        setDirectionOverrides((current) => ({
+          ...current,
+          [readId]: {
+            direction_status: observation.status,
+            vehicle_orientation: observation.orientation,
+            orientation_confidence: observation.confidence,
+            direction_label: observation.directionLabel,
+          },
+        }));
+      }
+      router.refresh();
+    }
     return result;
   };
 
@@ -369,8 +405,13 @@ export default function PlateTableWrapper({
   );
 
   // Determine which data to pass to PlateTable
-  const dataToDisplay =
+  const baseDataToDisplay =
     hasActiveFilters() || !isLiveModeActive ? data : liveData;
+  const dataToDisplay = baseDataToDisplay.map((plate) =>
+    directionOverrides[plate.id]
+      ? { ...plate, ...directionOverrides[plate.id] }
+      : plate
+  );
   const totalToDisplay =
     hasActiveFilters() || !isLiveModeActive ? total : liveTotal;
 

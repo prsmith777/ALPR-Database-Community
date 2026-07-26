@@ -290,6 +290,7 @@ export default function PlateTable({
   const [pendingViewerNavigation, setPendingViewerNavigation] = useState(null);
   const [pendingVehicleReview, setPendingVehicleReview] = useState("");
   const [pendingDirectionReview, setPendingDirectionReview] = useState("");
+  const [isDirectionReviewOpen, setIsDirectionReviewOpen] = useState(false);
   const [directionReviewError, setDirectionReviewError] = useState("");
   const [searchInput, setSearchInput] = useState(filters.search || "");
   const [isLive, setIsLive] = useState(true);
@@ -344,10 +345,16 @@ export default function PlateTable({
           : Number(observation.confidence),
         directionLabel: observation?.directionLabel || previous.directionLabel,
       } : previous);
+      setIsDirectionReviewOpen(false);
     } finally {
       setPendingDirectionReview("");
     }
   };
+
+  useEffect(() => {
+    setIsDirectionReviewOpen(false);
+    setDirectionReviewError("");
+  }, [selectedImage?.id]);
 
   useEffect(() => {
     async function fetchBiHost() {
@@ -1729,7 +1736,14 @@ export default function PlateTable({
                       onSort={onSort}
                     />
                   </TableHead>
-                  <TableHead className="w-36 hidden md:table-cell">Direction</TableHead>
+                  <TableHead className="w-36 hidden md:table-cell">
+                    <SortButton
+                      label="Direction"
+                      field="direction"
+                      sort={sort}
+                      onSort={onSort}
+                    />
+                  </TableHead>
                   <TableHead className="w-24 sm:w-40">
                     <SortButton
                       label="Timestamp"
@@ -2392,41 +2406,64 @@ export default function PlateTable({
                 </div>
                 <div>
                   <div className="text-xs uppercase text-muted-foreground">Direction</div>
-                  <div className={selectedImage.directionLabel ? "" : "text-muted-foreground"}>
-                    {selectedImage.directionLabel || "Unknown"}
+                  <div className="flex items-center gap-1.5">
+                    <div className={selectedImage.directionLabel ? "" : "text-muted-foreground"}>
+                      {selectedImage.directionLabel || "Unknown"}
+                    </div>
+                    {canReview && (
+                      <Popover open={isDirectionReviewOpen} onOpenChange={setIsDirectionReviewOpen}>
+                        <PopoverTrigger asChild>
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            className="h-6 shrink-0 px-2 text-xs"
+                            aria-label="Review vehicle direction"
+                          >
+                            Review
+                          </Button>
+                        </PopoverTrigger>
+                        <PopoverContent align="start" className="w-64 p-3">
+                          <div className="space-y-3">
+                            <div>
+                              <div className="text-sm font-medium">Review vehicle direction</div>
+                              <div className="text-xs text-muted-foreground">
+                                Choose the view shown in this capture.
+                              </div>
+                            </div>
+                            <div className="grid grid-cols-2 gap-2">
+                              <Button
+                                type="button"
+                                variant={selectedImage.vehicleOrientation === "front" ? "default" : "outline"}
+                                size="sm"
+                                disabled={Boolean(pendingDirectionReview)}
+                                onClick={() => handleDirectionReview("front")}
+                              >
+                                {pendingDirectionReview === "front" ? "Saving..." : "Front view"}
+                              </Button>
+                              <Button
+                                type="button"
+                                variant={selectedImage.vehicleOrientation === "rear" ? "default" : "outline"}
+                                size="sm"
+                                disabled={Boolean(pendingDirectionReview)}
+                                onClick={() => handleDirectionReview("rear")}
+                              >
+                                {pendingDirectionReview === "rear" ? "Saving..." : "Rear view"}
+                              </Button>
+                            </div>
+                            {directionReviewError && (
+                              <div className="text-xs text-destructive">{directionReviewError}</div>
+                            )}
+                          </div>
+                        </PopoverContent>
+                      </Popover>
+                    )}
                   </div>
                   {selectedImage.directionLabel && selectedImage.directionConfidence !== null ? (
                     <div className="text-xs text-muted-foreground">
                       {selectedImage.vehicleOrientation} view · {Math.round(selectedImage.directionConfidence * 100)}%
                     </div>
                   ) : null}
-                  {canReview && (
-                    <div className="mt-2 flex flex-wrap gap-1">
-                      <Button
-                        type="button"
-                        variant={selectedImage.vehicleOrientation === "front" ? "default" : "outline"}
-                        size="sm"
-                        className="h-7 px-2 text-xs"
-                        disabled={Boolean(pendingDirectionReview)}
-                        onClick={() => handleDirectionReview("front")}
-                      >
-                        {pendingDirectionReview === "front" ? "Saving..." : "Mark front view"}
-                      </Button>
-                      <Button
-                        type="button"
-                        variant={selectedImage.vehicleOrientation === "rear" ? "default" : "outline"}
-                        size="sm"
-                        className="h-7 px-2 text-xs"
-                        disabled={Boolean(pendingDirectionReview)}
-                        onClick={() => handleDirectionReview("rear")}
-                      >
-                        {pendingDirectionReview === "rear" ? "Saving..." : "Mark rear view"}
-                      </Button>
-                    </div>
-                  )}
-                  {directionReviewError && (
-                    <div className="mt-1 text-xs text-destructive">{directionReviewError}</div>
-                  )}
                   {selectedImage.vehicleColor && selectedImage.vehicleColorConfidence !== null ? (
                     <div className="mt-1 text-xs capitalize text-muted-foreground">
                       {selectedImage.vehicleColor} · {Math.round(selectedImage.vehicleColorConfidence * 100)}% color

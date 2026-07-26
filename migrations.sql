@@ -2050,3 +2050,61 @@ VALUES (
     'Add direction-classified notification events and camera-configured direction conditions.'
 )
 ON CONFLICT (version) DO NOTHING;
+
+-- A human front/rear review is authoritative even while a camera is still
+-- collecting enough samples to classify unlabeled captures. Repair any
+-- reviewed rows that an earlier release left in the Unknown state.
+WITH orientation_counts AS (
+    SELECT camera_key, embedding_model,
+           COUNT(*) FILTER (WHERE orientation = 'front') AS front_count,
+           COUNT(*) FILTER (WHERE orientation = 'rear') AS rear_count
+    FROM public.vehicle_orientation_labels
+    GROUP BY camera_key, embedding_model
+)
+INSERT INTO public.vehicle_direction_observations (
+    read_id, camera_key, embedding_model, classifier_version,
+    profile_version, status, orientation, orientation_confidence,
+    direction_label, sample_counts, evaluated_at
+)
+SELECT labels.read_id,
+       labels.camera_key,
+       labels.embedding_model,
+       'vehicle-reid-orientation-knn-v1',
+       profiles.profile_version,
+       'ready',
+       labels.orientation,
+       1,
+       CASE labels.orientation
+           WHEN 'front' THEN profiles.front_direction_label
+           ELSE profiles.rear_direction_label
+       END,
+       jsonb_build_object(
+           'front', counts.front_count,
+           'rear', counts.rear_count
+       ),
+       CURRENT_TIMESTAMP
+FROM public.vehicle_orientation_labels labels
+JOIN public.camera_direction_profiles profiles
+  ON profiles.camera_key = labels.camera_key
+JOIN orientation_counts counts
+  ON counts.camera_key = labels.camera_key
+ AND counts.embedding_model = labels.embedding_model
+WHERE profiles.enabled = TRUE
+ON CONFLICT (read_id) DO UPDATE SET
+    camera_key = EXCLUDED.camera_key,
+    embedding_model = EXCLUDED.embedding_model,
+    classifier_version = EXCLUDED.classifier_version,
+    profile_version = EXCLUDED.profile_version,
+    status = EXCLUDED.status,
+    orientation = EXCLUDED.orientation,
+    orientation_confidence = EXCLUDED.orientation_confidence,
+    direction_label = EXCLUDED.direction_label,
+    sample_counts = EXCLUDED.sample_counts,
+    evaluated_at = EXCLUDED.evaluated_at;
+
+INSERT INTO public.schema_migrations (version, description)
+VALUES (
+    '2026072602_reviewed_vehicle_direction_truth',
+    'Make human-reviewed front/rear labels immediately authoritative and repair older reviewed observations.'
+)
+ON CONFLICT (version) DO NOTHING;

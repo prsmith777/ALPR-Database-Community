@@ -169,9 +169,15 @@ test("live feed direction is visible, correctable, and filterable by semantic ca
   ]);
   assert.match(table, /ariaLabel="Filter by direction"/);
   assert.match(table, /<DirectionBadge plate=\{plate\}/);
-  assert.match(table, /Mark front view/);
-  assert.match(table, /Mark rear view/);
+  assert.match(table, /label="Direction"[\s\S]*?field="direction"/);
+  assert.match(table, /aria-label="Review vehicle direction"/);
+  assert.match(table, /<PopoverContent align="start" className="w-64 p-3">/);
+  assert.match(table, /Front view/);
+  assert.match(table, /Rear view/);
   assert.match(wrapper, /params\.getAll\("direction"\)/);
+  assert.match(wrapper, /setDirectionOverrides/);
+  assert.match(wrapper, /direction_label: observation\.directionLabel/);
+  assert.match(wrapper, /directionOverrides\[plate\.id\]/);
   assert.match(page, /searchParamList\(searchParams\?\.direction\)/);
   assert.match(actions, /reviewVehicleDirection[\s\S]*?requirePermission\("plate\.review"\)/);
   assert.match(database, /LOWER\(direction\.direction_label\) = ANY/);
