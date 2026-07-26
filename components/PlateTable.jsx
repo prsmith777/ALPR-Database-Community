@@ -2404,26 +2404,31 @@ export default function PlateTable({
                     <div className="text-muted-foreground">No tags</div>
                   )}
                 </div>
-                <div>
+                <div className="min-w-0 text-center">
                   <div className="text-xs uppercase text-muted-foreground">Direction</div>
-                  <div className="flex items-center gap-1.5">
+                  <div className="flex flex-col items-center gap-1">
                     <div className={selectedImage.directionLabel ? "" : "text-muted-foreground"}>
                       {selectedImage.directionLabel || "Unknown"}
                     </div>
                     {canReview && (
                       <Popover open={isDirectionReviewOpen} onOpenChange={setIsDirectionReviewOpen}>
-                        <PopoverTrigger asChild>
-                          <Button
-                            type="button"
-                            variant="outline"
-                            size="sm"
-                            className="h-6 shrink-0 px-2 text-xs"
-                            aria-label="Review vehicle direction"
-                          >
-                            Review
-                          </Button>
-                        </PopoverTrigger>
-                        <PopoverContent align="start" className="w-64 p-3">
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <PopoverTrigger asChild>
+                              <Button
+                                type="button"
+                                variant="outline"
+                                size="icon"
+                                className="h-6 w-6 shrink-0 rounded-full"
+                                aria-label="Review vehicle direction"
+                              >
+                                <Pencil className="h-3 w-3" />
+                              </Button>
+                            </PopoverTrigger>
+                          </TooltipTrigger>
+                          <TooltipContent>Review vehicle direction</TooltipContent>
+                        </Tooltip>
+                        <PopoverContent align="center" className="w-64 p-3">
                           <div className="space-y-3">
                             <div>
                               <div className="text-sm font-medium">Review vehicle direction</div>
