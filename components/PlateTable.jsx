@@ -30,6 +30,7 @@ import {
   RotateCcw,
   ScanSearch,
   ChevronRight,
+  Split,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -86,7 +87,7 @@ import { useRouter } from "next/navigation";
 import PlateMatchModeSelect from "@/components/PlateMatchModeSelect";
 import PlateImage from "@/components/PlateImage";
 import MultiSelectFilter from "@/components/MultiSelectFilter";
-import { getSettings } from "@/app/actions";
+import { getSettings, reviewVehicleClusterSuggestion } from "@/app/actions";
 import ImageViewer from "./ImageViewer";
 import { useAccess } from "@/components/auth/AccessProvider";
 import { resolveReadViewerNavigation } from "@/lib/read-viewer-navigation.mjs";
@@ -259,6 +260,7 @@ export default function PlateTable({
   const [pendingReviewReadId, setPendingReviewReadId] = useState(null);
   const [pendingReviewTargetValidated, setPendingReviewTargetValidated] = useState(null);
   const [pendingViewerNavigation, setPendingViewerNavigation] = useState(null);
+  const [pendingVehicleReview, setPendingVehicleReview] = useState("");
   const [searchInput, setSearchInput] = useState(filters.search || "");
   const [isLive, setIsLive] = useState(true);
   const [prefetchedImages, setPrefetchedImages] = useState(new Set());
@@ -273,6 +275,24 @@ export default function PlateTable({
   const correctionInputRef = useRef(null);
 
   const router = useRouter();
+
+  const handleVehicleReview = async (decision) => {
+    if (!selectedImage?.id || pendingVehicleReview) return;
+    setPendingVehicleReview(decision);
+    try {
+      const result = await reviewVehicleClusterSuggestion({ readId: selectedImage.id, decision });
+      if (!result.success) return;
+      setSelectedImage((previous) => previous ? {
+        ...previous,
+        vehicleClusterId: Number(result.data.cluster_id),
+        vehicleClusterStatus: result.data.assignment_status,
+        vehicleClusterSimilarity: result.data.similarity === null ? null : Number(result.data.similarity),
+      } : previous);
+      router.refresh();
+    } finally {
+      setPendingVehicleReview("");
+    }
+  };
 
   useEffect(() => {
     async function fetchBiHost() {
@@ -348,6 +368,15 @@ export default function PlateTable({
         ? null
         : Number(plate.orientation_confidence),
       directionLabel: plate.direction_label || "",
+      vehicleColor: plate.vehicle_color || "",
+      vehicleColorConfidence: plate.vehicle_color_confidence === null || plate.vehicle_color_confidence === undefined
+        ? null
+        : Number(plate.vehicle_color_confidence),
+      vehicleClusterId: plate.vehicle_cluster_id ? Number(plate.vehicle_cluster_id) : null,
+      vehicleClusterStatus: plate.vehicle_cluster_status || null,
+      vehicleClusterSimilarity: plate.vehicle_cluster_similarity === null || plate.vehicle_cluster_similarity === undefined
+        ? null
+        : Number(plate.vehicle_cluster_similarity),
       id: plate.id,
       validated: plate.validated,
       bi_path: bi_url,
@@ -493,6 +522,17 @@ export default function PlateTable({
         || currentPlate?.orientation_confidence === undefined
         ? null
         : Number(currentPlate.orientation_confidence);
+      const currentVehicleColor = currentPlate?.vehicle_color || "";
+      const currentVehicleColorConfidence = currentPlate?.vehicle_color_confidence === null
+        || currentPlate?.vehicle_color_confidence === undefined
+        ? null
+        : Number(currentPlate.vehicle_color_confidence);
+      const currentVehicleClusterId = currentPlate?.vehicle_cluster_id ? Number(currentPlate.vehicle_cluster_id) : null;
+      const currentVehicleClusterStatus = currentPlate?.vehicle_cluster_status || null;
+      const currentVehicleClusterSimilarity = currentPlate?.vehicle_cluster_similarity === null
+        || currentPlate?.vehicle_cluster_similarity === undefined
+        ? null
+        : Number(currentPlate.vehicle_cluster_similarity);
 
       if (
         currentPlate &&
@@ -504,7 +544,12 @@ export default function PlateTable({
           currentKnownName !== selectedImage.knownName ||
           currentTagSignature !== selectedTagSignature ||
           currentDirectionLabel !== selectedImage.directionLabel ||
-          currentDirectionConfidence !== selectedImage.directionConfidence)
+          currentDirectionConfidence !== selectedImage.directionConfidence ||
+          currentVehicleColor !== selectedImage.vehicleColor ||
+          currentVehicleColorConfidence !== selectedImage.vehicleColorConfidence ||
+          currentVehicleClusterId !== selectedImage.vehicleClusterId ||
+          currentVehicleClusterStatus !== selectedImage.vehicleClusterStatus ||
+          currentVehicleClusterSimilarity !== selectedImage.vehicleClusterSimilarity)
       ) {
         setSelectedImage((previous) => ({
           ...previous,
@@ -524,6 +569,11 @@ export default function PlateTable({
           vehicleOrientation: currentPlate.vehicle_orientation || "unknown",
           directionConfidence: currentDirectionConfidence,
           directionLabel: currentDirectionLabel,
+          vehicleColor: currentVehicleColor,
+          vehicleColorConfidence: currentVehicleColorConfidence,
+          vehicleClusterId: currentVehicleClusterId,
+          vehicleClusterStatus: currentVehicleClusterStatus,
+          vehicleClusterSimilarity: currentVehicleClusterSimilarity,
         }));
       }
     }
@@ -2200,7 +2250,7 @@ export default function PlateTable({
               </DialogTitle>
             </DialogHeader>
             {selectedImage && (
-              <div className="grid gap-3 rounded-lg border p-3 text-sm sm:grid-cols-2 lg:grid-cols-6">
+              <div className="grid gap-3 rounded-lg border p-3 text-sm sm:grid-cols-2 lg:grid-cols-7">
                 <div>
                   <div className="text-xs uppercase text-muted-foreground">Observed</div>
                   <div className="font-mono">{selectedImage.observedPlate}</div>
@@ -2248,6 +2298,23 @@ export default function PlateTable({
                       {selectedImage.vehicleOrientation} view · {Math.round(selectedImage.directionConfidence * 100)}%
                     </div>
                   ) : null}
+                  {selectedImage.vehicleColor && selectedImage.vehicleColorConfidence !== null ? (
+                    <div className="mt-1 text-xs capitalize text-muted-foreground">
+                      {selectedImage.vehicleColor} · {Math.round(selectedImage.vehicleColorConfidence * 100)}% color
+                    </div>
+                  ) : null}
+                </div>
+                <div>
+                  <div className="text-xs uppercase text-muted-foreground">Vehicle</div>
+                  {selectedImage.vehicleClusterId ? (
+                    <>
+                      <Link href="/visual_search/vehicles" className="text-blue-500 hover:underline">Vehicle #{selectedImage.vehicleClusterId}</Link>
+                      <div className="text-xs capitalize text-muted-foreground">
+                        {selectedImage.vehicleClusterStatus}
+                        {selectedImage.vehicleClusterSimilarity !== null ? ` · ${Math.round(selectedImage.vehicleClusterSimilarity * 100)}%` : ""}
+                      </div>
+                    </>
+                  ) : <div className="text-muted-foreground">Unassigned</div>}
                 </div>
               </div>
             )}
@@ -2268,6 +2335,16 @@ export default function PlateTable({
                       <span className="whitespace-nowrap">Find similar vehicle</span>
                     </Link>
                   </Button>}
+                  {canReview && selectedImage?.vehicleClusterStatus === "suggested" && (
+                    <>
+                      <Button variant="outline" size="sm" disabled={Boolean(pendingVehicleReview)} onClick={() => handleVehicleReview("confirm")}>
+                        <CircleCheck className="mr-1 h-3 w-3 sm:h-4 sm:w-4" /> Confirm vehicle
+                      </Button>
+                      <Button variant="outline" size="sm" disabled={Boolean(pendingVehicleReview)} onClick={() => handleVehicleReview("separate")}>
+                        <Split className="mr-1 h-3 w-3 sm:h-4 sm:w-4" /> Different vehicle
+                      </Button>
+                    </>
+                  )}
                   {canReview && <Button
                     variant="outline"
                     size="sm"

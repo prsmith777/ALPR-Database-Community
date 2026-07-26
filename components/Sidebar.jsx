@@ -33,7 +33,7 @@ const allNavItems = [
   { icon: LayoutDashboard, label: "Dashboard", href: "/dashboard", permission: "plate.read" },
   { icon: Cctv, label: "Live Feed", href: "/live_feed", permission: "plate.read" },
   { icon: Database, label: "Database", href: "/database", permission: "plate.read" },
-  { icon: ScanSearch, label: "Visual Search", href: "/visual_search", permission: "plate.read" },
+  { icon: ScanSearch, label: "Vehicle Intelligence", href: "/visual_search", permission: "plate.read" },
   { icon: BookMarked, label: "Known Plates", href: "/known_plates", permission: "plate.read" },
   { icon: BellPlus, label: "Notification Rules", href: "/notifications", permission: "notification.manage" },
 ];

@@ -2001,6 +2001,8 @@ function visualSearchFailure(error, fallback) {
     "INVALID_DIRECTION_PROFILE",
     "INVALID_VEHICLE_ORIENTATION",
     "VEHICLE_DIRECTION_ASSET_UNAVAILABLE",
+    "INVALID_VEHICLE_CLUSTER_REVIEW",
+    "VEHICLE_CLUSTER_ASSIGNMENT_NOT_FOUND",
   ]);
   if (safeCodes.has(error?.code)) return { success: false, error: error.message };
   console.error(fallback, { code: String(error?.code || "") });
@@ -2190,5 +2192,48 @@ export async function labelVehicleOrientation(input = {}) {
     return { success: true, data };
   } catch (error) {
     return visualSearchFailure(error, "Unable to save this front/rear example.");
+  }
+}
+
+export async function getVehicleClusterOverview() {
+  const principal = await requirePermission("plate.read");
+  try {
+    return {
+      success: true,
+      data: {
+        ...(await (await getCaptureAssetService()).getVehicleClusterOverview()),
+        canReview: hasPermission(principal, "plate.review"),
+        canAnalyze: hasPermission(principal, "maintenance.manage"),
+      },
+    };
+  } catch (error) {
+    return visualSearchFailure(error, "Unable to load shadow vehicle clusters.");
+  }
+}
+
+export async function analyzeRecentVehicleClusters(limit = 100) {
+  await requirePermission("maintenance.manage");
+  try {
+    const data = await (await getCaptureAssetService()).clusterRecentUnassigned(limit);
+    revalidatePath("/visual_search/vehicles");
+    return { success: true, data };
+  } catch (error) {
+    return visualSearchFailure(error, "Unable to analyze recent vehicle captures.");
+  }
+}
+
+export async function reviewVehicleClusterSuggestion(input = {}) {
+  const principal = await requirePermission("plate.review");
+  try {
+    const data = await (await getCaptureAssetService()).reviewVehicleCluster({
+      readId: input.readId,
+      decision: input.decision,
+      actor: principal,
+    });
+    revalidatePath("/visual_search/vehicles");
+    revalidatePath("/live_feed");
+    return { success: true, data };
+  } catch (error) {
+    return visualSearchFailure(error, "Unable to review this vehicle suggestion.");
   }
 }

@@ -1932,3 +1932,83 @@ VALUES (
     'Add configurable per-camera direction meanings and audited ReID-assisted front/rear calibration.'
 )
 ON CONFLICT (version) DO NOTHING;
+
+-- Vehicle attributes are immutable per-read model observations. A better
+-- future capture adds evidence; it never rewrites an older capture's result.
+CREATE TABLE IF NOT EXISTS public.vehicle_attribute_observations (
+    id BIGSERIAL PRIMARY KEY,
+    read_id INTEGER NOT NULL REFERENCES public.plate_reads(id) ON DELETE CASCADE,
+    attribute_key VARCHAR(40) NOT NULL,
+    status VARCHAR(20) NOT NULL CHECK (status IN ('ready', 'unknown', 'failed')),
+    attribute_value VARCHAR(120),
+    confidence REAL CHECK (confidence BETWEEN 0 AND 1),
+    provider VARCHAR(80) NOT NULL,
+    model_version VARCHAR(80) NOT NULL,
+    raw_result JSONB NOT NULL DEFAULT '{}'::JSONB,
+    error_code VARCHAR(80),
+    evaluated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT vehicle_attribute_observation_state CHECK (
+        (status = 'ready' AND attribute_value IS NOT NULL AND confidence IS NOT NULL AND error_code IS NULL) OR
+        (status = 'unknown' AND attribute_value IS NULL AND error_code IS NULL) OR
+        (status = 'failed' AND attribute_value IS NULL AND error_code IS NOT NULL)
+    ),
+    UNIQUE (read_id, attribute_key, provider, model_version)
+);
+
+CREATE INDEX IF NOT EXISTS idx_vehicle_attribute_observations_lookup
+    ON public.vehicle_attribute_observations (attribute_key, attribute_value, status, confidence DESC);
+
+INSERT INTO public.schema_migrations (version, description)
+VALUES (
+    '2026072505_vehicle_attribute_observations',
+    'Add per-read vehicle attribute evidence with confidence and provider/model provenance.'
+)
+ON CONFLICT (version) DO NOTHING;
+
+-- Shadow clusters are candidate groupings, never plate ownership claims.
+-- Plate text is retained for review but is not an input to assignment.
+CREATE TABLE IF NOT EXISTS public.vehicle_clusters (
+    id BIGSERIAL PRIMARY KEY,
+    status VARCHAR(20) NOT NULL DEFAULT 'shadow'
+        CHECK (status IN ('shadow', 'confirmed', 'retired')),
+    representative_read_id INTEGER NOT NULL UNIQUE
+        REFERENCES public.plate_reads(id) ON DELETE CASCADE,
+    embedding_model VARCHAR(80) NOT NULL,
+    algorithm_version VARCHAR(80) NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS public.vehicle_cluster_assignments (
+    read_id INTEGER PRIMARY KEY REFERENCES public.plate_reads(id) ON DELETE CASCADE,
+    cluster_id BIGINT NOT NULL REFERENCES public.vehicle_clusters(id) ON DELETE CASCADE,
+    assignment_status VARCHAR(20) NOT NULL
+        CHECK (assignment_status IN ('seed', 'suggested', 'confirmed')),
+    similarity REAL CHECK (similarity BETWEEN -1 AND 1),
+    similarity_margin REAL CHECK (similarity_margin BETWEEN -2 AND 2),
+    embedding_model VARCHAR(80) NOT NULL,
+    algorithm_version VARCHAR(80) NOT NULL,
+    actor_user_id BIGINT REFERENCES public.users(id) ON DELETE SET NULL,
+    actor_username VARCHAR(64),
+    actor_display_name VARCHAR(120),
+    revision INTEGER NOT NULL DEFAULT 1 CHECK (revision > 0),
+    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT vehicle_cluster_assignment_evidence CHECK (
+        (assignment_status = 'seed' AND similarity IS NULL) OR
+        (assignment_status IN ('suggested', 'confirmed') AND similarity IS NOT NULL)
+    )
+);
+
+CREATE INDEX IF NOT EXISTS idx_vehicle_cluster_assignments_cluster
+    ON public.vehicle_cluster_assignments (cluster_id, assignment_status, updated_at DESC);
+CREATE INDEX IF NOT EXISTS idx_vehicle_cluster_assignments_review
+    ON public.vehicle_cluster_assignments (assignment_status, similarity DESC, updated_at DESC)
+    WHERE assignment_status = 'suggested';
+
+INSERT INTO public.schema_migrations (version, description)
+VALUES (
+    '2026072506_vehicle_shadow_clusters',
+    'Add reviewable descriptor-only shadow vehicle clusters without plate ownership or mismatch alerts.'
+)
+ON CONFLICT (version) DO NOTHING;

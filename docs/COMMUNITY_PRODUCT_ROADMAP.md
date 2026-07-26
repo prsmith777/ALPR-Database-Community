@@ -73,6 +73,11 @@ reliable background processing.
   calibrate the local classifier from audited front/rear examples. Unconfigured,
   under-trained, and low-confidence captures remain Unknown. Original captures
   remain unchanged, ingestion does not wait, and this phase stores no clips.
+  Per-read color observations retain confidence and local algorithm provenance.
+  Descriptor-only shadow clusters exclude plate text, require conservative
+  similarity and winner-margin gates, and expose bounded Confirm vehicle or
+  Different vehicle review. They make no ownership or mismatch claims and send
+  no alerts.
 - Administrators now have a read-only Storage Health view in Data & Privacy.
   It reports mounted-filesystem capacity, PostgreSQL and plate-read size,
   record/image-path counts, recent ingestion, visual-index state,
@@ -256,9 +261,18 @@ remain externally orchestrated.
   Unknown below threshold. Results include classifier/model/profile provenance,
   orientation confidence, and sample counts. No camera mappings are hard-coded
   and no video clips are stored.
-- Add asynchronous vehicle observations with per-field confidence,
-  provider/model/version provenance, raw result, status, and error.
-- Store plate jurisdiction/region, make, model, color, body type, year range,
+- Per-read vehicle color observations and shadow clusters are implemented as
+  an evidence-gathering phase. Color is stored with confidence and local
+  algorithm provenance against the individual read, never copied onto a plate.
+  Descriptor-only grouping excludes plate text and creates either a seed
+  cluster or a reviewable suggested assignment. Review changes are audited.
+  Recognition Feed shows assignment, direction, and color evidence in its
+  image dialog. Shadow clusters create no plate ownership claims, mismatch
+  labels, or alerts.
+- Expand the implemented asynchronous color and direction observations to
+  make/model/body type/year with per-field confidence, provider/model/version
+  provenance, raw result, status, and error.
+- Store plate jurisdiction/region, make, model, body type, year range,
   alternate OCR candidates, and bounding boxes; expand current orientation
   observations with optional multiframe motion validation before speed claims.
 - Expand Vehicle ReID calibration with larger labeled local samples and
