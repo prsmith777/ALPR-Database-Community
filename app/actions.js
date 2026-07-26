@@ -1998,6 +1998,9 @@ function visualSearchFailure(error, fallback) {
     "INVALID_VEHICLE_MATCH_PAIR",
     "VEHICLE_MATCH_ASSET_UNAVAILABLE",
     "VEHICLE_MATCH_MODEL_MISMATCH",
+    "INVALID_DIRECTION_PROFILE",
+    "INVALID_VEHICLE_ORIENTATION",
+    "VEHICLE_DIRECTION_ASSET_UNAVAILABLE",
   ]);
   if (safeCodes.has(error?.code)) return { success: false, error: error.message };
   console.error(fallback, { code: String(error?.code || "") });
@@ -2149,5 +2152,43 @@ export async function submitVehicleMatchFeedback(input = {}) {
     return { success: true, data };
   } catch (error) {
     return visualSearchFailure(error, "Unable to save vehicle match feedback.");
+  }
+}
+
+export async function getVehicleDirectionSetup(cameraName = null) {
+  await requirePermission("system.manage_settings");
+  try {
+    return {
+      success: true,
+      data: await (await getCaptureAssetService()).getDirectionSetup(cameraName),
+    };
+  } catch (error) {
+    return visualSearchFailure(error, "Unable to load vehicle direction setup.");
+  }
+}
+
+export async function saveVehicleDirectionProfile(input = {}) {
+  const principal = await requirePermission("system.manage_settings");
+  try {
+    const data = await (await getCaptureAssetService()).saveDirectionProfile(input, principal);
+    revalidatePath("/settings/vehicle-intelligence");
+    return { success: true, data };
+  } catch (error) {
+    return visualSearchFailure(error, "Unable to save this camera direction profile.");
+  }
+}
+
+export async function labelVehicleOrientation(input = {}) {
+  const principal = await requirePermission("system.manage_settings");
+  try {
+    const data = await (await getCaptureAssetService()).recordOrientationLabel({
+      readId: input.readId,
+      orientation: input.orientation,
+      actor: principal,
+    });
+    revalidatePath("/settings/vehicle-intelligence");
+    return { success: true, data };
+  } catch (error) {
+    return visualSearchFailure(error, "Unable to save this front/rear example.");
   }
 }

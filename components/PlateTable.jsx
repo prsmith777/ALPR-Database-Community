@@ -342,6 +342,12 @@ export default function PlateTable({
       cameraName: plate.camera_name || "",
       knownName: plate.known_name || "",
       tags: Array.isArray(plate.tags) ? plate.tags : [],
+      directionStatus: plate.direction_status || null,
+      vehicleOrientation: plate.vehicle_orientation || "unknown",
+      directionConfidence: plate.orientation_confidence === null || plate.orientation_confidence === undefined
+        ? null
+        : Number(plate.orientation_confidence),
+      directionLabel: plate.direction_label || "",
       id: plate.id,
       validated: plate.validated,
       bi_path: bi_url,
@@ -482,6 +488,11 @@ export default function PlateTable({
         : [];
       const currentTagSignature = JSON.stringify(currentTags);
       const selectedTagSignature = JSON.stringify(selectedImageTags);
+      const currentDirectionLabel = currentPlate?.direction_label || "";
+      const currentDirectionConfidence = currentPlate?.orientation_confidence === null
+        || currentPlate?.orientation_confidence === undefined
+        ? null
+        : Number(currentPlate.orientation_confidence);
 
       if (
         currentPlate &&
@@ -491,7 +502,9 @@ export default function PlateTable({
             currentReviewStatus !== selectedImage.reviewStatus ||
             currentReviewRevision !== selectedReviewRevision)) ||
           currentKnownName !== selectedImage.knownName ||
-          currentTagSignature !== selectedTagSignature)
+          currentTagSignature !== selectedTagSignature ||
+          currentDirectionLabel !== selectedImage.directionLabel ||
+          currentDirectionConfidence !== selectedImage.directionConfidence)
       ) {
         setSelectedImage((previous) => ({
           ...previous,
@@ -507,6 +520,10 @@ export default function PlateTable({
             : {}),
           knownName: currentKnownName,
           tags: currentTags,
+          directionStatus: currentPlate.direction_status || null,
+          vehicleOrientation: currentPlate.vehicle_orientation || "unknown",
+          directionConfidence: currentDirectionConfidence,
+          directionLabel: currentDirectionLabel,
         }));
       }
     }
@@ -2183,7 +2200,7 @@ export default function PlateTable({
               </DialogTitle>
             </DialogHeader>
             {selectedImage && (
-              <div className="grid gap-3 rounded-lg border p-3 text-sm sm:grid-cols-2 lg:grid-cols-5">
+              <div className="grid gap-3 rounded-lg border p-3 text-sm sm:grid-cols-2 lg:grid-cols-6">
                 <div>
                   <div className="text-xs uppercase text-muted-foreground">Observed</div>
                   <div className="font-mono">{selectedImage.observedPlate}</div>
@@ -2220,6 +2237,17 @@ export default function PlateTable({
                   ) : (
                     <div className="text-muted-foreground">No tags</div>
                   )}
+                </div>
+                <div>
+                  <div className="text-xs uppercase text-muted-foreground">Direction</div>
+                  <div className={selectedImage.directionLabel ? "" : "text-muted-foreground"}>
+                    {selectedImage.directionLabel || "Unknown"}
+                  </div>
+                  {selectedImage.directionLabel && selectedImage.directionConfidence !== null ? (
+                    <div className="text-xs text-muted-foreground">
+                      {selectedImage.vehicleOrientation} view · {Math.round(selectedImage.directionConfidence * 100)}%
+                    </div>
+                  ) : null}
                 </div>
               </div>
             )}

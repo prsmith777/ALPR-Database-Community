@@ -68,7 +68,11 @@ reliable background processing.
   finalization workflow.
 - Vehicle ReID visual search, uploaded-image queries, camera fallback profiles,
   calibration feedback, and the resumable safety-aware background index worker
-  are available. Original captures remain unchanged.
+  are available. Administrators can also configure camera-specific front/rear
+  direction meanings with custom labels and a confidence threshold, then
+  calibrate the local classifier from audited front/rear examples. Unconfigured,
+  under-trained, and low-confidence captures remain Unknown. Original captures
+  remain unchanged, ingestion does not wait, and this phase stores no clips.
 - Administrators now have a read-only Storage Health view in Data & Privacy.
   It reports mounted-filesystem capacity, PostgreSQL and plate-read size,
   record/image-path counts, recent ingestion, visual-index state,
@@ -243,10 +247,20 @@ remain externally orchestrated.
   canonical read pairs and the exact embedding model, changes are audited, and
   a local accuracy summary can recommend—but does not automatically apply—an
   interpretation threshold after both classes have enough examples.
+- Configurable single-frame direction foundation implemented: Settings >
+  Vehicle Intelligence discovers current and future cameras dynamically,
+  stores separate meanings for visible front and rear views, accepts custom
+  compass/site labels, and applies a continuous confidence threshold. Audited
+  per-camera examples calibrate a conservative ReID-assisted classifier; it
+  remains collecting until both views have enough examples and preserves
+  Unknown below threshold. Results include classifier/model/profile provenance,
+  orientation confidence, and sample counts. No camera mappings are hard-coded
+  and no video clips are stored.
 - Add asynchronous vehicle observations with per-field confidence,
   provider/model/version provenance, raw result, status, and error.
 - Store plate jurisdiction/region, make, model, color, body type, year range,
-  orientation, alternate OCR candidates, and bounding boxes.
+  alternate OCR candidates, and bounding boxes; expand current orientation
+  observations with optional multiframe motion validation before speed claims.
 - Expand Vehicle ReID calibration with larger labeled local samples and
   camera-pair reporting before making stronger labels or applying thresholds.
 - Consider pgvector only when the bounded in-process cosine scan no longer
