@@ -75,6 +75,8 @@ test("vehicle intelligence schema is shadow-only and reviewable", async () => {
   assert.match(component, /Different vehicle/);
   assert.match(service, /chooseShadowCluster\(\{ embedding: asset\.vehicle_embedding, candidates \}\)/);
   assert.doesNotMatch(service, /chooseShadowCluster\([\s\S]{0,300}plate_number/);
+  assert.match(service, /clusterRecentUnassigned[\s\S]*?analyzeVehicleColorAssets\(assets\)/);
+  assert.doesNotMatch(service, /clusterRecentUnassigned[\s\S]{0,1800}?analyzeRecentVehicleColors\(bounded\)/);
   assert.match(actions, /reviewVehicleClusterSuggestion[\s\S]*?requirePermission\("plate\.review"\)/);
   assert.match(actions, /analyzeRecentVehicleClusters[\s\S]*?requirePermission\("maintenance\.manage"\)/);
 });
