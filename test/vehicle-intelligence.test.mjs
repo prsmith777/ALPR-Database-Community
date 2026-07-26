@@ -3,6 +3,7 @@ import { readFile } from "node:fs/promises";
 import test from "node:test";
 
 import { createColorSignature } from "../lib/image-similarity.mjs";
+import { CaptureAssetRepository } from "../lib/capture-asset-repository.mjs";
 import { inferVehicleColor } from "../lib/vehicle-attributes.mjs";
 import { chooseShadowCluster } from "../lib/vehicle-clustering.mjs";
 
@@ -76,4 +77,57 @@ test("vehicle intelligence schema is shadow-only and reviewable", async () => {
   assert.doesNotMatch(service, /chooseShadowCluster\([\s\S]{0,300}plate_number/);
   assert.match(actions, /reviewVehicleClusterSuggestion[\s\S]*?requirePermission\("plate\.review"\)/);
   assert.match(actions, /analyzeRecentVehicleClusters[\s\S]*?requirePermission\("maintenance\.manage"\)/);
+});
+
+test("vehicle cluster queries use one current vehicle asset per read", async () => {
+  const calls = [];
+  const repository = new CaptureAssetRepository({
+    executor: {
+      async query(text, values) {
+        calls.push({ text, values });
+        if (text.includes("total_clusters")) {
+          return { rows: [{ total_clusters: 0, shadow_clusters: 0, pending_reviews: 0, confirmed_assignments: 0 }] };
+        }
+        return { rows: [] };
+      },
+    },
+  });
+
+  await repository.listVehicleClusterOverview();
+
+  assert.equal(calls.length, 3);
+  assert.equal(calls[0].values.length, 3);
+  assert.match(calls[0].text, /JOIN LATERAL[\s\S]*?asset_type = \$2[\s\S]*?algorithm_version = \$3/i);
+  assert.doesNotMatch(calls[0].text, /JOIN public\.capture_assets representative ON/i);
+  assert.equal(calls[1].values.length, 3);
+  assert.match(calls[1].text, /JOIN LATERAL[\s\S]*?candidate[\s\S]*?JOIN LATERAL[\s\S]*?representative/i);
+});
+
+test("vehicle cluster review explicitly types the shared status parameter", async () => {
+  const calls = [];
+  const client = {
+    async query(text, values) {
+      calls.push({ text, values });
+      if (text.includes("FOR UPDATE")) {
+        return { rows: [{ read_id: 10, cluster_id: 20, assignment_status: "suggested", similarity: 0.97, revision: 1 }] };
+      }
+      if (text.includes("UPDATE public.vehicle_cluster_assignments")) {
+        return { rows: [{ read_id: 10, cluster_id: 20, assignment_status: "confirmed", similarity: 0.97, similarity_margin: 0.08, revision: 2 }] };
+      }
+      return { rows: [] };
+    },
+  };
+  const repository = new CaptureAssetRepository({ executor: client });
+
+  await repository.reviewVehicleClusterAssignment({
+    readId: 10,
+    decision: "confirm",
+    embeddingModel: "test-model",
+    algorithmVersion: "test-cluster",
+    actor: { id: 1, username: "tester", displayName: "Tester" },
+  });
+
+  const update = calls.find((call) => call.text.includes("UPDATE public.vehicle_cluster_assignments"));
+  assert.match(update.text, /assignment_status = \$3::varchar/i);
+  assert.match(update.text, /CASE WHEN \$3::varchar = 'seed'/i);
 });
