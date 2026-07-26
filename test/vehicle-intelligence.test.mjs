@@ -101,6 +101,7 @@ test("vehicle cluster queries use one current vehicle asset per read", async () 
   assert.equal(calls[0].values.length, 3);
   assert.match(calls[0].text, /JOIN LATERAL[\s\S]*?asset_type = \$2[\s\S]*?algorithm_version = \$3/i);
   assert.doesNotMatch(calls[0].text, /JOIN public\.capture_assets representative ON/i);
+  assert.match(calls[0].text, /ORDER BY clusters\.updated_at DESC, clusters\.id DESC/i);
   assert.equal(calls[1].values.length, 3);
   assert.match(calls[1].text, /JOIN LATERAL[\s\S]*?candidate[\s\S]*?JOIN LATERAL[\s\S]*?representative/i);
 });
