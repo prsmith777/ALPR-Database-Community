@@ -64,10 +64,11 @@ test("accepted-read email and webhook payloads preserve rule context without cre
       observedPlate: "ABC12B",
       cameraName: "Driveway",
       confidence: 0.91,
+      knownName: "Visitor",
+      tags: ["Guest"],
     },
     eventId: "plate-read:42",
     read: { image_path: "/images/read-42.jpg" },
-    candidate: { name: "Visitor", tags: ["Guest"] },
   };
   const email = notificationAcceptedReadServiceInternals.durableActionPayload({
     ...base,
