@@ -28,13 +28,14 @@ import { Textarea } from "@/components/ui/textarea";
 import { preferredRuleTimeZone, scheduleConditionTimeZone, syncQuietHoursTimeZone } from "@/lib/notification-rule-time-zone.mjs";
 
 const CONDITION_LABELS = {
-  always: "Any accepted read",
+  always: "Any event",
   plate_match: "Plate text",
   known_plate: "Known plate",
   known_name: "Known-plate name",
   tag: "Tag",
   watchlist: "Monitored plate",
   camera: "Camera",
+  direction: "Vehicle direction",
   confidence: "Confidence",
   read_count: "Read count",
   local_time_window: "Schedule",
@@ -63,6 +64,17 @@ function defaultActivityGroup() {
     children: [
       { kind: "condition", key: token(), conditionType: "camera", operator: "in", value: { names: [] } },
       { kind: "condition", key: token(), conditionType: "read_count", operator: "at_most", value: { scope: "camera", count: 0, windowSeconds: 900 } },
+    ],
+  };
+}
+
+function defaultDirectionGroup() {
+  return {
+    kind: "group",
+    key: token(),
+    combinator: "all",
+    children: [
+      { kind: "condition", key: token(), conditionType: "direction", operator: "in", value: { labels: [] } },
     ],
   };
 }
@@ -162,6 +174,7 @@ function cleanCondition(condition) {
   if (type === "known_name") return { kind: "condition", conditionType: type, operator: "in", value: { names: condition.value.names || [] } };
   if (type === "tag") return { kind: "condition", conditionType: type, operator: "any", value: { tags: condition.value.tags || [] } };
   if (type === "camera") return { kind: "condition", conditionType: type, operator: "in", value: { names: condition.value.names || [] } };
+  if (type === "direction") return { kind: "condition", conditionType: type, operator: "in", value: { labels: condition.value.labels || [] } };
   if (type === "confidence") return { kind: "condition", conditionType: type, operator: condition.operator || "at_least", value: { threshold: condition.value.threshold ?? 80 } };
   if (type === "read_count") return { kind: "condition", conditionType: type, operator: condition.operator || "at_least", value: { scope: condition.value.scope || "plate", count: condition.value.count ?? 1, windowSeconds: condition.value.windowSeconds ?? 0 } };
   return {
@@ -230,6 +243,12 @@ function ConditionValue({ condition, update, options, ruleTimeZone }) {
     return <div className="flex flex-wrap gap-2">{options.cameras.map((camera) => {
       const selected = (value.names || []).includes(camera);
       return <button type="button" key={camera} onClick={() => update({ value: { ...value, names: selected ? value.names.filter((name) => name !== camera) : [...(value.names || []), camera] } })} className={`rounded-full border px-3 py-1 text-sm ${selected ? "border-primary bg-primary text-primary-foreground" : ""}`}>{camera}</button>;
+    })}</div>;
+  }
+  if (condition.conditionType === "direction") {
+    return <div className="flex flex-wrap gap-2">{(options.directions || []).map((direction) => {
+      const selected = (value.labels || []).includes(direction);
+      return <button type="button" key={direction} onClick={() => update({ value: { ...value, labels: selected ? value.labels.filter((label) => label !== direction) : [...(value.labels || []), direction] } })} className={`rounded-full border px-3 py-1 text-sm ${selected ? "border-primary bg-primary text-primary-foreground" : ""}`}>{direction}</button>;
     })}</div>;
   }
   if (condition.conditionType === "confidence") {
@@ -324,7 +343,7 @@ function ActionEditor({ action, update, remove, options }) {
 
 export function NotificationRuleBuilder({ overview }) {
   const router = useRouter();
-  const options = overview?.options || { tags: [], cameras: [], brokers: [], localTimeZone: "America/Denver" };
+  const options = overview?.options || { tags: [], cameras: [], directions: [], brokers: [], localTimeZone: "America/Denver" };
   const rules = useMemo(() => overview?.rules || [], [overview?.rules]);
   const [draft, setDraft] = useState(() => emptyDraft(options));
   const [message, setMessage] = useState(null);
@@ -451,7 +470,7 @@ export function NotificationRuleBuilder({ overview }) {
         <div className="grid gap-3 md:grid-cols-2"><Input value={draft.name} onChange={(event) => setDraft({ ...draft, name: event.target.value })} placeholder="Rule name" /><Input type="number" min="0" max="2678400" value={draft.cooldownSeconds} onChange={(event) => setDraft({ ...draft, cooldownSeconds: event.target.value })} placeholder="Cooldown seconds" /></div>
         <Textarea value={draft.description} onChange={(event) => setDraft({ ...draft, description: event.target.value })} placeholder="Optional description" />
         <div className="grid gap-3 rounded-lg border p-3 md:grid-cols-3">
-          <label className="space-y-1 text-sm"><span className="font-medium">Trigger</span><Select className="w-full" value={draft.eventType} onChange={(eventType) => setDraft({ ...draft, eventType, conditionTree: eventType === "camera.activity_check" ? defaultActivityGroup() : defaultGroup() })}><option value="plate_read.accepted">Accepted plate read</option><option value="camera.activity_check">Scheduled camera activity</option></Select></label>
+          <label className="space-y-1 text-sm"><span className="font-medium">Trigger</span><Select className="w-full" value={draft.eventType} onChange={(eventType) => setDraft({ ...draft, eventType, conditionTree: eventType === "camera.activity_check" ? defaultActivityGroup() : eventType === "vehicle.direction_classified" ? defaultDirectionGroup() : defaultGroup() })}><option value="plate_read.accepted">Accepted plate read</option><option value="vehicle.direction_classified">Vehicle direction classified</option><option value="camera.activity_check">Scheduled camera activity</option></Select></label>
           <label className="space-y-1 text-sm"><span className="font-medium">Rule time zone</span><Input value={draft.timeZone} onChange={(event) => { const nextRuleTimeZone = event.target.value; setDraft({ ...draft, timeZone: nextRuleTimeZone, quietHours: syncQuietHoursTimeZone({ quietHours: draft.quietHours, priorRuleTimeZone: draft.timeZone, nextRuleTimeZone }) }); }} placeholder="America/Denver" /></label>
           {draft.eventType === "camera.activity_check" ? <label className="space-y-1 text-sm"><span className="font-medium">Check every (seconds)</span><Input type="number" min="60" max="86400" value={draft.evaluationIntervalSeconds} onChange={(event) => setDraft({ ...draft, evaluationIntervalSeconds: event.target.value })} /></label> : <div className="self-end text-xs text-muted-foreground">Conditions use the read&apos;s stored event time.</div>}
         </div>

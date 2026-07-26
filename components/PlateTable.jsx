@@ -174,6 +174,21 @@ function PlateIdentity({ plate, compact = false }) {
   );
 }
 
+function DirectionBadge({ plate }) {
+  const label = plate.direction_label || "Unknown";
+  const ready = plate.direction_status === "ready" && Boolean(plate.direction_label);
+  return (
+    <Badge
+      variant="outline"
+      className={ready
+        ? "border-cyan-500/40 text-cyan-500"
+        : "border-muted-foreground/30 text-muted-foreground"}
+    >
+      {label}
+    </Badge>
+  );
+}
+
 export default function PlateTable({
   data,
   loading,
@@ -187,10 +202,12 @@ export default function PlateTable({
   onDeleteRecord,
   onValidate,
   availableCameras,
+  availableDirections = [],
   onCorrectPlate,
   onPreviewCorrection,
   onReviewHistory,
   onReverseReview,
+  onReviewDirection,
   timeFormat = 12,
   sort = { field: "", direction: "" },
   onSort = () => {},
@@ -220,6 +237,9 @@ export default function PlateTable({
   const selectedReviewStatuses = Array.isArray(filters.reviewStatuses)
     ? filters.reviewStatuses
     : [];
+  const selectedDirections = Array.isArray(filters.directionLabels)
+    ? filters.directionLabels
+    : [];
   const tagFilterOptions = [
     { value: "untagged", label: "Untagged", color: "#6B7280" },
     ...availableTags.map((tag) => ({
@@ -237,6 +257,14 @@ export default function PlateTable({
     { value: "confirmed", label: "Confirmed", color: "#22C55E" },
     { value: "corrected", label: "Corrected", color: "#3B82F6" },
     { value: "alias_resolved", label: "Alias resolved", color: "#A78BFA" },
+  ];
+  const directionFilterOptions = [
+    ...availableDirections.map((direction) => ({
+      value: direction,
+      label: direction,
+      color: "#06B6D4",
+    })),
+    { value: "__unknown__", label: "Unknown", color: "#6B7280" },
   ];
 
   // Only keep state for modals and temporary form data
@@ -261,6 +289,8 @@ export default function PlateTable({
   const [pendingReviewTargetValidated, setPendingReviewTargetValidated] = useState(null);
   const [pendingViewerNavigation, setPendingViewerNavigation] = useState(null);
   const [pendingVehicleReview, setPendingVehicleReview] = useState("");
+  const [pendingDirectionReview, setPendingDirectionReview] = useState("");
+  const [directionReviewError, setDirectionReviewError] = useState("");
   const [searchInput, setSearchInput] = useState(filters.search || "");
   const [isLive, setIsLive] = useState(true);
   const [prefetchedImages, setPrefetchedImages] = useState(new Set());
@@ -291,6 +321,31 @@ export default function PlateTable({
       router.refresh();
     } finally {
       setPendingVehicleReview("");
+    }
+  };
+
+  const handleDirectionReview = async (orientation) => {
+    if (!selectedImage?.id || pendingDirectionReview || typeof onReviewDirection !== "function") return;
+    setPendingDirectionReview(orientation);
+    setDirectionReviewError("");
+    try {
+      const result = await onReviewDirection(selectedImage.id, orientation);
+      if (!result?.success) {
+        setDirectionReviewError(result?.error || "Unable to correct the direction.");
+        return;
+      }
+      const observation = result.data?.observation;
+      setSelectedImage((previous) => previous ? {
+        ...previous,
+        directionStatus: observation?.status || previous.directionStatus,
+        vehicleOrientation: observation?.orientation || orientation,
+        directionConfidence: observation?.confidence === null || observation?.confidence === undefined
+          ? previous.directionConfidence
+          : Number(observation.confidence),
+        directionLabel: observation?.directionLabel || previous.directionLabel,
+      } : previous);
+    } finally {
+      setPendingDirectionReview("");
     }
   };
 
@@ -518,6 +573,8 @@ export default function PlateTable({
       const currentTagSignature = JSON.stringify(currentTags);
       const selectedTagSignature = JSON.stringify(selectedImageTags);
       const currentDirectionLabel = currentPlate?.direction_label || "";
+      const currentDirectionStatus = currentPlate?.direction_status || null;
+      const currentVehicleOrientation = currentPlate?.vehicle_orientation || "unknown";
       const currentDirectionConfidence = currentPlate?.orientation_confidence === null
         || currentPlate?.orientation_confidence === undefined
         ? null
@@ -543,6 +600,8 @@ export default function PlateTable({
             currentReviewRevision !== selectedReviewRevision)) ||
           currentKnownName !== selectedImage.knownName ||
           currentTagSignature !== selectedTagSignature ||
+          currentDirectionStatus !== selectedImage.directionStatus ||
+          currentVehicleOrientation !== selectedImage.vehicleOrientation ||
           currentDirectionLabel !== selectedImage.directionLabel ||
           currentDirectionConfidence !== selectedImage.directionConfidence ||
           currentVehicleColor !== selectedImage.vehicleColor ||
@@ -756,6 +815,10 @@ export default function PlateTable({
     onUpdateFilters({ reviewStatus: values });
   };
 
+  const handleDirectionChange = (values) => {
+    onUpdateFilters({ direction: values });
+  };
+
   const handleDateRangeSelect = (range) => {
     onUpdateFilters({
       dateFrom: range.from ? range.from.toDateString() : null,
@@ -900,6 +963,7 @@ export default function PlateTable({
       hourTo: null,
       camera: null,
       reviewStatus: null,
+      direction: null,
     });
   };
 
@@ -1126,6 +1190,18 @@ export default function PlateTable({
           value={selectedReviewStatuses}
           options={reviewStatusFilterOptions}
           onChange={handleReviewStatusChange}
+          className="w-full"
+        />
+      </div>
+
+      <div className="space-y-2">
+        <h4 className="text-sm font-medium">Filter by Direction</h4>
+        <MultiSelectFilter
+          ariaLabel="Filter by direction"
+          allLabel="All directions"
+          value={selectedDirections}
+          options={directionFilterOptions}
+          onChange={handleDirectionChange}
           className="w-full"
         />
       </div>
@@ -1405,6 +1481,14 @@ export default function PlateTable({
                 onChange={handleReviewStatusChange}
                 className="h-9 w-[210px] dark:bg-[#161618]"
               />
+              <MultiSelectFilter
+                ariaLabel="Filter by direction"
+                allLabel="All directions"
+                value={selectedDirections}
+                options={directionFilterOptions}
+                onChange={handleDirectionChange}
+                className="h-9 w-[190px] dark:bg-[#161618]"
+              />
 
               <Popover>
                 <PopoverTrigger asChild>
@@ -1470,6 +1554,7 @@ export default function PlateTable({
               />
               {(filters.search ||
                 selectedTags.length > 0 ||
+                selectedDirections.length > 0 ||
                 filters.dateRange.from ||
                 (filters.hourRange?.from !== undefined &&
                   filters.hourRange?.to !== undefined)) && (
@@ -1519,6 +1604,7 @@ export default function PlateTable({
           filters.dateRange.from ||
           selectedCameras.length > 0 ||
           selectedReviewStatuses.length > 0 ||
+          selectedDirections.length > 0 ||
           (filters.hourRange?.from !== undefined &&
             filters.hourRange?.to !== undefined)) && (
           <div className="flex sm:hidden items-center gap-2 mb-4 overflow-x-auto pb-2">
@@ -1560,6 +1646,14 @@ export default function PlateTable({
               >
                 Review: {selectedReviewStatuses
                   .map((status) => REVIEW_STATUS_LABELS[status] || status)
+                  .join(", ")}
+              </Badge>
+            )}
+
+            {selectedDirections.length > 0 && (
+              <Badge variant="outline" className="text-xs h-6 whitespace-nowrap">
+                Direction: {selectedDirections
+                  .map((direction) => direction === "__unknown__" ? "Unknown" : direction)
                   .join(", ")}
               </Badge>
             )}
@@ -1635,6 +1729,7 @@ export default function PlateTable({
                       onSort={onSort}
                     />
                   </TableHead>
+                  <TableHead className="w-36 hidden md:table-cell">Direction</TableHead>
                   <TableHead className="w-24 sm:w-40">
                     <SortButton
                       label="Timestamp"
@@ -1651,13 +1746,13 @@ export default function PlateTable({
               <TableBody>
                 {loading ? (
                   <TableRow>
-                    <TableCell colSpan={7} className="text-center py-4">
+                    <TableCell colSpan={9} className="text-center py-4">
                       Loading...
                     </TableCell>
                   </TableRow>
                 ) : data.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={7} className="text-center py-4">
+                    <TableCell colSpan={9} className="text-center py-4">
                       No results found
                     </TableCell>
                   </TableRow>
@@ -1732,6 +1827,9 @@ export default function PlateTable({
                             Unknown
                           </span>
                         )}
+                      </TableCell>
+                      <TableCell className="hidden md:table-cell">
+                        <DirectionBadge plate={plate} />
                       </TableCell>
                       <TableCell className="text-xs sm:text-sm">
                         {new Date(plate.timestamp).toLocaleString("en-US", {
@@ -2169,6 +2267,10 @@ export default function PlateTable({
                             {plate.occurrence_count}
                           </div>
                           <div>
+                            <span className="font-medium">Direction: </span>
+                            {plate.direction_label || "Unknown"}
+                          </div>
+                          <div>
                             <span className="font-medium">Time: </span>
                             {new Date(plate.timestamp).toLocaleTimeString(
                               "en-US",
@@ -2298,6 +2400,33 @@ export default function PlateTable({
                       {selectedImage.vehicleOrientation} view · {Math.round(selectedImage.directionConfidence * 100)}%
                     </div>
                   ) : null}
+                  {canReview && (
+                    <div className="mt-2 flex flex-wrap gap-1">
+                      <Button
+                        type="button"
+                        variant={selectedImage.vehicleOrientation === "front" ? "default" : "outline"}
+                        size="sm"
+                        className="h-7 px-2 text-xs"
+                        disabled={Boolean(pendingDirectionReview)}
+                        onClick={() => handleDirectionReview("front")}
+                      >
+                        {pendingDirectionReview === "front" ? "Saving..." : "Mark front view"}
+                      </Button>
+                      <Button
+                        type="button"
+                        variant={selectedImage.vehicleOrientation === "rear" ? "default" : "outline"}
+                        size="sm"
+                        className="h-7 px-2 text-xs"
+                        disabled={Boolean(pendingDirectionReview)}
+                        onClick={() => handleDirectionReview("rear")}
+                      >
+                        {pendingDirectionReview === "rear" ? "Saving..." : "Mark rear view"}
+                      </Button>
+                    </div>
+                  )}
+                  {directionReviewError && (
+                    <div className="mt-1 text-xs text-destructive">{directionReviewError}</div>
+                  )}
                   {selectedImage.vehicleColor && selectedImage.vehicleColorConfidence !== null ? (
                     <div className="mt-1 text-xs capitalize text-muted-foreground">
                       {selectedImage.vehicleColor} · {Math.round(selectedImage.vehicleColorConfidence * 100)}% color

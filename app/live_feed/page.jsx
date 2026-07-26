@@ -4,6 +4,7 @@ import {
   getLatestPlateReads,
   getTags,
   getCameraNames,
+  getDirectionLabels,
   getTimeFormat,
 } from "@/app/actions";
 
@@ -53,15 +54,17 @@ export default async function LivePlates(props) {
         : null,
     cameraNames: searchParamList(searchParams?.camera),
     reviewStatuses: searchParamList(searchParams?.reviewStatus),
+    directionLabels: searchParamList(searchParams?.direction),
     sortField: searchParams?.sortField,
     sortDirection: searchParams?.sortDirection,
   };
 
-  const [platesRes, tagsRes, camerasRes, timeFormat, config] =
+  const [platesRes, tagsRes, camerasRes, directionsRes, timeFormat, config] =
     await Promise.all([
       getLatestPlateReads(params),
       getTags(),
       getCameraNames(),
+      getDirectionLabels(),
       getTimeFormat(),
       getPlateViewSettings(),
     ]);
@@ -75,6 +78,7 @@ export default async function LivePlates(props) {
             total={platesRes.pagination.total}
             tags={tagsRes.success ? tagsRes.data : []}
             cameras={camerasRes.success ? camerasRes.data : []}
+            directions={directionsRes.success ? directionsRes.data : []}
             timeFormat={timeFormat}
             biHost={config?.blueiris?.host}
             matchingSettings={config?.plateMatching}

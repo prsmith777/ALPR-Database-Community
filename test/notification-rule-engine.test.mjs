@@ -120,6 +120,23 @@ test("known-name conditions preserve legacy MQTT name matching", () => {
   assert.equal(mismatch.reason, "known-name-mismatch");
 });
 
+test("direction conditions match camera-configured semantic labels", () => {
+  const directionEvent = {
+    ...acceptedRead,
+    type: "vehicle.direction_classified",
+    directionLabel: "Entering driveway",
+    vehicleOrientation: "front",
+    directionConfidence: 0.91,
+  };
+  const result = evaluateNotificationCondition(
+    condition("direction", "in", { labels: ["Entering driveway"] }),
+    { event: directionEvent }
+  );
+  assert.equal(result.matched, true);
+  assert.equal(result.reason, "direction-matched");
+  assert.equal(result.actual, "Entering driveway");
+});
+
 test("count conditions consume explicit precomputed metrics without database side effects", () => {
   const readCount = condition("read_count", "at_least", {
     scope: "plate",

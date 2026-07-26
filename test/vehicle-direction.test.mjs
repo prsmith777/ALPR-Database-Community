@@ -93,4 +93,7 @@ test("direction schema and administrator setup are durable and camera driven", a
   assert.doesNotMatch(settings, /Street LPR|Entry LPR/);
   assert.match(actions, /saveVehicleDirectionProfile[\s\S]*?requirePermission\("system\.manage_settings"\)/);
   assert.match(actions, /labelVehicleOrientation[\s\S]*?requirePermission\("system\.manage_settings"\)/);
+  assert.match(migration, /2026072601_vehicle_direction_notifications/i);
+  assert.match(migration, /vehicle\.direction_classified/i);
+  assert.match(migration, /'direction'/i);
 });

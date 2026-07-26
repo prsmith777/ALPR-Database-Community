@@ -19,6 +19,7 @@ import {
   getPlateReviewHistory,
   previewPlateCorrection,
   reversePlateReview,
+  reviewVehicleDirection,
   tagPlate,
   untagPlate,
   validatePlateRecord,
@@ -29,6 +30,7 @@ export default function PlateTableWrapper({
   total, // Initial total from server component
   tags,
   cameras,
+  directions,
   timeFormat,
   biHost,
   matchingSettings,
@@ -338,6 +340,12 @@ export default function PlateTableWrapper({
     return result;
   };
 
+  const handleReviewDirection = async (readId, orientation) => {
+    const result = await reviewVehicleDirection({ readId, orientation });
+    if (result.success) router.refresh();
+    return result;
+  };
+
   const handleSort = useCallback(
     (field) => {
       // Sorting means live mode should be off
@@ -372,6 +380,7 @@ export default function PlateTableWrapper({
       total={totalToDisplay}
       availableTags={[{ name: "untagged", color: "#6B7280" }, ...tags]}
       availableCameras={cameras}
+      availableDirections={directions}
       timeFormat={timeFormat}
       biHost={biHost}
       pagination={{
@@ -402,6 +411,7 @@ export default function PlateTableWrapper({
             : null,
         cameraNames: params.getAll("camera").filter(Boolean),
         reviewStatuses: params.getAll("reviewStatus").filter(Boolean),
+        directionLabels: params.getAll("direction").filter(Boolean),
       }}
       sort={{
         field: params.get("sortField") || "timestamp",
@@ -418,6 +428,7 @@ export default function PlateTableWrapper({
       onPreviewCorrection={handlePreviewCorrection}
       onReviewHistory={handleReviewHistory}
       onReverseReview={handleReverseReview}
+      onReviewDirection={handleReviewDirection}
       onValidate={handleValidatePlate}
       isLive={isLiveModeActive} // Pass the live mode state
       onLiveChange={setIsLiveModeActive} // Pass the setter for live mode

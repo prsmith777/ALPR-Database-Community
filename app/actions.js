@@ -26,6 +26,7 @@ import {
   getTagsForPlate,
   correctAllPlateReads,
   getDistinctCameraNames,
+  getDistinctDirectionLabels,
   togglePlateIgnore,
   getPlateImagePreviews,
   backfillOccurrenceCounts,
@@ -526,6 +527,7 @@ export async function getLatestPlateReads({
   cameraName = "",
   cameraNames = [],
   reviewStatuses = [],
+  directionLabels = [],
   sortField = "",
   sortDirection = "",
 } = {}) {
@@ -556,6 +558,7 @@ export async function getLatestPlateReads({
               ? [cameraName]
               : [],
         reviewStatuses: Array.isArray(reviewStatuses) ? reviewStatuses : [],
+        directionLabels: Array.isArray(directionLabels) ? directionLabels : [],
       },
       sort: {
         field: sortField,
@@ -1666,6 +1669,16 @@ export async function getCameraNames() {
   }
 }
 
+export async function getDirectionLabels() {
+  await requirePermission("plate.read");
+  try {
+    return { success: true, data: await getDistinctDirectionLabels() };
+  } catch (error) {
+    console.error("Error getting direction labels:", error);
+    return { success: false, error: "Failed to fetch direction labels", data: [] };
+  }
+}
+
 export async function correctPlateRead(formData) {
   const principal = await requirePermission("plate.review");
   try {
@@ -2192,6 +2205,21 @@ export async function labelVehicleOrientation(input = {}) {
     return { success: true, data };
   } catch (error) {
     return visualSearchFailure(error, "Unable to save this front/rear example.");
+  }
+}
+
+export async function reviewVehicleDirection(input = {}) {
+  const principal = await requirePermission("plate.review");
+  try {
+    const data = await (await getCaptureAssetService()).recordOrientationLabel({
+      readId: input.readId,
+      orientation: input.orientation,
+      actor: principal,
+    });
+    revalidatePath("/live_feed");
+    return { success: true, data };
+  } catch (error) {
+    return visualSearchFailure(error, "Unable to correct this vehicle direction.");
   }
 }
 

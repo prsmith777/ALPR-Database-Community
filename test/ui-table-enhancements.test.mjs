@@ -159,6 +159,25 @@ test("live feed review status filtering is multi-select, URL-backed, and server-
   assert.match(table, /reviewStatus: null/);
 });
 
+test("live feed direction is visible, correctable, and filterable by semantic camera label", async () => {
+  const [table, wrapper, page, actions, database] = await Promise.all([
+    source("components/PlateTable.jsx"),
+    source("components/PlateTableWrapper.jsx"),
+    source("app/live_feed/page.jsx"),
+    source("app/actions.js"),
+    source("lib/db.js"),
+  ]);
+  assert.match(table, /ariaLabel="Filter by direction"/);
+  assert.match(table, /<DirectionBadge plate=\{plate\}/);
+  assert.match(table, /Mark front view/);
+  assert.match(table, /Mark rear view/);
+  assert.match(wrapper, /params\.getAll\("direction"\)/);
+  assert.match(page, /searchParamList\(searchParams\?\.direction\)/);
+  assert.match(actions, /reviewVehicleDirection[\s\S]*?requirePermission\("plate\.review"\)/);
+  assert.match(database, /LOWER\(direction\.direction_label\) = ANY/);
+  assert.match(database, /UNKNOWN_DIRECTION_FILTER/);
+});
+
 test("the image viewer applies review results even when filtering removes the read", async () => {
   const table = await source("components/PlateTable.jsx");
 
