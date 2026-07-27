@@ -2433,12 +2433,12 @@ export default function PlateTable({
             }
           }}
         >
-          <DialogContent className="max-h-[calc(100vh-2rem)] w-[calc(100vw-2rem)] max-w-7xl overflow-y-auto sm:h-[calc(100vh-2rem)] sm:w-[calc(100vw-2rem)] sm:max-w-7xl sm:grid-rows-[auto_minmax(0,1fr)_auto] sm:overflow-hidden">
+          <DialogContent className="max-h-[calc(100vh-2rem)] w-[calc(100vw-2rem)] max-w-7xl overflow-y-auto sm:h-[calc(100vh-2rem)] sm:w-[calc(100vw-2rem)] sm:max-w-7xl sm:grid-rows-[minmax(0,1fr)_auto] sm:overflow-hidden">
             <DialogTitle className="sr-only">
               License Plate Image - {selectedImage?.plateNumber}
             </DialogTitle>
             {selectedImage && (
-              <div className="grid min-h-0 items-stretch gap-3 lg:grid-cols-[minmax(0,1fr)_14rem]">
+              <div className="grid min-h-0 items-stretch gap-3 lg:grid-cols-[minmax(0,1fr)_11rem]">
                 <div className="grid min-h-0 grid-rows-[auto_minmax(0,1fr)] gap-3">
                   <div className="grid gap-3 rounded-lg border p-3 text-sm sm:grid-cols-2 lg:grid-cols-6">
                 <div>
@@ -2543,14 +2543,14 @@ export default function PlateTable({
                   ) : null}
                 </div>
                   </div>
-                  <div className="relative h-[40vh] w-full sm:h-auto sm:min-h-0">
+                  <div className="relative h-[40vh] w-full overflow-hidden rounded-md border bg-black sm:h-auto sm:min-h-0">
                     <ImageViewer
                       image={selectedImage}
                       onClose={() => setSelectedImage(null)}
                     />
                   </div>
                 </div>
-                <aside className="h-full rounded-lg border p-3 text-sm lg:min-h-0">
+                <aside className="h-full rounded-lg border p-2.5 text-sm lg:min-h-0">
                   <div className="text-xs uppercase text-muted-foreground">Vehicle</div>
                   {selectedImage.vehicleClusterId ? (
                     <>
@@ -2592,9 +2592,9 @@ export default function PlateTable({
                 </aside>
               </div>
             )}
-            <DialogFooter>
-              <div className="flex w-full flex-wrap gap-2">
-                <div className="contents">
+            <DialogFooter className="self-end">
+              <div className="grid w-full gap-2">
+                <div className="flex flex-wrap items-center gap-2">
                   {canRead && selectedImage && <Button asChild variant="outline" size="sm" className="text-xs sm:text-sm">
                     <Link href={`/visual_search?readId=${selectedImage.id}`}>
                       <ScanSearch className="h-3 w-3 sm:h-4 sm:w-4 mr-1 sm:mr-2" />
@@ -2692,7 +2692,8 @@ export default function PlateTable({
                       ))}
                     </DropdownMenuContent>
                   </DropdownMenu>}
-                  <div className="flex shrink-0 gap-2">
+                </div>
+                <div className="flex flex-wrap items-center gap-2">
                     {canReview && <Button
                       variant="outline"
                       size="sm"
@@ -2748,9 +2749,7 @@ export default function PlateTable({
                       <Trash2 className="mr-1 h-3 w-3 sm:mr-2 sm:h-4 sm:w-4" />
                       <span className="whitespace-nowrap">Delete</span>
                     </Button>}
-                  </div>
-                </div>
-                <div className="ml-auto flex gap-2">
+                  <div className="ml-auto flex gap-2">
                   {biHost && selectedImage?.bi_path && (
                     <Button
                       variant="outline"
@@ -2776,6 +2775,7 @@ export default function PlateTable({
                     <Download className="h-3 w-3 sm:h-4 sm:w-4 mr-1 sm:mr-2" />
                     <span className="whitespace-nowrap">Download</span>
                   </Button>}
+                  </div>
                 </div>
               </div>
             </DialogFooter>

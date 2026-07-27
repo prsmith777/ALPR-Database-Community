@@ -133,6 +133,40 @@ test("the paced worker backfills automatic vehicle types after indexing and dire
   assert.equal(worker.snapshot().lastBatch.succeeded, 11);
 });
 
+test("the paced worker backfills the current color model so monochrome captures are reclassified", async () => {
+  let colorLimit = null;
+  const times = [
+    new Date("2026-07-23T12:00:00.000Z"),
+    new Date("2026-07-23T12:00:04.000Z"),
+  ];
+  const worker = new VisualIndexWorker({
+    service: {
+      async getStatus() {
+        return {
+          pending: 0,
+          retryable: 0,
+          direction: { pending: 0 },
+          attributes: { vehicleTypePending: 0, vehicleColorPending: 12 },
+        };
+      },
+      async indexBatch() { throw new Error("Image indexing should not run"); },
+      async analyzeRecentVehicleColors(limit) {
+        colorLimit = limit;
+        return { processed: 12, succeeded: 12, failed: 0, busy: false };
+      },
+    },
+    loadSettings: async () => ({ visualIndex: { batchSize: 20, intervalSeconds: 30 } }),
+    now: () => times.shift(),
+    logger: {},
+  });
+
+  await worker.runOnce();
+
+  assert.equal(colorLimit, 20);
+  assert.equal(worker.snapshot().lastBatch.kind, "vehicle-color");
+  assert.equal(worker.snapshot().lastBatch.succeeded, 12);
+});
+
 test("historical direction and vehicle type backlogs alternate without starving either queue", async () => {
   const batchKinds = [];
   let statusCalls = 0;

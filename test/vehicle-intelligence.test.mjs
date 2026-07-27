@@ -85,9 +85,11 @@ test("color assessment remains enabled for genuinely chromatic captures", () => 
 test("live-feed vehicle descriptors use a side rail without reducing image height", async () => {
   const table = await source("components/PlateTable.jsx");
   assert.match(table, /sm:w-\[calc\(100vw-2rem\)\][^\n]*sm:max-w-7xl/);
-  assert.match(table, /grid min-h-0 items-stretch gap-3 lg:grid-cols-\[minmax\(0,1fr\)_14rem\]/);
-  assert.match(table, /<ImageViewer[\s\S]*?<aside className="h-full rounded-lg border p-3 text-sm lg:min-h-0">/);
+  assert.match(table, /sm:grid-rows-\[minmax\(0,1fr\)_auto\]/);
+  assert.match(table, /grid min-h-0 items-stretch gap-3 lg:grid-cols-\[minmax\(0,1fr\)_11rem\]/);
+  assert.match(table, /<ImageViewer[\s\S]*?<aside className="h-full rounded-lg border p-2\.5 text-sm lg:min-h-0">/);
   assert.match(table, /<aside[\s\S]*?<div className="text-xs uppercase text-muted-foreground">Type<\/div>[\s\S]*?<div className="text-xs uppercase text-muted-foreground">Color<\/div>/);
+  assert.match(table, /<DialogFooter className="self-end">[\s\S]*?className="grid w-full gap-2"/);
   const directionSection = table.slice(table.indexOf("<span>Direction</span>"), table.indexOf("<aside"));
   assert.doesNotMatch(directionSection, /vehicleColor|vehicleBodyType/);
 });
