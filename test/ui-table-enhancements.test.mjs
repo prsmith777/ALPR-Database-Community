@@ -44,12 +44,12 @@ test("live feed image review advances visibly and starts focused on the plate", 
   assert.match(plateTable, /setIsDeleteConfirmOpen\(true\)/);
   assert.match(plateTable, /<DialogTitle>Confirm Deletion<\/DialogTitle>/);
   assert.match(plateTable, /selectedImage\?\.id === activePlate\.id/);
-  assert.match(plateTable, /className="flex shrink-0 gap-2"/);
+  assert.match(plateTable, /className="grid w-full gap-2"/);
   assert.match(plateTable, /Show next read \(Right Arrow\)/);
   assert.match(plateTable, /\[role="slider"\]/);
-  assert.match(plateTable, /sm:grid-rows-\[auto_minmax\(0,1fr\)_auto\].*sm:overflow-hidden/);
+  assert.match(plateTable, /sm:grid-rows-\[minmax\(0,1fr\)_auto\].*sm:overflow-hidden/);
   assert.match(plateTable, /<DialogTitle className="sr-only">[\s\S]*?License Plate Image/);
-  assert.match(plateTable, /className="contents"/);
+  assert.match(plateTable, /className="flex flex-wrap items-center gap-2"/);
   assert.match(plateTable, /className="ml-auto flex gap-2"/);
   assert.match(imageViewer, /useState\(image\?\.crop_coordinates \? plateZoom : 1\)/);
   assert.match(imageViewer, /const midpoint = \(1 \+ getSliderMax\(\)\) \/ 2/);

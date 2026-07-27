@@ -453,9 +453,15 @@ export default function PlateTable({
       directionLabel: plate.direction_label || "",
       directionProfileConfigured: plate.direction_profile_configured === true,
       vehicleColor: plate.vehicle_color || "",
+      vehicleColorStatus: plate.vehicle_color_status || "",
       vehicleColorConfidence: plate.vehicle_color_confidence === null || plate.vehicle_color_confidence === undefined
         ? null
         : Number(plate.vehicle_color_confidence),
+      vehicleBodyType: plate.vehicle_body_type || "",
+      vehicleBodyTypeConfidence: plate.vehicle_body_type_confidence === null
+        || plate.vehicle_body_type_confidence === undefined
+        ? null
+        : Number(plate.vehicle_body_type_confidence),
       vehicleClusterId: plate.vehicle_cluster_id ? Number(plate.vehicle_cluster_id) : null,
       vehicleClusterStatus: plate.vehicle_cluster_status || null,
       vehicleClusterSimilarity: plate.vehicle_cluster_similarity === null || plate.vehicle_cluster_similarity === undefined
@@ -610,10 +616,16 @@ export default function PlateTable({
         ? null
         : Number(currentPlate.orientation_confidence);
       const currentVehicleColor = currentPlate?.vehicle_color || "";
+      const currentVehicleColorStatus = currentPlate?.vehicle_color_status || "";
       const currentVehicleColorConfidence = currentPlate?.vehicle_color_confidence === null
         || currentPlate?.vehicle_color_confidence === undefined
         ? null
         : Number(currentPlate.vehicle_color_confidence);
+      const currentVehicleBodyType = currentPlate?.vehicle_body_type || "";
+      const currentVehicleBodyTypeConfidence = currentPlate?.vehicle_body_type_confidence === null
+        || currentPlate?.vehicle_body_type_confidence === undefined
+        ? null
+        : Number(currentPlate.vehicle_body_type_confidence);
       const currentVehicleClusterId = currentPlate?.vehicle_cluster_id ? Number(currentPlate.vehicle_cluster_id) : null;
       const currentVehicleClusterStatus = currentPlate?.vehicle_cluster_status || null;
       const currentVehicleClusterSimilarity = currentPlate?.vehicle_cluster_similarity === null
@@ -636,7 +648,10 @@ export default function PlateTable({
           currentDirectionProfileConfigured !== selectedImage.directionProfileConfigured ||
           currentDirectionConfidence !== selectedImage.directionConfidence ||
           currentVehicleColor !== selectedImage.vehicleColor ||
+          currentVehicleColorStatus !== selectedImage.vehicleColorStatus ||
           currentVehicleColorConfidence !== selectedImage.vehicleColorConfidence ||
+          currentVehicleBodyType !== selectedImage.vehicleBodyType ||
+          currentVehicleBodyTypeConfidence !== selectedImage.vehicleBodyTypeConfidence ||
           currentVehicleClusterId !== selectedImage.vehicleClusterId ||
           currentVehicleClusterStatus !== selectedImage.vehicleClusterStatus ||
           currentVehicleClusterSimilarity !== selectedImage.vehicleClusterSimilarity)
@@ -661,7 +676,10 @@ export default function PlateTable({
           directionLabel: currentDirectionLabel,
           directionProfileConfigured: currentDirectionProfileConfigured,
           vehicleColor: currentVehicleColor,
+          vehicleColorStatus: currentVehicleColorStatus,
           vehicleColorConfidence: currentVehicleColorConfidence,
+          vehicleBodyType: currentVehicleBodyType,
+          vehicleBodyTypeConfidence: currentVehicleBodyTypeConfidence,
           vehicleClusterId: currentVehicleClusterId,
           vehicleClusterStatus: currentVehicleClusterStatus,
           vehicleClusterSimilarity: currentVehicleClusterSimilarity,
@@ -2415,12 +2433,14 @@ export default function PlateTable({
             }
           }}
         >
-          <DialogContent className="max-h-[calc(100vh-2rem)] w-[calc(100vw-32px)] max-w-7xl overflow-y-auto sm:h-[calc(100vh-2rem)] sm:w-2/3 sm:max-w-7xl sm:grid-rows-[auto_minmax(0,1fr)_auto] sm:overflow-hidden">
+          <DialogContent className="max-h-[calc(100vh-2rem)] w-[calc(100vw-2rem)] max-w-7xl overflow-y-auto sm:h-[calc(100vh-2rem)] sm:w-[calc(100vw-2rem)] sm:max-w-7xl sm:grid-rows-[minmax(0,1fr)_auto] sm:overflow-hidden">
             <DialogTitle className="sr-only">
               License Plate Image - {selectedImage?.plateNumber}
             </DialogTitle>
             {selectedImage && (
-              <div className="grid gap-3 rounded-lg border p-3 text-sm sm:grid-cols-2 lg:grid-cols-7">
+              <div className="grid min-h-0 items-stretch gap-3 lg:grid-cols-[minmax(0,1fr)_11rem]">
+                <div className="grid min-h-0 grid-rows-[auto_minmax(0,1fr)] gap-3">
+                  <div className="grid gap-3 rounded-lg border p-3 text-sm sm:grid-cols-2 lg:grid-cols-6">
                 <div>
                   <div className="text-xs uppercase text-muted-foreground">Observed</div>
                   <div className="font-mono">{selectedImage.observedPlate}</div>
@@ -2521,13 +2541,16 @@ export default function PlateTable({
                       {selectedImage.vehicleOrientation} view · {Math.round(selectedImage.directionConfidence * 100)}%
                     </div>
                   ) : null}
-                  {selectedImage.vehicleColor && selectedImage.vehicleColorConfidence !== null ? (
-                    <div className="mt-1 text-xs capitalize text-muted-foreground">
-                      {selectedImage.vehicleColor} · {Math.round(selectedImage.vehicleColorConfidence * 100)}% color
-                    </div>
-                  ) : null}
                 </div>
-                <div>
+                  </div>
+                  <div className="relative h-[40vh] w-full overflow-hidden rounded-md border bg-black sm:h-auto sm:min-h-0">
+                    <ImageViewer
+                      image={selectedImage}
+                      onClose={() => setSelectedImage(null)}
+                    />
+                  </div>
+                </div>
+                <aside className="h-full rounded-lg border p-2.5 text-sm lg:min-h-0">
                   <div className="text-xs uppercase text-muted-foreground">Vehicle</div>
                   {selectedImage.vehicleClusterId ? (
                     <>
@@ -2538,20 +2561,40 @@ export default function PlateTable({
                       </div>
                     </>
                   ) : <div className="text-muted-foreground">Unassigned</div>}
-                </div>
+                  <div className="mt-4 space-y-3 border-t pt-3">
+                    <div>
+                      <div className="text-xs uppercase text-muted-foreground">Type</div>
+                      <div className="capitalize">
+                        {selectedImage.vehicleBodyType && selectedImage.vehicleBodyTypeConfidence !== null
+                          ? selectedImage.vehicleBodyType
+                          : "Unavailable"}
+                      </div>
+                      {selectedImage.vehicleBodyType && selectedImage.vehicleBodyTypeConfidence !== null ? (
+                        <div className="text-xs text-muted-foreground">
+                          {Math.round(selectedImage.vehicleBodyTypeConfidence * 100)}% confidence
+                        </div>
+                      ) : null}
+                    </div>
+                    <div>
+                      <div className="text-xs uppercase text-muted-foreground">Color</div>
+                      <div className="capitalize">
+                        {selectedImage.vehicleColor && selectedImage.vehicleColorConfidence !== null
+                          ? selectedImage.vehicleColor
+                          : selectedImage.vehicleColorStatus === "unknown" ? "Unavailable" : "Pending"}
+                      </div>
+                      {selectedImage.vehicleColor && selectedImage.vehicleColorConfidence !== null ? (
+                        <div className="text-xs text-muted-foreground">
+                          {Math.round(selectedImage.vehicleColorConfidence * 100)}% confidence
+                        </div>
+                      ) : null}
+                    </div>
+                  </div>
+                </aside>
               </div>
             )}
-            <div className="relative h-[40vh] w-full sm:h-auto sm:min-h-0">
-              {selectedImage && (
-                <ImageViewer
-                  image={selectedImage}
-                  onClose={() => setSelectedImage(null)}
-                />
-              )}
-            </div>
-            <DialogFooter>
-              <div className="flex w-full flex-wrap gap-2">
-                <div className="contents">
+            <DialogFooter className="self-end">
+              <div className="grid w-full gap-2">
+                <div className="flex flex-wrap items-center gap-2">
                   {canRead && selectedImage && <Button asChild variant="outline" size="sm" className="text-xs sm:text-sm">
                     <Link href={`/visual_search?readId=${selectedImage.id}`}>
                       <ScanSearch className="h-3 w-3 sm:h-4 sm:w-4 mr-1 sm:mr-2" />
@@ -2649,7 +2692,8 @@ export default function PlateTable({
                       ))}
                     </DropdownMenuContent>
                   </DropdownMenu>}
-                  <div className="flex shrink-0 gap-2">
+                </div>
+                <div className="flex flex-wrap items-center gap-2">
                     {canReview && <Button
                       variant="outline"
                       size="sm"
@@ -2705,9 +2749,7 @@ export default function PlateTable({
                       <Trash2 className="mr-1 h-3 w-3 sm:mr-2 sm:h-4 sm:w-4" />
                       <span className="whitespace-nowrap">Delete</span>
                     </Button>}
-                  </div>
-                </div>
-                <div className="ml-auto flex gap-2">
+                  <div className="ml-auto flex gap-2">
                   {biHost && selectedImage?.bi_path && (
                     <Button
                       variant="outline"
@@ -2733,6 +2775,7 @@ export default function PlateTable({
                     <Download className="h-3 w-3 sm:h-4 sm:w-4 mr-1 sm:mr-2" />
                     <span className="whitespace-nowrap">Download</span>
                   </Button>}
+                  </div>
                 </div>
               </div>
             </DialogFooter>

@@ -207,6 +207,79 @@ test("legacy UTC repair is limited to tracked migrated rules", async () => {
   assert.match(repair, /condition\.condition_type = 'local_time_window'/);
 });
 
+test("editing a delivered disabled rule retires actions without deleting delivery history", async () => {
+  const calls = [];
+  let nextGroupId = 80;
+  let nextChannelId = 90;
+  const client = {
+    async query(sql, values = []) {
+      const normalized = String(sql).replace(/\s+/g, " ").trim();
+      calls.push({ sql: normalized, values });
+      if (normalized.includes("SELECT r.*")) {
+        return { rows: [{
+          id: 44,
+          name: "Entry delivery alert",
+          description: "",
+          enabled: false,
+          event_type: "plate_read.accepted",
+          time_zone: "America/Denver",
+          quiet_hours: { enabled: false },
+          cooldown_seconds: 0,
+          version: 3,
+          managed_by_migration: false,
+          migrated_from_legacy: false,
+        }] };
+      }
+      if (normalized.includes("SELECT g.*")) {
+        return { rows: [{ id: 51, rule_id: 44, parent_group_id: null, combinator: "all", position: 0 }] };
+      }
+      if (normalized.includes("SELECT c.*")) return { rows: [] };
+      if (normalized.includes("SELECT a.*")) {
+        return { rows: [{
+          id: 61,
+          rule_id: 44,
+          channel_id: 71,
+          enabled: false,
+          position: 0,
+          configuration: {},
+          channel_name: "Historical email",
+          channel_type: "email",
+          channel_enabled: false,
+          channel_configuration: {},
+        }] };
+      }
+      if (normalized.startsWith("UPDATE public.notification_rules")) {
+        return { rows: [{ version: 4 }], rowCount: 1 };
+      }
+      if (normalized.startsWith("INSERT INTO public.notification_condition_groups")) {
+        return { rows: [{ id: nextGroupId++ }], rowCount: 1 };
+      }
+      if (normalized.startsWith("INSERT INTO public.notification_channels")) {
+        return { rows: [{ id: nextChannelId++ }], rowCount: 1 };
+      }
+      return { rows: [], rowCount: 1 };
+    },
+    release() {},
+  };
+  const repository = new NotificationRuleBuilderRepository({
+    pool: { query: (...args) => client.query(...args), connect: async () => client },
+  });
+
+  const result = await repository.updateDraft({
+    id: 44,
+    actor: { id: 9 },
+    draft: validDraft({ name: "Updated entry delivery alert" }),
+  });
+
+  assert.deepEqual(result, { ruleId: 44, version: 4, enabled: false });
+  assert.ok(calls.some(({ sql }) => sql.includes("UPDATE public.notification_actions") && sql.includes("retired_at = CURRENT_TIMESTAMP")));
+  assert.ok(calls.some(({ sql }) => sql.startsWith("UPDATE public.notification_channels") && sql.includes("enabled = FALSE")));
+  assert.equal(calls.some(({ sql }) => sql.startsWith("DELETE FROM public.notification_actions")), false);
+  assert.equal(calls.some(({ sql }) => sql.startsWith("DELETE FROM public.notification_channels")), false);
+  assert.ok(calls.some(({ sql }) => sql.startsWith("INSERT INTO public.notification_actions")));
+  assert.equal(calls.at(-1).sql, "COMMIT");
+});
+
 test("deleting a disabled rule hides it atomically while preserving history", async () => {
   const calls = [];
   const client = {

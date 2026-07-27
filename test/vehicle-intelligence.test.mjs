@@ -4,8 +4,17 @@ import test from "node:test";
 
 import { createColorSignature } from "../lib/image-similarity.mjs";
 import { CaptureAssetRepository } from "../lib/capture-asset-repository.mjs";
-import { inferVehicleColor } from "../lib/vehicle-attributes.mjs";
+import { CaptureAssetService } from "../lib/capture-asset-service.mjs";
+import {
+  VEHICLE_COLOR_MODEL,
+  VEHICLE_TYPE_MODEL,
+  VEHICLE_TYPE_PROVIDER,
+  assessVehicleColorPixels,
+  inferVehicleColor,
+  inferVehicleType,
+} from "../lib/vehicle-attributes.mjs";
 import { chooseShadowCluster } from "../lib/vehicle-clustering.mjs";
+import { VEHICLE_INTELLIGENCE_NAVIGATION } from "../lib/vehicle-intelligence-navigation.mjs";
 
 async function source(path) {
   return readFile(new URL(`../${path}`, import.meta.url), "utf8");
@@ -35,6 +44,127 @@ test("vehicle color remains per-read evidence with confidence", () => {
   );
   assert.equal(inferVehicleColor(createColorSignature(pixels(240, 240, 240))).value, "white");
   assert.equal(inferVehicleColor(createColorSignature(pixels(10, 10, 10))).value, "black");
+});
+
+test("monochrome night captures do not receive a guessed vehicle color", () => {
+  const monochrome = Buffer.alloc(16 * 16 * 3);
+  for (let offset = 0; offset < monochrome.length; offset += 3) {
+    const value = (offset / 3 * 17) % 256;
+    monochrome[offset] = value;
+    monochrome[offset + 1] = Math.min(255, value + 2);
+    monochrome[offset + 2] = Math.max(0, value - 2);
+  }
+  const observation = assessVehicleColorPixels(monochrome);
+  assert.deepEqual(
+    {
+      status: observation.status,
+      value: observation.value,
+      confidence: observation.confidence,
+      reason: observation.reason,
+      monochromeRatio: observation.monochromeRatio,
+    },
+    {
+      status: "unknown",
+      value: null,
+      confidence: null,
+      reason: "monochrome_capture",
+      monochromeRatio: 1,
+    }
+  );
+  assert.match(VEHICLE_COLOR_MODEL, /v2$/);
+});
+
+test("color assessment remains enabled for genuinely chromatic captures", () => {
+  const observation = assessVehicleColorPixels(pixels(220, 20, 20));
+  assert.equal(observation.status, "ready");
+  assert.equal(observation.value, "red");
+  assert.equal(observation.reason, null);
+  assert.equal(observation.monochromeRatio, 0);
+});
+
+test("live-feed vehicle descriptors use a side rail without reducing image height", async () => {
+  const table = await source("components/PlateTable.jsx");
+  assert.match(table, /sm:w-\[calc\(100vw-2rem\)\][^\n]*sm:max-w-7xl/);
+  assert.match(table, /sm:grid-rows-\[minmax\(0,1fr\)_auto\]/);
+  assert.match(table, /grid min-h-0 items-stretch gap-3 lg:grid-cols-\[minmax\(0,1fr\)_11rem\]/);
+  assert.match(table, /<ImageViewer[\s\S]*?<aside className="h-full rounded-lg border p-2\.5 text-sm lg:min-h-0">/);
+  assert.match(table, /<aside[\s\S]*?<div className="text-xs uppercase text-muted-foreground">Type<\/div>[\s\S]*?<div className="text-xs uppercase text-muted-foreground">Color<\/div>/);
+  assert.match(table, /<DialogFooter className="self-end">[\s\S]*?className="grid w-full gap-2"/);
+  const directionSection = table.slice(table.indexOf("<span>Direction</span>"), table.indexOf("<aside"));
+  assert.doesNotMatch(directionSection, /vehicleColor|vehicleBodyType/);
+});
+
+test("local vehicle type inference preserves confidence and model provenance", async () => {
+  assert.deepEqual(inferVehicleType([0.8, 0.05, 0.1, 0.05]), {
+    status: "ready",
+    value: "car",
+    confidence: 0.8,
+    scores: { car: 0.8, bus: 0.05, truck: 0.1, van: 0.05 },
+  });
+  assert.deepEqual(inferVehicleType([0.4, 0.1, 0.3, 0.2]), {
+    status: "unknown",
+    value: null,
+    confidence: 0.4,
+    scores: { car: 0.4, bus: 0.1, truck: 0.3, van: 0.2 },
+  });
+  assert.equal(VEHICLE_TYPE_PROVIDER, "openvino-open-model-zoo");
+  assert.match(VEHICLE_TYPE_MODEL, /vehicle-attributes-recognition-barrier-0039/);
+  const [modelXml, modelBin, modelLicense] = await Promise.all([
+    readFile(new URL("../models/visual-search/vehicle-attributes-recognition-barrier-0039.xml", import.meta.url)),
+    readFile(new URL("../models/visual-search/vehicle-attributes-recognition-barrier-0039.bin", import.meta.url)),
+    source("models/visual-search/LICENSE.open-model-zoo.txt"),
+  ]);
+  assert.ok(modelXml.length > 40_000);
+  assert.ok(modelBin.length > 1_000_000);
+  assert.match(modelLicense, /Apache License[\s\S]*Version 2\.0/);
+});
+
+test("automatic vehicle type analysis stores per-read evidence without manual labels", async () => {
+  const saved = [];
+  const service = new CaptureAssetService({
+    repository: {
+      async saveVehicleAttributeObservation(observation) { saved.push(observation); },
+    },
+    fileStorage: {
+      async getImage(path) { return path === "derived/read-1.jpg" ? Buffer.from("image") : null; },
+    },
+    vehicleTypeAnalyzer: {
+      async analyze() {
+        return {
+          status: "ready",
+          value: "truck",
+          confidence: 0.91,
+          scores: { car: 0.04, bus: 0.02, truck: 0.91, van: 0.03 },
+        };
+      },
+    },
+    logger: {},
+  });
+
+  const result = await service.analyzeVehicleTypeAssets([
+    { read_id: 1, derived_path: "derived/read-1.jpg" },
+  ]);
+
+  assert.deepEqual(result, {
+    processed: 1,
+    succeeded: 1,
+    ready: 1,
+    unknown: 0,
+    failed: 0,
+  });
+  assert.deepEqual(saved[0], {
+    readId: 1,
+    attributeKey: "body_type",
+    status: "ready",
+    attributeValue: "truck",
+    confidence: 0.91,
+    provider: VEHICLE_TYPE_PROVIDER,
+    modelVersion: VEHICLE_TYPE_MODEL,
+    rawResult: {
+      scores: { car: 0.04, bus: 0.02, truck: 0.91, van: 0.03 },
+      input: "detected_vehicle_crop",
+    },
+  });
 });
 
 test("shadow clustering uses descriptor similarity and a continuous margin", () => {
@@ -87,7 +217,7 @@ test("vehicle intelligence keeps ReID grouping separate from reviewed plate asso
   assert.match(component, /queue=plates/);
   assert.match(component, /queue=direction/);
   assert.match(component, /queue=setup/);
-  assert.match(await source("app/visual_search/vehicles/review/page.jsx"), /title: "Needs Review"/);
+  assert.match(await source("lib/vehicle-intelligence-navigation.mjs"), /title: "Needs Review"/);
   assert.match(component, /Open vehicle profile/i);
   assert.match(component, /Confirm vehicle/);
   assert.match(component, /Different vehicle/);
@@ -97,6 +227,8 @@ test("vehicle intelligence keeps ReID grouping separate from reviewed plate asso
   assert.match(service, /chooseShadowCluster\(\{ embedding: asset\.vehicle_embedding, candidates \}\)/);
   assert.doesNotMatch(service, /chooseShadowCluster\([\s\S]{0,300}plate_number/);
   assert.match(service, /clusterRecentUnassigned[\s\S]*?analyzeVehicleColorAssets\(assets\)/);
+  assert.match(service, /analyzeRecentVehicleTypes/);
+  assert.match(service, /attributeKey: "body_type"/);
   assert.doesNotMatch(service, /clusterRecentUnassigned[\s\S]{0,1800}?analyzeRecentVehicleColors\(bounded\)/);
   assert.match(actions, /reviewVehicleClusterSuggestion[\s\S]*?requirePermission\("plate\.review"\)/);
   assert.match(actions, /reviewVehiclePlateAssociation[\s\S]*?requirePermission\("plate\.review"\)/);
@@ -153,6 +285,25 @@ test("vehicle intelligence settings always navigate to their dedicated route", a
   assert.match(shell, /<Link key=\{item\.id\} href=\{item\.href\}/);
   assert.doesNotMatch(shell, /isLocalSection|onSelect &&/);
   assert.doesNotMatch(settingsForm, /onSelect=\{setActiveSection\}/);
+});
+
+test("every vehicle intelligence route shares the complete top navigation", async () => {
+  assert.deepEqual(VEHICLE_INTELLIGENCE_NAVIGATION.map(({ title, href }) => ({ title, href })), [
+    { title: "Visual Search", href: "/visual_search" },
+    { title: "Vehicle Profiles", href: "/visual_search/vehicles" },
+    { title: "Needs Review", href: "/visual_search/vehicles/review" },
+  ]);
+
+  const routes = [
+    "app/visual_search/page.jsx",
+    "app/visual_search/vehicles/page.jsx",
+    "app/visual_search/vehicles/review/page.jsx",
+    "app/visual_search/vehicles/[clusterId]/page.jsx",
+  ];
+  for (const route of routes) {
+    const page = await source(route);
+    assert.match(page, /navigation=\{VEHICLE_INTELLIGENCE_NAVIGATION\}/, route);
+  }
 });
 
 test("vehicle cluster queries use one current vehicle asset per read", async () => {
