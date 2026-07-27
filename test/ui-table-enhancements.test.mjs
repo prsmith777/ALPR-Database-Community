@@ -170,6 +170,8 @@ test("live feed direction is visible, correctable, and filterable by semantic ca
   ]);
   assert.match(table, /ariaLabel="Filter by direction"/);
   assert.match(table, /<DirectionBadge plate=\{plate\}/);
+  assert.match(table, /direction_profile_configured[\s\S]*?"Pending"/);
+  assert.match(wrapper, /setInterval\(\(\) => router\.refresh\(\), 10_000\)/);
   assert.match(table, /label="Direction"[\s\S]*?field="direction"/);
   assert.match(table, /aria-label="Review vehicle direction"/);
   assert.match(table, /className="h-4 w-4 shrink-0 p-0 text-muted-foreground hover:text-foreground"/);
