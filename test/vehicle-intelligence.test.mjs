@@ -78,7 +78,11 @@ test("vehicle intelligence keeps ReID grouping separate from reviewed plate asso
   assert.match(migration, /CREATE TABLE IF NOT EXISTS public\.vehicle_plate_associations/i);
   assert.match(migration, /2026072702_vehicle_plate_associations/i);
   assert.match(migration, /WHERE assignments\.assignment_status = 'confirmed'/i);
-  assert.match(component, /Confirmed plate associations are reviewed separately/i);
+  assert.match(component, /Each queue is complete and paginated independently/i);
+  assert.match(component, /Plate associations/);
+  assert.match(component, /Direction reviews/);
+  assert.match(component, /Camera setup needs attention/);
+  assert.match(component, /Showing \{first\.toLocaleString\(\)\}/);
   assert.match(component, /Open vehicle profile/i);
   assert.match(component, /Confirm vehicle/);
   assert.match(component, /Different vehicle/);
@@ -153,7 +157,7 @@ test("vehicle cluster queries use one current vehicle asset per read", async () 
       async query(text, values) {
         calls.push({ text, values });
         if (text.includes("total_clusters")) {
-          return { rows: [{ total_clusters: 0, shadow_clusters: 0, pending_reviews: 0, confirmed_assignments: 0 }] };
+          return { rows: [{ total_clusters: 0, filtered_clusters: 0, shadow_clusters: 0, pending_reviews: 0, confirmed_assignments: 0, pending_plate_associations: 0, pending_direction_reviews: 0 }] };
         }
         return { rows: [] };
       },
@@ -162,13 +166,51 @@ test("vehicle cluster queries use one current vehicle asset per read", async () 
 
   await repository.listVehicleClusterOverview();
 
-  assert.equal(calls.length, 3);
-  assert.equal(calls[0].values.length, 3);
-  assert.match(calls[0].text, /JOIN LATERAL[\s\S]*?asset_type = \$2[\s\S]*?algorithm_version = \$3/i);
+  assert.equal(calls.length, 5);
+  assert.equal(calls[0].values.length, 7);
+  assert.match(calls[0].text, /JOIN LATERAL[\s\S]*?asset_type = \$1[\s\S]*?algorithm_version = \$2/i);
   assert.doesNotMatch(calls[0].text, /JOIN public\.capture_assets representative ON/i);
   assert.match(calls[0].text, /ORDER BY clusters\.updated_at DESC, clusters\.id DESC/i);
-  assert.equal(calls[1].values.length, 3);
+  assert.match(calls[0].text, /LIMIT \$6 OFFSET \$7/i);
+  assert.equal(calls[0].values[5], 50);
+  assert.equal(calls[0].values[6], 0);
+  assert.equal(calls[1].values.length, 4);
   assert.match(calls[1].text, /JOIN LATERAL[\s\S]*?candidate[\s\S]*?JOIN LATERAL[\s\S]*?representative/i);
+  assert.match(calls[2].text, /FROM public\.vehicle_plate_associations association[\s\S]*?WHERE association\.status = 'suggested'/i);
+  assert.match(calls[2].text, /LIMIT \$3 OFFSET \$4/i);
+  assert.match(calls[3].text, /labels\.id IS NULL[\s\S]*?observations\.status <> 'ready'/i);
+  assert.match(calls[4].text, /pending_direction_reviews/i);
+});
+
+test("vehicle profile and review queues paginate independently", async () => {
+  const calls = [];
+  const repository = new CaptureAssetRepository({
+    executor: {
+      async query(text, values) {
+        calls.push({ text, values });
+        if (text.includes("total_clusters")) return { rows: [{}] };
+        return { rows: [] };
+      },
+    },
+  });
+
+  const result = await repository.listVehicleClusterOverview({
+    profilePage: 3,
+    profilePageSize: 50,
+    vehicleReviewPage: 2,
+    plateReviewPage: 4,
+    directionReviewPage: 5,
+    reviewPageSize: 20,
+    embeddingModel: "vehicle-model",
+    directionClassifierVersion: "direction-model",
+  });
+
+  assert.equal(calls[0].values.at(-1), 100);
+  assert.equal(calls[1].values.at(-1), 20);
+  assert.equal(calls[2].values.at(-1), 60);
+  assert.equal(calls[3].values.at(-1), 80);
+  assert.equal(result.pagination.profiles.page, 3);
+  assert.equal(result.pagination.plateReviews.page, 4);
 });
 
 test("vehicle cluster review explicitly types the shared status parameter", async () => {

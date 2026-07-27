@@ -2267,6 +2267,7 @@ export async function reviewVehicleDirection(input = {}) {
       actor: principal,
     });
     revalidatePath("/live_feed");
+    revalidatePath("/visual_search/vehicles");
     return { success: true, data };
   } catch (error) {
     return visualSearchFailure(error, "Unable to correct this vehicle direction.");
@@ -2334,15 +2335,16 @@ export async function setVehicleDirectionReevaluationPaused(paused) {
   }
 }
 
-export async function getVehicleClusterOverview() {
+export async function getVehicleClusterOverview(options = {}) {
   const principal = await requirePermission("plate.read");
   try {
     return {
       success: true,
       data: {
-        ...(await (await getCaptureAssetService()).getVehicleClusterOverview()),
+        ...(await (await getCaptureAssetService()).getVehicleClusterOverview(options)),
         canReview: hasPermission(principal, "plate.review"),
         canAnalyze: hasPermission(principal, "maintenance.manage"),
+        canManageSettings: hasPermission(principal, "system.manage_settings"),
       },
     };
   } catch (error) {
