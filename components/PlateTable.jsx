@@ -2433,7 +2433,7 @@ export default function PlateTable({
             }
           }}
         >
-          <DialogContent className="max-h-[calc(100vh-2rem)] w-[calc(100vw-32px)] max-w-7xl overflow-y-auto sm:h-[calc(100vh-2rem)] sm:w-2/3 sm:max-w-7xl sm:grid-rows-[auto_minmax(0,1fr)_auto] sm:overflow-hidden">
+          <DialogContent className="max-h-[calc(100vh-2rem)] w-[calc(100vw-2rem)] max-w-7xl overflow-y-auto sm:h-[calc(100vh-2rem)] sm:w-[calc(100vw-2rem)] sm:max-w-7xl sm:grid-rows-[auto_minmax(0,1fr)_auto] sm:overflow-hidden">
             <DialogTitle className="sr-only">
               License Plate Image - {selectedImage?.plateNumber}
             </DialogTitle>

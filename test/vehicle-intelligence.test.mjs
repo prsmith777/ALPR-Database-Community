@@ -84,6 +84,7 @@ test("color assessment remains enabled for genuinely chromatic captures", () => 
 
 test("live-feed vehicle descriptors use a side rail without reducing image height", async () => {
   const table = await source("components/PlateTable.jsx");
+  assert.match(table, /sm:w-\[calc\(100vw-2rem\)\][^\n]*sm:max-w-7xl/);
   assert.match(table, /grid min-h-0 items-stretch gap-3 lg:grid-cols-\[minmax\(0,1fr\)_14rem\]/);
   assert.match(table, /<ImageViewer[\s\S]*?<aside className="h-full rounded-lg border p-3 text-sm lg:min-h-0">/);
   assert.match(table, /<aside[\s\S]*?<div className="text-xs uppercase text-muted-foreground">Type<\/div>[\s\S]*?<div className="text-xs uppercase text-muted-foreground">Color<\/div>/);
