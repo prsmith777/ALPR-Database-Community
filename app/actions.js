@@ -2318,6 +2318,22 @@ export async function queueVehicleDirectionReevaluation(input = {}) {
   }
 }
 
+export async function setVehicleDirectionReevaluationPaused(paused) {
+  const principal = await requirePermission("maintenance.manage");
+  try {
+    const service = await getCaptureAssetService();
+    const control = await service.setDirectionReevaluationPaused({
+      paused: paused === true,
+      actor: principal,
+    });
+    const status = await service.getDirectionSetup();
+    revalidatePath("/settings/vehicle-intelligence");
+    return { success: true, data: { control, backfill: status.backfill } };
+  } catch (error) {
+    return visualSearchFailure(error, "Unable to update historical direction re-evaluation.");
+  }
+}
+
 export async function getVehicleClusterOverview() {
   const principal = await requirePermission("plate.read");
   try {

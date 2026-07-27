@@ -82,8 +82,11 @@ reliable background processing.
   observations, preserves human reviews, tracks bounded failures, and exposes
   progress plus a one-batch administrator control. Administrators can preview
   and queue an explicit selected-camera or all-camera re-evaluation after
-  improving calibration; only machine-generated observations are replaced,
-  human reviews remain authoritative, and the work resumes in paced batches.
+  improving calibration. Current machine results remain visible until each
+  replacement is ready, human reviews remain authoritative, and the durable
+  historical queue can be paused or resumed without stopping direction work
+  for newly ingested reads. New live work is prioritized and appears as Pending
+  rather than Unknown until analysis finishes.
   Historical evaluation does not emit notifications.
   Per-read color observations retain confidence and local algorithm provenance.
   Descriptor-only shadow clusters exclude plate text, require conservative

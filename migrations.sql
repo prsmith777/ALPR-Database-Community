@@ -2135,3 +2135,67 @@ VALUES (
     'Add paced resumable historical direction backfill with bounded failure tracking.'
 )
 ON CONFLICT (version) DO NOTHING;
+
+-- Historical re-evaluation is queued separately from ordinary live direction
+-- work. Existing observations remain visible until their replacement is ready,
+-- and an administrator can pause only the historical queue without delaying
+-- newly ingested reads.
+CREATE TABLE IF NOT EXISTS public.vehicle_direction_reevaluation_queue (
+    read_id INTEGER PRIMARY KEY REFERENCES public.plate_reads(id) ON DELETE CASCADE,
+    camera_key VARCHAR(120) NOT NULL,
+    requested_by_user_id BIGINT REFERENCES public.users(id) ON DELETE SET NULL,
+    requested_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_vehicle_direction_reevaluation_queue_order
+    ON public.vehicle_direction_reevaluation_queue (requested_at, read_id);
+
+CREATE TABLE IF NOT EXISTS public.vehicle_direction_reevaluation_control (
+    singleton BOOLEAN PRIMARY KEY DEFAULT TRUE CHECK (singleton = TRUE),
+    paused BOOLEAN NOT NULL DEFAULT FALSE,
+    updated_by_user_id BIGINT REFERENCES public.users(id) ON DELETE SET NULL,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+INSERT INTO public.vehicle_direction_reevaluation_control (singleton, paused)
+VALUES (TRUE, FALSE)
+ON CONFLICT (singleton) DO NOTHING;
+
+-- Carry an in-progress re-evaluation from the previous release into the new
+-- durable queue. The earlier implementation represented queued work by
+-- deleting machine observations, so current missing/outdated rows are the only
+-- safe evidence available during this one-time upgrade.
+INSERT INTO public.vehicle_direction_reevaluation_queue (read_id, camera_key)
+SELECT ca.read_id, LOWER(BTRIM(reads.camera_name))
+FROM public.capture_assets ca
+JOIN public.plate_reads reads ON reads.id = ca.read_id
+LEFT JOIN public.camera_visual_profiles cvp
+  ON cvp.camera_key = LOWER(BTRIM(reads.camera_name))
+JOIN public.camera_direction_profiles profiles
+  ON profiles.camera_key = LOWER(BTRIM(reads.camera_name))
+LEFT JOIN public.vehicle_direction_observations observations
+  ON observations.read_id = ca.read_id
+LEFT JOIN public.vehicle_orientation_labels labels
+  ON labels.read_id = ca.read_id
+ AND labels.embedding_model = 'vehicle-reid-0001-ir-fp16-v1'
+WHERE ca.asset_type = 'vehicle_crop'
+  AND ca.algorithm_version = 'vehicle_reid_0001_v1'
+  AND ca.status = 'ready'
+  AND ca.crop_profile_version = COALESCE(cvp.profile_version, 1)
+  AND ca.embedding_model = 'vehicle-reid-0001-ir-fp16-v1'
+  AND ca.vehicle_embedding IS NOT NULL
+  AND labels.read_id IS NULL
+  AND (
+    observations.read_id IS NULL OR
+    observations.embedding_model IS DISTINCT FROM 'vehicle-reid-0001-ir-fp16-v1' OR
+    observations.classifier_version IS DISTINCT FROM 'vehicle-reid-orientation-knn-v1' OR
+    observations.profile_version IS DISTINCT FROM profiles.profile_version
+  )
+ON CONFLICT (read_id) DO NOTHING;
+
+INSERT INTO public.schema_migrations (version, description)
+VALUES (
+    '2026072701_vehicle_direction_reevaluation_queue',
+    'Preserve current directions during re-evaluation and add durable pause/resume controls.'
+)
+ON CONFLICT (version) DO NOTHING;

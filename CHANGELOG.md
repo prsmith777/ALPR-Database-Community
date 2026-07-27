@@ -7,9 +7,11 @@
   and webhook navigation. Search, sorting, pagination, and filter parameters
   remain URL-backed so filtered views can still be bookmarked and shared.
 - Added previewed historical vehicle-direction re-evaluation for the selected
-  camera or every configured camera. It replaces only machine-generated
-  results, preserves human front/rear reviews, clears bounded retry failures,
-  resumes through the background worker, and sends no historical notifications.
+  camera or every configured camera. Current results stay visible until their
+  replacements are ready, human front/rear reviews remain authoritative, and
+  administrators can pause or resume only the historical queue. New live reads
+  are prioritized, display Pending until analyzed, refresh in Live Feed without
+  manual intervention, and historical work sends no notifications.
 
 ## [0.1.10] - 07-26-2026
 

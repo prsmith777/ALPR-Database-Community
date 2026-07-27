@@ -184,15 +184,24 @@ function PlateIdentity({ plate, compact = false }) {
   );
 }
 
+function directionDisplayLabel(plate) {
+  if (plate.direction_label) return plate.direction_label;
+  if (plate.direction_profile_configured && !plate.direction_status) return "Pending";
+  return "Unknown";
+}
+
 function DirectionBadge({ plate }) {
-  const label = plate.direction_label || "Unknown";
+  const label = directionDisplayLabel(plate);
   const ready = plate.direction_status === "ready" && Boolean(plate.direction_label);
+  const pending = label === "Pending";
   return (
     <Badge
       variant="outline"
       className={ready
         ? "border-cyan-500/40 text-cyan-500"
-        : "border-muted-foreground/30 text-muted-foreground"}
+        : pending
+          ? "border-amber-500/40 text-amber-500"
+          : "border-muted-foreground/30 text-muted-foreground"}
     >
       {label}
     </Badge>
@@ -442,6 +451,7 @@ export default function PlateTable({
         ? null
         : Number(plate.orientation_confidence),
       directionLabel: plate.direction_label || "",
+      directionProfileConfigured: plate.direction_profile_configured === true,
       vehicleColor: plate.vehicle_color || "",
       vehicleColorConfidence: plate.vehicle_color_confidence === null || plate.vehicle_color_confidence === undefined
         ? null
@@ -593,6 +603,7 @@ export default function PlateTable({
       const selectedTagSignature = JSON.stringify(selectedImageTags);
       const currentDirectionLabel = currentPlate?.direction_label || "";
       const currentDirectionStatus = currentPlate?.direction_status || null;
+      const currentDirectionProfileConfigured = currentPlate?.direction_profile_configured === true;
       const currentVehicleOrientation = currentPlate?.vehicle_orientation || "unknown";
       const currentDirectionConfidence = currentPlate?.orientation_confidence === null
         || currentPlate?.orientation_confidence === undefined
@@ -622,6 +633,7 @@ export default function PlateTable({
           currentDirectionStatus !== selectedImage.directionStatus ||
           currentVehicleOrientation !== selectedImage.vehicleOrientation ||
           currentDirectionLabel !== selectedImage.directionLabel ||
+          currentDirectionProfileConfigured !== selectedImage.directionProfileConfigured ||
           currentDirectionConfidence !== selectedImage.directionConfidence ||
           currentVehicleColor !== selectedImage.vehicleColor ||
           currentVehicleColorConfidence !== selectedImage.vehicleColorConfidence ||
@@ -647,6 +659,7 @@ export default function PlateTable({
           vehicleOrientation: currentPlate.vehicle_orientation || "unknown",
           directionConfidence: currentDirectionConfidence,
           directionLabel: currentDirectionLabel,
+          directionProfileConfigured: currentDirectionProfileConfigured,
           vehicleColor: currentVehicleColor,
           vehicleColorConfidence: currentVehicleColorConfidence,
           vehicleClusterId: currentVehicleClusterId,
@@ -2325,7 +2338,7 @@ export default function PlateTable({
                           </div>
                           <div>
                             <span className="font-medium">Direction: </span>
-                            {plate.direction_label || "Unknown"}
+                            {directionDisplayLabel(plate)}
                           </div>
                           <div>
                             <span className="font-medium">Time: </span>
@@ -2498,7 +2511,10 @@ export default function PlateTable({
                     )}
                   </div>
                   <div className={selectedImage.directionLabel ? "" : "text-muted-foreground"}>
-                    {selectedImage.directionLabel || "Unknown"}
+                    {selectedImage.directionLabel
+                      || (selectedImage.directionProfileConfigured && !selectedImage.directionStatus
+                        ? "Pending"
+                        : "Unknown")}
                   </div>
                   {selectedImage.directionLabel && selectedImage.directionConfidence !== null ? (
                     <div className="text-xs text-muted-foreground">
