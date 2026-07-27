@@ -97,6 +97,42 @@ test("the paced worker drains historical direction work after image indexing", a
   assert.equal(worker.snapshot().lastBatch.succeeded, 19);
 });
 
+test("the paced worker backfills automatic vehicle types after indexing and directions", async () => {
+  let typeLimit = null;
+  let indexCalls = 0;
+  const times = [
+    new Date("2026-07-23T12:00:00.000Z"),
+    new Date("2026-07-23T12:00:04.000Z"),
+  ];
+  const worker = new VisualIndexWorker({
+    service: {
+      async getStatus() {
+        return {
+          pending: 0,
+          retryable: 0,
+          direction: { pending: 0 },
+          attributes: { vehicleTypePending: 12 },
+        };
+      },
+      async indexBatch() { indexCalls += 1; return {}; },
+      async analyzeRecentVehicleTypes(limit) {
+        typeLimit = limit;
+        return { processed: 12, succeeded: 11, failed: 1, busy: false };
+      },
+    },
+    loadSettings: async () => ({ visualIndex: { batchSize: 20, intervalSeconds: 30 } }),
+    now: () => times.shift(),
+    logger: {},
+  });
+
+  await worker.runOnce();
+
+  assert.equal(indexCalls, 0);
+  assert.equal(typeLimit, 20);
+  assert.equal(worker.snapshot().lastBatch.kind, "vehicle-type");
+  assert.equal(worker.snapshot().lastBatch.succeeded, 11);
+});
+
 test("image indexing and historical directions alternate when both have a backlog", async () => {
   let indexCalls = 0;
   let directionCalls = 0;

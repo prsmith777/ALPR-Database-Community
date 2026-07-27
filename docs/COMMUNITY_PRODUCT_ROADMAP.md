@@ -20,7 +20,7 @@ reliable background processing.
 
 ## Release baseline — July 27, 2026
 
-- Application `0.1.11` includes named users and roles, evidence-preserving plate
+- Application `0.1.12` includes named users and roles, evidence-preserving plate
   review, filter-respecting exports, the searchable help center, local privacy
   controls, and viewport-safe date/help navigation. Monitored Plates now lives
   inside Known Plates with reason, priority, monitoring-since, and read-history
@@ -89,6 +89,10 @@ reliable background processing.
   rather than Unknown until analysis finishes.
   Historical evaluation does not emit notifications.
   Per-read color observations retain confidence and local algorithm provenance.
+  Automatic local coarse vehicle-type observations classify car, van, truck,
+  or bus with confidence and OpenVINO provider/model provenance. New reads are
+  evaluated during indexing and the paced worker fills missing historical
+  observations without manual labeling or external image transfer.
   Descriptor-only vehicle profiles exclude plate text, require conservative
   similarity and winner-margin gates, and expose bounded Confirm vehicle or
   Different vehicle review. Effective plates from human-confirmed members are
@@ -300,12 +304,12 @@ remain externally orchestrated.
   Recognition Feed shows assignment, direction, and color evidence in its image
   dialog. Confirmed associations are a baseline only; mismatch labels and alerts
   remain disabled.
-- Expand the implemented asynchronous color and direction observations to
-  make/model/body type/year with per-field confidence, provider/model/version
-  provenance, raw result, status, and error.
-- Store plate jurisdiction/region, make, model, body type, year range,
-  alternate OCR candidates, and bounding boxes; expand current orientation
-  observations with optional multiframe motion validation before speed claims.
+- Expand the implemented asynchronous color, coarse-type, and direction
+  observations to make/model/year with per-field confidence,
+  provider/model/version provenance, raw result, status, and error.
+- Store make, model, year range, alternate OCR candidates, and bounding boxes;
+  expand current orientation observations with optional multiframe motion
+  validation before speed claims.
 - Expand Vehicle ReID calibration with larger labeled local samples and
   camera-pair reporting before making stronger labels or applying thresholds.
 - Consider pgvector only when the bounded in-process cosine scan no longer
