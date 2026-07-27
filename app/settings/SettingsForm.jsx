@@ -765,7 +765,6 @@ export default function SettingsForm({
       activeId={activeSection}
       title="Settings"
       description="Application, security, privacy, and integration settings."
-      onSelect={setActiveSection}
     >
               {/* Error/Success Messages */}
               {error && (
