@@ -65,6 +65,16 @@ test("execution and delivery history enforce idempotence, retry, and lock state"
   assert.match(migration, /notification_rule_cutover_events is append-only/i);
 });
 
+test("notification action revisions preserve delivery foreign keys", () => {
+  assert.match(migration, /ADD COLUMN IF NOT EXISTS retired_at TIMESTAMPTZ/i);
+  assert.match(migration, /uq_notification_actions_active_position[\s\S]*?WHERE retired_at IS NULL/i);
+  assert.match(migration, /2026072703_notification_action_history/i);
+  assert.match(
+    migration,
+    /action_id BIGINT NOT NULL REFERENCES public\.notification_actions\(id\) ON DELETE RESTRICT/i
+  );
+});
+
 test("legacy notification copies have durable one-to-one provenance", () => {
   assert.match(
     compact,

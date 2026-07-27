@@ -392,6 +392,7 @@ export default function VehicleClusters({ initialResult, view = "profiles", init
                   <div className="flex items-center justify-between"><div className="font-semibold">Vehicle #{cluster.id}</div><Badge variant="secondary">{cluster.status}</Badge></div>
                   <div className="text-sm">{cluster.captureCount} captures · {cluster.confirmedCount} confirmed</div>
                   {cluster.representativeColor && <div className="text-sm capitalize">{cluster.representativeColor} · {percent(cluster.representativeColorConfidence)} color</div>}
+                  {cluster.representativeBodyType && <div className="text-sm capitalize">{cluster.representativeBodyType} · {percent(cluster.representativeBodyTypeConfidence)} type</div>}
                   <div className="text-xs text-muted-foreground">Last seen {when(cluster.lastSeen)}</div>
                   {cluster.confirmedPlateAssociations.length > 0 && <div className="space-y-1"><div className="text-xs font-medium text-muted-foreground">Confirmed plates</div><div className="flex flex-wrap gap-1">{cluster.confirmedPlateAssociations.map((association) => <Badge key={association.plateNumber} className="font-mono">{association.plateNumber}</Badge>)}</div></div>}
                   {cluster.suggestedPlateAssociations.length > 0 && <div className="flex items-center gap-1 text-xs text-amber-600 dark:text-amber-400"><AlertTriangle className="h-3.5 w-3.5" />Review in Needs Review &gt; Plate Associations</div>}

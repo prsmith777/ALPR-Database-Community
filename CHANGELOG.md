@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Added fully local automatic coarse vehicle-type observations using the
+  OpenVINO Open Model Zoo model. New and historical vehicle crops can produce
+  car, van, truck, or bus evidence with confidence, provider/model provenance,
+  Unknown handling, and durable failure state without manual labeling or an
+  external service.
 - Added reviewable vehicle profiles that keep descriptor-only ReID grouping
   separate from explicit plate associations. Human-confirmed cluster captures
   create plate-link suggestions; confirmation or rejection is separately

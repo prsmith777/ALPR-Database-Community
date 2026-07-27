@@ -119,10 +119,11 @@ export default function VehicleProfile({ initialResult }) {
           <div className="relative aspect-video bg-muted"><NextImage src={data.representativeImageUrl} alt={`Representative for Vehicle ${data.id}`} fill sizes="(min-width:1024px) 60vw, 100vw" className="object-cover" unoptimized /></div>
           <CardContent className="space-y-3 p-5">
             <div className="flex flex-wrap items-center justify-between gap-3"><div><h2 className="text-2xl font-semibold">Vehicle #{data.id}</h2><p className="text-sm text-muted-foreground">Representative read {data.representativeReadId} · {data.representativeCamera}</p></div><Badge variant={data.status === "confirmed" ? "default" : "secondary"}>{data.status}</Badge></div>
-            <div className="grid gap-3 sm:grid-cols-3">
+            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
               <div className="rounded-md border p-3"><div className="text-xl font-semibold">{data.captureCount}</div><div className="text-xs text-muted-foreground">captures</div></div>
               <div className="rounded-md border p-3"><div className="text-xl font-semibold">{data.confirmedCount}</div><div className="text-xs text-muted-foreground">confirmed members</div></div>
               <div className="rounded-md border p-3"><div className="text-xl font-semibold capitalize">{data.representativeColor || "Unknown"}</div><div className="text-xs text-muted-foreground">representative color {data.representativeColor ? `· ${percent(data.representativeColorConfidence)}` : ""}</div></div>
+              <div className="rounded-md border p-3"><div className="text-xl font-semibold capitalize">{data.representativeBodyType || "Unknown"}</div><div className="text-xs text-muted-foreground">representative type {data.representativeBodyType ? `· ${percent(data.representativeBodyTypeConfidence)}` : ""}</div></div>
             </div>
             <div className="text-sm text-muted-foreground">Seen {when(data.firstSeen)} through {when(data.lastSeen)}</div>
           </CardContent>
@@ -166,7 +167,7 @@ export default function VehicleProfile({ initialResult }) {
                 <div className="flex items-center justify-between gap-2"><span className="font-mono font-semibold">{capture.plateNumber}</span><Badge variant={capture.assignmentStatus === "confirmed" ? "default" : "secondary"}>{capture.assignmentStatus}</Badge></div>
                 {capture.observedPlate !== capture.plateNumber && <div className="text-xs text-muted-foreground">Camera read {capture.observedPlate}</div>}
                 <div className="text-sm text-muted-foreground">{capture.cameraName} · {when(capture.timestamp)}</div>
-                <div className="flex flex-wrap gap-1">{capture.direction && <Badge variant="outline">{capture.direction}</Badge>}{capture.color && <Badge variant="outline" className="capitalize">{capture.color}</Badge>}{capture.similarity !== null && <Badge variant="outline">{percent(capture.similarity)} ReID</Badge>}</div>
+                <div className="flex flex-wrap gap-1">{capture.direction && <Badge variant="outline">{capture.direction}</Badge>}{capture.color && <Badge variant="outline" className="capitalize">{capture.color}</Badge>}{capture.bodyType && <Badge variant="outline" className="capitalize">{capture.bodyType} · {percent(capture.bodyTypeConfidence)}</Badge>}{capture.similarity !== null && <Badge variant="outline">{percent(capture.similarity)} ReID</Badge>}</div>
                 <Button asChild variant="ghost" size="sm" className="px-0"><Link href={`/live_feed?search=${encodeURIComponent(capture.plateNumber)}&matchMode=off`}>Open in Live Feed <ExternalLink className="ml-2 h-3.5 w-3.5" /></Link></Button>
               </CardContent>
             </Card>
