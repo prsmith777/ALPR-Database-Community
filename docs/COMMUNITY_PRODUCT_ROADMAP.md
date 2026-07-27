@@ -103,7 +103,10 @@ reliable background processing.
   plate-oriented typography requests a slashed-zero glyph to distinguish `0`
   from `O`.
 - Recurring plate-correction aliases now default to All cameras while retaining
-  an explicit current-camera-only scope for camera-specific OCR errors.
+  an explicit current-camera-only scope for camera-specific OCR errors. An
+  alias-only save repairs mappings without changing historical reads, conflicts
+  can be replaced through an audited retire-and-create confirmation, and review
+  reversal can optionally disable its associated active alias.
 
 Every production candidate must update this baseline and the in-app help model
 in the same release. The exact deployed Git SHA belongs in deployment status

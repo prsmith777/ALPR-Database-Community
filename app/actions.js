@@ -142,6 +142,7 @@ function plateReviewActionFailure(error, fallback) {
   const safeCodes = new Set([
     "ALIAS_EXISTS",
     "ALIAS_NOT_FOUND",
+    "ALIAS_REVIEW_MISMATCH",
     "INVALID_ACTION",
     "INVALID_PLATE",
     "INVALID_STATUS",
@@ -1687,6 +1688,7 @@ export async function correctPlateRead(formData) {
     const newPlateNumber = formData.get("newPlateNumber");
     const correctAll = formData.get("correctAll") === "true";
     const rememberAlias = formData.get("rememberAlias") === "true";
+    const replaceAlias = formData.get("replaceAlias") === "true";
     const cameraName =
       formData.get("aliasScope") === "camera"
         ? formData.get("cameraName")
@@ -1694,16 +1696,51 @@ export async function correctPlateRead(formData) {
     const reason = formData.get("reason");
     const notes = formData.get("notes");
     const repository = getPlateReviewRepository();
+    const normalizedOldPlate = String(oldPlateNumber || "").trim().toUpperCase();
+    const normalizedNewPlate = String(newPlateNumber || "").trim().toUpperCase();
+    const plateChanged = normalizedOldPlate !== normalizedNewPlate;
 
-    if (correctAll && !hasPermission(principal, "plate.review.batch")) {
+    if (correctAll && plateChanged && !hasPermission(principal, "plate.review.batch")) {
       return { success: false, error: "Administrator permission is required for batch correction." };
     }
     if (rememberAlias && !hasPermission(principal, "plate.alias.manage")) {
       return { success: false, error: "Administrator permission is required to create a recurring alias." };
     }
+    if (!plateChanged && !rememberAlias) {
+      return { success: false, error: "The corrected plate is already the effective plate." };
+    }
 
-    const data = correctAll
-      ? await repository.batchCorrect({
+    const aliasSourcePlate = formData.get("aliasSourcePlate") || oldPlateNumber;
+    const existingAlias = rememberAlias
+      ? await repository.getEnabledAlias({ sourcePlate: aliasSourcePlate, cameraName })
+      : null;
+    if (
+      existingAlias &&
+      existingAlias.target_plate !== normalizedNewPlate &&
+      !replaceAlias
+    ) {
+      return {
+        success: false,
+        code: "ALIAS_REPLACE_CONFIRMATION_REQUIRED",
+        error: "Confirm whether to replace the existing recurring alias.",
+        aliasConflict: {
+          id: existingAlias.id,
+          sourcePlate: existingAlias.source_plate,
+          targetPlate: existingAlias.target_plate,
+          cameraName: existingAlias.camera_name || null,
+          replacementTargetPlate: normalizedNewPlate,
+        },
+      };
+    }
+
+    const data = !plateChanged
+      ? {
+          id: Number(readId),
+          effectivePlate: normalizedNewPlate,
+          aliasOnly: true,
+        }
+      : correctAll
+        ? await repository.batchCorrect({
           sourcePlate: oldPlateNumber,
           targetPlate: newPlateNumber,
           cameraName: formData.get("batchCameraOnly") === "true"
@@ -1713,27 +1750,31 @@ export async function correctPlateRead(formData) {
           reason,
           notes,
           actor: principal,
-        })
-      : await repository.reviewRead({
+          })
+        : await repository.reviewRead({
           readId,
           action: "correct",
           newPlate: newPlateNumber,
           reason,
           notes,
           actor: principal,
-        });
+          });
 
     let alias = null;
+    let replacedAlias = null;
     let warning = null;
     if (rememberAlias) {
       try {
-        alias = await repository.createAlias({
-          sourcePlate: formData.get("aliasSourcePlate") || oldPlateNumber,
+        const aliasResult = await repository.createOrReplaceAlias({
+          sourcePlate: aliasSourcePlate,
           targetPlate: newPlateNumber,
           cameraName,
           reason,
           actor: principal,
+          replaceExisting: replaceAlias,
         });
+        alias = aliasResult.alias;
+        replacedAlias = aliasResult.replacedAlias;
       } catch (error) {
         warning = error?.message || "The read was corrected, but the recurring alias could not be created.";
       }
@@ -1741,7 +1782,7 @@ export async function correctPlateRead(formData) {
 
     revalidatePath("/live_feed");
     revalidatePath("/database");
-    return { success: true, data, alias, warning };
+    return { success: true, data, alias, replacedAlias, warning };
   } catch (error) {
     return plateReviewActionFailure(error, "Failed to correct the plate read.");
   }
@@ -1782,13 +1823,22 @@ export async function getPlateReviewHistory(readId) {
 export async function reversePlateReview(formData) {
   const principal = await requirePermission("plate.review.batch");
   try {
+    const disableAliasId = formData.get("disableAliasId");
+    if (disableAliasId && !hasPermission(principal, "plate.alias.manage")) {
+      return {
+        success: false,
+        error: "Administrator permission is required to disable a recurring alias.",
+      };
+    }
     const data = await getPlateReviewRepository().reverseLatestReview({
       readId: formData.get("readId"),
       reason: formData.get("reason"),
       actor: principal,
+      disableAliasId: disableAliasId || null,
     });
     revalidatePath("/live_feed");
     revalidatePath("/database");
+    revalidatePath("/settings");
     return { success: true, data };
   } catch (error) {
     return plateReviewActionFailure(error, "Unable to reverse the plate review.");

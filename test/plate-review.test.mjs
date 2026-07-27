@@ -103,6 +103,106 @@ test("correction requires an explanation and never silently accepts an unchanged
   );
 });
 
+test("alias replacement atomically retires the enabled mapping and preserves its audit trail", async () => {
+  const { repository, calls } = makeTransactionalRepository(async (sql) => {
+    if (sql.includes("FROM public.plate_aliases") && sql.includes("FOR UPDATE")) {
+      return {
+        rowCount: 1,
+        rows: [{
+          id: 8,
+          source_plate: "U0777009",
+          target_plate: "UC77008",
+          camera_name: null,
+          reason: "ocr_character_error",
+        }],
+      };
+    }
+    if (sql.includes("INSERT INTO public.plate_aliases") && sql.includes("RETURNING *")) {
+      return {
+        rowCount: 1,
+        rows: [{ id: 9, source_plate: "U0777009", target_plate: "UC77009", camera_name: null }],
+      };
+    }
+    return { rowCount: 1, rows: [] };
+  });
+
+  const result = await repository.createOrReplaceAlias({
+    sourcePlate: "U0777009",
+    targetPlate: "UC77009",
+    reason: "ocr_character_error",
+    actor: { id: 7, username: "paul", displayName: "Paul" },
+    replaceExisting: true,
+  });
+
+  assert.equal(result.replacedAlias.id, 8);
+  assert.equal(result.alias.id, 9);
+  assert.ok(calls.some((call) =>
+    call.sql.includes("UPDATE public.plate_aliases SET enabled = FALSE") && call.values[0] === 8
+  ));
+  assert.ok(calls.some((call) => call.values.includes("plate.alias_replaced")));
+  assert.ok(calls.some((call) => call.values.some((value) =>
+    typeof value === "string" && value.includes('"replacesAliasId":8')
+  )));
+});
+
+test("review reversal can disable only the active alias associated with that review", async () => {
+  const { repository, calls } = makeTransactionalRepository(async (sql) => {
+    if (sql.includes("FROM public.plate_reads") && sql.includes("FOR UPDATE")) {
+      return {
+        rowCount: 1,
+        rows: [{
+          id: 12,
+          event_identity: "event-12",
+          observed_plate: "U0777009",
+          plate_number: "UC77009",
+          camera_name: "Entry LPR 2",
+          review_status: "corrected",
+        }],
+      };
+    }
+    if (sql.includes("SELECT review.*") && sql.includes("FOR UPDATE")) {
+      return {
+        rowCount: 1,
+        rows: [{
+          id: 44,
+          previous_plate: "U0777009",
+          new_plate: "UC77009",
+          previous_status: "unreviewed",
+        }],
+      };
+    }
+    if (sql.includes("plate_read_reviews") && sql.includes("RETURNING id")) {
+      return { rowCount: 1, rows: [{ id: 45 }] };
+    }
+    if (sql.includes("FROM public.plate_aliases") && sql.includes("FOR UPDATE")) {
+      return {
+        rowCount: 1,
+        rows: [{
+          id: 8,
+          source_plate: "U0777009",
+          target_plate: "UC77009",
+          camera_name: null,
+        }],
+      };
+    }
+    return { rowCount: 1, rows: [] };
+  });
+
+  const result = await repository.reverseLatestReview({
+    readId: 12,
+    reason: "administrator_reversal",
+    actor: { id: 7, username: "paul", displayName: "Paul" },
+    disableAliasId: 8,
+  });
+
+  assert.equal(result.disabledAliasId, 8);
+  assert.ok(calls.some((call) =>
+    call.sql.includes("UPDATE public.plate_aliases SET enabled = FALSE") && call.values[0] === 8
+  ));
+  assert.ok(calls.some((call) => call.values.includes("plate.alias_disabled_on_review_reversal")));
+  assert.equal(calls.at(-2).sql, "COMMIT");
+});
+
 test("camera-scoped alias lookup is exact and alias application is auditable", async () => {
   const calls = [];
   const client = {
@@ -178,6 +278,9 @@ test("correction UI exposes previewed batch scope, recurring alias, and append-o
   assert.match(feed, /Camera observed/);
   assert.match(feed, /Current effective plate/);
   assert.match(feed, /Remember .* as a recurring misread/);
+  assert.match(feed, /Save recurring alias/);
+  assert.match(feed, /Replace existing recurring alias/);
+  assert.match(feed, /Reverse and disable alias/);
   assert.equal((feed.match(/aliasScope: "all"/g) || []).length, 3);
   assert.doesNotMatch(feed, /aliasScope: "camera"/);
   assert.match(feed, /Preview affected reads/);
@@ -190,6 +293,8 @@ test("correction UI exposes previewed batch scope, recurring alias, and append-o
   assert.match(settings, /Aliases are disabled, never deleted/);
   assert.match(actions, /requirePermission\("plate\.review\.batch"\)/);
   assert.match(actions, /requirePermission\("plate\.alias\.manage"\)/);
+  assert.match(actions, /ALIAS_REPLACE_CONFIRMATION_REQUIRED/);
+  assert.match(actions, /aliasOnly: true/);
   assert.doesNotMatch(actions.match(/export async function correctPlateRead[\s\S]*?\n}/)[0], /removePlate/);
 });
 

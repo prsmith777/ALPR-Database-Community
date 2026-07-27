@@ -15,6 +15,8 @@
   separate application and user-manual versions.
 - Improved the image review workflow, plate-focused zoom, next-read navigation,
   correction status filters, and recurring aliases that default to all cameras.
+- Added alias-only saves, confirmed audited alias replacement, and optional
+  associated-alias disabling when reversing a plate review.
 
 - Added guarded deletion for disabled notification rules. The confirmation
   identifies the exact rule and version, removes it from the active workspace,

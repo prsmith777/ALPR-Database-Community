@@ -62,6 +62,16 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
@@ -276,6 +286,8 @@ export default function PlateTable({
   const [isCorrectPlateOpen, setIsCorrectPlateOpen] = useState(false);
   const [correctionError, setCorrectionError] = useState("");
   const [correctionPreview, setCorrectionPreview] = useState(null);
+  const [aliasReplaceConflict, setAliasReplaceConflict] = useState(null);
+  const [reverseCandidate, setReverseCandidate] = useState(null);
   const [historyState, setHistoryState] = useState({
     open: false,
     read: null,
@@ -884,7 +896,7 @@ export default function PlateTable({
     }
   };
 
-  const correctionFormData = () => {
+  const correctionFormData = ({ replaceAlias = false } = {}) => {
     const formData = new FormData();
     formData.append("readId", correction.id);
     formData.append("oldPlateNumber", correction.plateNumber);
@@ -896,21 +908,30 @@ export default function PlateTable({
     formData.append("batchCameraOnly", correction.batchCameraOnly.toString());
     formData.append("rememberAlias", correction.rememberAlias.toString());
     formData.append("aliasScope", correction.aliasScope);
+    formData.append("replaceAlias", replaceAlias.toString());
     formData.append("reason", correction.reason);
     formData.append("notes", correction.notes);
     return formData;
   };
 
-  const handleCorrectSubmit = async () => {
+  const handleCorrectSubmit = async ({ replaceAlias = false } = {}) => {
     if (!correction) return;
     setCorrectionError("");
-    const result = await onCorrectPlate(correctionFormData());
+    const result = await onCorrectPlate(correctionFormData({ replaceAlias }));
     if (!result?.success) {
+      if (
+        result?.code === "ALIAS_REPLACE_CONFIRMATION_REQUIRED" &&
+        result?.aliasConflict
+      ) {
+        setAliasReplaceConflict(result.aliasConflict);
+        return;
+      }
       setCorrectionError(result?.error || "Unable to correct this plate read.");
       return;
     }
+    setAliasReplaceConflict(null);
     if (result.warning) window.alert(result.warning);
-    if (selectedImage) {
+    if (selectedImage && !result?.data?.aliasOnly) {
       setSelectedImage((prev) => ({
         ...prev,
         plateNumber: correction.newPlateNumber,
@@ -945,17 +966,30 @@ export default function PlateTable({
     }));
   };
 
-  const handleReverseReview = async () => {
+  const handleReverseReview = async ({ disableAlias = false } = {}) => {
     if (!historyState.read) return;
     const formData = new FormData();
     formData.append("readId", historyState.read.id);
     formData.append("reason", "administrator_reversal");
+    if (disableAlias && reverseCandidate?.related_alias_id) {
+      formData.append("disableAliasId", reverseCandidate.related_alias_id);
+    }
     const result = await onReverseReview(formData);
     if (!result?.success) {
       setHistoryState((current) => ({ ...current, error: result?.error || "Unable to reverse review." }));
       return;
     }
+    setReverseCandidate(null);
     await openReviewHistory(historyState.read);
+  };
+
+  const requestReverseReview = () => {
+    const candidate = historyState.entries.find(
+      (entry) =>
+        ["confirm", "correct", "reject", "reopen"].includes(entry.action) &&
+        !entry.reversed
+    );
+    if (candidate) setReverseCandidate(candidate);
   };
 
   const clearFilters = () => {
@@ -1348,6 +1382,15 @@ export default function PlateTable({
         </Button>
       </div>
     </div>
+  );
+
+  const correctionChangesPlate = Boolean(
+    correction?.newPlateNumber &&
+      correction.newPlateNumber.trim().toUpperCase() !==
+        String(correction.plateNumber || "").trim().toUpperCase()
+  );
+  const aliasOnlyCorrection = Boolean(
+    correction?.rememberAlias && correction?.newPlateNumber && !correctionChangesPlate
   );
 
   return (
@@ -2885,7 +2928,7 @@ export default function PlateTable({
                 />
               </div>
 
-              {canBatchReview && (
+              {canBatchReview && !aliasOnlyCorrection && (
                 <div className="space-y-3 rounded-lg border p-4">
                   <div className="flex items-center gap-2">
                     <Switch
@@ -2984,6 +3027,12 @@ export default function PlateTable({
                         {correction.newPlateNumber || "the corrected plate"} and inherit its
                         known name, tags, monitored-plate state, and notification rules.
                       </p>
+                      {aliasOnlyCorrection && (
+                        <p className="rounded-md bg-muted p-3 text-sm">
+                          This read already has that effective plate. Saving will create or
+                          replace only the recurring alias; no historical reads will be changed.
+                        </p>
+                      )}
                     </div>
                   )}
                 </div>
@@ -3008,14 +3057,18 @@ export default function PlateTable({
                 Cancel
               </Button>
               <Button
-                onClick={handleCorrectSubmit}
+                onClick={() => handleCorrectSubmit()}
                 disabled={
                   !correction?.newPlateNumber ||
-                  correction.newPlateNumber === correction.plateNumber ||
-                  (correction.correctAll && !correctionPreview)
+                  (!correctionChangesPlate && !correction?.rememberAlias) ||
+                  (correctionChangesPlate && correction.correctAll && !correctionPreview)
                 }
               >
-                {correction?.correctAll ? "Apply previewed batch" : "Correct this read"}
+                {aliasOnlyCorrection
+                  ? "Save recurring alias"
+                  : correction?.correctAll
+                    ? "Apply previewed batch"
+                    : "Correct this read"}
               </Button>
             </DialogFooter>
           </DialogContent>
@@ -3069,9 +3122,10 @@ export default function PlateTable({
             )}
             <DialogFooter>
               {canBatchReview && historyState.entries.some((entry) =>
-                ["confirm", "correct", "reject", "reopen"].includes(entry.action)
+                ["confirm", "correct", "reject", "reopen"].includes(entry.action) &&
+                  !entry.reversed
               ) && (
-                <Button variant="outline" onClick={handleReverseReview}>
+                <Button variant="outline" onClick={requestReverseReview}>
                   <RotateCcw className="mr-2 h-4 w-4" />
                   Reverse latest review
                 </Button>
@@ -3086,6 +3140,74 @@ export default function PlateTable({
             </DialogFooter>
           </DialogContent>
         </Dialog>
+
+        <AlertDialog
+          open={Boolean(aliasReplaceConflict)}
+          onOpenChange={(open) => {
+            if (!open) setAliasReplaceConflict(null);
+          }}
+        >
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Replace existing recurring alias?</AlertDialogTitle>
+              <AlertDialogDescription>
+                {aliasReplaceConflict?.sourcePlate} currently resolves to{" "}
+                {aliasReplaceConflict?.targetPlate} for{" "}
+                {aliasReplaceConflict?.cameraName
+                  ? `camera ${aliasReplaceConflict.cameraName}`
+                  : "all cameras"}
+                . Replacing it will disable that alias and create a new mapping to{" "}
+                {aliasReplaceConflict?.replacementTargetPlate}. The previous alias remains in
+                the audit history.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>Keep existing alias</AlertDialogCancel>
+              <AlertDialogAction onClick={() => handleCorrectSubmit({ replaceAlias: true })}>
+                Replace alias
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+
+        <AlertDialog
+          open={Boolean(reverseCandidate)}
+          onOpenChange={(open) => {
+            if (!open) setReverseCandidate(null);
+          }}
+        >
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Reverse latest plate review?</AlertDialogTitle>
+              <AlertDialogDescription>
+                This restores the read&apos;s previous effective plate and review status.
+                {reverseCandidate?.related_alias_enabled
+                  ? ` An active alias also maps ${reverseCandidate.related_alias_source_plate} to ${reverseCandidate.related_alias_target_plate}. Choose whether to disable it at the same time.`
+                  : " No active recurring alias is associated with this review."}
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>Cancel</AlertDialogCancel>
+              {reverseCandidate?.related_alias_enabled ? (
+                <>
+                  <AlertDialogAction onClick={() => handleReverseReview()}>
+                    Reverse only
+                  </AlertDialogAction>
+                  <AlertDialogAction
+                    className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                    onClick={() => handleReverseReview({ disableAlias: true })}
+                  >
+                    Reverse and disable alias
+                  </AlertDialogAction>
+                </>
+              ) : (
+                <AlertDialogAction onClick={() => handleReverseReview()}>
+                  Reverse review
+                </AlertDialogAction>
+              )}
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
         </div>
       </div>
     </TooltipProvider>
