@@ -22,9 +22,9 @@ test("release information resolves a commit-pinned deployment image", () => {
     ALPR_RELEASE_CHANNEL: "staging",
   });
 
-  assert.equal(release.version, "0.1.10");
-  assert.equal(release.manualVersion, "1.25");
-  assert.equal(release.manualUpdatedAt, "July 26, 2026");
+  assert.equal(release.version, "0.1.11");
+  assert.equal(release.manualVersion, "1.26");
+  assert.equal(release.manualUpdatedAt, "July 27, 2026");
   assert.equal(release.gitSha, "8cd2fa8");
   assert.equal(release.channel, "staging");
   assert.equal(release.source, "commit-pinned image");

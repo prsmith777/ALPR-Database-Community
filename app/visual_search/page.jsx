@@ -16,7 +16,7 @@ export default async function VisualSearchPage({ searchParams }) {
     <DashboardLayout>
       <TitleNavbar title="Vehicle Intelligence" navigation={[
         { title: "Visual Search", href: "/visual_search", permission: "plate.read" },
-        { title: "Vehicle Clusters", href: "/visual_search/vehicles", permission: "plate.read" },
+        { title: "Vehicle Profiles", href: "/visual_search/vehicles", permission: "plate.read" },
       ]}>
         <VisualSearch
           initialResult={bootstrap}

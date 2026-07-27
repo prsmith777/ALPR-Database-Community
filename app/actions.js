@@ -2334,19 +2334,36 @@ export async function setVehicleDirectionReevaluationPaused(paused) {
   }
 }
 
-export async function getVehicleClusterOverview() {
+export async function getVehicleClusterOverview(featureKey = null) {
   const principal = await requirePermission("plate.read");
   try {
     return {
       success: true,
       data: {
-        ...(await (await getCaptureAssetService()).getVehicleClusterOverview()),
+        ...(await (await getCaptureAssetService()).getVehicleClusterOverview({ featureKey })),
         canReview: hasPermission(principal, "plate.review"),
         canAnalyze: hasPermission(principal, "maintenance.manage"),
       },
     };
   } catch (error) {
     return visualSearchFailure(error, "Unable to load shadow vehicle clusters.");
+  }
+}
+
+export async function getVehicleProfile(clusterId) {
+  const principal = await requirePermission("plate.read");
+  try {
+    const profile = await (await getCaptureAssetService()).getVehicleProfile(clusterId);
+    if (!profile) return { success: false, error: "Vehicle profile was not found." };
+    return {
+      success: true,
+      data: {
+        ...profile,
+        canReview: hasPermission(principal, "plate.review"),
+      },
+    };
+  } catch (error) {
+    return visualSearchFailure(error, "Unable to load this vehicle profile.");
   }
 }
 
@@ -2374,5 +2391,42 @@ export async function reviewVehicleClusterSuggestion(input = {}) {
     return { success: true, data };
   } catch (error) {
     return visualSearchFailure(error, "Unable to review this vehicle suggestion.");
+  }
+}
+
+export async function reviewVehiclePlateAssociation(input = {}) {
+  const principal = await requirePermission("plate.review");
+  try {
+    const data = await (await getCaptureAssetService()).reviewVehiclePlateAssociation({
+      clusterId: input.clusterId,
+      plateNumber: input.plateNumber,
+      decision: input.decision,
+      actor: principal,
+    });
+    revalidatePath("/visual_search/vehicles");
+    revalidatePath(`/visual_search/vehicles/${Number(input.clusterId)}`);
+    revalidatePath("/live_feed");
+    return { success: true, data };
+  } catch (error) {
+    return visualSearchFailure(error, "Unable to review this vehicle plate association.");
+  }
+}
+
+export async function reviewVehicleDistinctiveFeatures(input = {}) {
+  const principal = await requirePermission("plate.review");
+  try {
+    const data = await (await getCaptureAssetService()).reviewVehicleDistinctiveFeatures({
+      readId: input.readId,
+      features: input.features,
+      actor: principal,
+    });
+    revalidatePath("/visual_search/vehicles");
+    if (Number.isSafeInteger(Number(input.clusterId)) && Number(input.clusterId) > 0) {
+      revalidatePath(`/visual_search/vehicles/${Number(input.clusterId)}`);
+    }
+    revalidatePath("/live_feed");
+    return { success: true, data };
+  } catch (error) {
+    return visualSearchFailure(error, "Unable to review these distinctive vehicle features.");
   }
 }
