@@ -77,7 +77,7 @@ test("the administrator Release page remains read-only", async () => {
   const [card, form, page, shell, compose, dockerfile, module] = await Promise.all([
     source("app/settings/ReleaseInformationCard.jsx"),
     source("app/settings/SettingsForm.jsx"),
-    source("app/settings/page.jsx"),
+    source("app/settings/SettingsSectionPage.jsx"),
     source("components/settings/SettingsShell.jsx"),
     source("docker-compose.yml"),
     source("Dockerfile"),
@@ -85,7 +85,7 @@ test("the administrator Release page remains read-only", async () => {
   ]);
 
   assert.match(shell, /title: "Release"/);
-  assert.match(shell, /section=release/);
+  assert.match(shell, /\/settings\/release/);
   assert.match(page, /getReleaseInfo\(\)/);
   assert.match(form, /ReleaseInformationCard/);
   assert.match(form, /"release"/);

@@ -27,19 +27,19 @@ const navigationSections = [
     title: "System",
     permission: "system.manage_settings",
     items: [
-      { title: "General", id: "general", href: "/settings?section=general", icon: Settings2 },
-      { title: "Database", id: "database", href: "/settings?section=database", icon: Database },
-      { title: "Plate Matching", id: "plateMatching", href: "/settings?section=plateMatching", icon: ScanSearch },
-      { title: "Review & Corrections", id: "plateReview", href: "/settings?section=plateReview", icon: ShieldCheck },
+      { title: "General", id: "general", href: "/settings/general", icon: Settings2 },
+      { title: "Database", id: "database", href: "/settings/database", icon: Database },
+      { title: "Plate Matching", id: "plateMatching", href: "/settings/plate-matching", icon: ScanSearch },
+      { title: "Review & Corrections", id: "plateReview", href: "/settings/review-corrections", icon: ShieldCheck },
       { title: "Vehicle Intelligence", id: "vehicleIntelligence", href: "/settings/vehicle-intelligence", icon: CarFront },
-      { title: "Data & Privacy", id: "privacy", href: "/settings?section=privacy", icon: Shield },
-      { title: "Release", id: "release", href: "/settings?section=release", icon: PackageOpen },
+      { title: "Data & Privacy", id: "privacy", href: "/settings/data-privacy", icon: Shield },
+      { title: "Release", id: "release", href: "/settings/release", icon: PackageOpen },
     ],
   },
   {
     title: "Account",
     items: [
-      { title: "Security", id: "security", href: "/settings?section=security", icon: Lock },
+      { title: "Security", id: "security", href: "/settings/security", icon: Lock },
     ],
   },
   {
@@ -49,8 +49,8 @@ const navigationSections = [
       { title: "Pushover", id: "pushover", href: "/settings/integrations/pushover", icon: Bell, permission: "system.manage_settings" },
       { title: "Email", id: "email", href: "/settings/integrations/email", icon: Mail, permission: "system.manage_settings" },
       { title: "Webhook", id: "webhook", href: "/settings/integrations/webhook", icon: Webhook, permission: "system.manage_settings" },
-      { title: "Blue Iris", id: "blueiris", href: "/settings?section=blueiris", icon: Server, permission: "system.manage_settings" },
-      { title: "Home Assistant", id: "homeassistant", href: "/settings?section=homeassistant", icon: Home, permission: "system.manage_settings" },
+      { title: "Blue Iris", id: "blueiris", href: "/settings/blue-iris", icon: Server, permission: "system.manage_settings" },
+      { title: "Home Assistant", id: "homeassistant", href: "/settings/home-assistant", icon: Home, permission: "system.manage_settings" },
     ],
   },
 ];

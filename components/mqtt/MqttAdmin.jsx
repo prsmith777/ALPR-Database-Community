@@ -12,10 +12,17 @@ import {
 import { MqttActivity } from "./MqttActivity";
 import { MqttBrokers } from "./MqttBrokers";
 import { MqttCameras } from "./MqttCameras";
+import { useRouteTab } from "@/components/useRouteTab";
 
 export function MqttAdmin() {
+  const routeTab = useRouteTab({
+    brokers: "/settings/integrations/mqtt",
+    cameras: "/settings/integrations/mqtt/cameras",
+    activity: "/settings/integrations/mqtt/activity",
+  }, "brokers");
+
   return (
-    <Tabs defaultValue="brokers" className="space-y-6">
+    <Tabs value={routeTab.active} onValueChange={routeTab.navigate} className="space-y-6">
       <TabsList className="grid h-auto w-full grid-cols-1 gap-1 p-1 sm:grid-cols-3">
         <TabsTrigger value="brokers" className="gap-2 py-2">
           <Network className="h-4 w-4" />

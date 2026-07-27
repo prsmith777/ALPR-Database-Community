@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Replaced legacy query-string page selection with dedicated URLs throughout
+  Settings, Known/Monitored Plates, Notification Rules, MQTT, Pushover, email,
+  and webhook navigation. Search, sorting, pagination, and filter parameters
+  remain URL-backed so filtered views can still be bookmarked and shared.
+
 ## [0.1.10] - 07-26-2026
 
 - Added configurable per-camera vehicle direction with audited front/rear

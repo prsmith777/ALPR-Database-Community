@@ -99,7 +99,7 @@ test("plate tables hide mutation and export controls from read-only roles", asyn
 });
 
 test("personal settings do not load administrator configuration or user lists", async () => {
-  const page = await source("app/settings/page.jsx");
+  const page = await source("app/settings/SettingsSectionPage.jsx");
   assert.match(page, /canManageSettings \? getSettings\(\) : Promise\.resolve\(null\)/);
   assert.match(page, /canManageSettings \? getAuthConfig\(\)/);
 

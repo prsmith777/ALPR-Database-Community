@@ -1,29 +1,23 @@
 "use client";
 
-import { useRouter } from "next/navigation";
-
 import { FlaggedPlatesTable } from "@/components/FlaggedPlatesTable";
 import { KnownPlatesTable } from "@/components/KnownPlatesTable";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { useRouteTab } from "@/components/useRouteTab";
 
 export function KnownPlatesWorkspace({
   knownPlates,
   monitoredPlates,
-  defaultView = "known",
 }) {
-  const router = useRouter();
+  const routeTab = useRouteTab({
+    known: "/known_plates",
+    monitored: "/known_plates/monitored",
+  }, "known");
 
   return (
     <Tabs
-      defaultValue={defaultView}
-      onValueChange={(view) =>
-        router.replace(
-          view === "monitored"
-            ? "/known_plates?view=monitored"
-            : "/known_plates",
-          { scroll: false }
-        )
-      }
+      value={routeTab.active}
+      onValueChange={routeTab.navigate}
       className="mt-4"
     >
       <TabsList aria-label="Plate management views" className="h-auto flex-wrap">

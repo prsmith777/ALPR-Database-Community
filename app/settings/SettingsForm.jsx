@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { useTransition, useOptimistic } from "react";
 import { X } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -60,12 +60,7 @@ export default function SettingsForm({
   const [isPending, startTransition] = useTransition(); // For general settings
   const [error, setError] = useState(""); // General error for main form
   const [success, setSuccess] = useState(false); // General success for main form
-  const [activeSection, setActiveSection] = useState(
-    initialSection || (canManageSettings ? "general" : "security")
-  );
-  useEffect(() => {
-    setActiveSection(initialSection || (canManageSettings ? "general" : "security"));
-  }, [canManageSettings, initialSection]);
+  const activeSection = initialSection || (canManageSettings ? "general" : "security");
   const [showApiKey, setShowApiKey] = useState(false); // This is local state for general form (will be managed by SecuritySettings itself now)
   const [showDialog, setShowDialog] = useState(false); // This is local state for general form (will be managed by SecuritySettings itself now)
 
