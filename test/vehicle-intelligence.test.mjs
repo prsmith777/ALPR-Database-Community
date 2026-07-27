@@ -78,11 +78,16 @@ test("vehicle intelligence keeps ReID grouping separate from reviewed plate asso
   assert.match(migration, /CREATE TABLE IF NOT EXISTS public\.vehicle_plate_associations/i);
   assert.match(migration, /2026072702_vehicle_plate_associations/i);
   assert.match(migration, /WHERE assignments\.assignment_status = 'confirmed'/i);
-  assert.match(component, /Each queue is complete and paginated independently/i);
+  assert.match(component, /Choose one queue/i);
   assert.match(component, /Plate associations/);
   assert.match(component, /Direction reviews/);
   assert.match(component, /Camera setup needs attention/);
   assert.match(component, /Showing \{first\.toLocaleString\(\)\}/);
+  assert.match(component, /view === "review"/);
+  assert.match(component, /queue=plates/);
+  assert.match(component, /queue=direction/);
+  assert.match(component, /queue=setup/);
+  assert.match(await source("app/visual_search/vehicles/review/page.jsx"), /title: "Needs Review"/);
   assert.match(component, /Open vehicle profile/i);
   assert.match(component, /Confirm vehicle/);
   assert.match(component, /Different vehicle/);

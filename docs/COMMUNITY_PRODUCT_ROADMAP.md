@@ -292,10 +292,11 @@ remain externally orchestrated.
   a plate. Descriptor-only grouping excludes plate text and creates either a
   seed cluster or a reviewable suggested assignment. Effective-plate links are
   independently suggested and require audited confirmation or rejection.
-  Vehicle Intelligence now separates vehicle matches, plate associations, and
-  direction examples into independently paginated review queues, adds camera
-  setup attention, and provides server-side profile search, status, camera, and
-  page controls so review is not limited to the newest 100 profiles.
+  Vehicle Intelligence now has a dedicated top-level Needs Review tab that
+  displays one independently paginated queue at a time for vehicle matches,
+  plate associations, direction examples, or administrator setup attention.
+  Server-side profile search, status, camera, and page controls ensure browsing
+  is not limited to the newest 100 profiles.
   Recognition Feed shows assignment, direction, and color evidence in its image
   dialog. Confirmed associations are a baseline only; mismatch labels and alerts
   remain disabled.
