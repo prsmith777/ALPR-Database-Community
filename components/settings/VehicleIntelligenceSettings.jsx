@@ -2,14 +2,26 @@
 
 import NextImage from "next/image";
 import { useEffect, useMemo, useState } from "react";
-import { BrainCircuit, Check, Loader2, Play, Save } from "lucide-react";
+import { BrainCircuit, Check, Loader2, Play, RotateCcw, Save } from "lucide-react";
 
 import {
   getVehicleDirectionSetup,
   labelVehicleOrientation,
+  previewVehicleDirectionReevaluation,
+  queueVehicleDirectionReevaluation,
   runVehicleDirectionBackfillBatch,
   saveVehicleDirectionProfile,
 } from "@/app/actions";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { SettingsShell } from "@/components/settings/SettingsShell";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -32,6 +44,7 @@ export default function VehicleIntelligenceSettings({ initialData }) {
   const [draft, setDraft] = useState(null);
   const [busy, setBusy] = useState("");
   const [message, setMessage] = useState("");
+  const [reevaluationPreview, setReevaluationPreview] = useState(null);
   const profile = useMemo(
     () => data.profiles.find((item) => item.cameraName === cameraName) || data.profiles[0] || null,
     [cameraName, data.profiles]
@@ -103,6 +116,37 @@ export default function VehicleIntelligenceSettings({ initialData }) {
         result.data.processed
           ? `Processed ${result.data.processed} historical captures: ${result.data.succeeded} completed, ${result.data.failed} failed.`
           : "No indexed historical captures are waiting for direction analysis."
+      );
+    } catch (error) { setMessage(error.message); }
+    finally { setBusy(""); }
+  };
+
+  const openReevaluation = async (selectedCameraName = null) => {
+    const pendingState = selectedCameraName ? "preview-camera" : "preview-all";
+    setBusy(pendingState);
+    setMessage("");
+    try {
+      const result = await previewVehicleDirectionReevaluation({ cameraName: selectedCameraName });
+      if (!result.success) throw new Error(result.error);
+      setReevaluationPreview(result.data);
+    } catch (error) { setMessage(error.message); }
+    finally { setBusy(""); }
+  };
+
+  const confirmReevaluation = async () => {
+    if (!reevaluationPreview) return;
+    setBusy("reevaluate");
+    setMessage("");
+    try {
+      const result = await queueVehicleDirectionReevaluation({
+        cameraName: reevaluationPreview.cameraName,
+      });
+      if (!result.success) throw new Error(result.error);
+      setReevaluationPreview(null);
+      await reload(cameraName);
+      setMessage(
+        `Queued ${result.data.queued.toLocaleString()} historical captures across ${result.data.cameraCount.toLocaleString()} camera${result.data.cameraCount === 1 ? "" : "s"}. `
+        + `${result.data.manualPreserved.toLocaleString()} human-reviewed capture${result.data.manualPreserved === 1 ? " was" : "s were"} preserved. Background processing will continue automatically.`
       );
     } catch (error) { setMessage(error.message); }
     finally { setBusy(""); }
@@ -221,6 +265,32 @@ export default function VehicleIntelligenceSettings({ initialData }) {
               {busy === "backfill" ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Play className="mr-2 h-4 w-4" />}
               Run one direction batch now
             </Button>
+            <div className="rounded-lg border p-4">
+              <div className="space-y-1">
+                <div className="font-medium">Re-evaluate completed history</div>
+                <p className="text-sm text-muted-foreground">
+                  Apply the latest front/rear examples to earlier machine-generated results. Human-reviewed directions remain unchanged, and historical notifications are never sent.
+                </p>
+              </div>
+              <div className="mt-4 flex flex-wrap gap-2">
+                <Button
+                  variant="outline"
+                  onClick={() => openReevaluation(cameraName)}
+                  disabled={Boolean(busy) || !profile}
+                >
+                  {busy === "preview-camera" ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <RotateCcw className="mr-2 h-4 w-4" />}
+                  Re-evaluate selected camera...
+                </Button>
+                <Button
+                  variant="outline"
+                  onClick={() => openReevaluation(null)}
+                  disabled={Boolean(busy) || data.profiles.length === 0}
+                >
+                  {busy === "preview-all" ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <RotateCcw className="mr-2 h-4 w-4" />}
+                  Re-evaluate all cameras...
+                </Button>
+              </div>
+            </div>
           </CardContent>
         </Card>
 
@@ -262,6 +332,44 @@ export default function VehicleIntelligenceSettings({ initialData }) {
           </Card>
         )}
       </div>
+      <AlertDialog
+        open={Boolean(reevaluationPreview)}
+        onOpenChange={(open) => { if (!open && busy !== "reevaluate") setReevaluationPreview(null); }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Re-evaluate historical directions?</AlertDialogTitle>
+            <AlertDialogDescription asChild>
+              <div className="space-y-3">
+                <p>
+                  {reevaluationPreview?.cameraName
+                    ? `The latest calibration examples will be applied to ${reevaluationPreview.cameraName}.`
+                    : "The latest calibration examples will be applied to every configured camera."}
+                </p>
+                <div className="grid grid-cols-2 gap-2 text-sm">
+                  <div className="rounded-md border p-3"><strong>{reevaluationPreview?.queued?.toLocaleString() || 0}</strong><br />captures queued</div>
+                  <div className="rounded-md border p-3"><strong>{reevaluationPreview?.cameraCount?.toLocaleString() || 0}</strong><br />cameras included</div>
+                  <div className="rounded-md border p-3"><strong>{reevaluationPreview?.previousReady?.toLocaleString() || 0}</strong><br />assigned results replaced</div>
+                  <div className="rounded-md border p-3"><strong>{reevaluationPreview?.previousUnknown?.toLocaleString() || 0}</strong><br />Unknown results retried</div>
+                </div>
+                <p>
+                  {reevaluationPreview?.manualPreserved?.toLocaleString() || 0} human-reviewed front/rear result{reevaluationPreview?.manualPreserved === 1 ? "" : "s"} will be preserved. Processing is resumable and does not send historical notifications.
+                </p>
+              </div>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={busy === "reevaluate"}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={(event) => { event.preventDefault(); confirmReevaluation(); }}
+              disabled={busy === "reevaluate" || !reevaluationPreview?.queued}
+            >
+              {busy === "reevaluate" ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <RotateCcw className="mr-2 h-4 w-4" />}
+              Queue re-evaluation
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </SettingsShell>
   );
 }
