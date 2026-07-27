@@ -2,6 +2,22 @@
 
 ## Unreleased
 
+## [0.1.10] - 07-26-2026
+
+- Added configurable per-camera vehicle direction with audited front/rear
+  calibration, sortable and reviewable Recognition Feed results, and a paced,
+  resumable historical backfill that preserves human decisions.
+- Added Vehicle ReID color evidence and conservative reviewable shadow vehicle
+  clusters without plate-ownership claims or automatic mismatch alerts.
+- Consolidated notification rules and dedicated MQTT, Pushover, SMTP email, and
+  signed-webhook integration pages with durable delivery and testing.
+- Added read-only Storage Health and installed release information, including
+  separate application and user-manual versions.
+- Improved the image review workflow, plate-focused zoom, next-read navigation,
+  correction status filters, and recurring aliases that default to all cameras.
+- Added alias-only saves, confirmed audited alias replacement, and optional
+  associated-alias disabling when reversing a plate review.
+
 - Added guarded deletion for disabled notification rules. The confirmation
   identifies the exact rule and version, removes it from the active workspace,
   cancels queued deliveries, and preserves historical activity and audit links.

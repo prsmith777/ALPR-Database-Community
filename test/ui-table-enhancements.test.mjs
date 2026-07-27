@@ -47,7 +47,8 @@ test("live feed image review advances visibly and starts focused on the plate", 
   assert.match(plateTable, /className="flex shrink-0 gap-2"/);
   assert.match(plateTable, /Show next read \(Right Arrow\)/);
   assert.match(plateTable, /\[role="slider"\]/);
-  assert.match(plateTable, /sm:grid-rows-\[auto_auto_minmax\(0,1fr\)_auto\].*sm:overflow-hidden/);
+  assert.match(plateTable, /sm:grid-rows-\[auto_minmax\(0,1fr\)_auto\].*sm:overflow-hidden/);
+  assert.match(plateTable, /<DialogTitle className="sr-only">[\s\S]*?License Plate Image/);
   assert.match(plateTable, /className="contents"/);
   assert.match(plateTable, /className="ml-auto flex gap-2"/);
   assert.match(imageViewer, /useState\(image\?\.crop_coordinates \? plateZoom : 1\)/);
@@ -157,6 +158,33 @@ test("live feed review status filtering is multi-select, URL-backed, and server-
   assert.match(database, /"alias_resolved"/);
   assert.match(database, /pr\.review_status = ANY\(\$\{reviewStatusParameter\}::text\[\]\)/);
   assert.match(table, /reviewStatus: null/);
+});
+
+test("live feed direction is visible, correctable, and filterable by semantic camera label", async () => {
+  const [table, wrapper, page, actions, database] = await Promise.all([
+    source("components/PlateTable.jsx"),
+    source("components/PlateTableWrapper.jsx"),
+    source("app/live_feed/page.jsx"),
+    source("app/actions.js"),
+    source("lib/db.js"),
+  ]);
+  assert.match(table, /ariaLabel="Filter by direction"/);
+  assert.match(table, /<DirectionBadge plate=\{plate\}/);
+  assert.match(table, /label="Direction"[\s\S]*?field="direction"/);
+  assert.match(table, /aria-label="Review vehicle direction"/);
+  assert.match(table, /className="h-4 w-4 shrink-0 p-0 text-muted-foreground hover:text-foreground"/);
+  assert.match(table, /<Pencil className="h-2\.5 w-2\.5"/);
+  assert.match(table, /<PopoverContent align="start" className="w-64 p-3">/);
+  assert.match(table, /Front view/);
+  assert.match(table, /Rear view/);
+  assert.match(wrapper, /params\.getAll\("direction"\)/);
+  assert.match(wrapper, /setDirectionOverrides/);
+  assert.match(wrapper, /direction_label: observation\.directionLabel/);
+  assert.match(wrapper, /directionOverrides\[plate\.id\]/);
+  assert.match(page, /searchParamList\(searchParams\?\.direction\)/);
+  assert.match(actions, /reviewVehicleDirection[\s\S]*?requirePermission\("plate\.review"\)/);
+  assert.match(database, /LOWER\(direction\.direction_label\) = ANY/);
+  assert.match(database, /UNKNOWN_DIRECTION_FILTER/);
 });
 
 test("the image viewer applies review results even when filtering removes the read", async () => {

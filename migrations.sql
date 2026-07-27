@@ -1866,3 +1866,272 @@ SET next_run_at = LEAST(
     updated_at = CURRENT_TIMESTAMP
 WHERE job_name = 'storage-reconciliation'
   AND status = 'failed';
+
+-- Camera direction is administrator-defined rather than inferred from a
+-- camera name. Human front/rear labels calibrate the existing local Vehicle
+-- ReID descriptor for each camera; low-confidence results remain unknown.
+CREATE TABLE IF NOT EXISTS public.camera_direction_profiles (
+    camera_key VARCHAR(100) PRIMARY KEY,
+    camera_name VARCHAR(100) NOT NULL,
+    enabled BOOLEAN NOT NULL DEFAULT TRUE,
+    front_direction_label VARCHAR(80) NOT NULL,
+    rear_direction_label VARCHAR(80) NOT NULL,
+    minimum_confidence REAL NOT NULL DEFAULT 0.68
+        CHECK (minimum_confidence BETWEEN 0.5 AND 0.95),
+    profile_version INTEGER NOT NULL DEFAULT 1 CHECK (profile_version > 0),
+    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT camera_direction_labels_differ CHECK (
+        LOWER(BTRIM(front_direction_label)) <> LOWER(BTRIM(rear_direction_label))
+    )
+);
+
+CREATE TABLE IF NOT EXISTS public.vehicle_orientation_labels (
+    id BIGSERIAL PRIMARY KEY,
+    read_id INTEGER NOT NULL REFERENCES public.plate_reads(id) ON DELETE CASCADE,
+    camera_key VARCHAR(100) NOT NULL,
+    embedding_model VARCHAR(80) NOT NULL,
+    orientation VARCHAR(10) NOT NULL CHECK (orientation IN ('front', 'rear')),
+    actor_user_id BIGINT REFERENCES public.users(id) ON DELETE SET NULL,
+    actor_username VARCHAR(64) NOT NULL,
+    actor_display_name VARCHAR(120) NOT NULL,
+    revision INTEGER NOT NULL DEFAULT 1 CHECK (revision > 0),
+    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE (read_id, embedding_model)
+);
+
+CREATE INDEX IF NOT EXISTS idx_vehicle_orientation_labels_camera
+    ON public.vehicle_orientation_labels (camera_key, embedding_model, orientation, updated_at DESC);
+
+CREATE TABLE IF NOT EXISTS public.vehicle_direction_observations (
+    read_id INTEGER PRIMARY KEY REFERENCES public.plate_reads(id) ON DELETE CASCADE,
+    camera_key VARCHAR(100) NOT NULL,
+    embedding_model VARCHAR(80) NOT NULL,
+    classifier_version VARCHAR(80) NOT NULL,
+    profile_version INTEGER NOT NULL CHECK (profile_version > 0),
+    status VARCHAR(20) NOT NULL CHECK (status IN ('collecting', 'ready', 'unknown')),
+    orientation VARCHAR(10) NOT NULL CHECK (orientation IN ('front', 'rear', 'unknown')),
+    orientation_confidence REAL CHECK (orientation_confidence BETWEEN 0 AND 1),
+    direction_label VARCHAR(80),
+    sample_counts JSONB NOT NULL DEFAULT '{"front":0,"rear":0}'::JSONB,
+    evaluated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT vehicle_direction_ready_state CHECK (
+        (status = 'ready' AND orientation IN ('front', 'rear') AND
+         orientation_confidence IS NOT NULL AND direction_label IS NOT NULL) OR
+        (status <> 'ready' AND orientation = 'unknown' AND direction_label IS NULL)
+    )
+);
+
+CREATE INDEX IF NOT EXISTS idx_vehicle_direction_observations_camera
+    ON public.vehicle_direction_observations (camera_key, status, direction_label, evaluated_at DESC);
+
+INSERT INTO public.schema_migrations (version, description)
+VALUES (
+    '2026072504_vehicle_direction_profiles',
+    'Add configurable per-camera direction meanings and audited ReID-assisted front/rear calibration.'
+)
+ON CONFLICT (version) DO NOTHING;
+
+-- Vehicle attributes are immutable per-read model observations. A better
+-- future capture adds evidence; it never rewrites an older capture's result.
+CREATE TABLE IF NOT EXISTS public.vehicle_attribute_observations (
+    id BIGSERIAL PRIMARY KEY,
+    read_id INTEGER NOT NULL REFERENCES public.plate_reads(id) ON DELETE CASCADE,
+    attribute_key VARCHAR(40) NOT NULL,
+    status VARCHAR(20) NOT NULL CHECK (status IN ('ready', 'unknown', 'failed')),
+    attribute_value VARCHAR(120),
+    confidence REAL CHECK (confidence BETWEEN 0 AND 1),
+    provider VARCHAR(80) NOT NULL,
+    model_version VARCHAR(80) NOT NULL,
+    raw_result JSONB NOT NULL DEFAULT '{}'::JSONB,
+    error_code VARCHAR(80),
+    evaluated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT vehicle_attribute_observation_state CHECK (
+        (status = 'ready' AND attribute_value IS NOT NULL AND confidence IS NOT NULL AND error_code IS NULL) OR
+        (status = 'unknown' AND attribute_value IS NULL AND error_code IS NULL) OR
+        (status = 'failed' AND attribute_value IS NULL AND error_code IS NOT NULL)
+    ),
+    UNIQUE (read_id, attribute_key, provider, model_version)
+);
+
+CREATE INDEX IF NOT EXISTS idx_vehicle_attribute_observations_lookup
+    ON public.vehicle_attribute_observations (attribute_key, attribute_value, status, confidence DESC);
+
+INSERT INTO public.schema_migrations (version, description)
+VALUES (
+    '2026072505_vehicle_attribute_observations',
+    'Add per-read vehicle attribute evidence with confidence and provider/model provenance.'
+)
+ON CONFLICT (version) DO NOTHING;
+
+-- Shadow clusters are candidate groupings, never plate ownership claims.
+-- Plate text is retained for review but is not an input to assignment.
+CREATE TABLE IF NOT EXISTS public.vehicle_clusters (
+    id BIGSERIAL PRIMARY KEY,
+    status VARCHAR(20) NOT NULL DEFAULT 'shadow'
+        CHECK (status IN ('shadow', 'confirmed', 'retired')),
+    representative_read_id INTEGER NOT NULL UNIQUE
+        REFERENCES public.plate_reads(id) ON DELETE CASCADE,
+    embedding_model VARCHAR(80) NOT NULL,
+    algorithm_version VARCHAR(80) NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS public.vehicle_cluster_assignments (
+    read_id INTEGER PRIMARY KEY REFERENCES public.plate_reads(id) ON DELETE CASCADE,
+    cluster_id BIGINT NOT NULL REFERENCES public.vehicle_clusters(id) ON DELETE CASCADE,
+    assignment_status VARCHAR(20) NOT NULL
+        CHECK (assignment_status IN ('seed', 'suggested', 'confirmed')),
+    similarity REAL CHECK (similarity BETWEEN -1 AND 1),
+    similarity_margin REAL CHECK (similarity_margin BETWEEN -2 AND 2),
+    embedding_model VARCHAR(80) NOT NULL,
+    algorithm_version VARCHAR(80) NOT NULL,
+    actor_user_id BIGINT REFERENCES public.users(id) ON DELETE SET NULL,
+    actor_username VARCHAR(64),
+    actor_display_name VARCHAR(120),
+    revision INTEGER NOT NULL DEFAULT 1 CHECK (revision > 0),
+    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT vehicle_cluster_assignment_evidence CHECK (
+        (assignment_status = 'seed' AND similarity IS NULL) OR
+        (assignment_status IN ('suggested', 'confirmed') AND similarity IS NOT NULL)
+    )
+);
+
+CREATE INDEX IF NOT EXISTS idx_vehicle_cluster_assignments_cluster
+    ON public.vehicle_cluster_assignments (cluster_id, assignment_status, updated_at DESC);
+CREATE INDEX IF NOT EXISTS idx_vehicle_cluster_assignments_review
+    ON public.vehicle_cluster_assignments (assignment_status, similarity DESC, updated_at DESC)
+    WHERE assignment_status = 'suggested';
+
+INSERT INTO public.schema_migrations (version, description)
+VALUES (
+    '2026072506_vehicle_shadow_clusters',
+    'Add reviewable descriptor-only shadow vehicle clusters without plate ownership or mismatch alerts.'
+)
+ON CONFLICT (version) DO NOTHING;
+
+-- Direction classification is emitted after Vehicle ReID completes, so it has
+-- a distinct event type and can be filtered using camera-configured labels.
+ALTER TABLE IF EXISTS public.notification_rules
+    DROP CONSTRAINT IF EXISTS notification_rules_event_type_check;
+ALTER TABLE IF EXISTS public.notification_rules
+    ADD CONSTRAINT notification_rules_event_type_check
+    CHECK (event_type IN (
+        'plate_read.accepted',
+        'vehicle.direction_classified',
+        'camera.activity_check'
+    ));
+
+ALTER TABLE IF EXISTS public.notification_conditions
+    DROP CONSTRAINT IF EXISTS notification_conditions_condition_type_check;
+ALTER TABLE IF EXISTS public.notification_conditions
+    ADD CONSTRAINT notification_conditions_condition_type_check
+    CHECK (condition_type IN (
+        'always',
+        'event_type',
+        'plate_match',
+        'camera',
+        'direction',
+        'known_plate',
+        'known_name',
+        'tag',
+        'watchlist',
+        'confidence',
+        'read_count',
+        'local_time_window'
+    ));
+
+INSERT INTO public.schema_migrations (version, description)
+VALUES (
+    '2026072601_vehicle_direction_notifications',
+    'Add direction-classified notification events and camera-configured direction conditions.'
+)
+ON CONFLICT (version) DO NOTHING;
+
+-- A human front/rear review is authoritative even while a camera is still
+-- collecting enough samples to classify unlabeled captures. Repair any
+-- reviewed rows that an earlier release left in the Unknown state.
+WITH orientation_counts AS (
+    SELECT camera_key, embedding_model,
+           COUNT(*) FILTER (WHERE orientation = 'front') AS front_count,
+           COUNT(*) FILTER (WHERE orientation = 'rear') AS rear_count
+    FROM public.vehicle_orientation_labels
+    GROUP BY camera_key, embedding_model
+)
+INSERT INTO public.vehicle_direction_observations (
+    read_id, camera_key, embedding_model, classifier_version,
+    profile_version, status, orientation, orientation_confidence,
+    direction_label, sample_counts, evaluated_at
+)
+SELECT labels.read_id,
+       labels.camera_key,
+       labels.embedding_model,
+       'vehicle-reid-orientation-knn-v1',
+       profiles.profile_version,
+       'ready',
+       labels.orientation,
+       1,
+       CASE labels.orientation
+           WHEN 'front' THEN profiles.front_direction_label
+           ELSE profiles.rear_direction_label
+       END,
+       jsonb_build_object(
+           'front', counts.front_count,
+           'rear', counts.rear_count
+       ),
+       CURRENT_TIMESTAMP
+FROM public.vehicle_orientation_labels labels
+JOIN public.camera_direction_profiles profiles
+  ON profiles.camera_key = labels.camera_key
+JOIN orientation_counts counts
+  ON counts.camera_key = labels.camera_key
+ AND counts.embedding_model = labels.embedding_model
+WHERE profiles.enabled = TRUE
+ON CONFLICT (read_id) DO UPDATE SET
+    camera_key = EXCLUDED.camera_key,
+    embedding_model = EXCLUDED.embedding_model,
+    classifier_version = EXCLUDED.classifier_version,
+    profile_version = EXCLUDED.profile_version,
+    status = EXCLUDED.status,
+    orientation = EXCLUDED.orientation,
+    orientation_confidence = EXCLUDED.orientation_confidence,
+    direction_label = EXCLUDED.direction_label,
+    sample_counts = EXCLUDED.sample_counts,
+    evaluated_at = EXCLUDED.evaluated_at;
+
+INSERT INTO public.schema_migrations (version, description)
+VALUES (
+    '2026072602_reviewed_vehicle_direction_truth',
+    'Make human-reviewed front/rear labels immediately authoritative and repair older reviewed observations.'
+)
+ON CONFLICT (version) DO NOTHING;
+
+-- Historical direction work is derived from durable capture assets and is
+-- naturally resumable: current observations are skipped, while repeat
+-- failures are retained for review instead of blocking the remaining corpus.
+CREATE TABLE IF NOT EXISTS public.vehicle_direction_backfill_failures (
+    read_id INTEGER PRIMARY KEY REFERENCES public.plate_reads(id) ON DELETE CASCADE,
+    embedding_model VARCHAR(80) NOT NULL,
+    classifier_version VARCHAR(80) NOT NULL,
+    profile_version INTEGER NOT NULL CHECK (profile_version > 0),
+    attempt_count INTEGER NOT NULL DEFAULT 1 CHECK (attempt_count > 0),
+    error_code VARCHAR(80) NOT NULL,
+    error_message VARCHAR(500) NOT NULL,
+    first_failed_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    last_failed_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_vehicle_direction_backfill_failures_retry
+    ON public.vehicle_direction_backfill_failures (
+        embedding_model, classifier_version, profile_version, attempt_count, last_failed_at
+    );
+
+INSERT INTO public.schema_migrations (version, description)
+VALUES (
+    '2026072603_vehicle_direction_backfill',
+    'Add paced resumable historical direction backfill with bounded failure tracking.'
+)
+ON CONFLICT (version) DO NOTHING;

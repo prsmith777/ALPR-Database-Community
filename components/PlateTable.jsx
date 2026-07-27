@@ -30,6 +30,7 @@ import {
   RotateCcw,
   ScanSearch,
   ChevronRight,
+  Split,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -61,6 +62,16 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
@@ -86,7 +97,7 @@ import { useRouter } from "next/navigation";
 import PlateMatchModeSelect from "@/components/PlateMatchModeSelect";
 import PlateImage from "@/components/PlateImage";
 import MultiSelectFilter from "@/components/MultiSelectFilter";
-import { getSettings } from "@/app/actions";
+import { getSettings, reviewVehicleClusterSuggestion } from "@/app/actions";
 import ImageViewer from "./ImageViewer";
 import { useAccess } from "@/components/auth/AccessProvider";
 import { resolveReadViewerNavigation } from "@/lib/read-viewer-navigation.mjs";
@@ -173,6 +184,21 @@ function PlateIdentity({ plate, compact = false }) {
   );
 }
 
+function DirectionBadge({ plate }) {
+  const label = plate.direction_label || "Unknown";
+  const ready = plate.direction_status === "ready" && Boolean(plate.direction_label);
+  return (
+    <Badge
+      variant="outline"
+      className={ready
+        ? "border-cyan-500/40 text-cyan-500"
+        : "border-muted-foreground/30 text-muted-foreground"}
+    >
+      {label}
+    </Badge>
+  );
+}
+
 export default function PlateTable({
   data,
   loading,
@@ -186,10 +212,12 @@ export default function PlateTable({
   onDeleteRecord,
   onValidate,
   availableCameras,
+  availableDirections = [],
   onCorrectPlate,
   onPreviewCorrection,
   onReviewHistory,
   onReverseReview,
+  onReviewDirection,
   timeFormat = 12,
   sort = { field: "", direction: "" },
   onSort = () => {},
@@ -219,6 +247,9 @@ export default function PlateTable({
   const selectedReviewStatuses = Array.isArray(filters.reviewStatuses)
     ? filters.reviewStatuses
     : [];
+  const selectedDirections = Array.isArray(filters.directionLabels)
+    ? filters.directionLabels
+    : [];
   const tagFilterOptions = [
     { value: "untagged", label: "Untagged", color: "#6B7280" },
     ...availableTags.map((tag) => ({
@@ -237,6 +268,14 @@ export default function PlateTable({
     { value: "corrected", label: "Corrected", color: "#3B82F6" },
     { value: "alias_resolved", label: "Alias resolved", color: "#A78BFA" },
   ];
+  const directionFilterOptions = [
+    ...availableDirections.map((direction) => ({
+      value: direction,
+      label: direction,
+      color: "#06B6D4",
+    })),
+    { value: "__unknown__", label: "Unknown", color: "#6B7280" },
+  ];
 
   // Only keep state for modals and temporary form data
   const [isAddKnownPlateOpen, setIsAddKnownPlateOpen] = useState(false);
@@ -247,6 +286,8 @@ export default function PlateTable({
   const [isCorrectPlateOpen, setIsCorrectPlateOpen] = useState(false);
   const [correctionError, setCorrectionError] = useState("");
   const [correctionPreview, setCorrectionPreview] = useState(null);
+  const [aliasReplaceConflict, setAliasReplaceConflict] = useState(null);
+  const [reverseCandidate, setReverseCandidate] = useState(null);
   const [historyState, setHistoryState] = useState({
     open: false,
     read: null,
@@ -259,6 +300,10 @@ export default function PlateTable({
   const [pendingReviewReadId, setPendingReviewReadId] = useState(null);
   const [pendingReviewTargetValidated, setPendingReviewTargetValidated] = useState(null);
   const [pendingViewerNavigation, setPendingViewerNavigation] = useState(null);
+  const [pendingVehicleReview, setPendingVehicleReview] = useState("");
+  const [pendingDirectionReview, setPendingDirectionReview] = useState("");
+  const [isDirectionReviewOpen, setIsDirectionReviewOpen] = useState(false);
+  const [directionReviewError, setDirectionReviewError] = useState("");
   const [searchInput, setSearchInput] = useState(filters.search || "");
   const [isLive, setIsLive] = useState(true);
   const [prefetchedImages, setPrefetchedImages] = useState(new Set());
@@ -273,6 +318,55 @@ export default function PlateTable({
   const correctionInputRef = useRef(null);
 
   const router = useRouter();
+
+  const handleVehicleReview = async (decision) => {
+    if (!selectedImage?.id || pendingVehicleReview) return;
+    setPendingVehicleReview(decision);
+    try {
+      const result = await reviewVehicleClusterSuggestion({ readId: selectedImage.id, decision });
+      if (!result.success) return;
+      setSelectedImage((previous) => previous ? {
+        ...previous,
+        vehicleClusterId: Number(result.data.cluster_id),
+        vehicleClusterStatus: result.data.assignment_status,
+        vehicleClusterSimilarity: result.data.similarity === null ? null : Number(result.data.similarity),
+      } : previous);
+      router.refresh();
+    } finally {
+      setPendingVehicleReview("");
+    }
+  };
+
+  const handleDirectionReview = async (orientation) => {
+    if (!selectedImage?.id || pendingDirectionReview || typeof onReviewDirection !== "function") return;
+    setPendingDirectionReview(orientation);
+    setDirectionReviewError("");
+    try {
+      const result = await onReviewDirection(selectedImage.id, orientation);
+      if (!result?.success) {
+        setDirectionReviewError(result?.error || "Unable to correct the direction.");
+        return;
+      }
+      const observation = result.data?.observation;
+      setSelectedImage((previous) => previous ? {
+        ...previous,
+        directionStatus: observation?.status || previous.directionStatus,
+        vehicleOrientation: observation?.orientation || orientation,
+        directionConfidence: observation?.confidence === null || observation?.confidence === undefined
+          ? previous.directionConfidence
+          : Number(observation.confidence),
+        directionLabel: observation?.directionLabel || previous.directionLabel,
+      } : previous);
+      setIsDirectionReviewOpen(false);
+    } finally {
+      setPendingDirectionReview("");
+    }
+  };
+
+  useEffect(() => {
+    setIsDirectionReviewOpen(false);
+    setDirectionReviewError("");
+  }, [selectedImage?.id]);
 
   useEffect(() => {
     async function fetchBiHost() {
@@ -342,6 +436,21 @@ export default function PlateTable({
       cameraName: plate.camera_name || "",
       knownName: plate.known_name || "",
       tags: Array.isArray(plate.tags) ? plate.tags : [],
+      directionStatus: plate.direction_status || null,
+      vehicleOrientation: plate.vehicle_orientation || "unknown",
+      directionConfidence: plate.orientation_confidence === null || plate.orientation_confidence === undefined
+        ? null
+        : Number(plate.orientation_confidence),
+      directionLabel: plate.direction_label || "",
+      vehicleColor: plate.vehicle_color || "",
+      vehicleColorConfidence: plate.vehicle_color_confidence === null || plate.vehicle_color_confidence === undefined
+        ? null
+        : Number(plate.vehicle_color_confidence),
+      vehicleClusterId: plate.vehicle_cluster_id ? Number(plate.vehicle_cluster_id) : null,
+      vehicleClusterStatus: plate.vehicle_cluster_status || null,
+      vehicleClusterSimilarity: plate.vehicle_cluster_similarity === null || plate.vehicle_cluster_similarity === undefined
+        ? null
+        : Number(plate.vehicle_cluster_similarity),
       id: plate.id,
       validated: plate.validated,
       bi_path: bi_url,
@@ -482,6 +591,24 @@ export default function PlateTable({
         : [];
       const currentTagSignature = JSON.stringify(currentTags);
       const selectedTagSignature = JSON.stringify(selectedImageTags);
+      const currentDirectionLabel = currentPlate?.direction_label || "";
+      const currentDirectionStatus = currentPlate?.direction_status || null;
+      const currentVehicleOrientation = currentPlate?.vehicle_orientation || "unknown";
+      const currentDirectionConfidence = currentPlate?.orientation_confidence === null
+        || currentPlate?.orientation_confidence === undefined
+        ? null
+        : Number(currentPlate.orientation_confidence);
+      const currentVehicleColor = currentPlate?.vehicle_color || "";
+      const currentVehicleColorConfidence = currentPlate?.vehicle_color_confidence === null
+        || currentPlate?.vehicle_color_confidence === undefined
+        ? null
+        : Number(currentPlate.vehicle_color_confidence);
+      const currentVehicleClusterId = currentPlate?.vehicle_cluster_id ? Number(currentPlate.vehicle_cluster_id) : null;
+      const currentVehicleClusterStatus = currentPlate?.vehicle_cluster_status || null;
+      const currentVehicleClusterSimilarity = currentPlate?.vehicle_cluster_similarity === null
+        || currentPlate?.vehicle_cluster_similarity === undefined
+        ? null
+        : Number(currentPlate.vehicle_cluster_similarity);
 
       if (
         currentPlate &&
@@ -491,7 +618,16 @@ export default function PlateTable({
             currentReviewStatus !== selectedImage.reviewStatus ||
             currentReviewRevision !== selectedReviewRevision)) ||
           currentKnownName !== selectedImage.knownName ||
-          currentTagSignature !== selectedTagSignature)
+          currentTagSignature !== selectedTagSignature ||
+          currentDirectionStatus !== selectedImage.directionStatus ||
+          currentVehicleOrientation !== selectedImage.vehicleOrientation ||
+          currentDirectionLabel !== selectedImage.directionLabel ||
+          currentDirectionConfidence !== selectedImage.directionConfidence ||
+          currentVehicleColor !== selectedImage.vehicleColor ||
+          currentVehicleColorConfidence !== selectedImage.vehicleColorConfidence ||
+          currentVehicleClusterId !== selectedImage.vehicleClusterId ||
+          currentVehicleClusterStatus !== selectedImage.vehicleClusterStatus ||
+          currentVehicleClusterSimilarity !== selectedImage.vehicleClusterSimilarity)
       ) {
         setSelectedImage((previous) => ({
           ...previous,
@@ -507,6 +643,15 @@ export default function PlateTable({
             : {}),
           knownName: currentKnownName,
           tags: currentTags,
+          directionStatus: currentPlate.direction_status || null,
+          vehicleOrientation: currentPlate.vehicle_orientation || "unknown",
+          directionConfidence: currentDirectionConfidence,
+          directionLabel: currentDirectionLabel,
+          vehicleColor: currentVehicleColor,
+          vehicleColorConfidence: currentVehicleColorConfidence,
+          vehicleClusterId: currentVehicleClusterId,
+          vehicleClusterStatus: currentVehicleClusterStatus,
+          vehicleClusterSimilarity: currentVehicleClusterSimilarity,
         }));
       }
     }
@@ -689,6 +834,10 @@ export default function PlateTable({
     onUpdateFilters({ reviewStatus: values });
   };
 
+  const handleDirectionChange = (values) => {
+    onUpdateFilters({ direction: values });
+  };
+
   const handleDateRangeSelect = (range) => {
     onUpdateFilters({
       dateFrom: range.from ? range.from.toDateString() : null,
@@ -747,7 +896,7 @@ export default function PlateTable({
     }
   };
 
-  const correctionFormData = () => {
+  const correctionFormData = ({ replaceAlias = false } = {}) => {
     const formData = new FormData();
     formData.append("readId", correction.id);
     formData.append("oldPlateNumber", correction.plateNumber);
@@ -759,21 +908,30 @@ export default function PlateTable({
     formData.append("batchCameraOnly", correction.batchCameraOnly.toString());
     formData.append("rememberAlias", correction.rememberAlias.toString());
     formData.append("aliasScope", correction.aliasScope);
+    formData.append("replaceAlias", replaceAlias.toString());
     formData.append("reason", correction.reason);
     formData.append("notes", correction.notes);
     return formData;
   };
 
-  const handleCorrectSubmit = async () => {
+  const handleCorrectSubmit = async ({ replaceAlias = false } = {}) => {
     if (!correction) return;
     setCorrectionError("");
-    const result = await onCorrectPlate(correctionFormData());
+    const result = await onCorrectPlate(correctionFormData({ replaceAlias }));
     if (!result?.success) {
+      if (
+        result?.code === "ALIAS_REPLACE_CONFIRMATION_REQUIRED" &&
+        result?.aliasConflict
+      ) {
+        setAliasReplaceConflict(result.aliasConflict);
+        return;
+      }
       setCorrectionError(result?.error || "Unable to correct this plate read.");
       return;
     }
+    setAliasReplaceConflict(null);
     if (result.warning) window.alert(result.warning);
-    if (selectedImage) {
+    if (selectedImage && !result?.data?.aliasOnly) {
       setSelectedImage((prev) => ({
         ...prev,
         plateNumber: correction.newPlateNumber,
@@ -808,17 +966,30 @@ export default function PlateTable({
     }));
   };
 
-  const handleReverseReview = async () => {
+  const handleReverseReview = async ({ disableAlias = false } = {}) => {
     if (!historyState.read) return;
     const formData = new FormData();
     formData.append("readId", historyState.read.id);
     formData.append("reason", "administrator_reversal");
+    if (disableAlias && reverseCandidate?.related_alias_id) {
+      formData.append("disableAliasId", reverseCandidate.related_alias_id);
+    }
     const result = await onReverseReview(formData);
     if (!result?.success) {
       setHistoryState((current) => ({ ...current, error: result?.error || "Unable to reverse review." }));
       return;
     }
+    setReverseCandidate(null);
     await openReviewHistory(historyState.read);
+  };
+
+  const requestReverseReview = () => {
+    const candidate = historyState.entries.find(
+      (entry) =>
+        ["confirm", "correct", "reject", "reopen"].includes(entry.action) &&
+        !entry.reversed
+    );
+    if (candidate) setReverseCandidate(candidate);
   };
 
   const clearFilters = () => {
@@ -833,6 +1004,7 @@ export default function PlateTable({
       hourTo: null,
       camera: null,
       reviewStatus: null,
+      direction: null,
     });
   };
 
@@ -1063,6 +1235,18 @@ export default function PlateTable({
         />
       </div>
 
+      <div className="space-y-2">
+        <h4 className="text-sm font-medium">Filter by Direction</h4>
+        <MultiSelectFilter
+          ariaLabel="Filter by direction"
+          allLabel="All directions"
+          value={selectedDirections}
+          options={directionFilterOptions}
+          onChange={handleDirectionChange}
+          className="w-full"
+        />
+      </div>
+
       <div className="space-y-3">
         <h4 className="text-sm font-medium">Date Range</h4>
         <Calendar
@@ -1198,6 +1382,15 @@ export default function PlateTable({
         </Button>
       </div>
     </div>
+  );
+
+  const correctionChangesPlate = Boolean(
+    correction?.newPlateNumber &&
+      correction.newPlateNumber.trim().toUpperCase() !==
+        String(correction.plateNumber || "").trim().toUpperCase()
+  );
+  const aliasOnlyCorrection = Boolean(
+    correction?.rememberAlias && correction?.newPlateNumber && !correctionChangesPlate
   );
 
   return (
@@ -1338,6 +1531,14 @@ export default function PlateTable({
                 onChange={handleReviewStatusChange}
                 className="h-9 w-[210px] dark:bg-[#161618]"
               />
+              <MultiSelectFilter
+                ariaLabel="Filter by direction"
+                allLabel="All directions"
+                value={selectedDirections}
+                options={directionFilterOptions}
+                onChange={handleDirectionChange}
+                className="h-9 w-[190px] dark:bg-[#161618]"
+              />
 
               <Popover>
                 <PopoverTrigger asChild>
@@ -1403,6 +1604,7 @@ export default function PlateTable({
               />
               {(filters.search ||
                 selectedTags.length > 0 ||
+                selectedDirections.length > 0 ||
                 filters.dateRange.from ||
                 (filters.hourRange?.from !== undefined &&
                   filters.hourRange?.to !== undefined)) && (
@@ -1452,6 +1654,7 @@ export default function PlateTable({
           filters.dateRange.from ||
           selectedCameras.length > 0 ||
           selectedReviewStatuses.length > 0 ||
+          selectedDirections.length > 0 ||
           (filters.hourRange?.from !== undefined &&
             filters.hourRange?.to !== undefined)) && (
           <div className="flex sm:hidden items-center gap-2 mb-4 overflow-x-auto pb-2">
@@ -1493,6 +1696,14 @@ export default function PlateTable({
               >
                 Review: {selectedReviewStatuses
                   .map((status) => REVIEW_STATUS_LABELS[status] || status)
+                  .join(", ")}
+              </Badge>
+            )}
+
+            {selectedDirections.length > 0 && (
+              <Badge variant="outline" className="text-xs h-6 whitespace-nowrap">
+                Direction: {selectedDirections
+                  .map((direction) => direction === "__unknown__" ? "Unknown" : direction)
                   .join(", ")}
               </Badge>
             )}
@@ -1568,6 +1779,14 @@ export default function PlateTable({
                       onSort={onSort}
                     />
                   </TableHead>
+                  <TableHead className="w-36 hidden md:table-cell">
+                    <SortButton
+                      label="Direction"
+                      field="direction"
+                      sort={sort}
+                      onSort={onSort}
+                    />
+                  </TableHead>
                   <TableHead className="w-24 sm:w-40">
                     <SortButton
                       label="Timestamp"
@@ -1584,13 +1803,13 @@ export default function PlateTable({
               <TableBody>
                 {loading ? (
                   <TableRow>
-                    <TableCell colSpan={7} className="text-center py-4">
+                    <TableCell colSpan={9} className="text-center py-4">
                       Loading...
                     </TableCell>
                   </TableRow>
                 ) : data.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={7} className="text-center py-4">
+                    <TableCell colSpan={9} className="text-center py-4">
                       No results found
                     </TableCell>
                   </TableRow>
@@ -1665,6 +1884,9 @@ export default function PlateTable({
                             Unknown
                           </span>
                         )}
+                      </TableCell>
+                      <TableCell className="hidden md:table-cell">
+                        <DirectionBadge plate={plate} />
                       </TableCell>
                       <TableCell className="text-xs sm:text-sm">
                         {new Date(plate.timestamp).toLocaleString("en-US", {
@@ -1741,7 +1963,7 @@ export default function PlateTable({
                                     unreviewedOnly: true,
                                     batchCameraOnly: false,
                                     rememberAlias: false,
-                                    aliasScope: "camera",
+                                    aliasScope: "all",
                                     reason: "ocr_character_error",
                                     notes: "",
                                   });
@@ -1938,7 +2160,7 @@ export default function PlateTable({
                                     unreviewedOnly: true,
                                     batchCameraOnly: false,
                                     rememberAlias: false,
-                                    aliasScope: "camera",
+                                    aliasScope: "all",
                                     reason: "ocr_character_error",
                                     notes: "",
                                   });
@@ -2102,6 +2324,10 @@ export default function PlateTable({
                             {plate.occurrence_count}
                           </div>
                           <div>
+                            <span className="font-medium">Direction: </span>
+                            {plate.direction_label || "Unknown"}
+                          </div>
+                          <div>
                             <span className="font-medium">Time: </span>
                             {new Date(plate.timestamp).toLocaleTimeString(
                               "en-US",
@@ -2176,14 +2402,12 @@ export default function PlateTable({
             }
           }}
         >
-          <DialogContent className="max-h-[calc(100vh-2rem)] w-[calc(100vw-32px)] max-w-7xl overflow-y-auto sm:h-[calc(100vh-2rem)] sm:w-2/3 sm:max-w-7xl sm:grid-rows-[auto_auto_minmax(0,1fr)_auto] sm:overflow-hidden">
-            <DialogHeader>
-              <DialogTitle>
-                License Plate Image - {selectedImage?.plateNumber}
-              </DialogTitle>
-            </DialogHeader>
+          <DialogContent className="max-h-[calc(100vh-2rem)] w-[calc(100vw-32px)] max-w-7xl overflow-y-auto sm:h-[calc(100vh-2rem)] sm:w-2/3 sm:max-w-7xl sm:grid-rows-[auto_minmax(0,1fr)_auto] sm:overflow-hidden">
+            <DialogTitle className="sr-only">
+              License Plate Image - {selectedImage?.plateNumber}
+            </DialogTitle>
             {selectedImage && (
-              <div className="grid gap-3 rounded-lg border p-3 text-sm sm:grid-cols-2 lg:grid-cols-5">
+              <div className="grid gap-3 rounded-lg border p-3 text-sm sm:grid-cols-2 lg:grid-cols-7">
                 <div>
                   <div className="text-xs uppercase text-muted-foreground">Observed</div>
                   <div className="font-mono">{selectedImage.observedPlate}</div>
@@ -2221,6 +2445,84 @@ export default function PlateTable({
                     <div className="text-muted-foreground">No tags</div>
                   )}
                 </div>
+                <div>
+                  <div className="flex items-center gap-1 text-xs uppercase text-muted-foreground">
+                    <span>Direction</span>
+                    {canReview && (
+                      <Popover open={isDirectionReviewOpen} onOpenChange={setIsDirectionReviewOpen}>
+                        <PopoverTrigger asChild>
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="icon"
+                            className="h-4 w-4 shrink-0 p-0 text-muted-foreground hover:text-foreground"
+                            aria-label="Review vehicle direction"
+                          >
+                            <Pencil className="h-2.5 w-2.5" />
+                          </Button>
+                        </PopoverTrigger>
+                        <PopoverContent align="start" className="w-64 p-3">
+                          <div className="space-y-3">
+                            <div>
+                              <div className="text-sm font-medium">Review vehicle direction</div>
+                              <div className="text-xs text-muted-foreground">
+                                Choose the view shown in this capture.
+                              </div>
+                            </div>
+                            <div className="grid grid-cols-2 gap-2">
+                              <Button
+                                type="button"
+                                variant={selectedImage.vehicleOrientation === "front" ? "default" : "outline"}
+                                size="sm"
+                                disabled={Boolean(pendingDirectionReview)}
+                                onClick={() => handleDirectionReview("front")}
+                              >
+                                {pendingDirectionReview === "front" ? "Saving..." : "Front view"}
+                              </Button>
+                              <Button
+                                type="button"
+                                variant={selectedImage.vehicleOrientation === "rear" ? "default" : "outline"}
+                                size="sm"
+                                disabled={Boolean(pendingDirectionReview)}
+                                onClick={() => handleDirectionReview("rear")}
+                              >
+                                {pendingDirectionReview === "rear" ? "Saving..." : "Rear view"}
+                              </Button>
+                            </div>
+                            {directionReviewError && (
+                              <div className="text-xs text-destructive">{directionReviewError}</div>
+                            )}
+                          </div>
+                        </PopoverContent>
+                      </Popover>
+                    )}
+                  </div>
+                  <div className={selectedImage.directionLabel ? "" : "text-muted-foreground"}>
+                    {selectedImage.directionLabel || "Unknown"}
+                  </div>
+                  {selectedImage.directionLabel && selectedImage.directionConfidence !== null ? (
+                    <div className="text-xs text-muted-foreground">
+                      {selectedImage.vehicleOrientation} view · {Math.round(selectedImage.directionConfidence * 100)}%
+                    </div>
+                  ) : null}
+                  {selectedImage.vehicleColor && selectedImage.vehicleColorConfidence !== null ? (
+                    <div className="mt-1 text-xs capitalize text-muted-foreground">
+                      {selectedImage.vehicleColor} · {Math.round(selectedImage.vehicleColorConfidence * 100)}% color
+                    </div>
+                  ) : null}
+                </div>
+                <div>
+                  <div className="text-xs uppercase text-muted-foreground">Vehicle</div>
+                  {selectedImage.vehicleClusterId ? (
+                    <>
+                      <Link href="/visual_search/vehicles" className="text-blue-500 hover:underline">Vehicle #{selectedImage.vehicleClusterId}</Link>
+                      <div className="text-xs capitalize text-muted-foreground">
+                        {selectedImage.vehicleClusterStatus}
+                        {selectedImage.vehicleClusterSimilarity !== null ? ` · ${Math.round(selectedImage.vehicleClusterSimilarity * 100)}%` : ""}
+                      </div>
+                    </>
+                  ) : <div className="text-muted-foreground">Unassigned</div>}
+                </div>
               </div>
             )}
             <div className="relative h-[40vh] w-full sm:h-auto sm:min-h-0">
@@ -2240,6 +2542,16 @@ export default function PlateTable({
                       <span className="whitespace-nowrap">Find similar vehicle</span>
                     </Link>
                   </Button>}
+                  {canReview && selectedImage?.vehicleClusterStatus === "suggested" && (
+                    <>
+                      <Button variant="outline" size="sm" disabled={Boolean(pendingVehicleReview)} onClick={() => handleVehicleReview("confirm")}>
+                        <CircleCheck className="mr-1 h-3 w-3 sm:h-4 sm:w-4" /> Confirm vehicle
+                      </Button>
+                      <Button variant="outline" size="sm" disabled={Boolean(pendingVehicleReview)} onClick={() => handleVehicleReview("separate")}>
+                        <Split className="mr-1 h-3 w-3 sm:h-4 sm:w-4" /> Different vehicle
+                      </Button>
+                    </>
+                  )}
                   {canReview && <Button
                     variant="outline"
                     size="sm"
@@ -2255,7 +2567,7 @@ export default function PlateTable({
                         unreviewedOnly: true,
                         batchCameraOnly: false,
                         rememberAlias: false,
-                        aliasScope: "camera",
+                        aliasScope: "all",
                         reason: "ocr_character_error",
                         notes: "",
                       });
@@ -2527,12 +2839,12 @@ export default function PlateTable({
             <div className="grid gap-5 py-2">
               <div
                 className={
-                  selectedImage?.id === correction?.id
+                  selectedImage && selectedImage.id === correction?.id
                     ? "grid gap-4 sm:grid-cols-[minmax(0,0.8fr)_minmax(0,1.2fr)]"
                     : "grid gap-4"
                 }
               >
-                {selectedImage?.id === correction?.id && (
+                {selectedImage && selectedImage.id === correction?.id && (
                   <div className="grid gap-2">
                     <div className="text-xs uppercase tracking-wide text-muted-foreground">
                       Plate image
@@ -2616,7 +2928,7 @@ export default function PlateTable({
                 />
               </div>
 
-              {canBatchReview && (
+              {canBatchReview && !aliasOnlyCorrection && (
                 <div className="space-y-3 rounded-lg border p-4">
                   <div className="flex items-center gap-2">
                     <Switch
@@ -2715,6 +3027,12 @@ export default function PlateTable({
                         {correction.newPlateNumber || "the corrected plate"} and inherit its
                         known name, tags, monitored-plate state, and notification rules.
                       </p>
+                      {aliasOnlyCorrection && (
+                        <p className="rounded-md bg-muted p-3 text-sm">
+                          This read already has that effective plate. Saving will create or
+                          replace only the recurring alias; no historical reads will be changed.
+                        </p>
+                      )}
                     </div>
                   )}
                 </div>
@@ -2739,14 +3057,18 @@ export default function PlateTable({
                 Cancel
               </Button>
               <Button
-                onClick={handleCorrectSubmit}
+                onClick={() => handleCorrectSubmit()}
                 disabled={
                   !correction?.newPlateNumber ||
-                  correction.newPlateNumber === correction.plateNumber ||
-                  (correction.correctAll && !correctionPreview)
+                  (!correctionChangesPlate && !correction?.rememberAlias) ||
+                  (correctionChangesPlate && correction.correctAll && !correctionPreview)
                 }
               >
-                {correction?.correctAll ? "Apply previewed batch" : "Correct this read"}
+                {aliasOnlyCorrection
+                  ? "Save recurring alias"
+                  : correction?.correctAll
+                    ? "Apply previewed batch"
+                    : "Correct this read"}
               </Button>
             </DialogFooter>
           </DialogContent>
@@ -2800,9 +3122,10 @@ export default function PlateTable({
             )}
             <DialogFooter>
               {canBatchReview && historyState.entries.some((entry) =>
-                ["confirm", "correct", "reject", "reopen"].includes(entry.action)
+                ["confirm", "correct", "reject", "reopen"].includes(entry.action) &&
+                  !entry.reversed
               ) && (
-                <Button variant="outline" onClick={handleReverseReview}>
+                <Button variant="outline" onClick={requestReverseReview}>
                   <RotateCcw className="mr-2 h-4 w-4" />
                   Reverse latest review
                 </Button>
@@ -2817,6 +3140,74 @@ export default function PlateTable({
             </DialogFooter>
           </DialogContent>
         </Dialog>
+
+        <AlertDialog
+          open={Boolean(aliasReplaceConflict)}
+          onOpenChange={(open) => {
+            if (!open) setAliasReplaceConflict(null);
+          }}
+        >
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Replace existing recurring alias?</AlertDialogTitle>
+              <AlertDialogDescription>
+                {aliasReplaceConflict?.sourcePlate} currently resolves to{" "}
+                {aliasReplaceConflict?.targetPlate} for{" "}
+                {aliasReplaceConflict?.cameraName
+                  ? `camera ${aliasReplaceConflict.cameraName}`
+                  : "all cameras"}
+                . Replacing it will disable that alias and create a new mapping to{" "}
+                {aliasReplaceConflict?.replacementTargetPlate}. The previous alias remains in
+                the audit history.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>Keep existing alias</AlertDialogCancel>
+              <AlertDialogAction onClick={() => handleCorrectSubmit({ replaceAlias: true })}>
+                Replace alias
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+
+        <AlertDialog
+          open={Boolean(reverseCandidate)}
+          onOpenChange={(open) => {
+            if (!open) setReverseCandidate(null);
+          }}
+        >
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Reverse latest plate review?</AlertDialogTitle>
+              <AlertDialogDescription>
+                This restores the read&apos;s previous effective plate and review status.
+                {reverseCandidate?.related_alias_enabled
+                  ? ` An active alias also maps ${reverseCandidate.related_alias_source_plate} to ${reverseCandidate.related_alias_target_plate}. Choose whether to disable it at the same time.`
+                  : " No active recurring alias is associated with this review."}
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>Cancel</AlertDialogCancel>
+              {reverseCandidate?.related_alias_enabled ? (
+                <>
+                  <AlertDialogAction onClick={() => handleReverseReview()}>
+                    Reverse only
+                  </AlertDialogAction>
+                  <AlertDialogAction
+                    className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                    onClick={() => handleReverseReview({ disableAlias: true })}
+                  >
+                    Reverse and disable alias
+                  </AlertDialogAction>
+                </>
+              ) : (
+                <AlertDialogAction onClick={() => handleReverseReview()}>
+                  Reverse review
+                </AlertDialogAction>
+              )}
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
         </div>
       </div>
     </TooltipProvider>

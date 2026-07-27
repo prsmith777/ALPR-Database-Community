@@ -88,6 +88,24 @@ test("advanced drafts retain deep groups, count windows, and explicit plate stra
   assert.equal(normalized.conditionTree.children[0].children[0].children[0].value.strategy, "wildcard");
 });
 
+test("direction drafts retain the post-ReID event and semantic direction labels", () => {
+  const normalized = normalizeNotificationRuleDraft(validDraft({
+    eventType: "vehicle.direction_classified",
+    conditionTree: {
+      kind: "group",
+      combinator: "all",
+      children: [{
+        kind: "condition",
+        conditionType: "direction",
+        operator: "in",
+        value: { labels: ["Entering driveway"] },
+      }],
+    },
+  }));
+  assert.equal(normalized.eventType, "vehicle.direction_classified");
+  assert.deepEqual(normalized.conditionTree.children[0].value.labels, ["Entering driveway"]);
+});
+
 test("scheduled camera drafts bind the event type consistently in PostgreSQL", async () => {
   const calls = [];
   const client = {

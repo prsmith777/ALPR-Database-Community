@@ -81,6 +81,7 @@ test("plate-read sorting accepts only fixed fields and directions", () => {
     tags:
       "ARRAY_AGG(DISTINCT LOWER(t.name) ORDER BY LOWER(t.name)) FILTER (WHERE t.name IS NOT NULL)",
     camera_name: "LOWER(pr.camera_name)",
+    direction: "LOWER(direction.direction_label)",
     timestamp: "pr.timestamp",
   };
 

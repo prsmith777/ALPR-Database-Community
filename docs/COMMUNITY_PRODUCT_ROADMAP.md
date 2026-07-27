@@ -20,7 +20,7 @@ reliable background processing.
 
 ## Release baseline — July 26, 2026
 
-- Application `0.1.9` includes named users and roles, evidence-preserving plate
+- Application `0.1.10` includes named users and roles, evidence-preserving plate
   review, filter-respecting exports, the searchable help center, local privacy
   controls, and viewport-safe date/help navigation. Monitored Plates now lives
   inside Known Plates with reason, priority, monitoring-since, and read-history
@@ -72,7 +72,21 @@ reliable background processing.
   finalization workflow.
 - Vehicle ReID visual search, uploaded-image queries, camera fallback profiles,
   calibration feedback, and the resumable safety-aware background index worker
-  are available. Original captures remain unchanged.
+  are available. Administrators can also configure camera-specific front/rear
+  direction meanings with custom labels and a confidence threshold, then
+  calibrate the local classifier from audited front/rear examples. Unconfigured,
+  under-trained, and low-confidence captures remain Unknown. Original captures
+  remain unchanged, ingestion does not wait, and this phase stores no clips.
+  A paced, safety-aware historical direction backfill follows the existing
+  Vehicle ReID index across all configured cameras, resumes from durable
+  observations, preserves human reviews, tracks bounded failures, and exposes
+  progress plus a one-batch administrator control. Historical evaluation does
+  not emit notifications.
+  Per-read color observations retain confidence and local algorithm provenance.
+  Descriptor-only shadow clusters exclude plate text, require conservative
+  similarity and winner-margin gates, and expose bounded Confirm vehicle or
+  Different vehicle review. They make no ownership or mismatch claims and send
+  no alerts.
 - Administrators now have a read-only Storage Health view in Data & Privacy.
   It reports mounted-filesystem capacity, PostgreSQL and plate-read size,
   record/image-path counts, recent ingestion, visual-index state,
@@ -88,6 +102,11 @@ reliable background processing.
   plate. Known Plate values link directly to exact individual reads, and
   plate-oriented typography requests a slashed-zero glyph to distinguish `0`
   from `O`.
+- Recurring plate-correction aliases now default to All cameras while retaining
+  an explicit current-camera-only scope for camera-specific OCR errors. An
+  alias-only save repairs mappings without changing historical reads, conflicts
+  can be replaced through an audited retire-and-create confirmation, and review
+  reversal can optionally disable its associated active alias.
 
 Every production candidate must update this baseline and the in-app help model
 in the same release. The exact deployed Git SHA belongs in deployment status
@@ -250,10 +269,29 @@ remain externally orchestrated.
   canonical read pairs and the exact embedding model, changes are audited, and
   a local accuracy summary can recommend—but does not automatically apply—an
   interpretation threshold after both classes have enough examples.
-- Add asynchronous vehicle observations with per-field confidence,
-  provider/model/version provenance, raw result, status, and error.
-- Store plate jurisdiction/region, make, model, color, body type, year range,
-  orientation, alternate OCR candidates, and bounding boxes.
+- Configurable single-frame direction foundation implemented: Settings >
+  Vehicle Intelligence discovers current and future cameras dynamically,
+  stores separate meanings for visible front and rear views, accepts custom
+  compass/site labels, and applies a continuous confidence threshold. Audited
+  per-camera examples calibrate a conservative ReID-assisted classifier; it
+  remains collecting until both views have enough examples and preserves
+  Unknown below threshold. Results include classifier/model/profile provenance,
+  orientation confidence, and sample counts. No camera mappings are hard-coded
+  and no video clips are stored.
+- Per-read vehicle color observations and shadow clusters are implemented as
+  an evidence-gathering phase. Color is stored with confidence and local
+  algorithm provenance against the individual read, never copied onto a plate.
+  Descriptor-only grouping excludes plate text and creates either a seed
+  cluster or a reviewable suggested assignment. Review changes are audited.
+  Recognition Feed shows assignment, direction, and color evidence in its
+  image dialog. Shadow clusters create no plate ownership claims, mismatch
+  labels, or alerts.
+- Expand the implemented asynchronous color and direction observations to
+  make/model/body type/year with per-field confidence, provider/model/version
+  provenance, raw result, status, and error.
+- Store plate jurisdiction/region, make, model, body type, year range,
+  alternate OCR candidates, and bounding boxes; expand current orientation
+  observations with optional multiframe motion validation before speed claims.
 - Expand Vehicle ReID calibration with larger labeled local samples and
   camera-pair reporting before making stronger labels or applying thresholds.
 - Consider pgvector only when the bounded in-process cosine scan no longer

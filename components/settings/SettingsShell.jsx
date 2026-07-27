@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 import {
   Antenna,
   Bell,
+  CarFront,
   Database,
   Home,
   Lock,
@@ -31,6 +32,7 @@ const navigationSections = [
       { title: "Database", id: "database", href: "/settings?section=database", icon: Database },
       { title: "Plate Matching", id: "plateMatching", href: "/settings?section=plateMatching", icon: ScanSearch },
       { title: "Review & Corrections", id: "plateReview", href: "/settings?section=plateReview", icon: ShieldCheck },
+      { title: "Vehicle Intelligence", id: "vehicleIntelligence", href: "/settings/vehicle-intelligence", icon: CarFront },
       { title: "Data & Privacy", id: "privacy", href: "/settings?section=privacy", icon: Shield },
       { title: "Release", id: "release", href: "/settings?section=release", icon: PackageOpen },
     ],

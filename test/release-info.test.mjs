@@ -22,7 +22,9 @@ test("release information resolves a commit-pinned deployment image", () => {
     ALPR_RELEASE_CHANNEL: "staging",
   });
 
-  assert.equal(release.version, "0.1.9");
+  assert.equal(release.version, "0.1.10");
+  assert.equal(release.manualVersion, "1.24");
+  assert.equal(release.manualUpdatedAt, "July 26, 2026");
   assert.equal(release.gitSha, "8cd2fa8");
   assert.equal(release.channel, "staging");
   assert.equal(release.source, "commit-pinned image");
@@ -88,6 +90,7 @@ test("the administrator Release page remains read-only", async () => {
   assert.match(form, /ReleaseInformationCard/);
   assert.match(form, /"release"/);
   assert.match(card, /Installed release/);
+  assert.match(card, /User manual/);
   assert.match(card, /Updates remain externally orchestrated/);
   assert.doesNotMatch(card, /onClick=/);
   assert.doesNotMatch(module, /child_process|\bexec\b|\bspawn\b|fetch\s*\(/);

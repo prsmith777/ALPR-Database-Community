@@ -26,6 +26,7 @@ import {
   getTagsForPlate,
   correctAllPlateReads,
   getDistinctCameraNames,
+  getDistinctDirectionLabels,
   togglePlateIgnore,
   getPlateImagePreviews,
   backfillOccurrenceCounts,
@@ -141,6 +142,7 @@ function plateReviewActionFailure(error, fallback) {
   const safeCodes = new Set([
     "ALIAS_EXISTS",
     "ALIAS_NOT_FOUND",
+    "ALIAS_REVIEW_MISMATCH",
     "INVALID_ACTION",
     "INVALID_PLATE",
     "INVALID_STATUS",
@@ -526,6 +528,7 @@ export async function getLatestPlateReads({
   cameraName = "",
   cameraNames = [],
   reviewStatuses = [],
+  directionLabels = [],
   sortField = "",
   sortDirection = "",
 } = {}) {
@@ -556,6 +559,7 @@ export async function getLatestPlateReads({
               ? [cameraName]
               : [],
         reviewStatuses: Array.isArray(reviewStatuses) ? reviewStatuses : [],
+        directionLabels: Array.isArray(directionLabels) ? directionLabels : [],
       },
       sort: {
         field: sortField,
@@ -1666,6 +1670,16 @@ export async function getCameraNames() {
   }
 }
 
+export async function getDirectionLabels() {
+  await requirePermission("plate.read");
+  try {
+    return { success: true, data: await getDistinctDirectionLabels() };
+  } catch (error) {
+    console.error("Error getting direction labels:", error);
+    return { success: false, error: "Failed to fetch direction labels", data: [] };
+  }
+}
+
 export async function correctPlateRead(formData) {
   const principal = await requirePermission("plate.review");
   try {
@@ -1674,6 +1688,7 @@ export async function correctPlateRead(formData) {
     const newPlateNumber = formData.get("newPlateNumber");
     const correctAll = formData.get("correctAll") === "true";
     const rememberAlias = formData.get("rememberAlias") === "true";
+    const replaceAlias = formData.get("replaceAlias") === "true";
     const cameraName =
       formData.get("aliasScope") === "camera"
         ? formData.get("cameraName")
@@ -1681,16 +1696,51 @@ export async function correctPlateRead(formData) {
     const reason = formData.get("reason");
     const notes = formData.get("notes");
     const repository = getPlateReviewRepository();
+    const normalizedOldPlate = String(oldPlateNumber || "").trim().toUpperCase();
+    const normalizedNewPlate = String(newPlateNumber || "").trim().toUpperCase();
+    const plateChanged = normalizedOldPlate !== normalizedNewPlate;
 
-    if (correctAll && !hasPermission(principal, "plate.review.batch")) {
+    if (correctAll && plateChanged && !hasPermission(principal, "plate.review.batch")) {
       return { success: false, error: "Administrator permission is required for batch correction." };
     }
     if (rememberAlias && !hasPermission(principal, "plate.alias.manage")) {
       return { success: false, error: "Administrator permission is required to create a recurring alias." };
     }
+    if (!plateChanged && !rememberAlias) {
+      return { success: false, error: "The corrected plate is already the effective plate." };
+    }
 
-    const data = correctAll
-      ? await repository.batchCorrect({
+    const aliasSourcePlate = formData.get("aliasSourcePlate") || oldPlateNumber;
+    const existingAlias = rememberAlias
+      ? await repository.getEnabledAlias({ sourcePlate: aliasSourcePlate, cameraName })
+      : null;
+    if (
+      existingAlias &&
+      existingAlias.target_plate !== normalizedNewPlate &&
+      !replaceAlias
+    ) {
+      return {
+        success: false,
+        code: "ALIAS_REPLACE_CONFIRMATION_REQUIRED",
+        error: "Confirm whether to replace the existing recurring alias.",
+        aliasConflict: {
+          id: existingAlias.id,
+          sourcePlate: existingAlias.source_plate,
+          targetPlate: existingAlias.target_plate,
+          cameraName: existingAlias.camera_name || null,
+          replacementTargetPlate: normalizedNewPlate,
+        },
+      };
+    }
+
+    const data = !plateChanged
+      ? {
+          id: Number(readId),
+          effectivePlate: normalizedNewPlate,
+          aliasOnly: true,
+        }
+      : correctAll
+        ? await repository.batchCorrect({
           sourcePlate: oldPlateNumber,
           targetPlate: newPlateNumber,
           cameraName: formData.get("batchCameraOnly") === "true"
@@ -1700,27 +1750,31 @@ export async function correctPlateRead(formData) {
           reason,
           notes,
           actor: principal,
-        })
-      : await repository.reviewRead({
+          })
+        : await repository.reviewRead({
           readId,
           action: "correct",
           newPlate: newPlateNumber,
           reason,
           notes,
           actor: principal,
-        });
+          });
 
     let alias = null;
+    let replacedAlias = null;
     let warning = null;
     if (rememberAlias) {
       try {
-        alias = await repository.createAlias({
-          sourcePlate: formData.get("aliasSourcePlate") || oldPlateNumber,
+        const aliasResult = await repository.createOrReplaceAlias({
+          sourcePlate: aliasSourcePlate,
           targetPlate: newPlateNumber,
           cameraName,
           reason,
           actor: principal,
+          replaceExisting: replaceAlias,
         });
+        alias = aliasResult.alias;
+        replacedAlias = aliasResult.replacedAlias;
       } catch (error) {
         warning = error?.message || "The read was corrected, but the recurring alias could not be created.";
       }
@@ -1728,7 +1782,7 @@ export async function correctPlateRead(formData) {
 
     revalidatePath("/live_feed");
     revalidatePath("/database");
-    return { success: true, data, alias, warning };
+    return { success: true, data, alias, replacedAlias, warning };
   } catch (error) {
     return plateReviewActionFailure(error, "Failed to correct the plate read.");
   }
@@ -1769,13 +1823,22 @@ export async function getPlateReviewHistory(readId) {
 export async function reversePlateReview(formData) {
   const principal = await requirePermission("plate.review.batch");
   try {
+    const disableAliasId = formData.get("disableAliasId");
+    if (disableAliasId && !hasPermission(principal, "plate.alias.manage")) {
+      return {
+        success: false,
+        error: "Administrator permission is required to disable a recurring alias.",
+      };
+    }
     const data = await getPlateReviewRepository().reverseLatestReview({
       readId: formData.get("readId"),
       reason: formData.get("reason"),
       actor: principal,
+      disableAliasId: disableAliasId || null,
     });
     revalidatePath("/live_feed");
     revalidatePath("/database");
+    revalidatePath("/settings");
     return { success: true, data };
   } catch (error) {
     return plateReviewActionFailure(error, "Unable to reverse the plate review.");
@@ -1998,6 +2061,11 @@ function visualSearchFailure(error, fallback) {
     "INVALID_VEHICLE_MATCH_PAIR",
     "VEHICLE_MATCH_ASSET_UNAVAILABLE",
     "VEHICLE_MATCH_MODEL_MISMATCH",
+    "INVALID_DIRECTION_PROFILE",
+    "INVALID_VEHICLE_ORIENTATION",
+    "VEHICLE_DIRECTION_ASSET_UNAVAILABLE",
+    "INVALID_VEHICLE_CLUSTER_REVIEW",
+    "VEHICLE_CLUSTER_ASSIGNMENT_NOT_FOUND",
   ]);
   if (safeCodes.has(error?.code)) return { success: false, error: error.message };
   console.error(fallback, { code: String(error?.code || "") });
@@ -2149,5 +2217,115 @@ export async function submitVehicleMatchFeedback(input = {}) {
     return { success: true, data };
   } catch (error) {
     return visualSearchFailure(error, "Unable to save vehicle match feedback.");
+  }
+}
+
+export async function getVehicleDirectionSetup(cameraName = null) {
+  await requirePermission("system.manage_settings");
+  try {
+    return {
+      success: true,
+      data: await (await getCaptureAssetService()).getDirectionSetup(cameraName),
+    };
+  } catch (error) {
+    return visualSearchFailure(error, "Unable to load vehicle direction setup.");
+  }
+}
+
+export async function saveVehicleDirectionProfile(input = {}) {
+  const principal = await requirePermission("system.manage_settings");
+  try {
+    const data = await (await getCaptureAssetService()).saveDirectionProfile(input, principal);
+    revalidatePath("/settings/vehicle-intelligence");
+    return { success: true, data };
+  } catch (error) {
+    return visualSearchFailure(error, "Unable to save this camera direction profile.");
+  }
+}
+
+export async function labelVehicleOrientation(input = {}) {
+  const principal = await requirePermission("system.manage_settings");
+  try {
+    const data = await (await getCaptureAssetService()).recordOrientationLabel({
+      readId: input.readId,
+      orientation: input.orientation,
+      actor: principal,
+    });
+    revalidatePath("/settings/vehicle-intelligence");
+    return { success: true, data };
+  } catch (error) {
+    return visualSearchFailure(error, "Unable to save this front/rear example.");
+  }
+}
+
+export async function reviewVehicleDirection(input = {}) {
+  const principal = await requirePermission("plate.review");
+  try {
+    const data = await (await getCaptureAssetService()).recordOrientationLabel({
+      readId: input.readId,
+      orientation: input.orientation,
+      actor: principal,
+    });
+    revalidatePath("/live_feed");
+    return { success: true, data };
+  } catch (error) {
+    return visualSearchFailure(error, "Unable to correct this vehicle direction.");
+  }
+}
+
+export async function runVehicleDirectionBackfillBatch(batchSize = 20) {
+  await requirePermission("maintenance.manage");
+  try {
+    const data = await (await getCaptureAssetService()).backfillDirectionBatch({
+      limit: batchSize,
+    });
+    revalidatePath("/settings/vehicle-intelligence");
+    revalidatePath("/live_feed");
+    return { success: true, data };
+  } catch (error) {
+    return visualSearchFailure(error, "Unable to process historical vehicle directions.");
+  }
+}
+
+export async function getVehicleClusterOverview() {
+  const principal = await requirePermission("plate.read");
+  try {
+    return {
+      success: true,
+      data: {
+        ...(await (await getCaptureAssetService()).getVehicleClusterOverview()),
+        canReview: hasPermission(principal, "plate.review"),
+        canAnalyze: hasPermission(principal, "maintenance.manage"),
+      },
+    };
+  } catch (error) {
+    return visualSearchFailure(error, "Unable to load shadow vehicle clusters.");
+  }
+}
+
+export async function analyzeRecentVehicleClusters(limit = 100) {
+  await requirePermission("maintenance.manage");
+  try {
+    const data = await (await getCaptureAssetService()).clusterRecentUnassigned(limit);
+    revalidatePath("/visual_search/vehicles");
+    return { success: true, data };
+  } catch (error) {
+    return visualSearchFailure(error, "Unable to analyze recent vehicle captures.");
+  }
+}
+
+export async function reviewVehicleClusterSuggestion(input = {}) {
+  const principal = await requirePermission("plate.review");
+  try {
+    const data = await (await getCaptureAssetService()).reviewVehicleCluster({
+      readId: input.readId,
+      decision: input.decision,
+      actor: principal,
+    });
+    revalidatePath("/visual_search/vehicles");
+    revalidatePath("/live_feed");
+    return { success: true, data };
+  } catch (error) {
+    return visualSearchFailure(error, "Unable to review this vehicle suggestion.");
   }
 }

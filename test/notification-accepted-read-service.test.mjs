@@ -293,3 +293,50 @@ test("unified Pushover actions enter the durable notification outbox inside inge
   assert.equal(notificationDeliveries[0].action.channelId, 82);
   assert.equal(notificationDeliveries[0].payload.imagePath, "images/069YQZ.jpg");
 });
+
+test("ready Vehicle ReID direction emits a distinct idempotent notification event", async () => {
+  const state = fixture({ rules: [unifiedRule({
+    eventTypes: ["vehicle.direction_classified"],
+    conditionTree: {
+      kind: "group",
+      combinator: "all",
+      children: [{ kind: "condition", conditionType: "direction", operator: "in", value: { labels: ["Entering driveway"] } }],
+    },
+  })] });
+  const service = new NotificationAcceptedReadService({
+    repository: state.repository,
+    mqttRepository: state.mqttRepository,
+  });
+  const result = await service.processVehicleDirection({
+    id: 37001,
+    plate_number: "069YQZ",
+    camera_name: "Entry LPR 1",
+    timestamp: "2026-07-26T18:00:00.000Z",
+  }, {
+    status: "ready",
+    orientation: "front",
+    confidence: 0.93,
+    directionLabel: "Entering driveway",
+  });
+
+  assert.equal(result.status, "queued");
+  assert.equal(result.eventId, "direction-read-37001");
+  assert.equal(state.executions[0].eventType, "vehicle.direction_classified");
+  assert.equal(state.envelopes[0].payload.direction_label, "Entering driveway");
+  assert.equal(state.envelopes[0].payload.vehicle_orientation, "front");
+  assert.equal(state.envelopes[0].payload.direction_confidence, 0.93);
+  assert.equal(state.envelopes[0].payload.message, "Delivery arrived");
+});
+
+test("unknown direction observations do not create notification executions", async () => {
+  const state = fixture();
+  const service = new NotificationAcceptedReadService({ repository: state.repository, mqttRepository: state.mqttRepository });
+  const result = await service.processVehicleDirection({ id: 37002 }, {
+    status: "unknown",
+    orientation: "unknown",
+    confidence: null,
+    directionLabel: null,
+  });
+  assert.equal(result.status, "ignored");
+  assert.equal(state.executions.length, 0);
+});
