@@ -80,8 +80,11 @@ reliable background processing.
   A paced, safety-aware historical direction backfill follows the existing
   Vehicle ReID index across all configured cameras, resumes from durable
   observations, preserves human reviews, tracks bounded failures, and exposes
-  progress plus a one-batch administrator control. Historical evaluation does
-  not emit notifications.
+  progress plus a one-batch administrator control. Administrators can preview
+  and queue an explicit selected-camera or all-camera re-evaluation after
+  improving calibration; only machine-generated observations are replaced,
+  human reviews remain authoritative, and the work resumes in paced batches.
+  Historical evaluation does not emit notifications.
   Per-read color observations retain confidence and local algorithm provenance.
   Descriptor-only shadow clusters exclude plate text, require conservative
   similarity and winner-margin gates, and expose bounded Confirm vehicle or

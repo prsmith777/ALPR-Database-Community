@@ -2287,6 +2287,37 @@ export async function runVehicleDirectionBackfillBatch(batchSize = 20) {
   }
 }
 
+export async function previewVehicleDirectionReevaluation(input = {}) {
+  await requirePermission("maintenance.manage");
+  try {
+    const data = await (await getCaptureAssetService()).previewDirectionReevaluation({
+      cameraName: input.cameraName || null,
+    });
+    return { success: true, data };
+  } catch (error) {
+    return visualSearchFailure(error, "Unable to preview historical direction re-evaluation.");
+  }
+}
+
+export async function queueVehicleDirectionReevaluation(input = {}) {
+  const principal = await requirePermission("maintenance.manage");
+  try {
+    const service = await getCaptureAssetService();
+    const data = await service.queueDirectionReevaluation({
+      cameraName: input.cameraName || null,
+      actor: principal,
+    });
+    const initialBatch = data.queued > 0
+      ? await service.backfillDirectionBatch({ limit: 20 })
+      : null;
+    revalidatePath("/settings/vehicle-intelligence");
+    revalidatePath("/live_feed");
+    return { success: true, data: { ...data, initialBatch } };
+  } catch (error) {
+    return visualSearchFailure(error, "Unable to queue historical direction re-evaluation.");
+  }
+}
+
 export async function getVehicleClusterOverview() {
   const principal = await requirePermission("plate.read");
   try {

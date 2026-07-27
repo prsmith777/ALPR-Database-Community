@@ -6,6 +6,10 @@
   Settings, Known/Monitored Plates, Notification Rules, MQTT, Pushover, email,
   and webhook navigation. Search, sorting, pagination, and filter parameters
   remain URL-backed so filtered views can still be bookmarked and shared.
+- Added previewed historical vehicle-direction re-evaluation for the selected
+  camera or every configured camera. It replaces only machine-generated
+  results, preserves human front/rear reviews, clears bounded retry failures,
+  resumes through the background worker, and sends no historical notifications.
 
 ## [0.1.10] - 07-26-2026
 
