@@ -18,9 +18,9 @@ reliable background processing.
 6. Audit sensitive searches, exports, corrections, rule changes, and
    destructive maintenance.
 
-## Release baseline — July 26, 2026
+## Release baseline — July 27, 2026
 
-- Application `0.1.10` includes named users and roles, evidence-preserving plate
+- Application `0.1.11` includes named users and roles, evidence-preserving plate
   review, filter-respecting exports, the searchable help center, local privacy
   controls, and viewport-safe date/help navigation. Monitored Plates now lives
   inside Known Plates with reason, priority, monitoring-since, and read-history
@@ -89,10 +89,12 @@ reliable background processing.
   rather than Unknown until analysis finishes.
   Historical evaluation does not emit notifications.
   Per-read color observations retain confidence and local algorithm provenance.
-  Descriptor-only shadow clusters exclude plate text, require conservative
+  Descriptor-only vehicle profiles exclude plate text, require conservative
   similarity and winner-margin gates, and expose bounded Confirm vehicle or
-  Different vehicle review. They make no ownership or mismatch claims and send
-  no alerts.
+  Different vehicle review. Effective plates from human-confirmed members are
+  proposed separately and require explicit audited confirmation or rejection;
+  only confirmed associations become trusted future mismatch baselines.
+  Automatic named-feature classification and mismatch alerts remain disabled.
 - Administrators now have a read-only Storage Health view in Data & Privacy.
   It reports mounted-filesystem capacity, PostgreSQL and plate-read size,
   record/image-path counts, recent ingestion, visual-index state,
@@ -284,14 +286,20 @@ remain externally orchestrated.
   Unknown below threshold. Results include classifier/model/profile provenance,
   orientation confidence, and sample counts. No camera mappings are hard-coded
   and no video clips are stored.
-- Per-read vehicle color observations and shadow clusters are implemented as
-  an evidence-gathering phase. Color is stored with confidence and local
-  algorithm provenance against the individual read, never copied onto a plate.
-  Descriptor-only grouping excludes plate text and creates either a seed
-  cluster or a reviewable suggested assignment. Review changes are audited.
-  Recognition Feed shows assignment, direction, and color evidence in its
-  image dialog. Shadow clusters create no plate ownership claims, mismatch
-  labels, or alerts.
+- Per-read vehicle color observations and reviewable vehicle profiles are
+  implemented as an evidence-gathering phase. Color is stored with confidence
+  and local algorithm provenance against the individual read, never copied onto
+  a plate. Descriptor-only grouping excludes plate text and creates either a
+  seed cluster or a reviewable suggested assignment. Effective-plate links are
+  independently suggested and require audited confirmation or rejection.
+  Vehicle Intelligence now has a dedicated top-level Needs Review tab that
+  displays one independently paginated queue at a time for vehicle matches,
+  plate associations, direction examples, or administrator setup attention.
+  Server-side profile search, status, camera, and page controls ensure browsing
+  is not limited to the newest 100 profiles.
+  Recognition Feed shows assignment, direction, and color evidence in its image
+  dialog. Confirmed associations are a baseline only; mismatch labels and alerts
+  remain disabled.
 - Expand the implemented asynchronous color and direction observations to
   make/model/body type/year with per-field confidence, provider/model/version
   provenance, raw result, status, and error.

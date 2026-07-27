@@ -2267,6 +2267,7 @@ export async function reviewVehicleDirection(input = {}) {
       actor: principal,
     });
     revalidatePath("/live_feed");
+    revalidatePath("/visual_search/vehicles");
     return { success: true, data };
   } catch (error) {
     return visualSearchFailure(error, "Unable to correct this vehicle direction.");
@@ -2334,19 +2335,37 @@ export async function setVehicleDirectionReevaluationPaused(paused) {
   }
 }
 
-export async function getVehicleClusterOverview() {
+export async function getVehicleClusterOverview(options = {}) {
   const principal = await requirePermission("plate.read");
   try {
     return {
       success: true,
       data: {
-        ...(await (await getCaptureAssetService()).getVehicleClusterOverview()),
+        ...(await (await getCaptureAssetService()).getVehicleClusterOverview(options)),
         canReview: hasPermission(principal, "plate.review"),
         canAnalyze: hasPermission(principal, "maintenance.manage"),
+        canManageSettings: hasPermission(principal, "system.manage_settings"),
       },
     };
   } catch (error) {
     return visualSearchFailure(error, "Unable to load shadow vehicle clusters.");
+  }
+}
+
+export async function getVehicleProfile(clusterId) {
+  const principal = await requirePermission("plate.read");
+  try {
+    const profile = await (await getCaptureAssetService()).getVehicleProfile(clusterId);
+    if (!profile) return { success: false, error: "Vehicle profile was not found." };
+    return {
+      success: true,
+      data: {
+        ...profile,
+        canReview: hasPermission(principal, "plate.review"),
+      },
+    };
+  } catch (error) {
+    return visualSearchFailure(error, "Unable to load this vehicle profile.");
   }
 }
 
@@ -2374,5 +2393,23 @@ export async function reviewVehicleClusterSuggestion(input = {}) {
     return { success: true, data };
   } catch (error) {
     return visualSearchFailure(error, "Unable to review this vehicle suggestion.");
+  }
+}
+
+export async function reviewVehiclePlateAssociation(input = {}) {
+  const principal = await requirePermission("plate.review");
+  try {
+    const data = await (await getCaptureAssetService()).reviewVehiclePlateAssociation({
+      clusterId: input.clusterId,
+      plateNumber: input.plateNumber,
+      decision: input.decision,
+      actor: principal,
+    });
+    revalidatePath("/visual_search/vehicles");
+    revalidatePath(`/visual_search/vehicles/${Number(input.clusterId)}`);
+    revalidatePath("/live_feed");
+    return { success: true, data };
+  } catch (error) {
+    return visualSearchFailure(error, "Unable to review this vehicle plate association.");
   }
 }

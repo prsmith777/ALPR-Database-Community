@@ -2199,3 +2199,65 @@ VALUES (
     'Preserve current directions during re-evaluation and add durable pause/resume controls.'
 )
 ON CONFLICT (version) DO NOTHING;
+
+-- A confirmed shadow-cluster assignment is evidence that a capture belongs to
+-- a vehicle, but it is not by itself permission to claim that the vehicle is
+-- associated with the capture's effective plate. Keep that second review
+-- decision explicit and independently auditable so later mismatch detection
+-- can rely only on confirmed baselines.
+CREATE TABLE IF NOT EXISTS public.vehicle_plate_associations (
+    id BIGSERIAL PRIMARY KEY,
+    cluster_id BIGINT NOT NULL REFERENCES public.vehicle_clusters(id) ON DELETE CASCADE,
+    plate_number VARCHAR(10) NOT NULL REFERENCES public.plates(plate_number) ON DELETE CASCADE,
+    status VARCHAR(20) NOT NULL DEFAULT 'suggested'
+        CHECK (status IN ('suggested', 'confirmed', 'rejected')),
+    evidence_count INTEGER NOT NULL DEFAULT 1 CHECK (evidence_count > 0),
+    confidence REAL CHECK (confidence BETWEEN -1 AND 1),
+    first_seen_at TIMESTAMPTZ,
+    last_seen_at TIMESTAMPTZ,
+    actor_user_id BIGINT REFERENCES public.users(id) ON DELETE SET NULL,
+    actor_username VARCHAR(64),
+    actor_display_name VARCHAR(120),
+    revision INTEGER NOT NULL DEFAULT 1 CHECK (revision > 0),
+    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE (cluster_id, plate_number)
+);
+
+CREATE INDEX IF NOT EXISTS idx_vehicle_plate_associations_review
+    ON public.vehicle_plate_associations (status, updated_at DESC)
+    WHERE status = 'suggested';
+CREATE INDEX IF NOT EXISTS idx_vehicle_plate_associations_plate
+    ON public.vehicle_plate_associations (plate_number, status, updated_at DESC);
+
+-- Preserve earlier human cluster reviews as plate-association suggestions.
+-- Effective plate text is review evidence only and never participates in ReID
+-- clustering or becomes authoritative without a separate confirmation.
+INSERT INTO public.vehicle_plate_associations (
+    cluster_id, plate_number, status, evidence_count, confidence,
+    first_seen_at, last_seen_at
+)
+SELECT assignments.cluster_id,
+       reads.plate_number,
+       'suggested',
+       COUNT(*)::INTEGER,
+       AVG(assignments.similarity)::REAL,
+       MIN(reads."timestamp"),
+       MAX(reads."timestamp")
+FROM public.vehicle_cluster_assignments assignments
+JOIN public.plate_reads reads ON reads.id = assignments.read_id
+WHERE assignments.assignment_status = 'confirmed'
+GROUP BY assignments.cluster_id, reads.plate_number
+ON CONFLICT (cluster_id, plate_number) DO UPDATE SET
+    evidence_count = EXCLUDED.evidence_count,
+    confidence = EXCLUDED.confidence,
+    first_seen_at = EXCLUDED.first_seen_at,
+    last_seen_at = EXCLUDED.last_seen_at,
+    updated_at = CURRENT_TIMESTAMP;
+
+INSERT INTO public.schema_migrations (version, description)
+VALUES (
+    '2026072702_vehicle_plate_associations',
+    'Add explicitly reviewed effective-plate associations as the safe vehicle-profile baseline.'
+)
+ON CONFLICT (version) DO NOTHING;

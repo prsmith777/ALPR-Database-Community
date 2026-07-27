@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Added reviewable vehicle profiles that keep descriptor-only ReID grouping
+  separate from explicit plate associations. Human-confirmed cluster captures
+  create plate-link suggestions; confirmation or rejection is separately
+  audited and only confirmed links become trusted future mismatch baselines.
 - Replaced legacy query-string page selection with dedicated URLs throughout
   Settings, Known/Monitored Plates, Notification Rules, MQTT, Pushover, email,
   and webhook navigation. Search, sorting, pagination, and filter parameters

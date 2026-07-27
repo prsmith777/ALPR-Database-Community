@@ -17,22 +17,25 @@ function positivePage(value) {
   return Math.max(1, Number.parseInt(value, 10) || 1);
 }
 
-export default async function VehicleClustersPage({ searchParams }) {
+function reviewQueue(value, canManageSettings) {
+  if (["vehicle", "plates", "direction"].includes(value)) return value;
+  if (value === "setup" && canManageSettings) return value;
+  return "vehicle";
+}
+
+export default async function VehicleReviewPage({ searchParams }) {
   await requirePagePermission("plate.read");
   const parameters = await searchParams;
   const result = await getVehicleClusterOverview({
-    profilePage: positivePage(parameters?.profilesPage),
     vehicleReviewPage: positivePage(parameters?.vehicleReviewPage),
     plateReviewPage: positivePage(parameters?.plateReviewPage),
     directionReviewPage: positivePage(parameters?.directionReviewPage),
-    profileStatus: parameters?.profileStatus || null,
-    profileSearch: parameters?.profileSearch || null,
-    profileCamera: parameters?.profileCamera || null,
   });
+  const queue = reviewQueue(parameters?.queue, result?.success && result.data.canManageSettings);
   return (
     <DashboardLayout>
       <TitleNavbar title="Vehicle Intelligence" navigation={navigation}>
-        <VehicleClusters initialResult={result} view="profiles" />
+        <VehicleClusters initialResult={result} view="review" initialQueue={queue} />
       </TitleNavbar>
     </DashboardLayout>
   );
