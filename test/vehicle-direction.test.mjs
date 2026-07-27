@@ -7,6 +7,7 @@ import {
   directionFromOrientation,
   normalizeDirectionProfile,
 } from "../lib/vehicle-direction.mjs";
+import { CaptureAssetRepository } from "../lib/capture-asset-repository.mjs";
 import { CaptureAssetService } from "../lib/capture-asset-service.mjs";
 import { VEHICLE_REID_MODEL } from "../lib/vehicle-reid.mjs";
 
@@ -179,6 +180,28 @@ test("historical direction backfill is bounded, resumable, and records individua
   assert.equal(failures[0].readId, 12);
   assert.equal(failures[0].profileVersion, 4);
   assert.equal(result.status.pending, 4);
+});
+
+test("historical direction queries join camera profiles through their declared read alias", async () => {
+  const queries = [];
+  const repository = new CaptureAssetRepository({
+    executor: {
+      query: async (text) => {
+        queries.push(text);
+        return { rows: queries.length === 1 ? [{}] : [] };
+      },
+    },
+  });
+
+  await repository.getDirectionBackfillStatus(VEHICLE_REID_MODEL, "vehicle-orientation-v1");
+  await repository.listDirectionBackfillCandidates(VEHICLE_REID_MODEL, "vehicle-orientation-v1", 5);
+
+  assert.equal(queries.length, 2);
+  for (const query of queries) {
+    assert.match(query, /JOIN public\.plate_reads reads ON reads\.id = ca\.read_id/i);
+    assert.match(query, /cvp\.camera_key = LOWER\(BTRIM\(reads\.camera_name\)\)/i);
+    assert.doesNotMatch(query, /BTRIM\(pr\.camera_name\)/i);
+  }
 });
 
 test("direction schema and administrator setup are durable and camera driven", async () => {
