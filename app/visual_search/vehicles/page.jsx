@@ -3,15 +3,10 @@ import VehicleClusters from "@/components/VehicleClusters";
 import DashboardLayout from "@/components/layout/MainLayout";
 import TitleNavbar from "@/components/layout/TitleNav";
 import { requirePagePermission } from "@/lib/page-permission.mjs";
+import { VEHICLE_INTELLIGENCE_NAVIGATION } from "@/lib/vehicle-intelligence-navigation.mjs";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
-
-const navigation = [
-  { title: "Visual Search", href: "/visual_search", permission: "plate.read" },
-  { title: "Vehicle Profiles", href: "/visual_search/vehicles", permission: "plate.read" },
-  { title: "Needs Review", href: "/visual_search/vehicles/review", permission: "plate.read" },
-];
 
 function positivePage(value) {
   return Math.max(1, Number.parseInt(value, 10) || 1);
@@ -31,7 +26,7 @@ export default async function VehicleClustersPage({ searchParams }) {
   });
   return (
     <DashboardLayout>
-      <TitleNavbar title="Vehicle Intelligence" navigation={navigation}>
+      <TitleNavbar title="Vehicle Intelligence" navigation={VEHICLE_INTELLIGENCE_NAVIGATION}>
         <VehicleClusters initialResult={result} view="profiles" />
       </TitleNavbar>
     </DashboardLayout>

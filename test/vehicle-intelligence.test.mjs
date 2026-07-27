@@ -12,6 +12,7 @@ import {
   inferVehicleType,
 } from "../lib/vehicle-attributes.mjs";
 import { chooseShadowCluster } from "../lib/vehicle-clustering.mjs";
+import { VEHICLE_INTELLIGENCE_NAVIGATION } from "../lib/vehicle-intelligence-navigation.mjs";
 
 async function source(path) {
   return readFile(new URL(`../${path}`, import.meta.url), "utf8");
@@ -166,7 +167,7 @@ test("vehicle intelligence keeps ReID grouping separate from reviewed plate asso
   assert.match(component, /queue=plates/);
   assert.match(component, /queue=direction/);
   assert.match(component, /queue=setup/);
-  assert.match(await source("app/visual_search/vehicles/review/page.jsx"), /title: "Needs Review"/);
+  assert.match(await source("lib/vehicle-intelligence-navigation.mjs"), /title: "Needs Review"/);
   assert.match(component, /Open vehicle profile/i);
   assert.match(component, /Confirm vehicle/);
   assert.match(component, /Different vehicle/);
@@ -234,6 +235,25 @@ test("vehicle intelligence settings always navigate to their dedicated route", a
   assert.match(shell, /<Link key=\{item\.id\} href=\{item\.href\}/);
   assert.doesNotMatch(shell, /isLocalSection|onSelect &&/);
   assert.doesNotMatch(settingsForm, /onSelect=\{setActiveSection\}/);
+});
+
+test("every vehicle intelligence route shares the complete top navigation", async () => {
+  assert.deepEqual(VEHICLE_INTELLIGENCE_NAVIGATION.map(({ title, href }) => ({ title, href })), [
+    { title: "Visual Search", href: "/visual_search" },
+    { title: "Vehicle Profiles", href: "/visual_search/vehicles" },
+    { title: "Needs Review", href: "/visual_search/vehicles/review" },
+  ]);
+
+  const routes = [
+    "app/visual_search/page.jsx",
+    "app/visual_search/vehicles/page.jsx",
+    "app/visual_search/vehicles/review/page.jsx",
+    "app/visual_search/vehicles/[clusterId]/page.jsx",
+  ];
+  for (const route of routes) {
+    const page = await source(route);
+    assert.match(page, /navigation=\{VEHICLE_INTELLIGENCE_NAVIGATION\}/, route);
+  }
 });
 
 test("vehicle cluster queries use one current vehicle asset per read", async () => {
