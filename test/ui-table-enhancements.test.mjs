@@ -242,7 +242,7 @@ test("Monitored Plates is integrated with Known Plates and preserves exact-read 
   ]);
 
   assert.match(page, /KnownPlatesWorkspace/);
-  assert.match(redirectPage, /redirect\("\/known_plates\?view=monitored"\)/);
+  assert.match(redirectPage, /redirect\("\/known_plates\/monitored"\)/);
   assert.match(workspace, /Monitored Plates/);
   assert.match(table, /Monitored Plates works with unified rules/);
   assert.match(table, /monitorReason/);

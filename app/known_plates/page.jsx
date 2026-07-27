@@ -7,12 +7,11 @@ import { requirePagePermission } from "@/lib/page-permission.mjs";
 
 export const dynamic = "force-dynamic";
 
-export default async function KnownPlatesPage({ searchParams }) {
+export default async function KnownPlatesPage() {
   await requirePagePermission("plate.read");
-  const [response, monitoredPlates, params] = await Promise.all([
+  const [response, monitoredPlates] = await Promise.all([
     getKnownPlatesList(),
     getFlagged(),
-    searchParams,
   ]);
   const knownPlates = response.success ? response.data : [];
   const loadError = response.success
@@ -33,7 +32,6 @@ export default async function KnownPlatesPage({ searchParams }) {
           <KnownPlatesWorkspace
             knownPlates={knownPlates}
             monitoredPlates={monitoredPlates}
-            defaultView={params?.view === "monitored" ? "monitored" : "known"}
           />
         )}
       </BasicTitle>

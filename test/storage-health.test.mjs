@@ -125,7 +125,7 @@ test("storage health degrades to partial read-only results when database probes 
 
 test("the administrator storage view is explicitly read-only and has no cleanup controls", async () => {
   const [page, settings, card] = await Promise.all([
-    readFile(new URL("../app/settings/page.jsx", import.meta.url), "utf8"),
+    readFile(new URL("../app/settings/SettingsSectionPage.jsx", import.meta.url), "utf8"),
     readFile(new URL("../app/settings/SettingsForm.jsx", import.meta.url), "utf8"),
     readFile(new URL("../app/settings/StorageHealthCard.jsx", import.meta.url), "utf8"),
   ]);

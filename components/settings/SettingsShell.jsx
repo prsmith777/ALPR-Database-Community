@@ -1,7 +1,6 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
 import {
   Antenna,
   Bell,
@@ -28,19 +27,19 @@ const navigationSections = [
     title: "System",
     permission: "system.manage_settings",
     items: [
-      { title: "General", id: "general", href: "/settings?section=general", icon: Settings2 },
-      { title: "Database", id: "database", href: "/settings?section=database", icon: Database },
-      { title: "Plate Matching", id: "plateMatching", href: "/settings?section=plateMatching", icon: ScanSearch },
-      { title: "Review & Corrections", id: "plateReview", href: "/settings?section=plateReview", icon: ShieldCheck },
+      { title: "General", id: "general", href: "/settings/general", icon: Settings2 },
+      { title: "Database", id: "database", href: "/settings/database", icon: Database },
+      { title: "Plate Matching", id: "plateMatching", href: "/settings/plate-matching", icon: ScanSearch },
+      { title: "Review & Corrections", id: "plateReview", href: "/settings/review-corrections", icon: ShieldCheck },
       { title: "Vehicle Intelligence", id: "vehicleIntelligence", href: "/settings/vehicle-intelligence", icon: CarFront },
-      { title: "Data & Privacy", id: "privacy", href: "/settings?section=privacy", icon: Shield },
-      { title: "Release", id: "release", href: "/settings?section=release", icon: PackageOpen },
+      { title: "Data & Privacy", id: "privacy", href: "/settings/data-privacy", icon: Shield },
+      { title: "Release", id: "release", href: "/settings/release", icon: PackageOpen },
     ],
   },
   {
     title: "Account",
     items: [
-      { title: "Security", id: "security", href: "/settings?section=security", icon: Lock },
+      { title: "Security", id: "security", href: "/settings/security", icon: Lock },
     ],
   },
   {
@@ -50,14 +49,13 @@ const navigationSections = [
       { title: "Pushover", id: "pushover", href: "/settings/integrations/pushover", icon: Bell, permission: "system.manage_settings" },
       { title: "Email", id: "email", href: "/settings/integrations/email", icon: Mail, permission: "system.manage_settings" },
       { title: "Webhook", id: "webhook", href: "/settings/integrations/webhook", icon: Webhook, permission: "system.manage_settings" },
-      { title: "Blue Iris", id: "blueiris", href: "/settings?section=blueiris", icon: Server, permission: "system.manage_settings" },
-      { title: "Home Assistant", id: "homeassistant", href: "/settings?section=homeassistant", icon: Home, permission: "system.manage_settings" },
+      { title: "Blue Iris", id: "blueiris", href: "/settings/blue-iris", icon: Server, permission: "system.manage_settings" },
+      { title: "Home Assistant", id: "homeassistant", href: "/settings/home-assistant", icon: Home, permission: "system.manage_settings" },
     ],
   },
 ];
 
-function SettingsShellContent({ activeId, title, description, onSelect, children }) {
-  const pathname = usePathname();
+function SettingsShellContent({ activeId, title, description, children }) {
   const { can } = useAccess();
   const visibleSections = navigationSections
     .filter((section) => !section.permission || can(section.permission))
@@ -66,10 +64,6 @@ function SettingsShellContent({ activeId, title, description, onSelect, children
       items: section.items.filter((item) => !item.permission || can(item.permission)),
     }))
     .filter((section) => section.items.length > 0);
-
-  function isLocalSection(item) {
-    return pathname === "/settings" && !item.href.startsWith("/settings/integrations");
-  }
 
   return (
       <div className="flex min-h-full bg-background">
@@ -95,14 +89,6 @@ function SettingsShellContent({ activeId, title, description, onSelect, children
                         ? "border border-blue-500/20 bg-blue-500/10 text-blue-600"
                         : "text-muted-foreground hover:bg-muted/50 hover:text-foreground"
                     );
-                    if (onSelect && isLocalSection(item)) {
-                      return (
-                        <button key={item.id} type="button" className={classes} onClick={() => onSelect(item.id)}>
-                          <Icon className="h-4 w-4 flex-shrink-0" />
-                          {item.title}
-                        </button>
-                      );
-                    }
                     return (
                       <Link key={item.id} href={item.href} className={classes}>
                         <Icon className="h-4 w-4 flex-shrink-0" />

@@ -28,6 +28,7 @@ import { Label } from "@/components/ui/label";
 import { PasswordInput } from "@/components/ui/password-input";
 import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { useRouteTab } from "@/components/useRouteTab";
 
 function ResultMessage({ message }) {
   if (!message) return null;
@@ -120,6 +121,12 @@ function TestCard({ channelType, ready, value, setValue, label, placeholder, inp
 
 export function PushoverSettings({ settings }) {
   const router = useRouter();
+  const routeTab = useRouteTab({
+    connection: "/settings/integrations/pushover",
+    defaults: "/settings/integrations/pushover/defaults",
+    usage: "/settings/integrations/pushover/usage",
+    test: "/settings/integrations/pushover/test",
+  }, "connection");
   const config = settings.notifications?.pushover || {};
   const configured = Boolean(config.appTokenConfigured && config.userKeyConfigured);
   const [samplePlate, setSamplePlate] = useState("TEST123");
@@ -142,7 +149,7 @@ export function PushoverSettings({ settings }) {
   }
 
   return (
-    <Tabs defaultValue="connection" className="space-y-6">
+    <Tabs value={routeTab.active} onValueChange={routeTab.navigate} className="space-y-6">
       <TabsList className="grid h-auto w-full grid-cols-2 gap-1 p-1 sm:grid-cols-4">
         <TabsTrigger value="connection" className="gap-2 py-2"><KeyRound className="h-4 w-4" />Connection</TabsTrigger>
         <TabsTrigger value="defaults" className="gap-2 py-2"><Settings2 className="h-4 w-4" />Defaults</TabsTrigger>
@@ -202,6 +209,11 @@ export function PushoverSettings({ settings }) {
 
 export function EmailSettings({ settings }) {
   const router = useRouter();
+  const routeTab = useRouteTab({
+    connection: "/settings/integrations/email",
+    sender: "/settings/integrations/email/sender",
+    test: "/settings/integrations/email/test",
+  }, "connection");
   const config = settings.notifications?.email || {};
   const configured = Boolean(config.host && config.from_address);
   const [recipient, setRecipient] = useState("");
@@ -224,7 +236,7 @@ export function EmailSettings({ settings }) {
   }
 
   return (
-    <Tabs defaultValue="connection" className="space-y-6">
+    <Tabs value={routeTab.active} onValueChange={routeTab.navigate} className="space-y-6">
       <TabsList className="grid h-auto w-full grid-cols-1 gap-1 p-1 sm:grid-cols-3">
         <TabsTrigger value="connection" className="gap-2 py-2"><Server className="h-4 w-4" />SMTP Connection</TabsTrigger>
         <TabsTrigger value="sender" className="gap-2 py-2"><UserRound className="h-4 w-4" />Sender Identity</TabsTrigger>
@@ -276,6 +288,11 @@ export function EmailSettings({ settings }) {
 
 export function WebhookSettings({ settings }) {
   const router = useRouter();
+  const routeTab = useRouteTab({
+    delivery: "/settings/integrations/webhook",
+    safety: "/settings/integrations/webhook/safety",
+    test: "/settings/integrations/webhook/test",
+  }, "delivery");
   const config = settings.notifications?.webhook || {};
   const configured = Boolean(config.signingSecretConfigured);
   const [target, setTarget] = useState("");
@@ -298,7 +315,7 @@ export function WebhookSettings({ settings }) {
   }
 
   return (
-    <Tabs defaultValue="delivery" className="space-y-6">
+    <Tabs value={routeTab.active} onValueChange={routeTab.navigate} className="space-y-6">
       <TabsList className="grid h-auto w-full grid-cols-1 gap-1 p-1 sm:grid-cols-3">
         <TabsTrigger value="delivery" className="gap-2 py-2"><KeyRound className="h-4 w-4" />Signing & Delivery</TabsTrigger>
         <TabsTrigger value="safety" className="gap-2 py-2"><ShieldCheck className="h-4 w-4" />Network Safety</TabsTrigger>
