@@ -2,10 +2,10 @@
 
 import NextImage from "next/image";
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
-import { ArrowLeft, CheckCircle2, ExternalLink, ListChecks, Loader2, ShieldCheck, Tags, XCircle } from "lucide-react";
+import { useState } from "react";
+import { ArrowLeft, CheckCircle2, ExternalLink, Loader2, ShieldCheck, XCircle } from "lucide-react";
 
-import { getVehicleProfile, reviewVehicleDistinctiveFeatures, reviewVehiclePlateAssociation } from "@/app/actions";
+import { getVehicleProfile, reviewVehiclePlateAssociation } from "@/app/actions";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -20,8 +20,6 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Checkbox } from "@/components/ui/checkbox";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 
 function when(value) {
   return value ? new Date(value).toLocaleString() : "Unknown";
@@ -74,44 +72,6 @@ function AssociationDecision({ association, busy, onReview, showConfirm = true, 
   );
 }
 
-function FeatureReview({ capture, catalog, busy, onSave }) {
-  const reviewedKeys = useMemo(() => capture.distinctiveFeatures
-    .filter((feature) => feature.reviewed || feature.provider === "human-review")
-    .map((feature) => feature.key), [capture.distinctiveFeatures]);
-  const [open, setOpen] = useState(false);
-  const [selected, setSelected] = useState(reviewedKeys);
-
-  useEffect(() => setSelected(reviewedKeys), [reviewedKeys]);
-
-  const toggle = (key, checked) => setSelected((current) => checked
-    ? [...new Set([...current, key])]
-    : current.filter((value) => value !== key));
-  const save = async () => {
-    const succeeded = await onSave(capture.readId, selected);
-    if (succeeded) setOpen(false);
-  };
-
-  return (
-    <Popover open={open} onOpenChange={setOpen}>
-      <PopoverTrigger asChild><Button variant="outline" size="sm" className="w-full"><ListChecks className="mr-2 h-4 w-4" />Review visible features</Button></PopoverTrigger>
-      <PopoverContent align="end" className="w-[min(24rem,calc(100vw-2rem))]">
-        <div className="space-y-3">
-          <div><div className="font-medium">Visible distinguishing features</div><div className="text-xs text-muted-foreground">Mark only features clearly visible in this capture. An unchecked item means it was not confirmed here—not that the vehicle never has it.</div></div>
-          <div className="grid max-h-64 gap-2 overflow-y-auto pr-1 sm:grid-cols-2">
-            {catalog.map((feature) => (
-              <label key={feature.key} className="flex cursor-pointer items-start gap-2 rounded-md border p-2 text-sm">
-                <Checkbox checked={selected.includes(feature.key)} onCheckedChange={(checked) => toggle(feature.key, checked === true)} />
-                <span>{feature.label}</span>
-              </label>
-            ))}
-          </div>
-          <div className="flex justify-end gap-2"><Button variant="ghost" size="sm" onClick={() => setOpen(false)}>Cancel</Button><Button size="sm" disabled={busy} onClick={save}>{busy ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}Save reviewed features</Button></div>
-        </div>
-      </PopoverContent>
-    </Popover>
-  );
-}
-
 export default function VehicleProfile({ initialResult }) {
   const [result, setResult] = useState(initialResult);
   const [busy, setBusy] = useState("");
@@ -140,27 +100,6 @@ export default function VehicleProfile({ initialResult }) {
         : `${plateNumber} was rejected as an association for this vehicle.`);
     } catch (error) {
       setMessage(error.message);
-    } finally {
-      setBusy("");
-    }
-  };
-
-  const reviewFeatures = async (readId, features) => {
-    setBusy(`features:${readId}`);
-    setMessage("");
-    try {
-      const response = await reviewVehicleDistinctiveFeatures({
-        clusterId: data.id,
-        readId,
-        features,
-      });
-      if (!response.success) throw new Error(response.error);
-      await reload();
-      setMessage(`Saved ${features.length} reviewed distinguishing ${features.length === 1 ? "feature" : "features"} for read ${readId}.`);
-      return true;
-    } catch (error) {
-      setMessage(error.message);
-      return false;
     } finally {
       setBusy("");
     }
@@ -217,18 +156,6 @@ export default function VehicleProfile({ initialResult }) {
         </Card>
       </div>
 
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2"><Tags className="h-5 w-5" />Distinguishing features</CardTitle>
-          <CardDescription>Reviewed visible traits are per-capture evidence. Repeated observations from seed or confirmed members strengthen the profile without turning one unclear image into a permanent claim.</CardDescription>
-        </CardHeader>
-        <CardContent>
-          {data.distinctiveFeatures.length > 0 ? (
-            <div className="flex flex-wrap gap-2">{data.distinctiveFeatures.map((feature) => <Badge key={feature.key} variant="secondary">{feature.label} · {feature.captureCount} {feature.captureCount === 1 ? "capture" : "captures"}</Badge>)}</div>
-          ) : <div className="rounded-md border border-dashed p-4 text-sm text-muted-foreground">No distinguishing features have been reviewed for this profile yet.</div>}
-        </CardContent>
-      </Card>
-
       <section className="space-y-3">
         <div><h2 className="text-xl font-semibold">Recent profile captures</h2><p className="text-sm text-muted-foreground">Plate text is shown as evidence and was not used to create the ReID grouping.</p></div>
         <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
@@ -240,8 +167,6 @@ export default function VehicleProfile({ initialResult }) {
                 {capture.observedPlate !== capture.plateNumber && <div className="text-xs text-muted-foreground">Camera read {capture.observedPlate}</div>}
                 <div className="text-sm text-muted-foreground">{capture.cameraName} · {when(capture.timestamp)}</div>
                 <div className="flex flex-wrap gap-1">{capture.direction && <Badge variant="outline">{capture.direction}</Badge>}{capture.color && <Badge variant="outline" className="capitalize">{capture.color}</Badge>}{capture.similarity !== null && <Badge variant="outline">{percent(capture.similarity)} ReID</Badge>}</div>
-                {capture.distinctiveFeatures.length > 0 && <div className="flex flex-wrap gap-1">{capture.distinctiveFeatures.map((feature) => <Badge key={`${feature.provider}:${feature.key}`} variant="secondary">{feature.label}</Badge>)}</div>}
-                {data.canReview && <FeatureReview capture={capture} catalog={data.featureCatalog} busy={busy === `features:${capture.readId}`} onSave={reviewFeatures} />}
                 <Button asChild variant="ghost" size="sm" className="px-0"><Link href={`/live_feed?search=${encodeURIComponent(capture.plateNumber)}&matchMode=off`}>Open in Live Feed <ExternalLink className="ml-2 h-3.5 w-3.5" /></Link></Button>
               </CardContent>
             </Card>

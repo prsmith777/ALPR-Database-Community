@@ -6,11 +6,6 @@
   separate from explicit plate associations. Human-confirmed cluster captures
   create plate-link suggestions; confirmation or rejection is separately
   audited and only confirmed links become trusted future mismatch baselines.
-- Added audited per-capture distinguishing-feature review for roof and rear
-  racks, stickers, toolboxes, trailers, aftermarket changes, and visible
-  damage. Vehicle profiles aggregate repeated observations and can be filtered
-  by reviewed traits while retaining provider/model provenance for later local
-  automatic classifiers.
 - Replaced legacy query-string page selection with dedicated URLs throughout
   Settings, Known/Monitored Plates, Notification Rules, MQTT, Pushover, email,
   and webhook navigation. Search, sorting, pagination, and filter parameters

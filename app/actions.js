@@ -2334,13 +2334,13 @@ export async function setVehicleDirectionReevaluationPaused(paused) {
   }
 }
 
-export async function getVehicleClusterOverview(featureKey = null) {
+export async function getVehicleClusterOverview() {
   const principal = await requirePermission("plate.read");
   try {
     return {
       success: true,
       data: {
-        ...(await (await getCaptureAssetService()).getVehicleClusterOverview({ featureKey })),
+        ...(await (await getCaptureAssetService()).getVehicleClusterOverview()),
         canReview: hasPermission(principal, "plate.review"),
         canAnalyze: hasPermission(principal, "maintenance.manage"),
       },
@@ -2409,24 +2409,5 @@ export async function reviewVehiclePlateAssociation(input = {}) {
     return { success: true, data };
   } catch (error) {
     return visualSearchFailure(error, "Unable to review this vehicle plate association.");
-  }
-}
-
-export async function reviewVehicleDistinctiveFeatures(input = {}) {
-  const principal = await requirePermission("plate.review");
-  try {
-    const data = await (await getCaptureAssetService()).reviewVehicleDistinctiveFeatures({
-      readId: input.readId,
-      features: input.features,
-      actor: principal,
-    });
-    revalidatePath("/visual_search/vehicles");
-    if (Number.isSafeInteger(Number(input.clusterId)) && Number(input.clusterId) > 0) {
-      revalidatePath(`/visual_search/vehicles/${Number(input.clusterId)}`);
-    }
-    revalidatePath("/live_feed");
-    return { success: true, data };
-  } catch (error) {
-    return visualSearchFailure(error, "Unable to review these distinctive vehicle features.");
   }
 }
