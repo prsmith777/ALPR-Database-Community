@@ -86,10 +86,14 @@ test("vehicle intelligence schema is shadow-only and reviewable", async () => {
 });
 
 test("vehicle intelligence settings always navigate to their dedicated route", async () => {
-  const shell = await source("components/settings/SettingsShell.jsx");
+  const [shell, settingsForm] = await Promise.all([
+    source("components/settings/SettingsShell.jsx"),
+    source("app/settings/SettingsForm.jsx"),
+  ]);
   assert.match(shell, /href: "\/settings\/vehicle-intelligence"/);
-  assert.match(shell, /item\.href\.startsWith\("\/settings\?section="\)/);
-  assert.doesNotMatch(shell, /!item\.href\.startsWith\("\/settings\/integrations"\)/);
+  assert.match(shell, /<Link key=\{item\.id\} href=\{item\.href\}/);
+  assert.doesNotMatch(shell, /isLocalSection|onSelect &&/);
+  assert.doesNotMatch(settingsForm, /onSelect=\{setActiveSection\}/);
 });
 
 test("vehicle cluster queries use one current vehicle asset per read", async () => {

@@ -1,7 +1,6 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
 import {
   Antenna,
   Bell,
@@ -56,8 +55,7 @@ const navigationSections = [
   },
 ];
 
-function SettingsShellContent({ activeId, title, description, onSelect, children }) {
-  const pathname = usePathname();
+function SettingsShellContent({ activeId, title, description, children }) {
   const { can } = useAccess();
   const visibleSections = navigationSections
     .filter((section) => !section.permission || can(section.permission))
@@ -66,10 +64,6 @@ function SettingsShellContent({ activeId, title, description, onSelect, children
       items: section.items.filter((item) => !item.permission || can(item.permission)),
     }))
     .filter((section) => section.items.length > 0);
-
-  function isLocalSection(item) {
-    return pathname === "/settings" && item.href.startsWith("/settings?section=");
-  }
 
   return (
       <div className="flex min-h-full bg-background">
@@ -95,14 +89,6 @@ function SettingsShellContent({ activeId, title, description, onSelect, children
                         ? "border border-blue-500/20 bg-blue-500/10 text-blue-600"
                         : "text-muted-foreground hover:bg-muted/50 hover:text-foreground"
                     );
-                    if (onSelect && isLocalSection(item)) {
-                      return (
-                        <button key={item.id} type="button" className={classes} onClick={() => onSelect(item.id)}>
-                          <Icon className="h-4 w-4 flex-shrink-0" />
-                          {item.title}
-                        </button>
-                      );
-                    }
                     return (
                       <Link key={item.id} href={item.href} className={classes}>
                         <Icon className="h-4 w-4 flex-shrink-0" />
