@@ -134,6 +134,36 @@ test("image indexing and historical directions alternate when both have a backlo
   assert.equal(indexCalls, 1);
 });
 
+test("a paused historical direction queue does not keep the worker busy", async () => {
+  let directionCalls = 0;
+  const service = {
+    async getStatus() {
+      return {
+        pending: 0,
+        retryable: 0,
+        direction: { pending: 25, actionablePending: 0, reevaluationPaused: true },
+      };
+    },
+    async indexBatch() {
+      return { processed: 0, succeeded: 0, failed: 0, busy: false };
+    },
+    async backfillDirectionBatch() {
+      directionCalls += 1;
+      return { processed: 0, succeeded: 0, failed: 0, busy: false };
+    },
+  };
+  const worker = new VisualIndexWorker({
+    service,
+    loadSettings: async () => ({ visualIndex: { batchSize: 20, intervalSeconds: 30 } }),
+    logger: {},
+  });
+
+  await worker.runOnce();
+
+  assert.equal(directionCalls, 0);
+  assert.equal(worker.snapshot().phase, "idle");
+});
+
 test("pause and safety thresholds prevent indexing without losing backlog state", async () => {
   let indexCalls = 0;
   const service = {

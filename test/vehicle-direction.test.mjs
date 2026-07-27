@@ -177,8 +177,9 @@ test("historical direction backfill is bounded, resumable, and records individua
   const cleared = [];
   const failures = [];
   const repository = {
-    listDirectionBackfillCandidates: async (_model, _classifier, limit) => {
+    listDirectionBackfillCandidates: async (_model, _classifier, limit, options) => {
       assert.equal(limit, 2);
+      assert.equal(options.includeReevaluation, true);
       return [
         { read_id: 11, profile_version: 4 },
         { read_id: 12, profile_version: 4 },
@@ -215,6 +216,36 @@ test("historical direction backfill is bounded, resumable, and records individua
   assert.equal(failures[0].readId, 12);
   assert.equal(failures[0].profileVersion, 4);
   assert.equal(result.status.pending, 4);
+});
+
+test("pausing historical re-evaluation still allows ordinary live direction work", async () => {
+  let includeReevaluation = null;
+  const repository = {
+    listDirectionBackfillCandidates: async (_model, _classifier, _limit, options) => {
+      includeReevaluation = options.includeReevaluation;
+      return [];
+    },
+    getDirectionBackfillStatus: async () => ({
+      eligible: 50,
+      populated: 40,
+      completed: 40,
+      pending: 10,
+      actionablePending: 0,
+      newPending: 0,
+      reevaluationPending: 10,
+      reevaluationPaused: true,
+      ready: 35,
+      unknown: 5,
+      failed: 0,
+    }),
+  };
+  const service = new CaptureAssetService({ repository, fileStorage: {} });
+
+  const result = await service.backfillDirectionBatch({ limit: 20 });
+
+  assert.equal(includeReevaluation, false);
+  assert.equal(result.processed, 0);
+  assert.equal(result.status.reevaluationPaused, true);
 });
 
 test("historical direction queries join camera profiles through their declared read alias", async () => {
@@ -256,8 +287,8 @@ test("historical direction re-evaluation queues machine results and preserves ma
             already_pending: 5,
           }] };
         }
-        if (text.includes("DELETE FROM public.vehicle_direction_observations")) {
-          return { rows: [{ status: "ready" }, { status: "unknown" }] };
+        if (text.includes("INSERT INTO public.vehicle_direction_reevaluation_queue")) {
+          return { rows: Array.from({ length: 100 }, (_, index) => ({ read_id: index + 1 })) };
         }
         if (text.includes("DELETE FROM public.vehicle_direction_backfill_failures")) {
           return { rows: [{ read_id: 8 }] };
@@ -276,16 +307,14 @@ test("historical direction re-evaluation queues machine results and preserves ma
 
   assert.equal(result.queued, 100);
   assert.equal(result.manualPreserved, 20);
-  assert.equal(result.removed, 2);
+  assert.equal(result.preserved, 100);
   assert.equal(result.failuresCleared, 1);
-  const destructiveCalls = calls.filter((call) => call.text.includes("DELETE FROM public.vehicle_direction"));
-  assert.equal(destructiveCalls.length, 2);
-  for (const call of destructiveCalls) {
-    assert.match(call.text, /LEFT JOIN public\.vehicle_orientation_labels labels/i);
-    assert.match(call.text, /labels\.read_id IS NULL/i);
-    assert.match(call.text, /LOWER\(BTRIM\(reads\.camera_name\)\) = LOWER\(BTRIM\(\$4\)\)/i);
-    assert.equal(call.values[3], "Street LPR 2");
-  }
+  assert.equal(calls.some((call) => call.text.includes("DELETE FROM public.vehicle_direction_observations")), false);
+  const queueCall = calls.find((call) => call.text.includes("INSERT INTO public.vehicle_direction_reevaluation_queue"));
+  assert.match(queueCall.text, /LEFT JOIN public\.vehicle_orientation_labels labels/i);
+  assert.match(queueCall.text, /labels\.read_id IS NULL/i);
+  assert.match(queueCall.text, /LOWER\(BTRIM\(reads\.camera_name\)\) = LOWER\(BTRIM\(\$4\)\)/i);
+  assert.equal(queueCall.values[3], "Street LPR 2");
   assert.match(calls.at(-1).text, /vehicle\.direction_reevaluation_queued/i);
 });
 
@@ -312,10 +341,15 @@ test("direction schema and administrator setup are durable and camera driven", a
   assert.match(migration, /ON CONFLICT \(read_id\) DO UPDATE SET/i);
   assert.match(migration, /2026072603_vehicle_direction_backfill/i);
   assert.match(migration, /vehicle_direction_backfill_failures/i);
+  assert.match(migration, /vehicle_direction_reevaluation_queue/i);
+  assert.match(migration, /vehicle_direction_reevaluation_control/i);
   assert.match(settings, /Historical direction backfill/);
   assert.match(settings, /Run one direction batch now/);
   assert.match(settings, /Re-evaluate selected camera/);
   assert.match(settings, /Re-evaluate all cameras/);
+  assert.match(settings, /Pause re-evaluation/);
+  assert.match(settings, /Resume re-evaluation/);
   assert.match(actions, /runVehicleDirectionBackfillBatch[\s\S]*?requirePermission\("maintenance\.manage"\)/);
   assert.match(actions, /queueVehicleDirectionReevaluation[\s\S]*?requirePermission\("maintenance\.manage"\)/);
+  assert.match(actions, /setVehicleDirectionReevaluationPaused[\s\S]*?requirePermission\("maintenance\.manage"\)/);
 });

@@ -73,18 +73,18 @@ export default function PlateTableWrapper({
   // router.refresh() is explicitly called for mutations, the `liveData` state
   // gets the fresh dataset from the server.
   useEffect(() => {
-    // Only update liveData if we're not in an active filtered/sorted state that
-    // would prevent SSE from being active, OR if the initial data is explicitly different.
-    if (!hasActiveFilters()) {
-      // If no filters are active, liveData should mirror the server's 'data' prop
-      // when it changes (due to router.refresh or initial load).
-      setLiveData(data);
-      setLiveTotal(total);
-    }
-    // If filters ARE active, liveData should remain what it was before filters were applied,
-    // or be replaced by the fetched 'data' if `router.refresh()` brings filtered data.
-    // The conditional merge logic below handles this.
-  }, [data, total, hasActiveFilters]);
+    setLiveData(data);
+    setLiveTotal(total);
+  }, [data, total]);
+
+  // The background visual-intelligence worker can update direction after the
+  // plate row first appears. Refresh while live updates are enabled so Pending
+  // becomes an assigned direction (or a genuine Unknown) without user action.
+  useEffect(() => {
+    if (!isLiveModeActive) return undefined;
+    const timer = window.setInterval(() => router.refresh(), 10_000);
+    return () => window.clearInterval(timer);
+  }, [isLiveModeActive, router]);
 
   useEffect(() => {
     setDirectionOverrides((current) => {

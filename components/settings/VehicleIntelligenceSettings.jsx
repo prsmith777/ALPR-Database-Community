@@ -2,7 +2,7 @@
 
 import NextImage from "next/image";
 import { useEffect, useMemo, useState } from "react";
-import { BrainCircuit, Check, Loader2, Play, RotateCcw, Save } from "lucide-react";
+import { BrainCircuit, Check, Loader2, Pause, Play, RotateCcw, Save } from "lucide-react";
 
 import {
   getVehicleDirectionSetup,
@@ -11,6 +11,7 @@ import {
   queueVehicleDirectionReevaluation,
   runVehicleDirectionBackfillBatch,
   saveVehicleDirectionProfile,
+  setVehicleDirectionReevaluationPaused,
 } from "@/app/actions";
 import {
   AlertDialog,
@@ -152,6 +153,21 @@ export default function VehicleIntelligenceSettings({ initialData }) {
     finally { setBusy(""); }
   };
 
+  const toggleReevaluationPaused = async () => {
+    const nextPaused = !data.backfill?.reevaluationPaused;
+    setBusy(nextPaused ? "pause-reevaluation" : "resume-reevaluation");
+    setMessage("");
+    try {
+      const result = await setVehicleDirectionReevaluationPaused(nextPaused);
+      if (!result.success) throw new Error(result.error);
+      await reload(cameraName);
+      setMessage(nextPaused
+        ? "Historical re-evaluation will pause after the current batch. New live reads will continue to be analyzed."
+        : "Historical re-evaluation resumed. New live reads remain prioritized.");
+    } catch (error) { setMessage(error.message); }
+    finally { setBusy(""); }
+  };
+
   const backfill = data.backfill || {
     eligible: 0,
     populated: 0,
@@ -160,6 +176,10 @@ export default function VehicleIntelligenceSettings({ initialData }) {
     ready: 0,
     unknown: 0,
     failed: 0,
+    actionablePending: 0,
+    newPending: 0,
+    reevaluationPending: 0,
+    reevaluationPaused: false,
     imagesAwaitingIndex: 0,
     imageFailures: 0,
   };
@@ -243,7 +263,9 @@ export default function VehicleIntelligenceSettings({ initialData }) {
             <div className="flex flex-wrap items-center justify-between gap-3 text-sm">
               <span>{backfill.completed.toLocaleString()} of {backfill.eligible.toLocaleString()} indexed captures completed</span>
               <Badge variant={backfill.pending ? "outline" : "secondary"}>
-                {backfill.pending ? `${backfill.pending.toLocaleString()} pending` : "Up to date"}
+                {backfill.reevaluationPaused && backfill.reevaluationPending
+                  ? `${backfill.reevaluationPending.toLocaleString()} re-evaluations paused`
+                  : backfill.pending ? `${backfill.pending.toLocaleString()} pending` : "Up to date"}
               </Badge>
             </div>
             <Progress value={backfillCompletion} aria-label={`${backfillCompletion}% of historical directions evaluated`} />
@@ -255,12 +277,12 @@ export default function VehicleIntelligenceSettings({ initialData }) {
               <div className="rounded-md border p-3"><div className="text-xl font-semibold">{backfill.failed.toLocaleString()}</div><div className="text-xs text-muted-foreground">direction failures</div></div>
             </div>
             <p className="text-xs text-muted-foreground">
-              The background visual-intelligence worker continues automatically using the configured indexing pace and safety limits. Captures below the confidence threshold correctly remain Unknown.
+              New live reads are processed before historical re-evaluations. Existing direction assignments stay visible until their replacements are ready. Captures below the confidence threshold correctly remain Unknown.
             </p>
             <Button
               variant="secondary"
               onClick={runDirectionBackfill}
-              disabled={Boolean(busy) || backfill.pending === 0}
+              disabled={Boolean(busy) || Number(backfill.actionablePending ?? backfill.pending) === 0}
             >
               {busy === "backfill" ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Play className="mr-2 h-4 w-4" />}
               Run one direction batch now
@@ -273,6 +295,20 @@ export default function VehicleIntelligenceSettings({ initialData }) {
                 </p>
               </div>
               <div className="mt-4 flex flex-wrap gap-2">
+                {backfill.reevaluationPending > 0 && (
+                  <Button
+                    variant={backfill.reevaluationPaused ? "default" : "secondary"}
+                    onClick={toggleReevaluationPaused}
+                    disabled={Boolean(busy)}
+                  >
+                    {busy === "pause-reevaluation" || busy === "resume-reevaluation"
+                      ? <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      : backfill.reevaluationPaused
+                        ? <Play className="mr-2 h-4 w-4" />
+                        : <Pause className="mr-2 h-4 w-4" />}
+                    {backfill.reevaluationPaused ? "Resume re-evaluation" : "Pause re-evaluation"}
+                  </Button>
+                )}
                 <Button
                   variant="outline"
                   onClick={() => openReevaluation(cameraName)}
@@ -349,11 +385,11 @@ export default function VehicleIntelligenceSettings({ initialData }) {
                 <div className="grid grid-cols-2 gap-2 text-sm">
                   <div className="rounded-md border p-3"><strong>{reevaluationPreview?.queued?.toLocaleString() || 0}</strong><br />captures queued</div>
                   <div className="rounded-md border p-3"><strong>{reevaluationPreview?.cameraCount?.toLocaleString() || 0}</strong><br />cameras included</div>
-                  <div className="rounded-md border p-3"><strong>{reevaluationPreview?.previousReady?.toLocaleString() || 0}</strong><br />assigned results replaced</div>
+                  <div className="rounded-md border p-3"><strong>{reevaluationPreview?.previousReady?.toLocaleString() || 0}</strong><br />assigned results retained while queued</div>
                   <div className="rounded-md border p-3"><strong>{reevaluationPreview?.previousUnknown?.toLocaleString() || 0}</strong><br />Unknown results retried</div>
                 </div>
                 <p>
-                  {reevaluationPreview?.manualPreserved?.toLocaleString() || 0} human-reviewed front/rear result{reevaluationPreview?.manualPreserved === 1 ? "" : "s"} will be preserved. Processing is resumable and does not send historical notifications.
+                  {reevaluationPreview?.manualPreserved?.toLocaleString() || 0} human-reviewed front/rear result{reevaluationPreview?.manualPreserved === 1 ? "" : "s"} will be preserved. Current machine results remain visible until replacements are ready. Processing is resumable, pausable, and does not send historical notifications.
                 </p>
               </div>
             </AlertDialogDescription>
