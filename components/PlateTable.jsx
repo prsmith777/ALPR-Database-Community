@@ -453,6 +453,7 @@ export default function PlateTable({
       directionLabel: plate.direction_label || "",
       directionProfileConfigured: plate.direction_profile_configured === true,
       vehicleColor: plate.vehicle_color || "",
+      vehicleColorStatus: plate.vehicle_color_status || "",
       vehicleColorConfidence: plate.vehicle_color_confidence === null || plate.vehicle_color_confidence === undefined
         ? null
         : Number(plate.vehicle_color_confidence),
@@ -615,6 +616,7 @@ export default function PlateTable({
         ? null
         : Number(currentPlate.orientation_confidence);
       const currentVehicleColor = currentPlate?.vehicle_color || "";
+      const currentVehicleColorStatus = currentPlate?.vehicle_color_status || "";
       const currentVehicleColorConfidence = currentPlate?.vehicle_color_confidence === null
         || currentPlate?.vehicle_color_confidence === undefined
         ? null
@@ -646,6 +648,7 @@ export default function PlateTable({
           currentDirectionProfileConfigured !== selectedImage.directionProfileConfigured ||
           currentDirectionConfidence !== selectedImage.directionConfidence ||
           currentVehicleColor !== selectedImage.vehicleColor ||
+          currentVehicleColorStatus !== selectedImage.vehicleColorStatus ||
           currentVehicleColorConfidence !== selectedImage.vehicleColorConfidence ||
           currentVehicleBodyType !== selectedImage.vehicleBodyType ||
           currentVehicleBodyTypeConfidence !== selectedImage.vehicleBodyTypeConfidence ||
@@ -673,6 +676,7 @@ export default function PlateTable({
           directionLabel: currentDirectionLabel,
           directionProfileConfigured: currentDirectionProfileConfigured,
           vehicleColor: currentVehicleColor,
+          vehicleColorStatus: currentVehicleColorStatus,
           vehicleColorConfidence: currentVehicleColorConfidence,
           vehicleBodyType: currentVehicleBodyType,
           vehicleBodyTypeConfidence: currentVehicleBodyTypeConfidence,
@@ -2434,7 +2438,9 @@ export default function PlateTable({
               License Plate Image - {selectedImage?.plateNumber}
             </DialogTitle>
             {selectedImage && (
-              <div className="grid gap-3 rounded-lg border p-3 text-sm sm:grid-cols-2 lg:grid-cols-7">
+              <div className="grid min-h-0 items-stretch gap-3 lg:grid-cols-[minmax(0,1fr)_14rem]">
+                <div className="grid min-h-0 grid-rows-[auto_minmax(0,1fr)] gap-3">
+                  <div className="grid gap-3 rounded-lg border p-3 text-sm sm:grid-cols-2 lg:grid-cols-6">
                 <div>
                   <div className="text-xs uppercase text-muted-foreground">Observed</div>
                   <div className="font-mono">{selectedImage.observedPlate}</div>
@@ -2535,18 +2541,16 @@ export default function PlateTable({
                       {selectedImage.vehicleOrientation} view · {Math.round(selectedImage.directionConfidence * 100)}%
                     </div>
                   ) : null}
-                  {selectedImage.vehicleColor && selectedImage.vehicleColorConfidence !== null ? (
-                    <div className="mt-1 text-xs capitalize text-muted-foreground">
-                      {selectedImage.vehicleColor} · {Math.round(selectedImage.vehicleColorConfidence * 100)}% color
-                    </div>
-                  ) : null}
-                  {selectedImage.vehicleBodyType && selectedImage.vehicleBodyTypeConfidence !== null ? (
-                    <div className="mt-1 text-xs capitalize text-muted-foreground">
-                      {selectedImage.vehicleBodyType} · {Math.round(selectedImage.vehicleBodyTypeConfidence * 100)}% type
-                    </div>
-                  ) : null}
                 </div>
-                <div>
+                  </div>
+                  <div className="relative h-[40vh] w-full sm:h-auto sm:min-h-0">
+                    <ImageViewer
+                      image={selectedImage}
+                      onClose={() => setSelectedImage(null)}
+                    />
+                  </div>
+                </div>
+                <aside className="h-full rounded-lg border p-3 text-sm lg:min-h-0">
                   <div className="text-xs uppercase text-muted-foreground">Vehicle</div>
                   {selectedImage.vehicleClusterId ? (
                     <>
@@ -2557,17 +2561,37 @@ export default function PlateTable({
                       </div>
                     </>
                   ) : <div className="text-muted-foreground">Unassigned</div>}
-                </div>
+                  <div className="mt-4 space-y-3 border-t pt-3">
+                    <div>
+                      <div className="text-xs uppercase text-muted-foreground">Type</div>
+                      <div className="capitalize">
+                        {selectedImage.vehicleBodyType && selectedImage.vehicleBodyTypeConfidence !== null
+                          ? selectedImage.vehicleBodyType
+                          : "Unavailable"}
+                      </div>
+                      {selectedImage.vehicleBodyType && selectedImage.vehicleBodyTypeConfidence !== null ? (
+                        <div className="text-xs text-muted-foreground">
+                          {Math.round(selectedImage.vehicleBodyTypeConfidence * 100)}% confidence
+                        </div>
+                      ) : null}
+                    </div>
+                    <div>
+                      <div className="text-xs uppercase text-muted-foreground">Color</div>
+                      <div className="capitalize">
+                        {selectedImage.vehicleColor && selectedImage.vehicleColorConfidence !== null
+                          ? selectedImage.vehicleColor
+                          : selectedImage.vehicleColorStatus === "unknown" ? "Unavailable" : "Pending"}
+                      </div>
+                      {selectedImage.vehicleColor && selectedImage.vehicleColorConfidence !== null ? (
+                        <div className="text-xs text-muted-foreground">
+                          {Math.round(selectedImage.vehicleColorConfidence * 100)}% confidence
+                        </div>
+                      ) : null}
+                    </div>
+                  </div>
+                </aside>
               </div>
             )}
-            <div className="relative h-[40vh] w-full sm:h-auto sm:min-h-0">
-              {selectedImage && (
-                <ImageViewer
-                  image={selectedImage}
-                  onClose={() => setSelectedImage(null)}
-                />
-              )}
-            </div>
             <DialogFooter>
               <div className="flex w-full flex-wrap gap-2">
                 <div className="contents">

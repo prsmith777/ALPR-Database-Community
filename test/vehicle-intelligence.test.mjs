@@ -6,8 +6,10 @@ import { createColorSignature } from "../lib/image-similarity.mjs";
 import { CaptureAssetRepository } from "../lib/capture-asset-repository.mjs";
 import { CaptureAssetService } from "../lib/capture-asset-service.mjs";
 import {
+  VEHICLE_COLOR_MODEL,
   VEHICLE_TYPE_MODEL,
   VEHICLE_TYPE_PROVIDER,
+  assessVehicleColorPixels,
   inferVehicleColor,
   inferVehicleType,
 } from "../lib/vehicle-attributes.mjs";
@@ -42,6 +44,51 @@ test("vehicle color remains per-read evidence with confidence", () => {
   );
   assert.equal(inferVehicleColor(createColorSignature(pixels(240, 240, 240))).value, "white");
   assert.equal(inferVehicleColor(createColorSignature(pixels(10, 10, 10))).value, "black");
+});
+
+test("monochrome night captures do not receive a guessed vehicle color", () => {
+  const monochrome = Buffer.alloc(16 * 16 * 3);
+  for (let offset = 0; offset < monochrome.length; offset += 3) {
+    const value = (offset / 3 * 17) % 256;
+    monochrome[offset] = value;
+    monochrome[offset + 1] = Math.min(255, value + 2);
+    monochrome[offset + 2] = Math.max(0, value - 2);
+  }
+  const observation = assessVehicleColorPixels(monochrome);
+  assert.deepEqual(
+    {
+      status: observation.status,
+      value: observation.value,
+      confidence: observation.confidence,
+      reason: observation.reason,
+      monochromeRatio: observation.monochromeRatio,
+    },
+    {
+      status: "unknown",
+      value: null,
+      confidence: null,
+      reason: "monochrome_capture",
+      monochromeRatio: 1,
+    }
+  );
+  assert.match(VEHICLE_COLOR_MODEL, /v2$/);
+});
+
+test("color assessment remains enabled for genuinely chromatic captures", () => {
+  const observation = assessVehicleColorPixels(pixels(220, 20, 20));
+  assert.equal(observation.status, "ready");
+  assert.equal(observation.value, "red");
+  assert.equal(observation.reason, null);
+  assert.equal(observation.monochromeRatio, 0);
+});
+
+test("live-feed vehicle descriptors use a side rail without reducing image height", async () => {
+  const table = await source("components/PlateTable.jsx");
+  assert.match(table, /grid min-h-0 items-stretch gap-3 lg:grid-cols-\[minmax\(0,1fr\)_14rem\]/);
+  assert.match(table, /<ImageViewer[\s\S]*?<aside className="h-full rounded-lg border p-3 text-sm lg:min-h-0">/);
+  assert.match(table, /<aside[\s\S]*?<div className="text-xs uppercase text-muted-foreground">Type<\/div>[\s\S]*?<div className="text-xs uppercase text-muted-foreground">Color<\/div>/);
+  const directionSection = table.slice(table.indexOf("<span>Direction</span>"), table.indexOf("<aside"));
+  assert.doesNotMatch(directionSection, /vehicleColor|vehicleBodyType/);
 });
 
 test("local vehicle type inference preserves confidence and model provenance", async () => {
