@@ -2839,12 +2839,12 @@ export default function PlateTable({
             <div className="grid gap-5 py-2">
               <div
                 className={
-                  selectedImage?.id === correction?.id
+                  selectedImage && selectedImage.id === correction?.id
                     ? "grid gap-4 sm:grid-cols-[minmax(0,0.8fr)_minmax(0,1.2fr)]"
                     : "grid gap-4"
                 }
               >
-                {selectedImage?.id === correction?.id && (
+                {selectedImage && selectedImage.id === correction?.id && (
                   <div className="grid gap-2">
                     <div className="text-xs uppercase tracking-wide text-muted-foreground">
                       Plate image

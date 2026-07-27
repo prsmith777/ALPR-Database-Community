@@ -281,6 +281,8 @@ test("correction UI exposes previewed batch scope, recurring alias, and append-o
   assert.match(feed, /Save recurring alias/);
   assert.match(feed, /Replace existing recurring alias/);
   assert.match(feed, /Reverse and disable alias/);
+  assert.equal((feed.match(/selectedImage && selectedImage\.id === correction\?\.id/g) || []).length, 2);
+  assert.doesNotMatch(feed, /selectedImage\?\.id === correction\?\.id/);
   assert.equal((feed.match(/aliasScope: "all"/g) || []).length, 3);
   assert.doesNotMatch(feed, /aliasScope: "camera"/);
   assert.match(feed, /Preview affected reads/);
