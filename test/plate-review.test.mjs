@@ -178,6 +178,8 @@ test("correction UI exposes previewed batch scope, recurring alias, and append-o
   assert.match(feed, /Camera observed/);
   assert.match(feed, /Current effective plate/);
   assert.match(feed, /Remember .* as a recurring misread/);
+  assert.equal((feed.match(/aliasScope: "all"/g) || []).length, 3);
+  assert.doesNotMatch(feed, /aliasScope: "camera"/);
   assert.match(feed, /Preview affected reads/);
   assert.match(feed, /Review History/);
   assert.doesNotMatch(feed, /Remove previous plate number from database/);

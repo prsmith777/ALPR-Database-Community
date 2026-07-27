@@ -1,4 +1,5 @@
 import {
+  BookOpenText,
   ExternalLink,
   GitCommitHorizontal,
   PackageOpen,
@@ -52,12 +53,18 @@ export default function ReleaseInformationCard({ release }) {
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-5">
-          <div className="grid gap-3 md:grid-cols-3">
+          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
             <ReleaseMetric
               icon={PackageOpen}
               label="Application version"
               value={release.version}
               detail="From the installed application package"
+            />
+            <ReleaseMetric
+              icon={BookOpenText}
+              label="User manual"
+              value={release.manualVersion}
+              detail={`Updated ${release.manualUpdatedAt}`}
             />
             <ReleaseMetric
               icon={GitCommitHorizontal}

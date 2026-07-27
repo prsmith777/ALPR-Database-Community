@@ -2223,6 +2223,20 @@ export async function reviewVehicleDirection(input = {}) {
   }
 }
 
+export async function runVehicleDirectionBackfillBatch(batchSize = 20) {
+  await requirePermission("maintenance.manage");
+  try {
+    const data = await (await getCaptureAssetService()).backfillDirectionBatch({
+      limit: batchSize,
+    });
+    revalidatePath("/settings/vehicle-intelligence");
+    revalidatePath("/live_feed");
+    return { success: true, data };
+  } catch (error) {
+    return visualSearchFailure(error, "Unable to process historical vehicle directions.");
+  }
+}
+
 export async function getVehicleClusterOverview() {
   const principal = await requirePermission("plate.read");
   try {

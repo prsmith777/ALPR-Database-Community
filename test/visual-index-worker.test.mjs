@@ -66,6 +66,74 @@ test("one automatic worker batch records progress, throughput, and an ETA", asyn
   assert.equal(worker.snapshot().phase, "sleeping");
 });
 
+test("the paced worker drains historical direction work after image indexing", async () => {
+  let directionLimit = null;
+  let indexCalls = 0;
+  const times = [
+    new Date("2026-07-23T12:00:00.000Z"),
+    new Date("2026-07-23T12:00:05.000Z"),
+  ];
+  const worker = new VisualIndexWorker({
+    service: {
+      async getStatus() {
+        return { pending: 0, retryable: 0, direction: { pending: 20 } };
+      },
+      async indexBatch() { indexCalls += 1; return {}; },
+      async backfillDirectionBatch({ limit }) {
+        directionLimit = limit;
+        return { processed: 20, succeeded: 19, failed: 1, busy: false };
+      },
+    },
+    loadSettings: async () => ({ visualIndex: { batchSize: 20, intervalSeconds: 30 } }),
+    now: () => times.shift(),
+    logger: {},
+  });
+
+  await worker.runOnce();
+
+  assert.equal(indexCalls, 0);
+  assert.equal(directionLimit, 20);
+  assert.equal(worker.snapshot().lastBatch.kind, "vehicle-direction");
+  assert.equal(worker.snapshot().lastBatch.succeeded, 19);
+});
+
+test("image indexing and historical directions alternate when both have a backlog", async () => {
+  let indexCalls = 0;
+  let directionCalls = 0;
+  const times = [
+    new Date("2026-07-23T12:00:00.000Z"),
+    new Date("2026-07-23T12:00:01.000Z"),
+    new Date("2026-07-23T12:00:02.000Z"),
+    new Date("2026-07-23T12:00:03.000Z"),
+  ];
+  const service = {
+    async getStatus() {
+      return { pending: 40, retryable: 0, direction: { pending: 40 } };
+    },
+    async indexBatch() {
+      indexCalls += 1;
+      return { processed: 20, succeeded: 20, failed: 0, busy: false };
+    },
+    async backfillDirectionBatch() {
+      directionCalls += 1;
+      return { processed: 20, succeeded: 20, failed: 0, busy: false };
+    },
+  };
+  const worker = new VisualIndexWorker({
+    service,
+    loadSettings: async () => ({ visualIndex: { batchSize: 20, intervalSeconds: 30 } }),
+    now: () => times.shift(),
+    logger: {},
+  });
+
+  await worker.runOnce();
+  assert.equal(worker.snapshot().lastBatch.kind, "vehicle-direction");
+  await worker.runOnce();
+  assert.equal(worker.snapshot().lastBatch.kind, "visual-index");
+  assert.equal(directionCalls, 1);
+  assert.equal(indexCalls, 1);
+});
+
 test("pause and safety thresholds prevent indexing without losing backlog state", async () => {
   let indexCalls = 0;
   const service = {

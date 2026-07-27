@@ -137,6 +137,50 @@ test("a reviewed front or rear capture receives its camera direction immediately
   assert.equal(observations[0].result.confidence, 1);
 });
 
+test("historical direction backfill is bounded, resumable, and records individual failures", async () => {
+  const cleared = [];
+  const failures = [];
+  const repository = {
+    listDirectionBackfillCandidates: async (_model, _classifier, limit) => {
+      assert.equal(limit, 2);
+      return [
+        { read_id: 11, profile_version: 4 },
+        { read_id: 12, profile_version: 4 },
+      ];
+    },
+    clearDirectionBackfillFailure: async (readId) => cleared.push(readId),
+    recordDirectionBackfillFailure: async (failure) => failures.push(failure),
+    getDirectionBackfillStatus: async () => ({
+      eligible: 10,
+      populated: 5,
+      completed: 6,
+      pending: 4,
+      ready: 4,
+      unknown: 1,
+      failed: 1,
+    }),
+  };
+  const service = new CaptureAssetService({ repository, fileStorage: {}, logger: {} });
+  service.refreshDirectionObservation = async (readId) => {
+    if (readId === 12) {
+      const error = new Error("bad descriptor");
+      error.code = "INVALID_EMBEDDING";
+      throw error;
+    }
+    return { status: "ready" };
+  };
+
+  const result = await service.backfillDirectionBatch({ limit: 2 });
+
+  assert.equal(result.processed, 2);
+  assert.equal(result.succeeded, 1);
+  assert.equal(result.failed, 1);
+  assert.deepEqual(cleared, [11]);
+  assert.equal(failures[0].readId, 12);
+  assert.equal(failures[0].profileVersion, 4);
+  assert.equal(result.status.pending, 4);
+});
+
 test("direction schema and administrator setup are durable and camera driven", async () => {
   const [migration, settings, actions] = await Promise.all([
     readFile(new URL("../migrations.sql", import.meta.url), "utf8"),
@@ -158,4 +202,9 @@ test("direction schema and administrator setup are durable and camera driven", a
   assert.match(migration, /'direction'/i);
   assert.match(migration, /2026072602_reviewed_vehicle_direction_truth/i);
   assert.match(migration, /ON CONFLICT \(read_id\) DO UPDATE SET/i);
+  assert.match(migration, /2026072603_vehicle_direction_backfill/i);
+  assert.match(migration, /vehicle_direction_backfill_failures/i);
+  assert.match(settings, /Historical direction backfill/);
+  assert.match(settings, /Run one direction batch now/);
+  assert.match(actions, /runVehicleDirectionBackfillBatch[\s\S]*?requirePermission\("maintenance\.manage"\)/);
 });

@@ -2,11 +2,12 @@
 
 import NextImage from "next/image";
 import { useEffect, useMemo, useState } from "react";
-import { BrainCircuit, Check, Loader2, Save } from "lucide-react";
+import { BrainCircuit, Check, Loader2, Play, Save } from "lucide-react";
 
 import {
   getVehicleDirectionSetup,
   labelVehicleOrientation,
+  runVehicleDirectionBackfillBatch,
   saveVehicleDirectionProfile,
 } from "@/app/actions";
 import { SettingsShell } from "@/components/settings/SettingsShell";
@@ -15,6 +16,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Progress } from "@/components/ui/progress";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 
@@ -40,6 +42,17 @@ export default function VehicleIntelligenceSettings({ initialData }) {
     setDraft({ ...profile });
   }, [profile]);
 
+  useEffect(() => {
+    const pending = Number(data.backfill?.pending || 0)
+      + Number(data.backfill?.imagesAwaitingIndex || 0);
+    if (!pending) return undefined;
+    const timer = window.setInterval(async () => {
+      const result = await getVehicleDirectionSetup(cameraName);
+      if (result.success) setData(result.data);
+    }, 5000);
+    return () => window.clearInterval(timer);
+  }, [cameraName, data.backfill?.imagesAwaitingIndex, data.backfill?.pending]);
+
   const reload = async (selected = cameraName) => {
     const result = await getVehicleDirectionSetup(selected);
     if (!result.success) throw new Error(result.error);
@@ -63,7 +76,7 @@ export default function VehicleIntelligenceSettings({ initialData }) {
       const result = await saveVehicleDirectionProfile(draft);
       if (!result.success) throw new Error(result.error);
       await reload(cameraName);
-      setMessage("Camera direction setup saved and recent indexed captures reevaluated.");
+      setMessage("Camera direction setup saved. Recent captures were updated and the remaining historical reads were queued.");
     } catch (error) { setMessage(error.message); }
     finally { setBusy(""); }
   };
@@ -78,6 +91,37 @@ export default function VehicleIntelligenceSettings({ initialData }) {
     } catch (error) { setMessage(error.message); }
     finally { setBusy(""); }
   };
+
+  const runDirectionBackfill = async () => {
+    setBusy("backfill");
+    setMessage("");
+    try {
+      const result = await runVehicleDirectionBackfillBatch(20);
+      if (!result.success) throw new Error(result.error);
+      await reload(cameraName);
+      setMessage(
+        result.data.processed
+          ? `Processed ${result.data.processed} historical captures: ${result.data.succeeded} completed, ${result.data.failed} failed.`
+          : "No indexed historical captures are waiting for direction analysis."
+      );
+    } catch (error) { setMessage(error.message); }
+    finally { setBusy(""); }
+  };
+
+  const backfill = data.backfill || {
+    eligible: 0,
+    populated: 0,
+    completed: 0,
+    pending: 0,
+    ready: 0,
+    unknown: 0,
+    failed: 0,
+    imagesAwaitingIndex: 0,
+    imageFailures: 0,
+  };
+  const backfillCompletion = backfill.eligible
+    ? Math.round(backfill.completed / backfill.eligible * 100)
+    : 100;
 
   return (
     <SettingsShell
@@ -141,6 +185,42 @@ export default function VehicleIntelligenceSettings({ initialData }) {
               </>
             )}
             {message && <p className="rounded-md border p-3 text-sm">{message}</p>}
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle>Historical direction backfill</CardTitle>
+            <CardDescription>
+              Existing image-backed reads are indexed and evaluated in safe, resumable batches. Human front/rear reviews remain authoritative, and this process does not send historical notifications.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="flex flex-wrap items-center justify-between gap-3 text-sm">
+              <span>{backfill.completed.toLocaleString()} of {backfill.eligible.toLocaleString()} indexed captures completed</span>
+              <Badge variant={backfill.pending ? "outline" : "secondary"}>
+                {backfill.pending ? `${backfill.pending.toLocaleString()} pending` : "Up to date"}
+              </Badge>
+            </div>
+            <Progress value={backfillCompletion} aria-label={`${backfillCompletion}% of historical directions evaluated`} />
+            <div className="grid grid-cols-2 gap-3 text-center sm:grid-cols-5">
+              <div className="rounded-md border p-3"><div className="text-xl font-semibold">{backfill.ready.toLocaleString()}</div><div className="text-xs text-muted-foreground">directions assigned</div></div>
+              <div className="rounded-md border p-3"><div className="text-xl font-semibold">{backfill.unknown.toLocaleString()}</div><div className="text-xs text-muted-foreground">remain unknown</div></div>
+              <div className="rounded-md border p-3"><div className="text-xl font-semibold">{backfill.imagesAwaitingIndex.toLocaleString()}</div><div className="text-xs text-muted-foreground">awaiting ReID</div></div>
+              <div className="rounded-md border p-3"><div className="text-xl font-semibold">{backfill.imageFailures.toLocaleString()}</div><div className="text-xs text-muted-foreground">image failures</div></div>
+              <div className="rounded-md border p-3"><div className="text-xl font-semibold">{backfill.failed.toLocaleString()}</div><div className="text-xs text-muted-foreground">direction failures</div></div>
+            </div>
+            <p className="text-xs text-muted-foreground">
+              The background visual-intelligence worker continues automatically using the configured indexing pace and safety limits. Captures below the confidence threshold correctly remain Unknown.
+            </p>
+            <Button
+              variant="secondary"
+              onClick={runDirectionBackfill}
+              disabled={Boolean(busy) || backfill.pending === 0}
+            >
+              {busy === "backfill" ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Play className="mr-2 h-4 w-4" />}
+              Run one direction batch now
+            </Button>
           </CardContent>
         </Card>
 

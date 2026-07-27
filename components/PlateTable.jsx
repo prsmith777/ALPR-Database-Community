@@ -1920,7 +1920,7 @@ export default function PlateTable({
                                     unreviewedOnly: true,
                                     batchCameraOnly: false,
                                     rememberAlias: false,
-                                    aliasScope: "camera",
+                                    aliasScope: "all",
                                     reason: "ocr_character_error",
                                     notes: "",
                                   });
@@ -2117,7 +2117,7 @@ export default function PlateTable({
                                     unreviewedOnly: true,
                                     batchCameraOnly: false,
                                     rememberAlias: false,
-                                    aliasScope: "camera",
+                                    aliasScope: "all",
                                     reason: "ocr_character_error",
                                     notes: "",
                                   });
@@ -2524,7 +2524,7 @@ export default function PlateTable({
                         unreviewedOnly: true,
                         batchCameraOnly: false,
                         rememberAlias: false,
-                        aliasScope: "camera",
+                        aliasScope: "all",
                         reason: "ocr_character_error",
                         notes: "",
                       });
