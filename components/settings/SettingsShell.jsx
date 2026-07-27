@@ -68,7 +68,7 @@ function SettingsShellContent({ activeId, title, description, onSelect, children
     .filter((section) => section.items.length > 0);
 
   function isLocalSection(item) {
-    return pathname === "/settings" && !item.href.startsWith("/settings/integrations");
+    return pathname === "/settings" && item.href.startsWith("/settings?section=");
   }
 
   return (
