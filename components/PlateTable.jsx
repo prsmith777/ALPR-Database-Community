@@ -456,6 +456,11 @@ export default function PlateTable({
       vehicleColorConfidence: plate.vehicle_color_confidence === null || plate.vehicle_color_confidence === undefined
         ? null
         : Number(plate.vehicle_color_confidence),
+      vehicleBodyType: plate.vehicle_body_type || "",
+      vehicleBodyTypeConfidence: plate.vehicle_body_type_confidence === null
+        || plate.vehicle_body_type_confidence === undefined
+        ? null
+        : Number(plate.vehicle_body_type_confidence),
       vehicleClusterId: plate.vehicle_cluster_id ? Number(plate.vehicle_cluster_id) : null,
       vehicleClusterStatus: plate.vehicle_cluster_status || null,
       vehicleClusterSimilarity: plate.vehicle_cluster_similarity === null || plate.vehicle_cluster_similarity === undefined
@@ -614,6 +619,11 @@ export default function PlateTable({
         || currentPlate?.vehicle_color_confidence === undefined
         ? null
         : Number(currentPlate.vehicle_color_confidence);
+      const currentVehicleBodyType = currentPlate?.vehicle_body_type || "";
+      const currentVehicleBodyTypeConfidence = currentPlate?.vehicle_body_type_confidence === null
+        || currentPlate?.vehicle_body_type_confidence === undefined
+        ? null
+        : Number(currentPlate.vehicle_body_type_confidence);
       const currentVehicleClusterId = currentPlate?.vehicle_cluster_id ? Number(currentPlate.vehicle_cluster_id) : null;
       const currentVehicleClusterStatus = currentPlate?.vehicle_cluster_status || null;
       const currentVehicleClusterSimilarity = currentPlate?.vehicle_cluster_similarity === null
@@ -637,6 +647,8 @@ export default function PlateTable({
           currentDirectionConfidence !== selectedImage.directionConfidence ||
           currentVehicleColor !== selectedImage.vehicleColor ||
           currentVehicleColorConfidence !== selectedImage.vehicleColorConfidence ||
+          currentVehicleBodyType !== selectedImage.vehicleBodyType ||
+          currentVehicleBodyTypeConfidence !== selectedImage.vehicleBodyTypeConfidence ||
           currentVehicleClusterId !== selectedImage.vehicleClusterId ||
           currentVehicleClusterStatus !== selectedImage.vehicleClusterStatus ||
           currentVehicleClusterSimilarity !== selectedImage.vehicleClusterSimilarity)
@@ -662,6 +674,8 @@ export default function PlateTable({
           directionProfileConfigured: currentDirectionProfileConfigured,
           vehicleColor: currentVehicleColor,
           vehicleColorConfidence: currentVehicleColorConfidence,
+          vehicleBodyType: currentVehicleBodyType,
+          vehicleBodyTypeConfidence: currentVehicleBodyTypeConfidence,
           vehicleClusterId: currentVehicleClusterId,
           vehicleClusterStatus: currentVehicleClusterStatus,
           vehicleClusterSimilarity: currentVehicleClusterSimilarity,
@@ -2524,6 +2538,11 @@ export default function PlateTable({
                   {selectedImage.vehicleColor && selectedImage.vehicleColorConfidence !== null ? (
                     <div className="mt-1 text-xs capitalize text-muted-foreground">
                       {selectedImage.vehicleColor} · {Math.round(selectedImage.vehicleColorConfidence * 100)}% color
+                    </div>
+                  ) : null}
+                  {selectedImage.vehicleBodyType && selectedImage.vehicleBodyTypeConfidence !== null ? (
+                    <div className="mt-1 text-xs capitalize text-muted-foreground">
+                      {selectedImage.vehicleBodyType} · {Math.round(selectedImage.vehicleBodyTypeConfidence * 100)}% type
                     </div>
                   ) : null}
                 </div>

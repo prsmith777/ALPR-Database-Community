@@ -4,7 +4,13 @@ import test from "node:test";
 
 import { createColorSignature } from "../lib/image-similarity.mjs";
 import { CaptureAssetRepository } from "../lib/capture-asset-repository.mjs";
-import { inferVehicleColor } from "../lib/vehicle-attributes.mjs";
+import { CaptureAssetService } from "../lib/capture-asset-service.mjs";
+import {
+  VEHICLE_TYPE_MODEL,
+  VEHICLE_TYPE_PROVIDER,
+  inferVehicleColor,
+  inferVehicleType,
+} from "../lib/vehicle-attributes.mjs";
 import { chooseShadowCluster } from "../lib/vehicle-clustering.mjs";
 
 async function source(path) {
@@ -35,6 +41,79 @@ test("vehicle color remains per-read evidence with confidence", () => {
   );
   assert.equal(inferVehicleColor(createColorSignature(pixels(240, 240, 240))).value, "white");
   assert.equal(inferVehicleColor(createColorSignature(pixels(10, 10, 10))).value, "black");
+});
+
+test("local vehicle type inference preserves confidence and model provenance", async () => {
+  assert.deepEqual(inferVehicleType([0.8, 0.05, 0.1, 0.05]), {
+    status: "ready",
+    value: "car",
+    confidence: 0.8,
+    scores: { car: 0.8, bus: 0.05, truck: 0.1, van: 0.05 },
+  });
+  assert.deepEqual(inferVehicleType([0.4, 0.1, 0.3, 0.2]), {
+    status: "unknown",
+    value: null,
+    confidence: 0.4,
+    scores: { car: 0.4, bus: 0.1, truck: 0.3, van: 0.2 },
+  });
+  assert.equal(VEHICLE_TYPE_PROVIDER, "openvino-open-model-zoo");
+  assert.match(VEHICLE_TYPE_MODEL, /vehicle-attributes-recognition-barrier-0039/);
+  const [modelXml, modelBin, modelLicense] = await Promise.all([
+    readFile(new URL("../models/visual-search/vehicle-attributes-recognition-barrier-0039.xml", import.meta.url)),
+    readFile(new URL("../models/visual-search/vehicle-attributes-recognition-barrier-0039.bin", import.meta.url)),
+    source("models/visual-search/LICENSE.open-model-zoo.txt"),
+  ]);
+  assert.ok(modelXml.length > 40_000);
+  assert.ok(modelBin.length > 1_000_000);
+  assert.match(modelLicense, /Apache License[\s\S]*Version 2\.0/);
+});
+
+test("automatic vehicle type analysis stores per-read evidence without manual labels", async () => {
+  const saved = [];
+  const service = new CaptureAssetService({
+    repository: {
+      async saveVehicleAttributeObservation(observation) { saved.push(observation); },
+    },
+    fileStorage: {
+      async getImage(path) { return path === "derived/read-1.jpg" ? Buffer.from("image") : null; },
+    },
+    vehicleTypeAnalyzer: {
+      async analyze() {
+        return {
+          status: "ready",
+          value: "truck",
+          confidence: 0.91,
+          scores: { car: 0.04, bus: 0.02, truck: 0.91, van: 0.03 },
+        };
+      },
+    },
+    logger: {},
+  });
+
+  const result = await service.analyzeVehicleTypeAssets([
+    { read_id: 1, derived_path: "derived/read-1.jpg" },
+  ]);
+
+  assert.deepEqual(result, {
+    processed: 1,
+    succeeded: 1,
+    ready: 1,
+    unknown: 0,
+    failed: 0,
+  });
+  assert.deepEqual(saved[0], {
+    readId: 1,
+    attributeKey: "body_type",
+    status: "ready",
+    attributeValue: "truck",
+    confidence: 0.91,
+    provider: VEHICLE_TYPE_PROVIDER,
+    modelVersion: VEHICLE_TYPE_MODEL,
+    rawResult: {
+      scores: { car: 0.04, bus: 0.02, truck: 0.91, van: 0.03 },
+      input: "detected_vehicle_crop",
+    },
+  });
 });
 
 test("shadow clustering uses descriptor similarity and a continuous margin", () => {
@@ -97,6 +176,8 @@ test("vehicle intelligence keeps ReID grouping separate from reviewed plate asso
   assert.match(service, /chooseShadowCluster\(\{ embedding: asset\.vehicle_embedding, candidates \}\)/);
   assert.doesNotMatch(service, /chooseShadowCluster\([\s\S]{0,300}plate_number/);
   assert.match(service, /clusterRecentUnassigned[\s\S]*?analyzeVehicleColorAssets\(assets\)/);
+  assert.match(service, /analyzeRecentVehicleTypes/);
+  assert.match(service, /attributeKey: "body_type"/);
   assert.doesNotMatch(service, /clusterRecentUnassigned[\s\S]{0,1800}?analyzeRecentVehicleColors\(bounded\)/);
   assert.match(actions, /reviewVehicleClusterSuggestion[\s\S]*?requirePermission\("plate\.review"\)/);
   assert.match(actions, /reviewVehiclePlateAssociation[\s\S]*?requirePermission\("plate\.review"\)/);
