@@ -94,11 +94,7 @@ reliable background processing.
   Different vehicle review. Effective plates from human-confirmed members are
   proposed separately and require explicit audited confirmation or rejection;
   only confirmed associations become trusted future mismatch baselines.
-  Reviewers can also record visible distinguishing features per capture,
-  including roof/rear racks, stickers, toolboxes, trailers, aftermarket changes,
-  and damage. Profiles aggregate repeated evidence and support feature filtering
-  while preserving confidence and provider/model provenance. Automatic feature
-  classification and mismatch alerts remain disabled.
+  Automatic named-feature classification and mismatch alerts remain disabled.
 - Administrators now have a read-only Storage Health view in Data & Privacy.
   It reports mounted-filesystem capacity, PostgreSQL and plate-read size,
   record/image-path counts, recent ingestion, visual-index state,
@@ -296,9 +292,7 @@ remain externally orchestrated.
   a plate. Descriptor-only grouping excludes plate text and creates either a
   seed cluster or a reviewable suggested assignment. Effective-plate links are
   independently suggested and require audited confirmation or rejection.
-  Per-capture distinguishing features can be reviewed, aggregated, and filtered
-  without turning one image into a permanent vehicle claim. Recognition Feed
-  shows assignment, direction, and color evidence in its image dialog. Confirmed
+  Recognition Feed shows assignment, direction, and color evidence in its image dialog. Confirmed
   associations are a baseline only; mismatch labels and alerts remain disabled.
 - Expand the implemented asynchronous color and direction observations to
   make/model/body type/year with per-field confidence, provider/model/version

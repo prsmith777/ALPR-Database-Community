@@ -59,7 +59,6 @@ test("the guide covers required workflows and clearly labels planned features", 
     "read storage health safely",
     "cannot delete or modify images",
     "read installed release information",
-    "review visible features",
     "confirm association",
   ]) {
     assert.match(text, new RegExp(required, "i"));
