@@ -7,6 +7,10 @@ import { CaptureAssetRepository } from "../lib/capture-asset-repository.mjs";
 import { inferVehicleColor } from "../lib/vehicle-attributes.mjs";
 import { chooseShadowCluster } from "../lib/vehicle-clustering.mjs";
 
+async function source(path) {
+  return readFile(new URL(`../${path}`, import.meta.url), "utf8");
+}
+
 function pixels(red, green, blue) {
   const result = Buffer.alloc(16 * 16 * 3);
   for (let offset = 0; offset < result.length; offset += 3) {
@@ -79,6 +83,13 @@ test("vehicle intelligence schema is shadow-only and reviewable", async () => {
   assert.doesNotMatch(service, /clusterRecentUnassigned[\s\S]{0,1800}?analyzeRecentVehicleColors\(bounded\)/);
   assert.match(actions, /reviewVehicleClusterSuggestion[\s\S]*?requirePermission\("plate\.review"\)/);
   assert.match(actions, /analyzeRecentVehicleClusters[\s\S]*?requirePermission\("maintenance\.manage"\)/);
+});
+
+test("vehicle intelligence settings always navigate to their dedicated route", async () => {
+  const shell = await source("components/settings/SettingsShell.jsx");
+  assert.match(shell, /href: "\/settings\/vehicle-intelligence"/);
+  assert.match(shell, /item\.href\.startsWith\("\/settings\?section="\)/);
+  assert.doesNotMatch(shell, /!item\.href\.startsWith\("\/settings\/integrations"\)/);
 });
 
 test("vehicle cluster queries use one current vehicle asset per read", async () => {
