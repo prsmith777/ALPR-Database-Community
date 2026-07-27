@@ -138,6 +138,41 @@ test("a reviewed front or rear capture receives its camera direction immediately
   assert.equal(observations[0].result.confidence, 1);
 });
 
+test("historical evaluation discovers and preserves an existing human orientation label", async () => {
+  const observations = [];
+  const repository = {
+    getAsset: async () => ({
+      read_id: 42,
+      camera_name: "Street LPR 2",
+      embedding_model: VEHICLE_REID_MODEL,
+      vehicle_embedding: "indexed",
+    }),
+    getDirectionProfile: async () => ({
+      camera_name: "Street LPR 2",
+      enabled: true,
+      front_direction_label: "Eastbound",
+      rear_direction_label: "Westbound",
+      minimum_confidence: 0.68,
+      profile_version: 3,
+    }),
+    listOrientationSamples: async () => [
+      { read_id: 40, orientation: "front" },
+      { read_id: 41, orientation: "front" },
+      { read_id: 42, orientation: "rear" },
+    ],
+    saveDirectionObservation: async (observation) => observations.push(observation),
+  };
+  const service = new CaptureAssetService({ repository, fileStorage: {} });
+
+  const result = await service.refreshDirectionObservation(42);
+
+  assert.equal(result.status, "ready");
+  assert.equal(result.orientation, "rear");
+  assert.equal(result.confidence, 1);
+  assert.equal(result.directionLabel, "Westbound");
+  assert.equal(observations[0].result.orientation, "rear");
+});
+
 test("historical direction backfill is bounded, resumable, and records individual failures", async () => {
   const cleared = [];
   const failures = [];
@@ -204,6 +239,56 @@ test("historical direction queries join camera profiles through their declared r
   }
 });
 
+test("historical direction re-evaluation queues machine results and preserves manual reviews", async () => {
+  const calls = [];
+  const repository = new CaptureAssetRepository({
+    executor: {
+      async query(text, values) {
+        calls.push({ text, values });
+        if (text.includes("WITH eligible AS")) {
+          return { rows: [{
+            eligible: 120,
+            camera_count: 1,
+            manual_preserved: 20,
+            queued: 100,
+            previous_ready: 60,
+            previous_unknown: 35,
+            already_pending: 5,
+          }] };
+        }
+        if (text.includes("DELETE FROM public.vehicle_direction_observations")) {
+          return { rows: [{ status: "ready" }, { status: "unknown" }] };
+        }
+        if (text.includes("DELETE FROM public.vehicle_direction_backfill_failures")) {
+          return { rows: [{ read_id: 8 }] };
+        }
+        return { rows: [] };
+      },
+    },
+  });
+
+  const result = await repository.queueDirectionReevaluation({
+    cameraName: "Street LPR 2",
+    embeddingModel: VEHICLE_REID_MODEL,
+    classifierVersion: "vehicle-orientation-v1",
+    actor: { id: 1 },
+  });
+
+  assert.equal(result.queued, 100);
+  assert.equal(result.manualPreserved, 20);
+  assert.equal(result.removed, 2);
+  assert.equal(result.failuresCleared, 1);
+  const destructiveCalls = calls.filter((call) => call.text.includes("DELETE FROM public.vehicle_direction"));
+  assert.equal(destructiveCalls.length, 2);
+  for (const call of destructiveCalls) {
+    assert.match(call.text, /LEFT JOIN public\.vehicle_orientation_labels labels/i);
+    assert.match(call.text, /labels\.read_id IS NULL/i);
+    assert.match(call.text, /LOWER\(BTRIM\(reads\.camera_name\)\) = LOWER\(BTRIM\(\$4\)\)/i);
+    assert.equal(call.values[3], "Street LPR 2");
+  }
+  assert.match(calls.at(-1).text, /vehicle\.direction_reevaluation_queued/i);
+});
+
 test("direction schema and administrator setup are durable and camera driven", async () => {
   const [migration, settings, actions] = await Promise.all([
     readFile(new URL("../migrations.sql", import.meta.url), "utf8"),
@@ -229,5 +314,8 @@ test("direction schema and administrator setup are durable and camera driven", a
   assert.match(migration, /vehicle_direction_backfill_failures/i);
   assert.match(settings, /Historical direction backfill/);
   assert.match(settings, /Run one direction batch now/);
+  assert.match(settings, /Re-evaluate selected camera/);
+  assert.match(settings, /Re-evaluate all cameras/);
   assert.match(actions, /runVehicleDirectionBackfillBatch[\s\S]*?requirePermission\("maintenance\.manage"\)/);
+  assert.match(actions, /queueVehicleDirectionReevaluation[\s\S]*?requirePermission\("maintenance\.manage"\)/);
 });
