@@ -112,7 +112,7 @@ function AttentionSummary({ data }) {
   );
 }
 
-export default function VehicleClusters({ initialResult }) {
+export default function VehicleClusters({ initialResult, view = "profiles", initialQueue = "vehicle" }) {
   const router = useRouter();
   const searchParams = useSearchParams();
   const [result, setResult] = useState(initialResult);
@@ -120,6 +120,10 @@ export default function VehicleClusters({ initialResult }) {
   const [message, setMessage] = useState("");
   const [profileSearch, setProfileSearch] = useState(initialResult?.data?.filters?.profileSearch || "");
   const data = result?.success ? result.data : null;
+  const basePath = view === "review" ? "/visual_search/vehicles/review" : "/visual_search/vehicles";
+  const activeQueue = ["vehicle", "plates", "direction", "setup"].includes(initialQueue)
+    ? initialQueue
+    : "vehicle";
 
   useEffect(() => {
     setResult(initialResult);
@@ -152,7 +156,7 @@ export default function VehicleClusters({ initialResult }) {
       else parameters.set(key, String(value));
     });
     const query = parameters.toString();
-    router.push(query ? `/visual_search/vehicles?${query}` : "/visual_search/vehicles");
+    router.push(query ? `${basePath}?${query}` : basePath);
   };
 
   const page = (urlKey, value) => updateUrl({ [urlKey]: value });
@@ -230,11 +234,11 @@ export default function VehicleClusters({ initialResult }) {
 
   return (
     <div className="space-y-8">
-      <Card className="border-blue-500/30 bg-blue-500/5">
+      {view === "profiles" && <Card className="border-blue-500/30 bg-blue-500/5">
         <CardHeader>
           <CardTitle className="flex items-center gap-2"><Layers3 className="h-5 w-5" /> Vehicle identity foundation</CardTitle>
           <CardDescription>
-            ReID groups captures without using plate text. Human decisions are collected in the independent review queues below.
+            ReID groups captures without using plate text. Outstanding decisions are organized in the Needs Review tab.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
@@ -244,11 +248,6 @@ export default function VehicleClusters({ initialResult }) {
             <div className="rounded-md border bg-background p-3"><div className="text-2xl font-semibold">{data.stats.pendingPlateAssociations}</div><div className="text-xs text-muted-foreground">plate associations to review</div></div>
             <div className="rounded-md border bg-background p-3"><div className="text-2xl font-semibold">{data.stats.pendingDirectionReviews}</div><div className="text-xs text-muted-foreground">direction candidates</div></div>
           </div>
-          <div className="grid gap-3 sm:grid-cols-3">
-            <div className="rounded-md border bg-background p-3"><div className="text-xl font-semibold">{data.stats.confirmedProfiles}</div><div className="text-xs text-muted-foreground">confirmed profiles</div></div>
-            <div className="rounded-md border bg-background p-3"><div className="text-xl font-semibold">{data.stats.confirmedAssignments}</div><div className="text-xs text-muted-foreground">confirmed capture assignments</div></div>
-            <div className="rounded-md border bg-background p-3"><div className="text-xl font-semibold">{data.stats.shadowClusters}</div><div className="text-xs text-muted-foreground">shadow profiles</div></div>
-          </div>
           {data.canAnalyze && (
             <Button onClick={analyze} disabled={Boolean(busy)}>
               {busy === "analyze" ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <RefreshCw className="mr-2 h-4 w-4" />}
@@ -257,12 +256,26 @@ export default function VehicleClusters({ initialResult }) {
           )}
           {message && <p role="status" className="rounded-md border bg-background p-3 text-sm">{message}</p>}
         </CardContent>
-      </Card>
+      </Card>}
 
-      <section className="space-y-4">
-        <div><h2 className="text-2xl font-semibold">Needs review</h2><p className="text-sm text-muted-foreground">Each queue is complete and paginated independently from the Vehicle Profiles list.</p></div>
+      {view === "review" && <section className="space-y-4">
+        <div><h2 className="text-2xl font-semibold">Needs Review</h2><p className="text-sm text-muted-foreground">Choose one queue. Counts cover the full database and each queue keeps its own page.</p></div>
+        <div className="flex flex-wrap gap-2 rounded-lg border bg-card p-3">
+          <Button asChild variant={activeQueue === "vehicle" ? "default" : "outline"}>
+            <Link href="/visual_search/vehicles/review?queue=vehicle">Vehicle Matches <Badge variant="secondary" className="ml-2">{data.stats.pendingReviews}</Badge></Link>
+          </Button>
+          <Button asChild variant={activeQueue === "plates" ? "default" : "outline"}>
+            <Link href="/visual_search/vehicles/review?queue=plates">Plate Associations <Badge variant="secondary" className="ml-2">{data.stats.pendingPlateAssociations}</Badge></Link>
+          </Button>
+          <Button asChild variant={activeQueue === "direction" ? "default" : "outline"}>
+            <Link href="/visual_search/vehicles/review?queue=direction">Directions <Badge variant="secondary" className="ml-2">{data.stats.pendingDirectionReviews}</Badge></Link>
+          </Button>
+          {data.canManageSettings && <Button asChild variant={activeQueue === "setup" ? "default" : "outline"}>
+            <Link href="/visual_search/vehicles/review?queue=setup">Setup Attention</Link>
+          </Button>}
+        </div>
 
-        <Card>
+        {activeQueue === "vehicle" && <Card>
           <CardHeader><CardTitle className="text-lg">Vehicle matches</CardTitle><CardDescription>Confirm a suggested grouping or separate the capture into its own vehicle profile.</CardDescription></CardHeader>
           <CardContent className="space-y-4">
             {data.suggestions.length === 0 ? <EmptyReview>No vehicle matches are waiting for review.</EmptyReview> : (
@@ -290,9 +303,9 @@ export default function VehicleClusters({ initialResult }) {
             )}
             <PaginationControls pagination={data.pagination.vehicleReviews} onPageChange={(value) => page("vehicleReviewPage", value)} />
           </CardContent>
-        </Card>
+        </Card>}
 
-        <Card>
+        {activeQueue === "plates" && <Card>
           <CardHeader><CardTitle className="text-lg">Plate associations</CardTitle><CardDescription>Review every proposed effective-plate link without searching through vehicle profiles.</CardDescription></CardHeader>
           <CardContent className="space-y-4">
             {data.plateAssociationReviews.length === 0 ? <EmptyReview>No plate associations are waiting for review.</EmptyReview> : (
@@ -315,9 +328,9 @@ export default function VehicleClusters({ initialResult }) {
             )}
             <PaginationControls pagination={data.pagination.plateReviews} onPageChange={(value) => page("plateReviewPage", value)} />
           </CardContent>
-        </Card>
+        </Card>}
 
-        <Card>
+        {activeQueue === "direction" && <Card>
           <CardHeader><CardTitle className="text-lg">Direction reviews</CardTitle><CardDescription>Unlabeled, unknown direction captures are balanced across configured cameras. A review immediately becomes authoritative calibration evidence.</CardDescription></CardHeader>
           <CardContent className="space-y-4">
             {data.directionReviews.length === 0 ? <EmptyReview>No unknown direction captures currently need review.</EmptyReview> : (
@@ -343,22 +356,21 @@ export default function VehicleClusters({ initialResult }) {
             )}
             <PaginationControls pagination={data.pagination.directionReviews} onPageChange={(value) => page("directionReviewPage", value)} />
           </CardContent>
-        </Card>
-      </section>
+        </Card>}
 
-      {data.canManageSettings && <AttentionSummary data={data} />}
+        {activeQueue === "setup" && data.canManageSettings && <div className="space-y-4">
+          <AttentionSummary data={data} />
+          {data.calibration && !data.calibration.recommendation && <Card>
+            <CardHeader><CardTitle className="flex items-center gap-2 text-lg"><Gauge className="h-5 w-5" />Optional ReID calibration</CardTitle><CardDescription>Same/different labels improve local threshold analysis but are not a pending identity decision.</CardDescription></CardHeader>
+            <CardContent className="flex flex-wrap items-center justify-between gap-4">
+              <p className="text-sm text-muted-foreground">Still useful: {data.calibration.neededSameVehicle} same-vehicle and {data.calibration.neededDifferentVehicle} different-vehicle labels.</p>
+              <Button asChild variant="outline"><Link href="/visual_search">Open Visual Search</Link></Button>
+            </CardContent>
+          </Card>}
+        </div>}
+      </section>}
 
-      {data.calibration && !data.calibration.recommendation && (
-        <Card>
-          <CardHeader><CardTitle className="flex items-center gap-2 text-lg"><Gauge className="h-5 w-5" />Optional ReID calibration</CardTitle><CardDescription>Same/different labels improve local threshold analysis but are not a pending identity decision.</CardDescription></CardHeader>
-          <CardContent className="flex flex-wrap items-center justify-between gap-4">
-            <p className="text-sm text-muted-foreground">Still useful: {data.calibration.neededSameVehicle} same-vehicle and {data.calibration.neededDifferentVehicle} different-vehicle labels.</p>
-            <Button asChild variant="outline"><Link href="/visual_search">Open Visual Search</Link></Button>
-          </CardContent>
-        </Card>
-      )}
-
-      <section className="space-y-4">
+      {view === "profiles" && <section className="space-y-4">
         <div><h2 className="text-xl font-semibold">Vehicle profiles</h2><p className="text-sm text-muted-foreground">Profiles are paginated independently from all review queues.</p></div>
         <Card>
           <CardContent className="space-y-4 p-4">
@@ -382,7 +394,7 @@ export default function VehicleClusters({ initialResult }) {
                   {cluster.representativeColor && <div className="text-sm capitalize">{cluster.representativeColor} · {percent(cluster.representativeColorConfidence)} color</div>}
                   <div className="text-xs text-muted-foreground">Last seen {when(cluster.lastSeen)}</div>
                   {cluster.confirmedPlateAssociations.length > 0 && <div className="space-y-1"><div className="text-xs font-medium text-muted-foreground">Confirmed plates</div><div className="flex flex-wrap gap-1">{cluster.confirmedPlateAssociations.map((association) => <Badge key={association.plateNumber} className="font-mono">{association.plateNumber}</Badge>)}</div></div>}
-                  {cluster.suggestedPlateAssociations.length > 0 && <div className="flex items-center gap-1 text-xs text-amber-600 dark:text-amber-400"><AlertTriangle className="h-3.5 w-3.5" />Review in the Plate Associations queue above</div>}
+                  {cluster.suggestedPlateAssociations.length > 0 && <div className="flex items-center gap-1 text-xs text-amber-600 dark:text-amber-400"><AlertTriangle className="h-3.5 w-3.5" />Review in Needs Review &gt; Plate Associations</div>}
                   <div className="flex flex-wrap gap-1">{cluster.observedPlates.slice(0, 5).map((plate) => <Badge key={plate} variant="outline" className="font-mono">{plate}</Badge>)}</div>
                   <Button asChild variant="outline" className="w-full"><Link href={`/visual_search/vehicles/${cluster.id}`}>Open vehicle profile <ArrowRight className="ml-2 h-4 w-4" /></Link></Button>
                 </CardContent>
@@ -391,7 +403,7 @@ export default function VehicleClusters({ initialResult }) {
           </div>
         )}
         <PaginationControls pagination={data.pagination.profiles} onPageChange={(value) => page("profilesPage", value)} />
-      </section>
+      </section>}
     </div>
   );
 }
