@@ -29,7 +29,7 @@ function percent(value) {
   return value === null || value === undefined ? "Not scored" : `${Math.round(value * 100)}%`;
 }
 
-function AssociationDecision({ association, busy, onReview, showConfirm = true, showReject = true }) {
+export function AssociationDecision({ association, busy, onReview, showConfirm = true, showReject = true }) {
   const confirmKey = `${association.plateNumber}:confirm`;
   const rejectKey = `${association.plateNumber}:reject`;
   return (
