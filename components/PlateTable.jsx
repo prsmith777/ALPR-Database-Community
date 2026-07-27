@@ -2531,7 +2531,7 @@ export default function PlateTable({
                   <div className="text-xs uppercase text-muted-foreground">Vehicle</div>
                   {selectedImage.vehicleClusterId ? (
                     <>
-                      <Link href="/visual_search/vehicles" className="text-blue-500 hover:underline">Vehicle #{selectedImage.vehicleClusterId}</Link>
+                      <Link href={`/visual_search/vehicles/${selectedImage.vehicleClusterId}`} className="text-blue-500 hover:underline">Vehicle #{selectedImage.vehicleClusterId}</Link>
                       <div className="text-xs capitalize text-muted-foreground">
                         {selectedImage.vehicleClusterStatus}
                         {selectedImage.vehicleClusterSimilarity !== null ? ` · ${Math.round(selectedImage.vehicleClusterSimilarity * 100)}%` : ""}
