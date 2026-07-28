@@ -118,6 +118,10 @@ import path from "path";
 import fs from "fs/promises";
 import split2 from "split2";
 import fileStorage from "@/lib/fileStorage";
+import {
+  BlueIrisClient,
+  normalizeBlueIrisSettings,
+} from "@/lib/blue-iris.mjs";
 
 async function readServerActionSessionId() {
   const cookieStore = await cookies();
@@ -1432,6 +1436,38 @@ export async function getSettings() {
   return sanitizeSettingsForClient(config);
 }
 
+export async function testBlueIrisConnection() {
+  await requirePermission("system.manage_settings");
+  try {
+    const config = await getConfig();
+    const result = await new BlueIrisClient(config.blueiris).testConnection();
+    return { success: true, ...result };
+  } catch (error) {
+    return {
+      success: false,
+      error: error?.message || "Unable to connect to Blue Iris.",
+    };
+  }
+}
+
+export async function previewBlueIrisAlertMatch(input = {}) {
+  await requirePermission("system.manage_settings");
+  try {
+    const config = await getConfig();
+    const result = await new BlueIrisClient(config.blueiris).findNearestAlert({
+      camera: input.camera,
+      timestamp: input.timestamp,
+      toleranceSeconds: input.toleranceSeconds,
+    });
+    return { success: true, ...result };
+  } catch (error) {
+    return {
+      success: false,
+      error: error?.message || "Unable to search Blue Iris alerts.",
+    };
+  }
+}
+
 export async function getPlateViewSettings() {
   await requirePermission("plate.read");
   const config = await getConfig();
@@ -1573,10 +1609,32 @@ export async function updateSettings(formData) {
           : currentConfig.homeassistant?.whitelist || [],
       };
     }
-    if (updateIfExists("bihost")) {
-      newConfig.blueiris = {
+    if (
+      updateIfExists("bihost") ||
+      updateIfExists("biUsername") ||
+      updateIfExists("biPassword") ||
+      updateIfExists("biTimeoutSeconds")
+    ) {
+      const candidateBlueIris = {
         ...currentConfig.blueiris,
-        host: formData.get("bihost"),
+        host: formData.get("bihost") ?? currentConfig.blueiris?.host,
+        username: String(
+          formData.get("biUsername") ?? currentConfig.blueiris?.username ?? ""
+        ).trim(),
+        password: resolveStoredSecretUpdate({
+          currentValue: currentConfig.blueiris?.password,
+          replacement: formData.get("biPassword"),
+          clear: formData.get("clearBiPassword"),
+        }),
+        timeout_seconds: Number(
+          formData.get("biTimeoutSeconds") ??
+            currentConfig.blueiris?.timeout_seconds ??
+            10
+        ),
+      };
+      normalizeBlueIrisSettings(candidateBlueIris);
+      newConfig.blueiris = {
+        ...candidateBlueIris,
       };
     }
     if (updateIfExists("plateMatching")) {
@@ -1594,6 +1652,7 @@ export async function updateSettings(formData) {
     revalidatePath("/settings/integrations/pushover");
     revalidatePath("/settings/integrations/email");
     revalidatePath("/settings/integrations/webhook");
+    revalidatePath("/settings/blue-iris");
     return { success: true };
   } catch (error) {
     console.error("Error updating settings:", error);

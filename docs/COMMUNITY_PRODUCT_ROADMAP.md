@@ -290,6 +290,12 @@ remain externally orchestrated.
   Unknown below threshold. Results include classifier/model/profile provenance,
   orientation confidence, and sample counts. No camera mappings are hard-coded
   and no video clips are stored.
+- Read-only Blue Iris correlation foundation implemented: a dedicated settings
+  surface stores replacement-only credentials, verifies the JSON API, lists
+  cameras, and searches bounded alert metadata around a plate-read timestamp.
+  New reads preserve the supplied alert clip/path/offset pointer while all BVR
+  recordings and retention remain under Blue Iris on the existing DrivePool
+  volumes. No drive is mounted and no video is copied into ALPR.
 - Per-read vehicle color observations and reviewable vehicle profiles are
   implemented as an evidence-gathering phase. Color is stored with confidence
   and local algorithm provenance against the individual read, never copied onto
@@ -310,6 +316,10 @@ remain externally orchestrated.
 - Store make, model, year range, alternate OCR candidates, and bounding boxes;
   expand current orientation observations with optional multiframe motion
   validation before speed claims.
+- Add a bounded Blue Iris retrieval worker that uses correlated alert metadata
+  to request only a short event window, selects the best vehicle frame, and
+  expires any temporary derivative after analysis. Validate this against the
+  production Blue Iris API before enabling automatic historical processing.
 - Expand Vehicle ReID calibration with larger labeled local samples and
   camera-pair reporting before making stronger labels or applying thresholds.
 - Consider pgvector only when the bounded in-process cosine scan no longer

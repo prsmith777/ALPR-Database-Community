@@ -3,6 +3,7 @@ import test from "node:test";
 
 import {
   getDatabaseConfig,
+  getBlueIrisConfig,
   getInitialEnvConfig,
   parseBooleanEnv,
   removeRuntimeDatabaseSecret,
@@ -62,12 +63,53 @@ test("explicit true environment values enable configured features", () => {
   assert.equal(config.general.ignoreNonPlate, true);
 });
 
-test("Blue Iris host initialization uses its own environment setting", () => {
+test("Blue Iris initialization uses dedicated environment settings", () => {
   const config = getInitialEnvConfig({
     BLUEIRIS_HOST: "http://192.168.0.10:81",
+    BLUEIRIS_USERNAME: "alpr-reader",
+    BLUEIRIS_PASSWORD: "runtime-bi-secret",
+    BLUEIRIS_TIMEOUT_SECONDS: "12",
   });
 
   assert.equal(config.blueiris.host, "http://192.168.0.10:81");
+  assert.equal(config.blueiris.username, "alpr-reader");
+  assert.equal(config.blueiris.password, "runtime-bi-secret");
+  assert.equal(config.blueiris.timeout_seconds, 12);
+});
+
+test("runtime Blue Iris passwords are not copied into persisted settings", () => {
+  const config = getInitialEnvConfig({ BLUEIRIS_PASSWORD: "runtime-bi-secret" });
+  const persisted = removeRuntimeDatabaseSecret(config, {
+    BLUEIRIS_PASSWORD: "runtime-bi-secret",
+  });
+
+  assert.equal(config.blueiris.password, "runtime-bi-secret");
+  assert.equal(Object.hasOwn(persisted.blueiris, "password"), false);
+});
+
+test("Blue Iris environment values override persisted credentials", () => {
+  assert.deepEqual(
+    getBlueIrisConfig(
+      {
+        host: "http://stored:81",
+        username: "stored-user",
+        password: "stored-secret",
+        timeout_seconds: 10,
+      },
+      {
+        BLUEIRIS_HOST: "https://runtime:443",
+        BLUEIRIS_USERNAME: "runtime-user",
+        BLUEIRIS_PASSWORD: "runtime-secret",
+        BLUEIRIS_TIMEOUT_SECONDS: "15",
+      }
+    ),
+    {
+      host: "https://runtime:443",
+      username: "runtime-user",
+      password: "runtime-secret",
+      timeout_seconds: 15,
+    }
+  );
 });
 
 test("visual indexing starts automatically and accepts bounded environment pacing", () => {
