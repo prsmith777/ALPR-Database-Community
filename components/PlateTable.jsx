@@ -1614,7 +1614,7 @@ export default function PlateTable({
                   </Button>
                 </PopoverTrigger>
                 <PopoverContent
-                  className="max-h-[var(--radix-popover-content-available-height)] w-auto overflow-y-auto overscroll-contain p-0"
+                  className="max-h-[var(--radix-popover-content-available-height)] w-[520px] overflow-y-auto overscroll-contain p-0"
                   align="start"
                   collisionPadding={16}
                   sticky="always"
@@ -1634,6 +1634,7 @@ export default function PlateTable({
                       });
                     }}
                     numberOfMonths={2}
+                    fixedWeeks
                   />
                 </PopoverContent>
               </Popover>

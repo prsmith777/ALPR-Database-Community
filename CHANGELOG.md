@@ -9,8 +9,12 @@
   can collapse to a persisted icon rail. The operational Vehicle Intelligence
   workspace remains focused on profiles and review work.
 - Added mouse-wheel zoom to the Recognition Feed image popup. Wheel changes
-  share the existing slider limits and plate-centering behavior, and scrolling
-  over the image no longer moves the underlying page.
+  now move from the midpoint to either limit in three notches while preserving
+  the continuous slider limits and plate-centering behavior, and scrolling over
+  the image no longer moves the underlying page.
+- Stabilized the Recognition Feed date-range calendar at a fixed two-month
+  footprint so navigating backward or forward no longer resizes or shifts the
+  popup between months with different week counts.
 - Added durable automatic Blue Iris best-vehicle-frame processing after each
   accepted live read. The background worker resolves ALPR camera names to Blue
   Iris camera IDs, samples the bounded 17-frame window without delaying

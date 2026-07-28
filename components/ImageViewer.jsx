@@ -83,8 +83,9 @@ const ImageViewer = ({
     if (!image?.crop_coordinates || event.deltaY === 0) return;
     event.preventDefault();
     const direction = event.deltaY < 0 ? 1 : -1;
-    setZoom((currentZoom) => clampZoom(currentZoom + direction * 0.2));
-  }, [clampZoom, image?.crop_coordinates]);
+    const wheelStep = (getSliderMax() - 1) / 6;
+    setZoom((currentZoom) => clampZoom(currentZoom + direction * wheelStep));
+  }, [clampZoom, getSliderMax, image?.crop_coordinates]);
 
   useEffect(() => {
     const container = containerRef.current;
