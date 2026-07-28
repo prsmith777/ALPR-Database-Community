@@ -4,6 +4,7 @@ import test from "node:test";
 import {
   BlueIrisVehicleFrameService,
   VEHICLE_FRAME_SAMPLE_OFFSETS_MS,
+  isLikelyBlueIrisPlaceholder,
   scoreVehicleFrame,
 } from "../lib/blue-iris-vehicle-frame.mjs";
 import { BlueIrisError } from "../lib/blue-iris.mjs";
@@ -21,6 +22,17 @@ test("default vehicle-frame sampling covers the event densely without retaining 
   assert.ok(VEHICLE_FRAME_SAMPLE_OFFSETS_MS.every((offset, index, offsets) => (
     index === 0 || offset - offsets[index - 1] === 500
   )));
+});
+
+test("Blue Iris no-video cards are rejected without rejecting normal frames", () => {
+  assert.equal(isLikelyBlueIrisPlaceholder({
+    entropy: 0.59,
+    channels: [{ stdev: 6.6 }, { stdev: 6.6 }, { stdev: 6.6 }],
+  }), true);
+  assert.equal(isLikelyBlueIrisPlaceholder({
+    entropy: 3.2,
+    channels: [{ stdev: 31 }, { stdev: 29 }, { stdev: 28 }],
+  }), false);
 });
 
 test("bounded selection retains only the highest-scoring vehicle frame", async () => {
@@ -57,6 +69,7 @@ test("bounded selection retains only the highest-scoring vehicle frame", async (
     jpeg() { return this; },
     async toBuffer() { return this.buffer; },
     async metadata() { return { width: 1280, height: 720 }; },
+    async stats() { return { entropy: 3, channels: [{ stdev: 20 }, { stdev: 20 }, { stdev: 20 }] }; },
   });
 
   const result = await service.selectBestFrame({ camera: "Cam146", timestamp: new Date(base) });
