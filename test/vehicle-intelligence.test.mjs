@@ -96,6 +96,12 @@ test("live-feed vehicle descriptors use a side rail without reducing image heigh
   assert.match(table, /<DialogFooter className="self-end">[\s\S]*?className="grid w-full gap-2"/);
   const directionSection = table.slice(table.indexOf("<span>Direction</span>"), table.indexOf("<aside"));
   assert.doesNotMatch(directionSection, /vehicleColor|vehicleBodyType/);
+  const vehicleMetadata = table.slice(
+    table.indexOf('<div className="text-xs uppercase text-muted-foreground">Vehicle</div>'),
+    table.indexOf('<div className="relative h-[40vh]')
+  );
+  assert.match(vehicleMetadata, /Vehicle #\{selectedImage\.vehicleClusterId\}/);
+  assert.doesNotMatch(vehicleMetadata, /vehicleClusterStatus|vehicleClusterSimilarity/);
 });
 
 test("vehicle images support centered zoom, drag panning, and full-screen inspection", async () => {
