@@ -64,6 +64,7 @@ test("identity migration creates durable normalized security records", async () 
     "role_permissions",
     "user_roles",
     "user_sessions",
+    "login_attempt_limits",
     "api_credentials",
     "audit_events",
   ]) {
@@ -78,6 +79,7 @@ test("identity migration creates durable normalized security records", async () 
   assert.match(migration, /ADD COLUMN IF NOT EXISTS must_change_password/);
   assert.match(migration, /DELETE FROM public\.role_permissions/);
   assert.match(migration, /user_sessions_token_hash_format/);
+  assert.match(migration, /login_attempt_limits_subject_hash_format/);
   assert.match(migration, /api_credentials_secret_hash_format/);
   assert.match(migration, /audit_events_append_only/);
   assert.match(migration, /prevent_audit_event_mutation/);

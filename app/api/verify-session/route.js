@@ -1,4 +1,4 @@
-import { verifySession, initializeAuth } from "@/lib/auth";
+import { getSessionPrincipal, initializeAuth } from "@/lib/auth";
 import { NextResponse } from "next/server";
 
 export const dynamic = "force-dynamic";
@@ -13,7 +13,11 @@ export async function POST(request) {
       return NextResponse.json({ valid: false }, { status: 400 });
     }
 
-    return NextResponse.json({ valid: await verifySession(sessionId) });
+    const principal = await getSessionPrincipal(sessionId);
+    return NextResponse.json({
+      valid: Boolean(principal),
+      mustChangePassword: Boolean(principal?.mustChangePassword),
+    });
   } catch {
     console.error("Session verification failed");
     return NextResponse.json(

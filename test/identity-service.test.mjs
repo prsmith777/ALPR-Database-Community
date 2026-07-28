@@ -18,7 +18,13 @@ function makeService(overrides = {}) {
       return { id: 1, username: input.username, roles: ["administrator"] };
     },
     findUserByUsername: async () => null,
-    recordFailedLogin: async (...args) => calls.push(["failed", ...args]),
+    getLoginThrottle: async () => null,
+    recordFailedLogin: async (input) => {
+      calls.push(["failed", input]);
+      return { blocked: false };
+    },
+    clearLoginThrottle: async (subjectHash) =>
+      calls.push(["throttle-cleared", subjectHash]),
     createSession: async (input) => calls.push(["session", input]),
     getSessionPrincipal: async () => null,
     touchSession: async () => {},
@@ -72,7 +78,70 @@ test("named login is generic on failure and records the attempt", async () => {
     await service.authenticate({ username: "person", password: "wrong" }),
     null
   );
-  assert.deepEqual(calls[0], ["failed", 7, "person"]);
+  assert.equal(calls[0][0], "failed");
+  assert.equal(calls[0][1].userId, 7);
+  assert.equal(calls[0][1].username, "person");
+  assert.equal(calls[0][1].failureLimit, 10);
+});
+
+test("unknown usernames still perform password verification", async () => {
+  let passwordChecks = 0;
+  const { service } = makeService();
+  service.passwordVerifier = async () => {
+    passwordChecks += 1;
+    return false;
+  };
+  assert.equal(
+    await service.authenticate({ username: "missing.user", password: "wrong" }),
+    null
+  );
+  assert.equal(passwordChecks, 1);
+});
+
+test("named login stops before password verification while the account is throttled", async () => {
+  let passwordChecks = 0;
+  let userLookups = 0;
+  const { service } = makeService({
+    getLoginThrottle: async () => ({
+      blockedUntil: new Date("2026-07-19T00:05:00.000Z"),
+    }),
+    findUserByUsername: async () => {
+      userLookups += 1;
+      return null;
+    },
+  });
+  service.passwordVerifier = async () => {
+    passwordChecks += 1;
+    return true;
+  };
+
+  const result = await service.authenticate({
+    username: "person",
+    password: "not checked",
+  });
+  assert.equal(result.rateLimited, true);
+  assert.equal(result.retryAfterSeconds, 300);
+  assert.equal(userLookups, 0);
+  assert.equal(passwordChecks, 0);
+});
+
+test("successful named login clears the persistent throttle before creating a session", async () => {
+  const { service, calls } = makeService({
+    findUserByUsername: async () => ({
+      id: 7,
+      status: "active",
+      password_hash: "hash:correct horse",
+    }),
+  });
+  await service.authenticate({
+    username: "person",
+    password: "correct horse",
+    userAgent: "Browser",
+  });
+  assert.deepEqual(
+    calls.map(([name]) => name),
+    ["throttle-cleared", "session"]
+  );
 });
 
 test("named login creates a persistent hashed session", async () => {
@@ -89,8 +158,8 @@ test("named login creates a persistent hashed session", async () => {
     userAgent: "Browser",
   });
   assert.equal(result.sessionToken, "a".repeat(64));
-  assert.equal(calls[0][0], "session");
-  assert.equal(calls[0][1].tokenHash, hashSessionToken(result.sessionToken));
+  const sessionCall = calls.find(([name]) => name === "session");
+  assert.equal(sessionCall[1].tokenHash, hashSessionToken(result.sessionToken));
 });
 
 test("user inputs and last-administrator repository guards remain errors", async () => {

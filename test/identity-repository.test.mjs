@@ -18,3 +18,12 @@ test("audit event actor parameters are explicitly typed as bigint", () => {
     /VALUES \(\$1::bigint, 'browser', 'auth\.login', 'user', \$1::text, 'succeeded'\)/
   );
 });
+
+test("failed-login throttling is persisted and updated atomically", () => {
+  assert.match(repositorySource, /pg_advisory_xact_lock\(hashtext\(\$1\)\)/);
+  assert.match(repositorySource, /INSERT INTO public\.login_attempt_limits/);
+  assert.match(repositorySource, /ON CONFLICT \(subject_hash\) DO UPDATE/);
+  assert.match(repositorySource, /make_interval\(secs => \$4::double precision\)/);
+  assert.match(repositorySource, /updated_at < CURRENT_TIMESTAMP - INTERVAL '24 hours'/);
+  assert.match(repositorySource, /DELETE FROM public\.login_attempt_limits/);
+});
