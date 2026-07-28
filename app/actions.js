@@ -1569,14 +1569,13 @@ export async function queueBlueIrisVehicleFrameHistory(input = {}) {
   await requirePermission("maintenance.manage");
   try {
     const runtime = await getBlueIrisVehicleFrameRuntime();
+    await runtime.queue.setHistoricalPaused(true);
     const queued = await runtime.queue.queueHistorical({
       cameraName: input.cameraName || null,
       startDate: input.startDate || null,
       endDate: input.endDate || null,
       replaceExisting: input.replaceExisting === true,
     });
-    await runtime.queue.setHistoricalPaused(false);
-    wakeBlueIrisVehicleFrameWorker();
     revalidatePath("/settings/vehicle-intelligence");
     return {
       success: true,
@@ -1590,6 +1589,31 @@ export async function queueBlueIrisVehicleFrameHistory(input = {}) {
     };
   } catch (error) {
     return visualSearchFailure(error, "Unable to queue historical Blue Iris vehicle frames.");
+  }
+}
+
+export async function cancelBlueIrisVehicleFrameHistory(input = {}) {
+  await requirePermission("maintenance.manage");
+  try {
+    const runtime = await getBlueIrisVehicleFrameRuntime();
+    const cancelled = await runtime.queue.cancelHistorical({
+      cameraName: input.cameraName || null,
+      startDate: input.startDate || null,
+      endDate: input.endDate || null,
+    });
+    revalidatePath("/settings/vehicle-intelligence");
+    return {
+      success: true,
+      data: {
+        ...cancelled,
+        status: {
+          ...await runtime.queue.getStatus(),
+          worker: runtime.worker.snapshot(),
+        },
+      },
+    };
+  } catch (error) {
+    return visualSearchFailure(error, "Unable to cancel historical Blue Iris vehicle frames.");
   }
 }
 

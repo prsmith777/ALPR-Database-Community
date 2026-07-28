@@ -166,6 +166,34 @@ test("existing vehicle views can be queued for reevaluation without deleting the
   assert.doesNotMatch(statement, /SET[\s\S]*vehicle_image_path\s*=/);
 });
 
+test("pending historical work can be cancelled by camera and date without touching saved images", async () => {
+  let statement = "";
+  let parameters = null;
+  const repository = new BlueIrisVehicleFrameRepository({
+    async query(sql, values) {
+      statement = sql;
+      parameters = values;
+      return { rowCount: 21_416, rows: [] };
+    },
+  });
+  const result = await repository.cancelHistorical({
+    cameraName: "Street LPR 2",
+    startDate: "2026-07-01T06:00:00.000Z",
+    endDate: "2026-08-01T05:59:59.999Z",
+  });
+  assert.equal(result.cancelled, 21_416);
+  assert.deepEqual(parameters, [
+    "Street LPR 2",
+    "2026-07-01T06:00:00.000Z",
+    "2026-08-01T05:59:59.999Z",
+  ]);
+  assert.match(statement, /vehicle_image_queue_kind = 'historical'/);
+  assert.match(statement, /vehicle_image_status IN \('pending', 'failed'\)/);
+  assert.match(statement, /WHEN vehicle_image_path IS NULL THEN NULL/);
+  assert.match(statement, /ELSE 'ready'/);
+  assert.doesNotMatch(statement, /vehicle_image_path\s*=/);
+});
+
 test("an administrator can explicitly retry a failed or unavailable read", async () => {
   let statement = "";
   let parameters = null;

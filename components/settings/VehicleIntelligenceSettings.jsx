@@ -2,7 +2,7 @@
 
 import NextImage from "next/image";
 import { useEffect, useMemo, useState } from "react";
-import { BrainCircuit, Check, History, Images, Loader2, Pause, Play, RotateCcw, Save, ScanSearch, Settings2 } from "lucide-react";
+import { BrainCircuit, Check, History, Images, Loader2, Pause, Play, RotateCcw, Save, ScanSearch, Settings2, XCircle } from "lucide-react";
 
 import {
   getVehicleDirectionSetup,
@@ -12,6 +12,7 @@ import {
   queueVehicleDirectionReevaluation,
   runVehicleDirectionBackfillBatch,
   saveVehicleDirectionProfile,
+  cancelBlueIrisVehicleFrameHistory,
   queueBlueIrisVehicleFrameHistory,
   runBlueIrisVehicleFrameBatch,
   setBlueIrisVehicleFrameHistoryPaused,
@@ -73,6 +74,7 @@ export default function VehicleIntelligenceSettings({ initialData, initialFrameQ
   const [frameMessage, setFrameMessage] = useState("");
   const [frameStartDate, setFrameStartDate] = useState("");
   const [frameEndDate, setFrameEndDate] = useState("");
+  const [cancelFrameHistoryOpen, setCancelFrameHistoryOpen] = useState(false);
   const profile = useMemo(
     () => data.profiles.find((item) => item.cameraName === cameraName) || data.profiles[0] || null,
     [cameraName, data.profiles]
@@ -236,8 +238,25 @@ export default function VehicleIntelligenceSettings({ initialData, initialFrameQ
       if (!result.success) throw new Error(result.error);
       setFrameQueue(result.data.status);
       setFrameMessage(replaceExisting
-        ? `Queued ${result.data.queued.toLocaleString()} existing vehicle view${result.data.queued === 1 ? "" : "s"} for reevaluation. Each prior image remains available until its replacement succeeds.`
-        : `Queued ${result.data.queued.toLocaleString()} missing vehicle view${result.data.queued === 1 ? "" : "s"}. Live reads remain prioritized.`);
+        ? `Queued ${result.data.queued.toLocaleString()} existing vehicle view${result.data.queued === 1 ? "" : "s"} for reevaluation. History remains paused until you explicitly resume it, and each prior image remains available until its replacement succeeds.`
+        : `Queued ${result.data.queued.toLocaleString()} missing vehicle view${result.data.queued === 1 ? "" : "s"}. History remains paused until you explicitly resume it; live reads continue automatically.`);
+    } catch (error) { setFrameMessage(error.message); }
+    finally { setBusy(""); }
+  };
+
+  const cancelFrameHistory = async () => {
+    setBusy("frame-history-cancel");
+    setFrameMessage("");
+    try {
+      const result = await cancelBlueIrisVehicleFrameHistory({
+        cameraName,
+        startDate: frameStartDate ? new Date(`${frameStartDate}T00:00:00`).toISOString() : null,
+        endDate: frameEndDate ? new Date(`${frameEndDate}T23:59:59.999`).toISOString() : null,
+      });
+      if (!result.success) throw new Error(result.error);
+      setFrameQueue(result.data.status);
+      setCancelFrameHistoryOpen(false);
+      setFrameMessage(`Cancelled ${result.data.cancelled.toLocaleString()} pending historical vehicle-view job${result.data.cancelled === 1 ? "" : "s"} for ${cameraName || "the selected scope"}. Live work was not changed.`);
     } catch (error) { setFrameMessage(error.message); }
     finally { setBusy(""); }
   };
@@ -419,6 +438,7 @@ export default function VehicleIntelligenceSettings({ initialData, initialFrameQ
                 <Button variant="outline" disabled={Boolean(busy) || !frameQueue?.configured} onClick={() => queueFrameHistory(true)}>{busy === "frame-history-all" ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}Queue all camera history</Button>
                 <Button variant="outline" disabled={Boolean(busy) || !frameQueue?.configured} onClick={() => queueFrameHistory(true, true)}>{busy === "frame-history-reevaluate" ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}Reevaluate existing views</Button>
                 <Button variant="secondary" disabled={Boolean(busy) || !frameQueue?.configured} onClick={toggleFrameHistory}>{frameQueue?.historicalPaused ? <Play className="mr-2 h-4 w-4" /> : <Pause className="mr-2 h-4 w-4" />}{frameQueue?.historicalPaused ? "Resume history" : "Pause history"}</Button>
+                <Button variant="destructive" disabled={Boolean(busy) || !cameraName || !frameQueue?.historicalOutstanding} onClick={() => setCancelFrameHistoryOpen(true)}><XCircle className="mr-2 h-4 w-4" />Cancel pending {cameraName || "camera"} history</Button>
                 <Button variant="secondary" disabled={Boolean(busy) || !frameQueue?.configured} onClick={runFrameBatch}>{busy === "frame-batch" ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Play className="mr-2 h-4 w-4" />}Run one frame now</Button>
               </div>
             </div>
@@ -570,6 +590,23 @@ export default function VehicleIntelligenceSettings({ initialData, initialFrameQ
           )}
         </TabsContent>
       </Tabs>
+      <AlertDialog open={cancelFrameHistoryOpen} onOpenChange={(open) => { if (busy !== "frame-history-cancel") setCancelFrameHistoryOpen(open); }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Cancel pending historical vehicle views?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This pauses history and removes only pending or retryable historical jobs for {cameraName || "the selected camera"}{frameStartDate || frameEndDate ? " within the selected date range" : ""}. Live reads, completed vehicle images, and manual retries are preserved. One frame already in progress may still finish.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={busy === "frame-history-cancel"}>Keep jobs</AlertDialogCancel>
+            <AlertDialogAction onClick={(event) => { event.preventDefault(); cancelFrameHistory(); }} disabled={busy === "frame-history-cancel"}>
+              {busy === "frame-history-cancel" ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <XCircle className="mr-2 h-4 w-4" />}
+              Cancel pending history
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
       <AlertDialog
         open={Boolean(reevaluationPreview)}
         onOpenChange={(open) => { if (!open && busy !== "reevaluate") setReevaluationPreview(null); }}

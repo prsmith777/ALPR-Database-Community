@@ -9,7 +9,9 @@ import {
   VEHICLE_FRAME_EXTENSION_OFFSETS_MS,
   VEHICLE_FRAME_SAMPLE_OFFSETS_MS,
   isLikelyBlueIrisPlaceholder,
+  productionBaselineVehicleFrameScore,
   scoreVehicleFrame,
+  selectGuardedVehicleFrame,
   selectBestTrackedVehicleFrame,
 } from "../lib/blue-iris-vehicle-frame.mjs";
 import { BlueIrisError } from "../lib/blue-iris.mjs";
@@ -45,31 +47,41 @@ test("default vehicle-frame sampling covers the event densely without retaining 
   assert.equal(VEHICLE_FRAME_DEEP_EXTENSION_OFFSETS_MS.length, 10);
 });
 
-test("a well-framed tracked vehicle beats a slightly higher-scoring edge-adjacent view", () => {
-  const anchor = {
+test("the guarded selector retains the production winner when v3 would choose the plate-time frame", () => {
+  const plateTimePartial = {
     offsetMs: 0,
+    primarySample: true,
+    frameRank: 0,
     detection: { containsPlate: true, selectionScore: 10 },
     embedding: Float32Array.from([1, 0]),
-    score: 0.45,
-    scoreBreakdown: { score: 0.45, completenessTier: 1 },
+    quality: { sharpnessScore: 0.9, exposureScore: 0.9, contrastScore: 0.9 },
+    baselineScore: 0.7,
+    score: 0.95,
+    scoreBreakdown: { score: 0.95, completenessTier: 3 },
   };
-  const edgeAdjacent = {
-    offsetMs: 1_000,
-    detection: { containsPlate: false, selectionScore: 1 },
-    embedding: Float32Array.from([0.999, 0.02]),
-    score: 0.92,
-    scoreBreakdown: { score: 0.92, completenessTier: 2 },
-  };
-  const wellFramed = {
+  const productionWinner = {
     offsetMs: 2_000,
+    primarySample: true,
+    frameRank: 0,
     detection: { containsPlate: false, selectionScore: 1 },
-    embedding: Float32Array.from([0.998, 0.03]),
-    score: 0.84,
-    scoreBreakdown: { score: 0.84, completenessTier: 3 },
+    // A changing front-to-side view may have low ReID similarity. It must not
+    // disqualify the same production-baseline frame that already worked.
+    embedding: Float32Array.from([0, 1]),
+    quality: { sharpnessScore: 0.75, exposureScore: 0.75, contrastScore: 0.75 },
+    baselineScore: 0.84,
+    score: 0.78,
+    scoreBreakdown: { score: 0.78, completenessTier: 2 },
   };
 
-  const result = selectBestTrackedVehicleFrame([anchor, edgeAdjacent, wellFramed]);
+  const result = selectGuardedVehicleFrame([plateTimePartial, productionWinner]);
   assert.equal(result.best.offsetMs, 2_000);
+  assert.equal(result.selectionReason, "production_baseline");
+});
+
+test("the baseline score is byte-for-byte compatible with the production formula", () => {
+  const detection = { confidence: 0.87, area: 0.31, left: 0.08, top: 0.1, right: 0.77, bottom: 0.78 };
+  const expected = Number((0.87 * 0.35 + Math.sqrt(0.31) * 0.45 + 0.2).toFixed(6));
+  assert.equal(productionBaselineVehicleFrameScore(detection), expected);
 });
 
 test("quality analysis distinguishes a sharp vehicle crop from a flat blurred crop", async () => {
@@ -168,11 +180,11 @@ test("a weak primary selection expands the timeline and selects a complete later
   assert.equal(result.expandedSampling, true);
 });
 
-test("an edge-adjacent extended result triggers a sparse deep search for a well-framed vehicle", async () => {
+test("a still-weak extended result triggers a sparse deep search for a better production-score view", async () => {
   const frames = new Map([
-    [0, { confidence: 0.95, area: 0.4, left: 0, top: 0.1, right: 0.7, bottom: 0.8 }],
-    [1_000, { confidence: 0.9, area: 0.3, left: 0.02, top: 0.03, right: 0.8, bottom: 0.82 }],
-    [4_000, { confidence: 0.86, area: 0.25, left: 0.08, top: 0.08, right: 0.76, bottom: 0.76 }],
+    [0, { confidence: 0.58, area: 0.06, left: 0, top: 0.1, right: 0.3, bottom: 0.3 }],
+    [1_000, { confidence: 0.6, area: 0.07, left: 0.01, top: 0.03, right: 0.36, bottom: 0.35 }],
+    [4_000, { confidence: 0.86, area: 0.3, left: 0.08, top: 0.08, right: 0.76, bottom: 0.76 }],
   ]);
   const base = Date.parse("2026-07-22T17:46:50Z");
   const service = new BlueIrisVehicleFrameService({
