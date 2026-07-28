@@ -1,21 +1,60 @@
-import { useState, useRef, useEffect, useCallback } from "react";
+import { useState, useRef, useEffect, useCallback, useMemo } from "react";
+import { createPortal } from "react-dom";
 import { Slider } from "@/components/ui/slider";
 import { Button } from "@/components/ui/button";
-import { ZoomIn } from "lucide-react";
+import { X, ZoomIn } from "lucide-react";
 import NextImage from "next/image";
 
-const MAX_PLATE_ZOOM = 12;
+const MAX_IMAGE_ZOOM = 12;
+
+function normalizedFocusCoordinates(coordinates, imageSize) {
+  if (!coordinates || !imageSize) return null;
+
+  const values = Array.isArray(coordinates)
+    ? coordinates
+    : [coordinates.left, coordinates.top, coordinates.right, coordinates.bottom];
+  if (values.length !== 4 || values.some((value) => !Number.isFinite(Number(value)))) {
+    return null;
+  }
+
+  const numeric = values.map(Number);
+  if (numeric.every((value) => value >= 0 && value <= 1)) {
+    return [
+      numeric[0] * imageSize.width,
+      numeric[1] * imageSize.height,
+      numeric[2] * imageSize.width,
+      numeric[3] * imageSize.height,
+    ];
+  }
+  return numeric;
+}
 
 const ImageViewer = ({
   image,
   compactControls = false,
   plateZoom = 3,
   fitPlateOnOpen = false,
+  zoomEnabled = false,
+  defaultZoom = null,
+  zoomLabel = "Zoom to Plate",
 }) => {
-  const [zoom, setZoom] = useState(image?.crop_coordinates ? plateZoom : 1);
+  const [zoom, setZoom] = useState(1);
+  const [pan, setPan] = useState({ x: 0, y: 0 });
   const [imageSize, setImageSize] = useState(null);
   const [containerSize, setContainerSize] = useState(null);
+  const [isDragging, setIsDragging] = useState(false);
+  const [isFullscreen, setIsFullscreen] = useState(false);
   const containerRef = useRef(null);
+  const dragRef = useRef(null);
+  const canZoom = zoomEnabled || Boolean(image?.crop_coordinates || image?.focus_coordinates);
+
+  const focusCoordinates = useMemo(
+    () => normalizedFocusCoordinates(
+      image?.focus_coordinates || image?.crop_coordinates,
+      imageSize
+    ),
+    [image?.crop_coordinates, image?.focus_coordinates, imageSize]
+  );
 
   useEffect(() => {
     const container = containerRef.current;
@@ -32,108 +71,105 @@ const ImageViewer = ({
     const observer = new ResizeObserver(updateContainerSize);
     observer.observe(container);
     return () => observer.disconnect();
-  }, []);
+  }, [isFullscreen]);
 
-  const getPlateFitZoom = useCallback(() => {
+  const getFocusFitZoom = useCallback(() => {
     if (
-      !image?.crop_coordinates ||
+      !focusCoordinates ||
       !imageSize ||
       !containerSize?.width ||
       !containerSize?.height
     ) {
-      return plateZoom;
+      return Math.max(1, Number(plateZoom) || 1);
     }
 
-    const [xMin, yMin, xMax, yMax] = image.crop_coordinates;
+    const [xMin, yMin, xMax, yMax] = focusCoordinates;
     const fitScale = Math.min(
       containerSize.width / imageSize.width,
       containerSize.height / imageSize.height
     );
-    const cropWidth = Math.max((xMax - xMin) * fitScale, 1);
-    const cropHeight = Math.max((yMax - yMin) * fitScale, 1);
+    const focusWidth = Math.max((xMax - xMin) * fitScale, 1);
+    const focusHeight = Math.max((yMax - yMin) * fitScale, 1);
     const margin = 0.85;
     const fittedZoom = Math.min(
-      MAX_PLATE_ZOOM,
-      (containerSize.width * margin) / cropWidth,
-      (containerSize.height * margin) / cropHeight
+      MAX_IMAGE_ZOOM,
+      (containerSize.width * margin) / focusWidth,
+      (containerSize.height * margin) / focusHeight
     );
 
-    // Round down to the slider step so the full crop and margin stay visible.
     return Math.max(1, Math.floor(fittedZoom * 10) / 10);
-  }, [containerSize, image?.crop_coordinates, imageSize, plateZoom]);
+  }, [containerSize, focusCoordinates, imageSize, plateZoom]);
 
   const getSliderMax = useCallback(
-    () => Math.max(5, getPlateFitZoom()),
-    [getPlateFitZoom]
+    () => Math.max(5, getFocusFitZoom()),
+    [getFocusFitZoom]
   );
 
-  const getPlateZoom = useCallback(() => {
-    if (fitPlateOnOpen) return getPlateFitZoom();
-
+  const getFocusZoom = useCallback(() => {
+    if (fitPlateOnOpen || image?.focus_coordinates) return getFocusFitZoom();
     const midpoint = (1 + getSliderMax()) / 2;
     return Math.round(midpoint * 10) / 10;
-  }, [fitPlateOnOpen, getPlateFitZoom, getSliderMax]);
+  }, [fitPlateOnOpen, getFocusFitZoom, getSliderMax, image?.focus_coordinates]);
 
   const clampZoom = useCallback(
     (value) => Math.min(getSliderMax(), Math.max(1, Math.round(value * 10) / 10)),
     [getSliderMax]
   );
 
+  const resetView = useCallback(() => {
+    setZoom(1);
+    setPan({ x: 0, y: 0 });
+  }, []);
+
+  const setZoomAndResetPan = useCallback((nextZoom) => {
+    setZoom(clampZoom(nextZoom));
+    setPan({ x: 0, y: 0 });
+  }, [clampZoom]);
+
   const handleWheel = useCallback((event) => {
-    if (!image?.crop_coordinates || event.deltaY === 0) return;
+    if (!canZoom || event.deltaY === 0) return;
     event.preventDefault();
     const direction = event.deltaY < 0 ? 1 : -1;
-    const wheelStep = (getSliderMax() - 1) / 6;
+    const wheelStep = (getSliderMax() - 1) / 3;
     setZoom((currentZoom) => clampZoom(currentZoom + direction * wheelStep));
-  }, [clampZoom, getSliderMax, image?.crop_coordinates]);
+  }, [canZoom, clampZoom, getSliderMax]);
 
   useEffect(() => {
     const container = containerRef.current;
     if (!container) return undefined;
     container.addEventListener("wheel", handleWheel, { passive: false });
     return () => container.removeEventListener("wheel", handleWheel);
-  }, [handleWheel]);
+  }, [handleWheel, isFullscreen]);
 
   useEffect(() => {
     setImageSize(null);
     const img = new Image();
-    img.onload = () => {
-      setImageSize({ width: img.width, height: img.height });
-    };
+    img.onload = () => setImageSize({ width: img.width, height: img.height });
     img.src = image.url;
   }, [image.url]);
 
   useEffect(() => {
-    setZoom(
-      image?.crop_coordinates
-        ? getPlateZoom()
-        : 1
-    );
-  }, [
-    getPlateZoom,
-    image?.crop_coordinates,
-  ]);
+    const initialZoom = defaultZoom === null
+      ? image?.crop_coordinates ? getFocusZoom() : 1
+      : defaultZoom;
+    setZoom(clampZoom(initialZoom));
+    setPan({ x: 0, y: 0 });
+  }, [clampZoom, defaultZoom, getFocusZoom, image?.crop_coordinates, image.url]);
+
+  useEffect(() => {
+    if (!isFullscreen) return undefined;
+    const handleKeyDown = (event) => {
+      if (event.key === "Escape") setIsFullscreen(false);
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [isFullscreen]);
 
   const getImageStyle = () => {
-    if (
-      zoom === 1 ||
-      !image?.crop_coordinates ||
-      !imageSize ||
-      !containerSize?.width ||
-      !containerSize?.height
-    ) {
-      return {
-        transform: "none",
-        width: "100%",
-        height: "100%",
-      };
+    if (!imageSize || !containerSize?.width || !containerSize?.height) {
+      return { position: "relative", width: "100%", height: "100%" };
     }
 
-    const [xMin, yMin, xMax, yMax] = image.crop_coordinates;
-
-    // Map the source-image plate center into the object-contain rendering.
-    const centerX = xMin + (xMax - xMin) / 2;
-    const centerY = yMin + (yMax - yMin) / 2;
     const fitScale = Math.min(
       containerSize.width / imageSize.width,
       containerSize.height / imageSize.height
@@ -142,80 +178,141 @@ const ImageViewer = ({
     const renderedHeight = imageSize.height * fitScale;
     const offsetX = (containerSize.width - renderedWidth) / 2;
     const offsetY = (containerSize.height - renderedHeight) / 2;
-    const renderedPlateX = offsetX + centerX * fitScale;
-    const renderedPlateY = offsetY + centerY * fitScale;
-
-    // Scale from the top-left, then translate the rendered plate center to
-    // the center of the viewer. This keeps off-center plates centered at any zoom.
-    const translateX = containerSize.width / 2 - renderedPlateX * zoom;
-    const translateY = containerSize.height / 2 - renderedPlateY * zoom;
+    const [xMin, yMin, xMax, yMax] = focusCoordinates || [
+      0,
+      0,
+      imageSize.width,
+      imageSize.height,
+    ];
+    const focusX = offsetX + (xMin + (xMax - xMin) / 2) * fitScale;
+    const focusY = offsetY + (yMin + (yMax - yMin) / 2) * fitScale;
+    const translateX = zoom === 1
+      ? 0
+      : containerSize.width / 2 - focusX * zoom + pan.x;
+    const translateY = zoom === 1
+      ? 0
+      : containerSize.height / 2 - focusY * zoom + pan.y;
 
     return {
-      transform: `translate(${translateX}px, ${translateY}px) scale(${zoom})`,
+      position: "relative",
+      transform: zoom === 1
+        ? "none"
+        : `translate(${translateX}px, ${translateY}px) scale(${zoom})`,
       transformOrigin: "0 0",
       width: "100%",
       height: "100%",
-      transition: "transform 0.2s ease-out",
+      transition: isDragging ? "none" : "transform 0.12s ease-out",
     };
   };
 
-  return (
-    <div className="flex flex-col h-full">
+  const handlePointerDown = (event) => {
+    if (zoom <= 1 || event.button !== 0) return;
+    event.currentTarget.setPointerCapture(event.pointerId);
+    dragRef.current = { x: event.clientX, y: event.clientY, pan };
+    setIsDragging(true);
+  };
+
+  const handlePointerMove = (event) => {
+    if (!dragRef.current) return;
+    const maxX = Math.max(containerSize?.width || 0, 1) * zoom;
+    const maxY = Math.max(containerSize?.height || 0, 1) * zoom;
+    setPan({
+      x: Math.max(-maxX, Math.min(maxX, dragRef.current.pan.x + event.clientX - dragRef.current.x)),
+      y: Math.max(-maxY, Math.min(maxY, dragRef.current.pan.y + event.clientY - dragRef.current.y)),
+    });
+  };
+
+  const endDrag = (event) => {
+    if (dragRef.current && event.currentTarget.hasPointerCapture?.(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    }
+    dragRef.current = null;
+    setIsDragging(false);
+  };
+
+  const controls = canZoom ? (
+    <div
+      className={
+        compactControls
+          ? "grid grid-cols-2 gap-2 py-2"
+          : "flex items-center gap-4 py-2 2xl:px-2 2xl:pt-6"
+      }
+    >
+      <Button
+        variant="outline"
+        className={compactControls ? "w-full" : undefined}
+        onClick={resetView}
+      >
+        Reset
+      </Button>
+      <Button
+        variant="outline"
+        className={compactControls ? "w-full" : undefined}
+        onClick={() => setZoomAndResetPan(getFocusZoom())}
+      >
+        <ZoomIn className="mr-2 h-4 w-4" />
+        {zoomLabel}
+      </Button>
+      <div className={compactControls ? "col-span-2 px-1" : "flex-1"}>
+        <Slider
+          value={[zoom]}
+          onValueChange={([newZoom]) => setZoom(newZoom)}
+          min={1}
+          max={getSliderMax()}
+          step={0.1}
+          className="w-full"
+        />
+      </div>
+    </div>
+  ) : null;
+
+  const viewer = (fullscreen = false) => (
+    <div className={fullscreen ? "fixed inset-0 z-[100] flex flex-col bg-black p-3" : "flex h-full flex-col"}>
+      {fullscreen ? (
+        <Button
+          type="button"
+          variant="secondary"
+          size="icon"
+          className="absolute right-5 top-5 z-[110]"
+          onClick={() => setIsFullscreen(false)}
+          aria-label="Close full screen image"
+        >
+          <X className="h-5 w-5" />
+        </Button>
+      ) : null}
       <div
         ref={containerRef}
-        title={image?.crop_coordinates ? "Scroll to zoom" : undefined}
-        className="relative w-full h-full overflow-hidden flex items-center justify-center"
+        title={`${canZoom ? "Scroll to zoom; drag to pan; " : ""}double-click for full screen`}
+        className={`relative flex min-h-0 flex-1 w-full items-center justify-center overflow-hidden select-none ${
+          zoom > 1 ? isDragging ? "cursor-grabbing" : "cursor-grab" : "cursor-zoom-in"
+        }`}
+        style={{ touchAction: "none" }}
+        onPointerDown={handlePointerDown}
+        onPointerMove={handlePointerMove}
+        onPointerUp={endDrag}
+        onPointerCancel={endDrag}
+        onDoubleClick={() => setIsFullscreen((current) => !current)}
       >
         <div style={getImageStyle()}>
           <NextImage
             src={image.url}
-            priority={true}
-            alt={`License plate ${image.plateNumber}`}
+            priority
+            alt={`Vehicle capture for ${image.plateNumber}`}
             fill
             className="object-contain"
+            draggable={false}
             unoptimized
           />
         </div>
       </div>
-      {image?.crop_coordinates && (
-        <div
-          className={
-            compactControls
-              ? "grid grid-cols-2 gap-2 py-2"
-              : "flex items-center gap-4 py-2 2xl:px-2 2xl:pt-6"
-          }
-        >
-          <Button
-            variant="outline"
-            className={compactControls ? "w-full" : undefined}
-            onClick={() => setZoom(1)}
-          >
-            Reset
-          </Button>
-          {image?.crop_coordinates && (
-            <Button
-              variant="outline"
-              className={compactControls ? "w-full" : undefined}
-              onClick={() => setZoom(getPlateZoom())}
-            >
-              <ZoomIn className="mr-2 h-4 w-4" />
-              Zoom to Plate
-            </Button>
-          )}
-          <div className={compactControls ? "col-span-2 px-1" : "flex-1"}>
-            <Slider
-              value={[zoom]}
-              onValueChange={([newZoom]) => setZoom(newZoom)}
-              min={1}
-              max={getSliderMax()}
-              step={0.1}
-              className="w-full"
-            />
-          </div>
-        </div>
-      )}
+      {controls}
     </div>
   );
+
+  if (isFullscreen && typeof document !== "undefined") {
+    return createPortal(viewer(true), document.body);
+  }
+  return viewer(false);
 };
 
 export default ImageViewer;

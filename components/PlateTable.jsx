@@ -105,6 +105,7 @@ import {
 import ImageViewer from "./ImageViewer";
 import { useAccess } from "@/components/auth/AccessProvider";
 import { resolveReadViewerNavigation } from "@/lib/read-viewer-navigation.mjs";
+import { buildBlueIrisUiUrl } from "@/lib/blue-iris-ui-url.mjs";
 import {
   Sheet,
   SheetContent,
@@ -327,10 +328,6 @@ export default function PlateTable({
   const [isFilterSheetOpen, setIsFilterSheetOpen] = useState(false);
   const [isSearchOptionsOpen, setIsSearchOptionsOpen] = useState(false);
 
-  //zoom/crop stuff
-  const [zoom, setZoom] = useState(1);
-  const [position, setPosition] = useState({ x: 0, y: 0 });
-  const imageContainerRef = useRef(null);
   const correctionInputRef = useRef(null);
 
   const router = useRouter();
@@ -474,6 +471,9 @@ export default function PlateTable({
       vehicleImageAttemptCount: Number(plate.vehicle_image_attempt_count || 0),
       vehicleImageRetryable: plate.vehicle_image_retryable !== false,
       vehicleImageTimestamp: plate.vehicle_image_timestamp || null,
+      vehicleImageDetectionBox: plate.vehicle_image_detection_box || null,
+      vehicleImageWidth: Number(plate.vehicle_image_width || 0) || null,
+      vehicleImageHeight: Number(plate.vehicle_image_height || 0) || null,
       thumbnail: thumbnailUrl,
       plateNumber: plate.plate_number,
       observedPlate: plate.observed_plate || plate.plate_number,
@@ -511,9 +511,6 @@ export default function PlateTable({
       crop_coordinates: plate.crop_coordinates,
     });
 
-    // Reset zoom and position when opening new image
-    setZoom(1);
-    setPosition({ x: 0, y: 0 });
     setSelectedImageView("plate");
   }, [data]);
 
@@ -679,6 +676,11 @@ export default function PlateTable({
       const currentVehicleImageAttemptCount = Number(currentPlate?.vehicle_image_attempt_count || 0);
       const currentVehicleImageRetryable = currentPlate?.vehicle_image_retryable !== false;
       const currentVehicleImageTimestamp = currentPlate?.vehicle_image_timestamp || null;
+      const currentVehicleImageDetectionBox = currentPlate?.vehicle_image_detection_box || null;
+      const currentVehicleImageWidth = Number(currentPlate?.vehicle_image_width || 0) || null;
+      const currentVehicleImageHeight = Number(currentPlate?.vehicle_image_height || 0) || null;
+      const currentVehicleImageDetectionSignature = JSON.stringify(currentVehicleImageDetectionBox);
+      const selectedVehicleImageDetectionSignature = JSON.stringify(selectedImage.vehicleImageDetectionBox);
 
       if (
         currentPlate &&
@@ -707,7 +709,10 @@ export default function PlateTable({
           currentVehicleImageErrorCode !== selectedImage.vehicleImageErrorCode ||
           currentVehicleImageAttemptCount !== selectedImage.vehicleImageAttemptCount ||
           currentVehicleImageRetryable !== selectedImage.vehicleImageRetryable ||
-          currentVehicleImageTimestamp !== selectedImage.vehicleImageTimestamp)
+          currentVehicleImageTimestamp !== selectedImage.vehicleImageTimestamp ||
+          currentVehicleImageDetectionSignature !== selectedVehicleImageDetectionSignature ||
+          currentVehicleImageWidth !== selectedImage.vehicleImageWidth ||
+          currentVehicleImageHeight !== selectedImage.vehicleImageHeight)
       ) {
         setSelectedImage((previous) => ({
           ...previous,
@@ -742,6 +747,9 @@ export default function PlateTable({
           vehicleImageAttemptCount: currentVehicleImageAttemptCount,
           vehicleImageRetryable: currentVehicleImageRetryable,
           vehicleImageTimestamp: currentVehicleImageTimestamp,
+          vehicleImageDetectionBox: currentVehicleImageDetectionBox,
+          vehicleImageWidth: currentVehicleImageWidth,
+          vehicleImageHeight: currentVehicleImageHeight,
         }));
       }
     }
@@ -2088,7 +2096,7 @@ export default function PlateTable({
                                   aria-label={`Open ${plate.plate_number} in Blue Iris`}
                                   onClick={() =>
                                     window.open(
-                                      `http://${biHost}/${plate.bi_path}`,
+                                      buildBlueIrisUiUrl(biHost, plate.bi_path),
                                       "_blank"
                                     )
                                   }
@@ -2269,7 +2277,7 @@ export default function PlateTable({
                                 <DropdownMenuItem
                                   onClick={() =>
                                     window.open(
-                                      `http://${biHost}/${plate.bi_path}`,
+                                      buildBlueIrisUiUrl(biHost, plate.bi_path),
                                       "_blank"
                                     )
                                   }
@@ -2503,11 +2511,11 @@ export default function PlateTable({
                   <div className="grid gap-3 rounded-lg border p-3 text-sm sm:grid-cols-2 lg:grid-cols-6">
                 <div>
                   <div className="text-xs uppercase text-muted-foreground">Observed</div>
-                  <div className="font-mono">{selectedImage.observedPlate}</div>
+                  <div className="font-mono text-lg font-semibold leading-tight">{selectedImage.observedPlate}</div>
                 </div>
                 <div>
                   <div className="text-xs uppercase text-muted-foreground">Effective</div>
-                  <div className="font-mono">{selectedImage.plateNumber}</div>
+                  <div className="font-mono text-lg font-semibold leading-tight">{selectedImage.plateNumber}</div>
                 </div>
                 <div>
                   <div className="text-xs uppercase text-muted-foreground">Review status</div>
@@ -2539,68 +2547,18 @@ export default function PlateTable({
                   )}
                 </div>
                 <div>
-                  <div className="flex items-center gap-1 text-xs uppercase text-muted-foreground">
-                    <span>Direction</span>
-                    {canReview && (
-                      <Popover open={isDirectionReviewOpen} onOpenChange={setIsDirectionReviewOpen}>
-                        <PopoverTrigger asChild>
-                          <Button
-                            type="button"
-                            variant="ghost"
-                            size="icon"
-                            className="h-4 w-4 shrink-0 p-0 text-muted-foreground hover:text-foreground"
-                            aria-label="Review vehicle direction"
-                          >
-                            <Pencil className="h-2.5 w-2.5" />
-                          </Button>
-                        </PopoverTrigger>
-                        <PopoverContent align="start" className="w-64 p-3">
-                          <div className="space-y-3">
-                            <div>
-                              <div className="text-sm font-medium">Review vehicle direction</div>
-                              <div className="text-xs text-muted-foreground">
-                                Choose the view shown in this capture.
-                              </div>
-                            </div>
-                            <div className="grid grid-cols-2 gap-2">
-                              <Button
-                                type="button"
-                                variant={selectedImage.vehicleOrientation === "front" ? "default" : "outline"}
-                                size="sm"
-                                disabled={Boolean(pendingDirectionReview)}
-                                onClick={() => handleDirectionReview("front")}
-                              >
-                                {pendingDirectionReview === "front" ? "Saving..." : "Front view"}
-                              </Button>
-                              <Button
-                                type="button"
-                                variant={selectedImage.vehicleOrientation === "rear" ? "default" : "outline"}
-                                size="sm"
-                                disabled={Boolean(pendingDirectionReview)}
-                                onClick={() => handleDirectionReview("rear")}
-                              >
-                                {pendingDirectionReview === "rear" ? "Saving..." : "Rear view"}
-                              </Button>
-                            </div>
-                            {directionReviewError && (
-                              <div className="text-xs text-destructive">{directionReviewError}</div>
-                            )}
-                          </div>
-                        </PopoverContent>
-                      </Popover>
-                    )}
-                  </div>
-                  <div className={selectedImage.directionLabel ? "" : "text-muted-foreground"}>
-                    {selectedImage.directionLabel
-                      || (selectedImage.directionProfileConfigured && !selectedImage.directionStatus
-                        ? "Pending"
-                        : "Unknown")}
-                  </div>
-                  {selectedImage.directionLabel && selectedImage.directionConfidence !== null ? (
-                    <div className="text-xs text-muted-foreground">
-                      {selectedImage.vehicleOrientation} view · {Math.round(selectedImage.directionConfidence * 100)}%
-                    </div>
-                  ) : null}
+                  <div className="text-xs uppercase text-muted-foreground">Vehicle</div>
+                  {selectedImage.vehicleClusterId ? (
+                    <>
+                      <Link href={`/visual_search/vehicles/${selectedImage.vehicleClusterId}`} className="text-blue-500 hover:underline">
+                        Vehicle #{selectedImage.vehicleClusterId}
+                      </Link>
+                      <div className="text-xs capitalize text-muted-foreground">
+                        {selectedImage.vehicleClusterStatus}
+                        {selectedImage.vehicleClusterSimilarity !== null ? ` · ${Math.round(selectedImage.vehicleClusterSimilarity * 100)}%` : ""}
+                      </div>
+                    </>
+                  ) : <div className="text-muted-foreground">Unassigned</div>}
                 </div>
                   </div>
                   <div className="relative h-[40vh] w-full overflow-hidden rounded-md border bg-black sm:h-auto sm:min-h-0">
@@ -2651,22 +2609,79 @@ export default function PlateTable({
                           ? selectedImage.vehicleImageUrl
                           : selectedImage.plateCaptureUrl,
                         crop_coordinates: selectedImageView === "vehicle" ? null : selectedImage.crop_coordinates,
+                        focus_coordinates: selectedImageView === "vehicle"
+                          ? selectedImage.vehicleImageDetectionBox
+                          : null,
                       }}
-                      onClose={() => setSelectedImage(null)}
+                      zoomEnabled={selectedImageView === "vehicle"}
+                      defaultZoom={selectedImageView === "vehicle" ? 1 : null}
+                      zoomLabel={selectedImageView === "vehicle" ? "Zoom to Vehicle" : "Zoom to Plate"}
                     />
                   </div>
                 </div>
                 <aside className="h-full rounded-lg border p-2.5 text-sm lg:min-h-0">
-                  <div className="text-xs uppercase text-muted-foreground">Vehicle</div>
-                  {selectedImage.vehicleClusterId ? (
-                    <>
-                      <Link href={`/visual_search/vehicles/${selectedImage.vehicleClusterId}`} className="text-blue-500 hover:underline">Vehicle #{selectedImage.vehicleClusterId}</Link>
-                      <div className="text-xs capitalize text-muted-foreground">
-                        {selectedImage.vehicleClusterStatus}
-                        {selectedImage.vehicleClusterSimilarity !== null ? ` · ${Math.round(selectedImage.vehicleClusterSimilarity * 100)}%` : ""}
-                      </div>
-                    </>
-                  ) : <div className="text-muted-foreground">Unassigned</div>}
+                  <div className="flex items-center gap-1 text-xs uppercase text-muted-foreground">
+                    <span>Direction</span>
+                    {canReview && (
+                      <Popover open={isDirectionReviewOpen} onOpenChange={setIsDirectionReviewOpen}>
+                        <PopoverTrigger asChild>
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="icon"
+                            className="h-4 w-4 shrink-0 p-0 text-muted-foreground hover:text-foreground"
+                            aria-label="Review vehicle direction"
+                          >
+                            <Pencil className="h-2.5 w-2.5" />
+                          </Button>
+                        </PopoverTrigger>
+                        <PopoverContent align="end" className="w-64 p-3">
+                          <div className="space-y-3">
+                            <div>
+                              <div className="text-sm font-medium">Review vehicle direction</div>
+                              <div className="text-xs text-muted-foreground">
+                                Choose the view shown in this capture.
+                              </div>
+                            </div>
+                            <div className="grid grid-cols-2 gap-2">
+                              <Button
+                                type="button"
+                                variant={selectedImage.vehicleOrientation === "front" ? "default" : "outline"}
+                                size="sm"
+                                disabled={Boolean(pendingDirectionReview)}
+                                onClick={() => handleDirectionReview("front")}
+                              >
+                                {pendingDirectionReview === "front" ? "Saving..." : "Front view"}
+                              </Button>
+                              <Button
+                                type="button"
+                                variant={selectedImage.vehicleOrientation === "rear" ? "default" : "outline"}
+                                size="sm"
+                                disabled={Boolean(pendingDirectionReview)}
+                                onClick={() => handleDirectionReview("rear")}
+                              >
+                                {pendingDirectionReview === "rear" ? "Saving..." : "Rear view"}
+                              </Button>
+                            </div>
+                            {directionReviewError && (
+                              <div className="text-xs text-destructive">{directionReviewError}</div>
+                            )}
+                          </div>
+                        </PopoverContent>
+                      </Popover>
+                    )}
+                  </div>
+                  <div className={selectedImage.directionLabel ? "" : "text-muted-foreground"}>
+                    {selectedImage.directionLabel
+                      || (selectedImage.directionProfileConfigured && !selectedImage.directionStatus
+                        ? "Pending"
+                        : "Unknown")}
+                  </div>
+                  {selectedImage.directionLabel && selectedImage.directionConfidence !== null ? (
+                    <div className="text-xs text-muted-foreground">
+                      {selectedImage.vehicleOrientation} view · {Math.round(selectedImage.directionConfidence * 100)}%
+                    </div>
+                  ) : null}
                   <div className="mt-4 space-y-3 border-t pt-3">
                     <div>
                       <div className="text-xs uppercase text-muted-foreground">Type</div>
@@ -2863,7 +2878,7 @@ export default function PlateTable({
                       className="text-xs sm:text-sm"
                       onClick={() =>
                         window.open(
-                          `http://${biHost}/${selectedImage.bi_path}`,
+                          buildBlueIrisUiUrl(biHost, selectedImage.bi_path),
                           "_blank"
                         )
                       }
