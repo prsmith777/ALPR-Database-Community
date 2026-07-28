@@ -3,6 +3,7 @@ import test from "node:test";
 
 import {
   BlueIrisVehicleFrameService,
+  VEHICLE_FRAME_SAMPLE_OFFSETS_MS,
   scoreVehicleFrame,
 } from "../lib/blue-iris-vehicle-frame.mjs";
 import { BlueIrisError } from "../lib/blue-iris.mjs";
@@ -11,6 +12,15 @@ test("vehicle-frame scoring favors a complete, larger vehicle over an edge-trunc
   const complete = scoreVehicleFrame({ confidence: 0.82, area: 0.35, left: 0.1, top: 0.1, right: 0.8, bottom: 0.8 });
   const truncated = scoreVehicleFrame({ confidence: 0.99, area: 0.12, left: 0, top: 0.2, right: 0.4, bottom: 0.7 });
   assert.ok(complete > truncated);
+});
+
+test("default vehicle-frame sampling covers the event densely without retaining extra frames", () => {
+  assert.equal(VEHICLE_FRAME_SAMPLE_OFFSETS_MS.length, 17);
+  assert.equal(VEHICLE_FRAME_SAMPLE_OFFSETS_MS[0], -2_000);
+  assert.equal(VEHICLE_FRAME_SAMPLE_OFFSETS_MS.at(-1), 6_000);
+  assert.ok(VEHICLE_FRAME_SAMPLE_OFFSETS_MS.every((offset, index, offsets) => (
+    index === 0 || offset - offsets[index - 1] === 500
+  )));
 });
 
 test("bounded selection retains only the highest-scoring vehicle frame", async () => {

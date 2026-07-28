@@ -89,7 +89,7 @@ reliable background processing.
   rather than Unknown until analysis finishes.
   Historical evaluation does not emit notifications.
   Blue Iris integration can now correlate a plate-read timestamp with continuous
-  BVR metadata and sample a fixed eight-frame timeline window through the
+  BVR metadata and sample a fixed 17-frame, half-second timeline window through the
   read-only JPEG endpoint. Local vehicle detection selects one best overview
   frame, stores only that derived JPEG on the read, and exposes Plate capture /
   Vehicle view controls without copying BVR files. Expired recordings become a
