@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs/promises";
 
-test("login supports named users while retaining guarded compatibility access", async () => {
+test("login retires compatibility access after named-user bootstrap", async () => {
   const page = await fs.readFile("app/login/page.jsx", "utf8");
   const actions = await fs.readFile("app/actions.js", "utf8");
   const route = await fs.readFile("app/api/login-state/route.js", "utf8");
@@ -11,9 +11,11 @@ test("login supports named users while retaining guarded compatibility access", 
   assert.match(page, /\/api\/login-state/);
   assert.match(route, /getBootstrapState/);
   assert.match(route, /bootstrapped: true/);
-  assert.doesNotMatch(actions, /getLoginSetupState/);
-  assert.match(actions, /if \(username\) \{/);
-  assert.match(actions, /getIdentityService\(\)\.authenticate/);
+  assert.match(actions, /identityService\.getBootstrapState\(\)/);
+  assert.match(actions, /if \(identityState\.bootstrapped\) \{/);
+  assert.match(actions, /if \(!username\) return \{ error: "Invalid username or password" \}/);
+  assert.match(actions, /identityService\.authenticate/);
+  assert.match(actions, /Too many unsuccessful attempts/);
 });
 
 test("security settings expose guarded bootstrap and user administration", async () => {
@@ -56,7 +58,26 @@ test("new-user passwords are confirmed and temporary-password reminders persist"
   assert.match(migration, /must_change_password BOOLEAN NOT NULL DEFAULT FALSE/);
   assert.match(repository, /must_change_password = \$3/);
   assert.match(reminder, /Change your temporary password/);
-  assert.match(reminder, /Change password now/);
+  assert.match(reminder, /Change your temporary password before continuing/);
+  assert.doesNotMatch(reminder, /Remind me later/);
+  assert.doesNotMatch(reminder, /setDismissed/);
+});
+
+test("temporary-password sessions are restricted to password change", async () => {
+  const [actions, middleware, routePermission, settingsPage, verifier] =
+    await Promise.all([
+      fs.readFile("app/actions.js", "utf8"),
+      fs.readFile("lib/middleware-auth.mjs", "utf8"),
+      fs.readFile("lib/route-permission.mjs", "utf8"),
+      fs.readFile("app/settings/SettingsSectionPage.jsx", "utf8"),
+      fs.readFile("app/api/verify-session/route.js", "utf8"),
+    ]);
+  assert.match(actions, /if \(principal\.mustChangePassword\)/);
+  assert.match(actions, /const permissions = principal\.mustChangePassword\s*\? \[\]/);
+  assert.match(middleware, /PASSWORD_CHANGE_REQUIRED/);
+  assert.match(routePermission, /PASSWORD_CHANGE_REQUIRED/);
+  assert.match(settingsPage, /mustChangePassword && sectionId !== "security"/);
+  assert.match(verifier, /mustChangePassword: Boolean\(principal\?\.mustChangePassword\)/);
 });
 
 test("successful password changes end the invalid session with a login redirect", async () => {

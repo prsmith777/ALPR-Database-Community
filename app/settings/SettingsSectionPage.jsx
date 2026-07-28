@@ -23,8 +23,14 @@ const ADMIN_SECTIONS = new Set([
 
 export default async function SettingsSectionPage({ sectionId }) {
   const access = await getCurrentAccess();
-  const canManageSettings = access.permissions.includes("system.manage_settings");
-  const canManageUsers = access.permissions.includes("system.manage_users");
+  const mustChangePassword = access.currentUser.mustChangePassword === true;
+  if (mustChangePassword && sectionId !== "security") {
+    redirect("/settings/security");
+  }
+  const canManageSettings =
+    !mustChangePassword && access.permissions.includes("system.manage_settings");
+  const canManageUsers =
+    !mustChangePassword && access.permissions.includes("system.manage_users");
   if (!canManageSettings && ADMIN_SECTIONS.has(sectionId)) {
     redirect("/settings/security");
   }

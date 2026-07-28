@@ -131,6 +131,9 @@ const requireAuthenticatedSession = createServerActionAuthenticator({
 
 async function requirePermission(permission) {
   const principal = await requireAuthenticatedSession();
+  if (principal.mustChangePassword) {
+    throw new Error("Password change required");
+  }
   if (!hasPermission(principal, permission)) {
     throw new Error("Permission denied");
   }
@@ -1177,19 +1180,30 @@ export async function loginAction(formData) {
   try {
     const headersList = await headers();
     const userAgent = headersList.get("user-agent") || "Unknown Device";
+    const identityService = getIdentityService();
+    const identityState = await identityService.getBootstrapState();
 
-    if (username) {
-      const namedLogin = await getIdentityService().authenticate({
+    if (identityState.bootstrapped) {
+      if (!username) return { error: "Invalid username or password" };
+      const namedLogin = await identityService.authenticate({
         username,
         password,
         userAgent,
       });
       if (!namedLogin) return { error: "Invalid username or password" };
+      if (namedLogin.rateLimited) {
+        return {
+          error: "Too many unsuccessful attempts. Try again later.",
+          retryAfterSeconds: namedLogin.retryAfterSeconds,
+        };
+      }
 
       const cookieStore = await cookies();
       setSessionCookie(cookieStore, namedLogin.sessionToken);
       return { success: true };
     }
+
+    if (username) return { error: "Invalid username or password" };
 
     const config = await getAuthConfig(); // Get current config to check hash type
     const storedHash = config.password;
@@ -1240,6 +1254,7 @@ export async function getIdentityAdminState() {
   const state = await identityService.getBootstrapState();
   const canManageUsers =
     principal.authMode === "named" &&
+    !principal.mustChangePassword &&
     hasPermission(principal, "system.manage_users");
   const users =
     state.bootstrapped && canManageUsers
@@ -1262,6 +1277,9 @@ export async function getIdentityAdminState() {
 
 export async function getCurrentAccess() {
   const principal = await requireAuthenticatedSession();
+  const permissions = principal.mustChangePassword
+    ? []
+    : [...(principal.permissions || [])];
   return {
     currentUser: {
       id: principal.id,
@@ -1271,7 +1289,7 @@ export async function getCurrentAccess() {
       authMode: principal.authMode,
       mustChangePassword: Boolean(principal.mustChangePassword),
     },
-    permissions: [...(principal.permissions || [])],
+    permissions,
   };
 }
 

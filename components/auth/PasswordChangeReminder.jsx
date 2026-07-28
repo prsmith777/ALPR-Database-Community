@@ -1,61 +1,37 @@
 "use client";
 
-import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { KeyRound } from "lucide-react";
 
 import { useAccess } from "@/components/auth/AccessProvider";
 import { Button } from "@/components/ui/button";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
 
 export function PasswordChangeReminder() {
   const router = useRouter();
   const { currentUser, ready } = useAccess();
-  const [dismissed, setDismissed] = useState(false);
   const passwordChangeRequired =
     ready &&
     currentUser?.authMode === "named" &&
     currentUser?.mustChangePassword === true;
 
-  const goToPasswordSettings = () => {
-    setDismissed(true);
-    router.push("/settings");
-  };
+  if (!passwordChangeRequired) return null;
 
   return (
-    <Dialog
-      open={passwordChangeRequired && !dismissed}
-      onOpenChange={(open) => {
-        if (!open) setDismissed(true);
-      }}
+    <div
+      role="alert"
+      className="fixed inset-x-0 top-0 z-[60] flex items-center justify-center gap-3 border-b border-amber-500/40 bg-amber-50 px-4 py-3 text-amber-950 shadow-sm dark:bg-amber-950 dark:text-amber-50"
     >
-      <DialogContent className="sm:max-w-md">
-        <DialogHeader>
-          <DialogTitle className="flex items-center gap-2">
-            <KeyRound className="h-5 w-5 text-primary" />
-            Change your temporary password
-          </DialogTitle>
-          <DialogDescription>
-            You signed in with a temporary password. Change it now under
-            Settings &gt; Security to protect your account.
-          </DialogDescription>
-        </DialogHeader>
-        <DialogFooter>
-          <Button type="button" variant="outline" onClick={() => setDismissed(true)}>
-            Remind me later
-          </Button>
-          <Button type="button" onClick={goToPasswordSettings}>
-            Change password now
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+      <KeyRound className="h-5 w-5 shrink-0" />
+      <p className="text-sm font-medium">
+        Change your temporary password before continuing.
+      </p>
+      <Button
+        type="button"
+        size="sm"
+        onClick={() => router.push("/settings/security")}
+      >
+        Change password
+      </Button>
+    </div>
   );
 }

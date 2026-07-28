@@ -490,6 +490,20 @@ CREATE INDEX IF NOT EXISTS idx_user_sessions_active
     ON public.user_sessions (user_id, expires_at)
     WHERE revoked_at IS NULL;
 
+CREATE TABLE IF NOT EXISTS public.login_attempt_limits (
+    subject_hash CHAR(64) PRIMARY KEY,
+    failed_attempts INTEGER NOT NULL DEFAULT 0
+        CHECK (failed_attempts >= 0),
+    window_started_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    blocked_until TIMESTAMPTZ,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT login_attempt_limits_subject_hash_format
+        CHECK (subject_hash ~ '^[0-9a-f]{64}$')
+);
+
+CREATE INDEX IF NOT EXISTS idx_login_attempt_limits_updated_at
+    ON public.login_attempt_limits (updated_at);
+
 CREATE TABLE IF NOT EXISTS public.api_credentials (
     id BIGSERIAL PRIMARY KEY,
     owner_user_id BIGINT REFERENCES public.users(id) ON DELETE RESTRICT,
