@@ -357,6 +357,35 @@ export default function VehicleIntelligenceSettings({ initialData, initialFrameQ
             {!frameQueue?.configured && (
               <p className="rounded-md border border-amber-500/40 bg-amber-500/10 p-3 text-sm">Configure and test Blue Iris before vehicle views can be extracted.</p>
             )}
+            {frameQueue?.configured && (
+              <div className="flex flex-wrap items-center justify-between gap-3 rounded-md border p-3 text-sm">
+                <div>
+                  <div className="font-medium">
+                    Live worker: {{
+                      starting: "Starting",
+                      processing: "Processing a read",
+                      sleeping: "Running",
+                      idle: "Idle",
+                      busy: "Already processing",
+                      error: "Needs attention",
+                      "not-configured": "Blue Iris not configured",
+                      stopped: "Stopped",
+                    }[frameQueue?.worker?.phase] || "Running"}
+                  </div>
+                  <div className="text-xs text-muted-foreground">
+                    Live reads continue automatically even when historical processing is paused.
+                  </div>
+                </div>
+                <Badge variant={frameQueue?.worker?.phase === "error" ? "destructive" : "secondary"}>
+                  {Number(frameQueue?.liveOutstanding || 0).toLocaleString()} live waiting
+                </Badge>
+              </div>
+            )}
+            {frameQueue?.worker?.lastError?.message ? (
+              <p className="rounded-md border border-destructive/40 bg-destructive/10 p-3 text-sm text-destructive">
+                Blue Iris worker error: {frameQueue.worker.lastError.message}
+              </p>
+            ) : null}
             <div className="grid grid-cols-2 gap-3 text-center sm:grid-cols-5">
               <div className="rounded-md border p-3"><div className="text-xl font-semibold">{Number(frameQueue?.ready || 0).toLocaleString()}</div><div className="text-xs text-muted-foreground">vehicle views ready</div></div>
               <div className="rounded-md border p-3"><div className="text-xl font-semibold">{Number(frameQueue?.pending || 0).toLocaleString()}</div><div className="text-xs text-muted-foreground">processing or queued</div></div>

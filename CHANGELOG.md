@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+- Replace the Blue Iris best-frame selector's size-heavy ranking with
+  plate-anchored multiframe Vehicle ReID tracking, hard completeness
+  preference, sharpness/exposure/contrast scoring, and an adaptive timeline
+  extension from 17 to at most 29 read-only JPEG samples. Persist bounded
+  selection diagnostics while retaining only one derived vehicle image.
+- Expose Blue Iris vehicle-frame worker health and live backlog in Vehicle
+  Views, show attempt-aware terminal reasons in Recognition Feed, and allow an
+  authorized reviewer to retry an individual failed or unavailable vehicle
+  view.
 - Reorganized the administrative Vehicle Setup area into clean, route-backed
   Cameras, Vehicle Views, Processing, and Calibration pages. Queue totals are
   shown as compact tab status, optional date filters and completed-history

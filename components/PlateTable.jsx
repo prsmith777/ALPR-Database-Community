@@ -97,7 +97,11 @@ import { useRouter } from "next/navigation";
 import PlateMatchModeSelect from "@/components/PlateMatchModeSelect";
 import PlateImage from "@/components/PlateImage";
 import MultiSelectFilter from "@/components/MultiSelectFilter";
-import { getSettings, reviewVehicleClusterSuggestion } from "@/app/actions";
+import {
+  getSettings,
+  retryBlueIrisVehicleFrameForRead,
+  reviewVehicleClusterSuggestion,
+} from "@/app/actions";
 import ImageViewer from "./ImageViewer";
 import { useAccess } from "@/components/auth/AccessProvider";
 import { resolveReadViewerNavigation } from "@/lib/read-viewer-navigation.mjs";
@@ -312,6 +316,8 @@ export default function PlateTable({
   const [pendingViewerNavigation, setPendingViewerNavigation] = useState(null);
   const [pendingVehicleReview, setPendingVehicleReview] = useState("");
   const [pendingDirectionReview, setPendingDirectionReview] = useState("");
+  const [pendingVehicleImageRetry, setPendingVehicleImageRetry] = useState(false);
+  const [vehicleImageRetryError, setVehicleImageRetryError] = useState("");
   const [isDirectionReviewOpen, setIsDirectionReviewOpen] = useState(false);
   const [directionReviewError, setDirectionReviewError] = useState("");
   const [searchInput, setSearchInput] = useState(filters.search || "");
@@ -373,9 +379,33 @@ export default function PlateTable({
     }
   };
 
+  const handleVehicleImageRetry = async () => {
+    if (!selectedImage?.id || pendingVehicleImageRetry) return;
+    setPendingVehicleImageRetry(true);
+    setVehicleImageRetryError("");
+    try {
+      const result = await retryBlueIrisVehicleFrameForRead(selectedImage.id);
+      if (!result?.success) {
+        setVehicleImageRetryError(result?.error || "Unable to retry this vehicle view.");
+        return;
+      }
+      setSelectedImage((previous) => previous ? {
+        ...previous,
+        vehicleImageStatus: "pending",
+        vehicleImageErrorCode: null,
+        vehicleImageAttemptCount: 0,
+        vehicleImageRetryable: true,
+      } : previous);
+      router.refresh();
+    } finally {
+      setPendingVehicleImageRetry(false);
+    }
+  };
+
   useEffect(() => {
     setIsDirectionReviewOpen(false);
     setDirectionReviewError("");
+    setVehicleImageRetryError("");
   }, [selectedImage?.id]);
 
   useEffect(() => {
@@ -441,6 +471,8 @@ export default function PlateTable({
       vehicleImageUrl: plate.vehicle_image_path ? `/images/${plate.vehicle_image_path}` : null,
       vehicleImageStatus: plate.vehicle_image_status || null,
       vehicleImageErrorCode: plate.vehicle_image_error_code || null,
+      vehicleImageAttemptCount: Number(plate.vehicle_image_attempt_count || 0),
+      vehicleImageRetryable: plate.vehicle_image_retryable !== false,
       vehicleImageTimestamp: plate.vehicle_image_timestamp || null,
       thumbnail: thumbnailUrl,
       plateNumber: plate.plate_number,
@@ -644,6 +676,8 @@ export default function PlateTable({
         : null;
       const currentVehicleImageStatus = currentPlate?.vehicle_image_status || null;
       const currentVehicleImageErrorCode = currentPlate?.vehicle_image_error_code || null;
+      const currentVehicleImageAttemptCount = Number(currentPlate?.vehicle_image_attempt_count || 0);
+      const currentVehicleImageRetryable = currentPlate?.vehicle_image_retryable !== false;
       const currentVehicleImageTimestamp = currentPlate?.vehicle_image_timestamp || null;
 
       if (
@@ -671,6 +705,8 @@ export default function PlateTable({
           currentVehicleImageUrl !== selectedImage.vehicleImageUrl ||
           currentVehicleImageStatus !== selectedImage.vehicleImageStatus ||
           currentVehicleImageErrorCode !== selectedImage.vehicleImageErrorCode ||
+          currentVehicleImageAttemptCount !== selectedImage.vehicleImageAttemptCount ||
+          currentVehicleImageRetryable !== selectedImage.vehicleImageRetryable ||
           currentVehicleImageTimestamp !== selectedImage.vehicleImageTimestamp)
       ) {
         setSelectedImage((previous) => ({
@@ -703,6 +739,8 @@ export default function PlateTable({
           vehicleImageUrl: currentVehicleImageUrl,
           vehicleImageStatus: currentVehicleImageStatus,
           vehicleImageErrorCode: currentVehicleImageErrorCode,
+          vehicleImageAttemptCount: currentVehicleImageAttemptCount,
+          vehicleImageRetryable: currentVehicleImageRetryable,
           vehicleImageTimestamp: currentVehicleImageTimestamp,
         }));
       }
@@ -2573,17 +2611,37 @@ export default function PlateTable({
                       </div>
                     )}
                     {!selectedImage.vehicleImageUrl && selectedImage.vehicleImageStatus && (
-                      <div className="absolute left-2 top-2 z-20 rounded-md border bg-background/90 px-3 py-2 text-xs shadow-sm backdrop-blur">
-                        Vehicle view: {{
-                          pending: "Queued",
-                          processing: "Processing",
-                          failed: "Retry pending",
-                          unavailable: {
-                            RECORDING_UNAVAILABLE: "Recording unavailable",
-                            VEHICLE_NOT_VISIBLE: "Vehicle not visible",
-                            CAMERA_NOT_MAPPED: "Camera not mapped",
-                          }[selectedImage.vehicleImageErrorCode] || "Unavailable",
-                        }[selectedImage.vehicleImageStatus] || selectedImage.vehicleImageStatus}
+                      <div className="absolute left-2 top-2 z-20 max-w-[min(26rem,calc(100%-1rem))] space-y-2 rounded-md border bg-background/90 px-3 py-2 text-xs shadow-sm backdrop-blur">
+                        <div>
+                          Vehicle view: {{
+                            pending: "Queued",
+                            processing: "Processing",
+                            failed: selectedImage.vehicleImageRetryable && selectedImage.vehicleImageAttemptCount < 3
+                              ? `Retry pending (attempt ${selectedImage.vehicleImageAttemptCount} of 3)`
+                              : `Failed after ${selectedImage.vehicleImageAttemptCount || 3} attempts`,
+                            unavailable: {
+                              RECORDING_UNAVAILABLE: "Recording unavailable or expired",
+                              VEHICLE_NOT_VISIBLE: "Vehicle not visible in the sample window",
+                              CAMERA_NOT_MAPPED: "Camera not mapped in Blue Iris",
+                            }[selectedImage.vehicleImageErrorCode] || "Unavailable",
+                          }[selectedImage.vehicleImageStatus] || selectedImage.vehicleImageStatus}
+                        </div>
+                        {canReview && ["failed", "unavailable"].includes(selectedImage.vehicleImageStatus) ? (
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="outline"
+                            className="h-7 px-2 text-xs"
+                            disabled={pendingVehicleImageRetry}
+                            onClick={handleVehicleImageRetry}
+                          >
+                            <RotateCcw className="mr-1.5 h-3.5 w-3.5" />
+                            {pendingVehicleImageRetry ? "Queueing..." : "Retry vehicle view"}
+                          </Button>
+                        ) : null}
+                        {vehicleImageRetryError ? (
+                          <div className="text-destructive">{vehicleImageRetryError}</div>
+                        ) : null}
                       </div>
                     )}
                     <ImageViewer

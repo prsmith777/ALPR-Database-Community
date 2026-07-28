@@ -45,6 +45,7 @@ test("ingestion and migrations preserve Blue Iris pointers without storing BVR c
   assert.match(migrations, /2026072704_blue_iris_alert_correlation/);
   assert.match(migrations, /2026072801_blue_iris_vehicle_frames/);
   assert.match(migrations, /2026072802_blue_iris_vehicle_frame_queue/);
+  assert.match(migrations, /2026072803_blue_iris_vehicle_frame_quality/);
   assert.match(route, /vehicle_image_status[\s\S]*'pending', 'live'/);
   assert.match(route, /wakeBlueIrisVehicleFrameWorker/);
   assert.doesNotMatch(route, /readFile\([^)]*ALERT_CLIP/);

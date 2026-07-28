@@ -40,6 +40,9 @@ test("live feed image review advances visibly and starts focused on the plate", 
   assert.match(plateTable, /onViewerPageChange/);
   assert.doesNotMatch(plateTable, /\(selectedIndex \+ 1\) % data\.length/);
   assert.match(plateTable, />Next read</);
+  assert.match(plateTable, /Retry vehicle view/);
+  assert.match(plateTable, /retryBlueIrisVehicleFrameForRead/);
+  assert.match(plateTable, /Failed after \$\{selectedImage\.vehicleImageAttemptCount \|\| 3\} attempts/);
   assert.match(plateTable, /Delete this read/);
   assert.match(plateTable, /setIsDeleteConfirmOpen\(true\)/);
   assert.match(plateTable, /<DialogTitle>Confirm Deletion<\/DialogTitle>/);
