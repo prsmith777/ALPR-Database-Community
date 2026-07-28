@@ -148,6 +148,24 @@ test("historical claims include only explicitly queued work", async () => {
   assert.match(statement, /vehicle_image_status = 'processing'/);
 });
 
+test("existing vehicle views can be queued for reevaluation without deleting their current image", async () => {
+  let statement = "";
+  let parameters = null;
+  const repository = new BlueIrisVehicleFrameRepository({
+    async query(sql, values) {
+      statement = sql;
+      parameters = values;
+      return { rowCount: 2, rows: [{ id: 1 }, { id: 2 }] };
+    },
+  });
+
+  const result = await repository.queueHistorical({ replaceExisting: true });
+  assert.equal(result.queued, 2);
+  assert.deepEqual(parameters, [null, null, null, true]);
+  assert.match(statement, /\$4::boolean = TRUE AND vehicle_image_path IS NOT NULL/);
+  assert.doesNotMatch(statement, /SET[\s\S]*vehicle_image_path\s*=/);
+});
+
 test("an administrator can explicitly retry a failed or unavailable read", async () => {
   let statement = "";
   let parameters = null;

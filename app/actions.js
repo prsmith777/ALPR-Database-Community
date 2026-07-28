@@ -1573,6 +1573,7 @@ export async function queueBlueIrisVehicleFrameHistory(input = {}) {
       cameraName: input.cameraName || null,
       startDate: input.startDate || null,
       endDate: input.endDate || null,
+      replaceExisting: input.replaceExisting === true,
     });
     await runtime.queue.setHistoricalPaused(false);
     wakeBlueIrisVehicleFrameWorker();

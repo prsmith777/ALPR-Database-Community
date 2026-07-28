@@ -223,18 +223,21 @@ export default function VehicleIntelligenceSettings({ initialData, initialFrameQ
     ? Math.round(backfill.completed / backfill.eligible * 100)
     : 100;
 
-  const queueFrameHistory = async (allCameras = false) => {
-    setBusy(allCameras ? "frame-history-all" : "frame-history-camera");
+  const queueFrameHistory = async (allCameras = false, replaceExisting = false) => {
+    setBusy(replaceExisting ? "frame-history-reevaluate" : allCameras ? "frame-history-all" : "frame-history-camera");
     setFrameMessage("");
     try {
       const result = await queueBlueIrisVehicleFrameHistory({
         cameraName: allCameras ? null : cameraName,
         startDate: frameStartDate ? new Date(`${frameStartDate}T00:00:00`).toISOString() : null,
         endDate: frameEndDate ? new Date(`${frameEndDate}T23:59:59.999`).toISOString() : null,
+        replaceExisting,
       });
       if (!result.success) throw new Error(result.error);
       setFrameQueue(result.data.status);
-      setFrameMessage(`Queued ${result.data.queued.toLocaleString()} missing vehicle view${result.data.queued === 1 ? "" : "s"}. Live reads remain prioritized.`);
+      setFrameMessage(replaceExisting
+        ? `Queued ${result.data.queued.toLocaleString()} existing vehicle view${result.data.queued === 1 ? "" : "s"} for reevaluation. Each prior image remains available until its replacement succeeds.`
+        : `Queued ${result.data.queued.toLocaleString()} missing vehicle view${result.data.queued === 1 ? "" : "s"}. Live reads remain prioritized.`);
     } catch (error) { setFrameMessage(error.message); }
     finally { setBusy(""); }
   };
@@ -414,6 +417,7 @@ export default function VehicleIntelligenceSettings({ initialData, initialFrameQ
               <div className="flex flex-wrap gap-2 sm:col-span-2">
                 <Button variant="outline" disabled={Boolean(busy) || !cameraName || !frameQueue?.configured} onClick={() => queueFrameHistory(false)}>{busy === "frame-history-camera" ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}Queue {cameraName || "selected camera"} history</Button>
                 <Button variant="outline" disabled={Boolean(busy) || !frameQueue?.configured} onClick={() => queueFrameHistory(true)}>{busy === "frame-history-all" ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}Queue all camera history</Button>
+                <Button variant="outline" disabled={Boolean(busy) || !frameQueue?.configured} onClick={() => queueFrameHistory(true, true)}>{busy === "frame-history-reevaluate" ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}Reevaluate existing views</Button>
                 <Button variant="secondary" disabled={Boolean(busy) || !frameQueue?.configured} onClick={toggleFrameHistory}>{frameQueue?.historicalPaused ? <Play className="mr-2 h-4 w-4" /> : <Pause className="mr-2 h-4 w-4" />}{frameQueue?.historicalPaused ? "Resume history" : "Pause history"}</Button>
                 <Button variant="secondary" disabled={Boolean(busy) || !frameQueue?.configured} onClick={runFrameBatch}>{busy === "frame-batch" ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Play className="mr-2 h-4 w-4" />}Run one frame now</Button>
               </div>

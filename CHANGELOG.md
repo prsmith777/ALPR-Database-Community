@@ -7,6 +7,9 @@
   preference, sharpness/exposure/contrast scoring, and an adaptive timeline
   extension from 17 to at most 29 read-only JPEG samples. Persist bounded
   selection diagnostics while retaining only one derived vehicle image.
+- Allow administrators to explicitly reevaluate existing vehicle views while
+  retaining every prior image until a replacement is successfully selected
+  and saved.
 - Expose Blue Iris vehicle-frame worker health and live backlog in Vehicle
   Views, show attempt-aware terminal reasons in Recognition Feed, and allow an
   authorized reviewer to retry an individual failed or unavailable vehicle
