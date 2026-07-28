@@ -5,6 +5,7 @@ import sharp from "sharp";
 import {
   analyzeVehicleFrameQuality,
   BlueIrisVehicleFrameService,
+  VEHICLE_FRAME_DEEP_EXTENSION_OFFSETS_MS,
   VEHICLE_FRAME_EXTENSION_OFFSETS_MS,
   VEHICLE_FRAME_SAMPLE_OFFSETS_MS,
   isLikelyBlueIrisPlaceholder,
@@ -39,6 +40,36 @@ test("default vehicle-frame sampling covers the event densely without retaining 
     index === 0 || offset - offsets[index - 1] === 500
   )));
   assert.equal(VEHICLE_FRAME_EXTENSION_OFFSETS_MS.at(-1), 10_000);
+  assert.equal(VEHICLE_FRAME_DEEP_EXTENSION_OFFSETS_MS[0], -8_000);
+  assert.equal(VEHICLE_FRAME_DEEP_EXTENSION_OFFSETS_MS.at(-1), 16_000);
+  assert.equal(VEHICLE_FRAME_DEEP_EXTENSION_OFFSETS_MS.length, 10);
+});
+
+test("a well-framed tracked vehicle beats a slightly higher-scoring edge-adjacent view", () => {
+  const anchor = {
+    offsetMs: 0,
+    detection: { containsPlate: true, selectionScore: 10 },
+    embedding: Float32Array.from([1, 0]),
+    score: 0.45,
+    scoreBreakdown: { score: 0.45, completenessTier: 1 },
+  };
+  const edgeAdjacent = {
+    offsetMs: 1_000,
+    detection: { containsPlate: false, selectionScore: 1 },
+    embedding: Float32Array.from([0.999, 0.02]),
+    score: 0.92,
+    scoreBreakdown: { score: 0.92, completenessTier: 2 },
+  };
+  const wellFramed = {
+    offsetMs: 2_000,
+    detection: { containsPlate: false, selectionScore: 1 },
+    embedding: Float32Array.from([0.998, 0.03]),
+    score: 0.84,
+    scoreBreakdown: { score: 0.84, completenessTier: 3 },
+  };
+
+  const result = selectBestTrackedVehicleFrame([anchor, edgeAdjacent, wellFramed]);
+  assert.equal(result.best.offsetMs, 2_000);
 });
 
 test("quality analysis distinguishes a sharp vehicle crop from a flat blurred crop", async () => {
@@ -135,6 +166,52 @@ test("a weak primary selection expands the timeline and selects a complete later
   assert.equal(result.best.offsetMs, 1_000);
   assert.equal(result.sampledCount, 2);
   assert.equal(result.expandedSampling, true);
+});
+
+test("an edge-adjacent extended result triggers a sparse deep search for a well-framed vehicle", async () => {
+  const frames = new Map([
+    [0, { confidence: 0.95, area: 0.4, left: 0, top: 0.1, right: 0.7, bottom: 0.8 }],
+    [1_000, { confidence: 0.9, area: 0.3, left: 0.02, top: 0.03, right: 0.8, bottom: 0.82 }],
+    [4_000, { confidence: 0.86, area: 0.25, left: 0.08, top: 0.08, right: 0.76, bottom: 0.76 }],
+  ]);
+  const base = Date.parse("2026-07-22T17:46:50Z");
+  const service = new BlueIrisVehicleFrameService({
+    client: {
+      async fetchTimelineJpeg({ timestamp }) {
+        const offset = new Date(timestamp).getTime() - base;
+        return { buffer: Buffer.from(String(offset)), timestamp: new Date(timestamp).toISOString() };
+      },
+    },
+    repository: {},
+    fileStorage: {},
+    detector: {
+      async detect(buffer, dimensions) {
+        const detection = frames.get(Number(buffer.toString())) || null;
+        return detection ? { ...detection, containsPlate: Boolean(dimensions.plateBox), selectionScore: 1 } : null;
+      },
+    },
+    imageProcessor: (buffer) => ({
+      buffer,
+      rotate() { return this; },
+      jpeg() { return this; },
+      async toBuffer() { return this.buffer; },
+      async metadata() { return { width: 1280, height: 720 }; },
+      async stats() { return { entropy: 3, channels: [{ stdev: 20 }, { stdev: 20 }, { stdev: 20 }] }; },
+    }),
+    qualityAnalyzer: async () => ({ sharpnessScore: 0.8, exposureScore: 0.8, contrastScore: 0.8 }),
+    sampleOffsetsMs: [0],
+    extensionOffsetsMs: [1_000],
+    deepExtensionOffsetsMs: [4_000],
+  });
+
+  const result = await service.selectBestFrame({
+    camera: "Cam146",
+    timestamp: new Date(base),
+    plateBox: [700, 360, 780, 410],
+  });
+  assert.equal(result.best.offsetMs, 4_000);
+  assert.equal(result.sampledCount, 3);
+  assert.equal(result.deepExpandedSampling, true);
 });
 
 test("Blue Iris no-video cards are rejected without rejecting normal frames", () => {

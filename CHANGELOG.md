@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Strengthen Blue Iris best-vehicle-frame selection so edge-adjacent detections no longer stop the search early, and add a bounded sparse fallback through 16 seconds when the initial timeline still lacks a clearly framed vehicle.
+
 - Replace the Blue Iris best-frame selector's size-heavy ranking with
   plate-anchored multiframe Vehicle ReID tracking, hard completeness
   preference, sharpness/exposure/contrast scoring, and an adaptive timeline
