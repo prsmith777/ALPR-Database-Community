@@ -122,6 +122,8 @@ import {
   BlueIrisClient,
   normalizeBlueIrisSettings,
 } from "@/lib/blue-iris.mjs";
+import { BlueIrisVehicleFrameService } from "@/lib/blue-iris-vehicle-frame.mjs";
+import { BlueIrisVehicleFrameRepository } from "@/lib/blue-iris-vehicle-frame-repository.mjs";
 
 async function readServerActionSessionId() {
   const cookieStore = await cookies();
@@ -1464,6 +1466,50 @@ export async function previewBlueIrisAlertMatch(input = {}) {
     return {
       success: false,
       error: error?.message || "Unable to search Blue Iris alerts.",
+    };
+  }
+}
+
+export async function selectBlueIrisVehicleFrame(input = {}) {
+  await requirePermission("system.manage_settings");
+  try {
+    const config = await getConfig();
+    const pool = await getPool();
+    const result = await new BlueIrisVehicleFrameService({
+      client: new BlueIrisClient(config.blueiris),
+      repository: new BlueIrisVehicleFrameRepository(pool),
+      fileStorage,
+    }).processNearestRead({
+      camera: input.camera,
+      cameraName: input.cameraName,
+      timestamp: input.timestamp,
+      toleranceSeconds: Math.min(
+        30,
+        Math.max(1, Number.parseInt(String(input.readToleranceSeconds ?? 3), 10) || 3)
+      ),
+    });
+    revalidatePath("/live_feed");
+    return { success: result.status === "ready", ...result };
+  } catch (error) {
+    console.error("Blue Iris vehicle-frame selection failed", error);
+    const safeCodes = new Set([
+      "CAMERA_REQUIRED",
+      "CONNECTION_FAILED",
+      "CREDENTIALS_REQUIRED",
+      "FRAME_TOO_LARGE",
+      "INVALID_TIMESTAMP",
+      "LOGIN_FAILED",
+      "RECORDING_UNAVAILABLE",
+      "TIMEOUT",
+      "VEHICLE_NOT_VISIBLE",
+    ]);
+    return {
+      success: false,
+      status: "failed",
+      errorCode: error?.code || "FRAME_SELECTION_FAILED",
+      message: safeCodes.has(error?.code)
+        ? error.message
+        : "Unable to select a Blue Iris vehicle frame.",
     };
   }
 }

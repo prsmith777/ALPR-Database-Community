@@ -18,7 +18,7 @@ reliable background processing.
 6. Audit sensitive searches, exports, corrections, rule changes, and
    destructive maintenance.
 
-## Release baseline — July 27, 2026
+## Release baseline — July 28, 2026
 
 - Application `0.1.12` includes named users and roles, evidence-preserving plate
   review, filter-respecting exports, the searchable help center, local privacy
@@ -88,6 +88,12 @@ reliable background processing.
   for newly ingested reads. New live work is prioritized and appears as Pending
   rather than Unknown until analysis finishes.
   Historical evaluation does not emit notifications.
+  Blue Iris integration can now correlate a plate-read timestamp with continuous
+  BVR metadata and sample a fixed eight-frame timeline window through the
+  read-only JPEG endpoint. Local vehicle detection selects one best overview
+  frame, stores only that derived JPEG on the read, and exposes Plate capture /
+  Vehicle view controls without copying BVR files. Expired recordings become a
+  terminal unavailable state; transient connection failures remain retryable.
   Per-read color observations retain confidence and local algorithm provenance.
   Automatic local coarse vehicle-type observations classify car, van, truck,
   or bus with confidence and OpenVINO provider/model provenance. New reads are

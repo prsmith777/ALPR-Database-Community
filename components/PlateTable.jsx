@@ -305,6 +305,7 @@ export default function PlateTable({
     error: "",
   });
   const [selectedImage, setSelectedImage] = useState(null);
+  const [selectedImageView, setSelectedImageView] = useState("plate");
   const [selectedIndex, setSelectedIndex] = useState(-1);
   const [pendingReviewReadId, setPendingReviewReadId] = useState(null);
   const [pendingReviewTargetValidated, setPendingReviewTargetValidated] = useState(null);
@@ -436,6 +437,10 @@ export default function PlateTable({
     setSelectedIndex(plateIndex);
     setSelectedImage({
       url: imageUrl,
+      plateCaptureUrl: imageUrl,
+      vehicleImageUrl: plate.vehicle_image_path ? `/images/${plate.vehicle_image_path}` : null,
+      vehicleImageStatus: plate.vehicle_image_status || null,
+      vehicleImageTimestamp: plate.vehicle_image_timestamp || null,
       thumbnail: thumbnailUrl,
       plateNumber: plate.plate_number,
       observedPlate: plate.observed_plate || plate.plate_number,
@@ -476,6 +481,7 @@ export default function PlateTable({
     // Reset zoom and position when opening new image
     setZoom(1);
     setPosition({ x: 0, y: 0 });
+    setSelectedImageView("plate");
   }, [data]);
 
   const getViewerNavigation = useCallback(
@@ -2544,8 +2550,20 @@ export default function PlateTable({
                 </div>
                   </div>
                   <div className="relative h-[40vh] w-full overflow-hidden rounded-md border bg-black sm:h-auto sm:min-h-0">
+                    {selectedImage.vehicleImageUrl && (
+                      <div className="absolute left-2 top-2 z-20 flex rounded-md border bg-background/90 p-1 shadow-sm backdrop-blur">
+                        <Button type="button" size="sm" variant={selectedImageView === "plate" ? "default" : "ghost"} className="h-7 px-2 text-xs" onClick={() => setSelectedImageView("plate")}>Plate capture</Button>
+                        <Button type="button" size="sm" variant={selectedImageView === "vehicle" ? "default" : "ghost"} className="h-7 px-2 text-xs" onClick={() => setSelectedImageView("vehicle")}>Vehicle view</Button>
+                      </div>
+                    )}
                     <ImageViewer
-                      image={selectedImage}
+                      image={{
+                        ...selectedImage,
+                        url: selectedImageView === "vehicle" && selectedImage.vehicleImageUrl
+                          ? selectedImage.vehicleImageUrl
+                          : selectedImage.plateCaptureUrl,
+                        crop_coordinates: selectedImageView === "vehicle" ? null : selectedImage.crop_coordinates,
+                      }}
                       onClose={() => setSelectedImage(null)}
                     />
                   </div>

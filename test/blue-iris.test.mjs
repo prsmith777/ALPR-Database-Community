@@ -16,6 +16,15 @@ function jsonResponse(body, status = 200) {
   };
 }
 
+function binaryResponse(buffer, status = 200) {
+  return {
+    ok: status >= 200 && status < 300,
+    status,
+    headers: { get: (name) => name === "content-length" ? String(buffer.length) : "image/jpeg" },
+    async arrayBuffer() { return buffer; },
+  };
+}
+
 test("Blue Iris server addresses are normalized without accepting embedded credentials or paths", () => {
   assert.equal(normalizeBlueIrisBaseUrl("192.168.0.167:81"), "http://192.168.0.167:81");
   assert.equal(normalizeBlueIrisBaseUrl("https://blueiris.local:443/"), "https://blueiris.local");
@@ -148,5 +157,50 @@ test("invalid credentials return a stable error without exposing the password", 
   await assert.rejects(
     client.login(),
     (error) => error.code === "LOGIN_FAILED" && !error.message.includes("do-not-expose")
+  );
+});
+
+test("timeline frame retrieval uses a read-only JPEG request at the requested epoch", async () => {
+  const requests = [];
+  const jpeg = Buffer.from([0xff, 0xd8, 1, 2, 0xff, 0xd9]);
+  const responses = [
+    jsonResponse({ result: "fail", session: "challenge" }),
+    jsonResponse({ result: "success", session: "active", data: {} }),
+    binaryResponse(jpeg),
+  ];
+  const client = new BlueIrisClient(
+    { host: "blueiris.local:81", username: "alpr", password: "secret" },
+    { fetchImpl: async (url, options) => {
+      requests.push({ url: String(url), method: options.method });
+      return responses.shift();
+    } }
+  );
+
+  const frame = await client.fetchTimelineJpeg({
+    camera: "Cam146",
+    timestamp: "2026-07-22T17:46:50.000Z",
+  });
+  const url = new URL(requests[2].url);
+  assert.equal(requests[2].method, "GET");
+  assert.equal(url.pathname, "/time/Cam146");
+  assert.equal(url.searchParams.get("pos"), String(Date.parse("2026-07-22T17:46:50.000Z")));
+  assert.equal(url.searchParams.get("jpeg"), "1");
+  assert.equal(url.searchParams.get("session"), "active");
+  assert.deepEqual(frame.buffer, jpeg);
+});
+
+test("missing timeline recording produces a stable terminal error", async () => {
+  const responses = [
+    jsonResponse({ result: "fail", session: "challenge" }),
+    jsonResponse({ result: "success", session: "active", data: {} }),
+    binaryResponse(Buffer.alloc(0), 404),
+  ];
+  const client = new BlueIrisClient(
+    { host: "blueiris.local:81", username: "alpr", password: "secret" },
+    { fetchImpl: async () => responses.shift() }
+  );
+  await assert.rejects(
+    client.fetchTimelineJpeg({ camera: "Cam146", timestamp: "2026-01-01T00:00:00Z" }),
+    (error) => error.code === "RECORDING_UNAVAILABLE"
   );
 });

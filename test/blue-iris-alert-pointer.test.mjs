@@ -43,5 +43,22 @@ test("ingestion and migrations preserve Blue Iris pointers without storing BVR c
   assert.match(route, /bi_alert_path/);
   assert.match(route, /bi_alert_offset_ms/);
   assert.match(migrations, /2026072704_blue_iris_alert_correlation/);
+  assert.match(migrations, /2026072801_blue_iris_vehicle_frames/);
   assert.doesNotMatch(route, /readFile\([^)]*ALERT_CLIP/);
+});
+
+test("Blue Iris vehicle frames are bounded, read-owned, and exposed as a two-view live-feed image", async () => {
+  const [service, table, settings, reconciliation] = await Promise.all([
+    readFile(new URL("../lib/blue-iris-vehicle-frame.mjs", import.meta.url), "utf8"),
+    readFile(new URL("../components/PlateTable.jsx", import.meta.url), "utf8"),
+    readFile(new URL("../app/settings/BlueIrisConnectionTest.jsx", import.meta.url), "utf8"),
+    readFile(new URL("../lib/storage-reconciliation-repository.mjs", import.meta.url), "utf8"),
+  ]);
+  assert.match(service, /VEHICLE_FRAME_SAMPLE_OFFSETS_MS/);
+  assert.match(service, /saveDerivedImage/);
+  assert.doesNotMatch(service, /\.bvr[^\n]*readFile|readFile[^\n]*\.bvr/);
+  assert.match(settings, /Select best vehicle frame/);
+  assert.match(table, /Plate capture/);
+  assert.match(table, /Vehicle view/);
+  assert.match(reconciliation, /vehicle_image_path/);
 });
