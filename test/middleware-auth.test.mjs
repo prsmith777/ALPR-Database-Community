@@ -125,6 +125,19 @@ test("login redirects a valid session to the home page", async () => {
   assert.equal(response.location, "/");
 });
 
+test("login sends temporary-password sessions directly to security settings", async () => {
+  const handler = createMiddlewareHandler(
+    responseAdapters(async () =>
+      Response.json({ valid: true, mustChangePassword: true })
+    )
+  );
+  const response = await handler(
+    makeRequest("/login", { sessionId: VALID_SESSION_ID })
+  );
+  assert.equal(response.type, "redirect");
+  assert.equal(response.location, "/settings/security");
+});
+
 test("login clears an invalid session and remains accessible", async () => {
   const handler = createMiddlewareHandler(responseAdapters(sessionFetch(false)));
   const response = await handler(
@@ -158,6 +171,40 @@ test("application API allows a valid browser session", async () => {
     makeRequest("/api/chat", { sessionId: VALID_SESSION_ID })
   );
   assert.equal(response.type, "next");
+});
+
+test("temporary-password sessions can reach only security settings and current access", async () => {
+  const handler = createMiddlewareHandler(
+    responseAdapters(async (url) => {
+      if (new URL(url).pathname === "/api/verify-session") {
+        return Response.json({ valid: true, mustChangePassword: true });
+      }
+      return Response.json({ updateRequired: false });
+    })
+  );
+
+  const page = await handler(
+    makeRequest("/dashboard", { sessionId: VALID_SESSION_ID })
+  );
+  assert.equal(page.type, "redirect");
+  assert.equal(page.location, "/settings/security");
+
+  const api = await handler(
+    makeRequest("/api/chat", { sessionId: VALID_SESSION_ID })
+  );
+  assert.equal(api.type, "json");
+  assert.equal(api.status, 403);
+  assert.equal(api.body.code, "PASSWORD_CHANGE_REQUIRED");
+
+  const security = await handler(
+    makeRequest("/settings/security", { sessionId: VALID_SESSION_ID })
+  );
+  assert.equal(security.type, "next");
+
+  const access = await handler(
+    makeRequest("/api/current-access", { sessionId: VALID_SESSION_ID })
+  );
+  assert.equal(access.type, "next");
 });
 
 test("application API returns JSON 401 and clears an invalid session", async () => {
