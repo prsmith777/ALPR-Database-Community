@@ -107,6 +107,14 @@ test("vehicle images support centered zoom, drag panning, and full-screen inspec
   assert.match(viewer, /createPortal\(viewer\(true\), document\.body\)/);
 });
 
+test("live-feed refreshes do not reset a user's vehicle zoom", async () => {
+  const viewer = await source("components/ImageViewer.jsx");
+  assert.match(viewer, /const initializedViewRef = useRef\(null\)/);
+  assert.match(viewer, /initializedViewRef\.current === viewResetKey/);
+  assert.match(viewer, /initializedViewRef\.current = viewResetKey;[\s\S]*?setZoom\(clampZoom\(initialZoom\)\)/);
+  assert.match(viewer, /setImageSize\(\{ url: image\.url, width: img\.width, height: img\.height \}\)/);
+});
+
 test("local vehicle type inference preserves confidence and model provenance", async () => {
   assert.deepEqual(inferVehicleType([0.8, 0.05, 0.1, 0.05]), {
     status: "ready",

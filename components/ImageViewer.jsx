@@ -46,7 +46,15 @@ const ImageViewer = ({
   const [isFullscreen, setIsFullscreen] = useState(false);
   const containerRef = useRef(null);
   const dragRef = useRef(null);
+  const initializedViewRef = useRef(null);
   const canZoom = zoomEnabled || Boolean(image?.crop_coordinates || image?.focus_coordinates);
+  const viewResetKey = JSON.stringify([
+    image?.url || "",
+    image?.focus_coordinates || image?.crop_coordinates || null,
+    defaultZoom,
+    fitPlateOnOpen,
+    plateZoom,
+  ]);
 
   const focusCoordinates = useMemo(
     () => normalizedFocusCoordinates(
@@ -77,6 +85,7 @@ const ImageViewer = ({
     if (
       !focusCoordinates ||
       !imageSize ||
+      imageSize.url !== image?.url ||
       !containerSize?.width ||
       !containerSize?.height
     ) {
@@ -98,7 +107,7 @@ const ImageViewer = ({
     );
 
     return Math.max(1, Math.floor(fittedZoom * 10) / 10);
-  }, [containerSize, focusCoordinates, imageSize, plateZoom]);
+  }, [containerSize, focusCoordinates, image?.url, imageSize, plateZoom]);
 
   const getSliderMax = useCallback(
     () => Math.max(5, getFocusFitZoom()),
@@ -143,18 +152,46 @@ const ImageViewer = ({
 
   useEffect(() => {
     setImageSize(null);
+    let active = true;
     const img = new Image();
-    img.onload = () => setImageSize({ width: img.width, height: img.height });
+    img.onload = () => {
+      if (active) setImageSize({ url: image.url, width: img.width, height: img.height });
+    };
     img.src = image.url;
+    return () => {
+      active = false;
+    };
   }, [image.url]);
 
   useEffect(() => {
+    const needsFocusMeasurements = defaultZoom === null && Boolean(image?.crop_coordinates);
+    if (
+      initializedViewRef.current === viewResetKey ||
+      (needsFocusMeasurements && (
+        imageSize?.url !== image.url ||
+        !containerSize?.width ||
+        !containerSize?.height
+      ))
+    ) {
+      return;
+    }
+
     const initialZoom = defaultZoom === null
       ? image?.crop_coordinates ? getFocusZoom() : 1
       : defaultZoom;
+    initializedViewRef.current = viewResetKey;
     setZoom(clampZoom(initialZoom));
     setPan({ x: 0, y: 0 });
-  }, [clampZoom, defaultZoom, getFocusZoom, image?.crop_coordinates, image.url]);
+  }, [
+    clampZoom,
+    containerSize,
+    defaultZoom,
+    getFocusZoom,
+    image?.crop_coordinates,
+    image.url,
+    imageSize,
+    viewResetKey,
+  ]);
 
   useEffect(() => {
     if (!isFullscreen) return undefined;
