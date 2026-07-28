@@ -47,6 +47,7 @@ import PlateReviewSettings from "./PlateReviewSettings";
 import PushoverUsageCard from "./PushoverUsageCard";
 import ReleaseInformationCard from "./ReleaseInformationCard";
 import StorageHealthCard from "./StorageHealthCard";
+import BlueIrisConnectionTest from "./BlueIrisConnectionTest";
 
 export default function SettingsForm({
   initialSettings,
@@ -142,6 +143,13 @@ export default function SettingsForm({
         break;
       case "blueiris":
         newFormData.append("bihost", formData.get("bihost"));
+        newFormData.append("biUsername", formData.get("biUsername"));
+        newFormData.append("biPassword", formData.get("biPassword"));
+        newFormData.append(
+          "clearBiPassword",
+          formData.get("clearBiPassword") === "on"
+        );
+        newFormData.append("biTimeoutSeconds", formData.get("biTimeoutSeconds"));
         break;
     }
 
@@ -703,8 +711,8 @@ export default function SettingsForm({
           Configure integration with Blue Iris camera system.
         </p>
       </div>
-      <div className="space-y-4">
-        <div className="space-y-2">
+      <div className="grid gap-4 md:grid-cols-2">
+        <div className="space-y-2 md:col-span-2">
           <Label htmlFor="bihost" className="text-sm font-medium">
             Blue Iris Hostname or IP address
           </Label>
@@ -717,10 +725,50 @@ export default function SettingsForm({
             defaultValue={initialSettings.blueiris.host}
             placeholder="192.168.1.68"
             autoComplete="off"
-            className="max-w-sm"
+            className="max-w-lg"
           />
         </div>
+        <div className="space-y-2">
+          <Label htmlFor="biUsername">Username</Label>
+          <Input
+            id="biUsername"
+            name="biUsername"
+            defaultValue={initialSettings.blueiris.username || ""}
+            autoComplete="username"
+          />
+        </div>
+        <div className="space-y-2">
+          <Label htmlFor="biTimeoutSeconds">Request timeout (seconds)</Label>
+          <Input
+            id="biTimeoutSeconds"
+            name="biTimeoutSeconds"
+            type="number"
+            min="2"
+            max="30"
+            defaultValue={initialSettings.blueiris.timeout_seconds || 10}
+          />
+        </div>
+        <div className="space-y-2 md:col-span-2">
+          <Label htmlFor="biPassword">Password</Label>
+          <PasswordInput
+            id="biPassword"
+            name="biPassword"
+            autoComplete="new-password"
+            placeholder={
+              initialSettings.blueiris.passwordConfigured
+                ? "Password configured — enter only to replace"
+                : "Blue Iris password"
+            }
+          />
+          {initialSettings.blueiris.passwordConfigured && (
+            <label className="flex items-center gap-2 text-sm text-muted-foreground">
+              <Checkbox id="clearBiPassword" name="clearBiPassword" />
+              Clear saved password
+            </label>
+          )}
+        </div>
       </div>
+      <BlueIrisConnectionTest />
     </div>
   );
 

@@ -345,7 +345,8 @@ test("direction schema and administrator setup are durable and camera driven", a
   assert.match(migration, /vehicle_direction_reevaluation_control/i);
   assert.match(settings, /Historical direction backfill/);
   assert.match(settings, /Run one direction batch now/);
-  assert.match(settings, /Re-evaluate selected camera/);
+  assert.match(settings, /Camera for selected re-evaluation/);
+  assert.match(settings, /Re-evaluate \{cameraName \|\| "selected camera"\}/);
   assert.match(settings, /Re-evaluate all cameras/);
   assert.match(settings, /Pause re-evaluation/);
   assert.match(settings, /Resume re-evaluation/);

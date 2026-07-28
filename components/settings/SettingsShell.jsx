@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useEffect, useState } from "react";
 import {
   Antenna,
   Bell,
@@ -10,6 +11,8 @@ import {
   Lock,
   Mail,
   PackageOpen,
+  PanelLeftClose,
+  PanelLeftOpen,
   ScanSearch,
   Server,
   Settings2,
@@ -31,7 +34,7 @@ const navigationSections = [
       { title: "Database", id: "database", href: "/settings/database", icon: Database },
       { title: "Plate Matching", id: "plateMatching", href: "/settings/plate-matching", icon: ScanSearch },
       { title: "Review & Corrections", id: "plateReview", href: "/settings/review-corrections", icon: ShieldCheck },
-      { title: "Vehicle Intelligence", id: "vehicleIntelligence", href: "/settings/vehicle-intelligence", icon: CarFront },
+      { title: "Vehicle Setup", id: "vehicleIntelligence", href: "/settings/vehicle-intelligence", icon: CarFront },
       { title: "Data & Privacy", id: "privacy", href: "/settings/data-privacy", icon: Shield },
       { title: "Release", id: "release", href: "/settings/release", icon: PackageOpen },
     ],
@@ -57,6 +60,19 @@ const navigationSections = [
 
 function SettingsShellContent({ activeId, title, description, children }) {
   const { can } = useAccess();
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+
+  useEffect(() => {
+    setSidebarCollapsed(window.localStorage.getItem("settings-sidebar-collapsed") === "true");
+  }, []);
+
+  const toggleSidebar = () => {
+    setSidebarCollapsed((current) => {
+      const next = !current;
+      window.localStorage.setItem("settings-sidebar-collapsed", String(next));
+      return next;
+    });
+  };
   const visibleSections = navigationSections
     .filter((section) => !section.permission || can(section.permission))
     .map((section) => ({
@@ -67,17 +83,24 @@ function SettingsShellContent({ activeId, title, description, children }) {
 
   return (
       <div className="flex min-h-full bg-background">
-        <aside className="hidden w-64 flex-shrink-0 border-r border-border bg-background lg:block">
-          <div className="border-b border-border p-6">
-            <div className="flex items-center gap-3">
-              <Settings2 className="h-6 w-6 text-primary" />
-              <h1 className="text-xl font-semibold">Settings</h1>
+        <aside className={cn("hidden flex-shrink-0 border-r border-border bg-background transition-[width] lg:block", sidebarCollapsed ? "w-16" : "w-56")}>
+          <div className={cn("border-b border-border", sidebarCollapsed ? "p-3" : "p-4")}>
+            <div className="flex items-center justify-between gap-2">
+              {!sidebarCollapsed ? (
+                <div className="flex min-w-0 items-center gap-3">
+                  <Settings2 className="h-6 w-6 text-primary" />
+                  <h1 className="text-xl font-semibold">Settings</h1>
+                </div>
+              ) : null}
+              <button type="button" onClick={toggleSidebar} className={cn("rounded-md p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground", sidebarCollapsed && "mx-auto")} aria-label={sidebarCollapsed ? "Expand Settings sidebar" : "Collapse Settings sidebar"}>
+                {sidebarCollapsed ? <PanelLeftOpen className="h-4 w-4" /> : <PanelLeftClose className="h-4 w-4" />}
+              </button>
             </div>
           </div>
-          <nav className="space-y-6 p-4" aria-label="Settings navigation">
+          <nav className={cn("space-y-6", sidebarCollapsed ? "p-2" : "p-3")} aria-label="Settings navigation">
             {visibleSections.map((section) => (
               <div key={section.title} className="space-y-2">
-                <h2 className="px-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                <h2 className={cn("px-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground", sidebarCollapsed && "sr-only")}>
                   {section.title}
                 </h2>
                 <div className="space-y-1">
@@ -90,9 +113,9 @@ function SettingsShellContent({ activeId, title, description, children }) {
                         : "text-muted-foreground hover:bg-muted/50 hover:text-foreground"
                     );
                     return (
-                      <Link key={item.id} href={item.href} className={classes}>
+                      <Link key={item.id} href={item.href} className={cn(classes, sidebarCollapsed && "justify-center px-2")} title={sidebarCollapsed ? item.title : undefined} aria-label={sidebarCollapsed ? item.title : undefined}>
                         <Icon className="h-4 w-4 flex-shrink-0" />
-                        {item.title}
+                        {!sidebarCollapsed ? item.title : null}
                       </Link>
                     );
                   })}

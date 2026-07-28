@@ -2,6 +2,27 @@
 
 ## Unreleased
 
+- Reorganized the administrative Vehicle Setup area into clean, route-backed
+  Cameras, Vehicle Views, Processing, and Calibration pages. Queue totals are
+  shown as compact tab status, optional date filters and completed-history
+  re-evaluation are progressively disclosed, and the desktop Settings sidebar
+  can collapse to a persisted icon rail. The operational Vehicle Intelligence
+  workspace remains focused on profiles and review work.
+- Added mouse-wheel zoom to the Recognition Feed image popup. Wheel changes
+  now move from the midpoint to either limit in three notches while preserving
+  the continuous slider limits and plate-centering behavior, and scrolling over
+  the image no longer moves the underlying page.
+- Stabilized the Recognition Feed date-range calendar at a fixed two-month
+  footprint so navigating backward or forward no longer resizes or shifts the
+  popup between months with different week counts.
+- Added durable automatic Blue Iris best-vehicle-frame processing after each
+  accepted live read. The background worker resolves ALPR camera names to Blue
+  Iris camera IDs, samples the bounded 17-frame window without delaying
+  ingestion, retries transient failures across restarts, and records explicit
+  queued, processing, ready, recording-unavailable, vehicle-not-visible, and
+  camera-not-mapped outcomes. Administrators can separately queue historical
+  work by camera and date range, pause or resume only that historical queue,
+  and inspect progress in Settings > Vehicle Intelligence.
 - Added fully local automatic coarse vehicle-type observations using the
   OpenVINO Open Model Zoo model. New and historical vehicle crops can produce
   car, van, truck, or bus evidence with confidence, provider/model provenance,

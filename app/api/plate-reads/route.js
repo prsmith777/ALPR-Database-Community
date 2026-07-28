@@ -10,6 +10,8 @@ import {
 import { NotificationAcceptedReadService } from "@/lib/notification-accepted-read-service.mjs";
 import { NotificationRuntimeRepository } from "@/lib/notification-runtime-repository.mjs";
 import { createPlateReadEventIdentity } from "@/lib/plate-read-event-identity.mjs";
+import { parseBlueIrisAlertPointer } from "@/lib/blue-iris-alert-pointer.mjs";
+import { wakeBlueIrisVehicleFrameWorker } from "@/lib/blue-iris-vehicle-frame-runtime.mjs";
 import {
   recordAliasApplicationWithClient,
   resolvePlateAliasWithClient,
@@ -305,17 +307,12 @@ async function processPlateRead(data) {
         transactionImages.push(imagePaths);
       }
 
-      let biPath = null;
-      if (data.ALERT_CLIP && data.ALERT_PATH && camera) {
-        try {
-          const parts = data.ALERT_PATH.split(".");
-          const msOffset = parts[2];
-          const recId = data.ALERT_CLIP.replace("@", "");
-          biPath = `ui3.htm?rec=${recId}-${msOffset}&cam=${camera}`;
-        } catch {
-          console.error("Blue Iris link construction failed");
-        }
-      }
+      const blueIrisAlert = parseBlueIrisAlertPointer({
+        clip: data.ALERT_CLIP,
+        path: data.ALERT_PATH,
+        camera,
+      });
+      const biPath = blueIrisAlert.playbackPath;
 
       const eventIdentity = createPlateReadEventIdentity({
         plateNumber: observedPlate,
@@ -343,17 +340,26 @@ async function processPlateRead(data) {
             timestamp,
             camera_name,
             bi_path,
+            bi_alert_clip,
+            bi_alert_path,
+            bi_alert_offset_ms,
             confidence,
             crop_coordinates,
             ocr_annotation,
             plate_annotation,
-            event_identity
+            event_identity,
+            vehicle_image_status,
+            vehicle_image_queue_kind,
+            vehicle_image_attempt_count,
+            vehicle_image_retryable,
+            vehicle_image_updated_at
           )
           SELECT $1, $2::varchar, $3,
                  CASE WHEN $3::bigint IS NULL THEN 'unreviewed' ELSE 'alias_resolved' END,
                  CASE WHEN $3::bigint IS NULL THEN 0 ELSE 1 END,
                  ($3::bigint IS NOT NULL),
-                 $4, $5, $6, $7, $8::varchar, $9, $10, $11, $12, $13, $14
+                 $4, $5, $6, $7, $8::varchar, $9, $10, $11, $12, $13, $14, $15, $16, $17,
+                 'pending', 'live', 0, TRUE, CURRENT_TIMESTAMP
           WHERE NOT EXISTS (
             SELECT 1 FROM plate_reads
             WHERE observed_plate = $2::varchar AND timestamp = $7
@@ -373,6 +379,9 @@ async function processPlateRead(data) {
           timestamp,
           camera,
           biPath,
+          blueIrisAlert.alertClip,
+          blueIrisAlert.alertPath,
+          blueIrisAlert.offsetMs,
           effectivePlateData.confidence || null,
           effectivePlateData.crop_coordinates || null,
           effectivePlateData.ocr_annotation || null,
@@ -415,6 +424,9 @@ async function processPlateRead(data) {
           image_path: imagePaths.imagePath,
           thumbnail_path: imagePaths.thumbnailPath,
           bi_path: biPath,
+          bi_alert_clip: blueIrisAlert.alertClip,
+          bi_alert_path: blueIrisAlert.alertPath,
+          bi_alert_offset_ms: blueIrisAlert.offsetMs,
         };
 
         const mqttResult = await mqttService.processAcceptedRead(acceptedRead);
@@ -441,6 +453,7 @@ async function processPlateRead(data) {
 
     await dbClient.query("COMMIT");
     transactionOpen = false;
+    if (processedPlates.length > 0) wakeBlueIrisVehicleFrameWorker();
 
     // Unified MQTT and Pushover handoffs committed with each read. The legacy
     // Pushover path remains post-commit until every migrated rule is cut over.

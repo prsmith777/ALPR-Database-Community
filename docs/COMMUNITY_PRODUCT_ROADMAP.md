@@ -18,9 +18,9 @@ reliable background processing.
 6. Audit sensitive searches, exports, corrections, rule changes, and
    destructive maintenance.
 
-## Release baseline — July 27, 2026
+## Release baseline — July 28, 2026
 
-- Application `0.1.12` includes named users and roles, evidence-preserving plate
+- Application `0.1.13` includes named users and roles, evidence-preserving plate
   review, filter-respecting exports, the searchable help center, local privacy
   controls, and viewport-safe date/help navigation. Monitored Plates now lives
   inside Known Plates with reason, priority, monitoring-since, and read-history
@@ -88,6 +88,25 @@ reliable background processing.
   for newly ingested reads. New live work is prioritized and appears as Pending
   rather than Unknown until analysis finishes.
   Historical evaluation does not emit notifications.
+  Settings > Vehicle Setup now separates Cameras, Vehicle Views, Processing,
+  and Calibration into clean route-backed pages. Camera-specific vehicle-view
+  and re-evaluation controls include their own selectors and name the selected
+  camera instead of depending on a selection hidden in another section. The
+  Settings navigation collapses to an icon rail on desktop so future setup
+  pages do not consume the working area.
+  Blue Iris integration can now correlate a plate-read timestamp with continuous
+  BVR metadata and sample a fixed 17-frame, half-second timeline window through the
+  read-only JPEG endpoint. Local vehicle detection selects one best overview
+  frame, stores only that derived JPEG on the read, and exposes Plate capture /
+  Vehicle view controls without copying BVR files. Expired recordings become a
+  terminal unavailable state; transient connection failures remain retryable.
+  Accepted live reads enter a durable post-commit queue and are processed by a
+  restart-safe background worker without slowing ingestion. Camera display names
+  are resolved to Blue Iris camera identifiers before retrieval. Historical work
+  remains explicitly administrator-queued by camera and optional date range,
+  runs behind live work, and can be paused independently. Recognition Feed shows
+  queued, processing, retry-pending, recording-unavailable,
+  vehicle-not-visible, and camera-not-mapped states when no vehicle frame exists.
   Per-read color observations retain confidence and local algorithm provenance.
   Automatic local coarse vehicle-type observations classify car, van, truck,
   or bus with confidence and OpenVINO provider/model provenance. New reads are
@@ -290,6 +309,19 @@ remain externally orchestrated.
   Unknown below threshold. Results include classifier/model/profile provenance,
   orientation confidence, and sample counts. No camera mappings are hard-coded
   and no video clips are stored.
+- Read-only Blue Iris correlation foundation implemented: a dedicated settings
+  surface stores replacement-only credentials, verifies the JSON API, lists
+  cameras, and searches bounded alert metadata around a plate-read timestamp.
+  New reads preserve the supplied alert clip/path/offset pointer while all BVR
+  recordings and retention remain under Blue Iris on the existing DrivePool
+  volumes. No drive is mounted and no video is copied into ALPR.
+- Durable Blue Iris vehicle-frame processing implemented: every accepted live
+  read is queued only after its database transaction commits, then a bounded
+  worker samples 17 timeline JPEGs and retains one best vehicle view. Atomic
+  claims, processing leases, capped transient retries, camera-name resolution,
+  and explicit terminal reasons make the queue recover safely across restarts.
+  Historical reads are opt-in by camera and optional date range, prioritized
+  behind live work, and independently pausable in Vehicle Intelligence.
 - Per-read vehicle color observations and reviewable vehicle profiles are
   implemented as an evidence-gathering phase. Color is stored with confidence
   and local algorithm provenance against the individual read, never copied onto
@@ -310,6 +342,9 @@ remain externally orchestrated.
 - Store make, model, year range, alternate OCR candidates, and bounding boxes;
   expand current orientation observations with optional multiframe motion
   validation before speed claims.
+- Validate automatic live best-frame selection and explicitly queued historical
+  processing against a wider production sample before adding multiframe motion
+  direction or speed estimation.
 - Expand Vehicle ReID calibration with larger labeled local samples and
   camera-pair reporting before making stronger labels or applying thresholds.
 - Consider pgvector only when the bounded in-process cosine scan no longer

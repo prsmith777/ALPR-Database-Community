@@ -118,6 +118,16 @@ import path from "path";
 import fs from "fs/promises";
 import split2 from "split2";
 import fileStorage from "@/lib/fileStorage";
+import {
+  BlueIrisClient,
+  normalizeBlueIrisSettings,
+} from "@/lib/blue-iris.mjs";
+import { BlueIrisVehicleFrameService } from "@/lib/blue-iris-vehicle-frame.mjs";
+import { BlueIrisVehicleFrameRepository } from "@/lib/blue-iris-vehicle-frame-repository.mjs";
+import {
+  getBlueIrisVehicleFrameRuntime,
+  wakeBlueIrisVehicleFrameWorker,
+} from "@/lib/blue-iris-vehicle-frame-runtime.mjs";
 
 async function readServerActionSessionId() {
   const cookieStore = await cookies();
@@ -1432,6 +1442,136 @@ export async function getSettings() {
   return sanitizeSettingsForClient(config);
 }
 
+export async function testBlueIrisConnection() {
+  await requirePermission("system.manage_settings");
+  try {
+    const config = await getConfig();
+    const result = await new BlueIrisClient(config.blueiris).testConnection();
+    return { success: true, ...result };
+  } catch (error) {
+    return {
+      success: false,
+      error: error?.message || "Unable to connect to Blue Iris.",
+    };
+  }
+}
+
+export async function previewBlueIrisAlertMatch(input = {}) {
+  await requirePermission("system.manage_settings");
+  try {
+    const config = await getConfig();
+    const result = await new BlueIrisClient(config.blueiris).findNearestAlert({
+      camera: input.camera,
+      timestamp: input.timestamp,
+      toleranceSeconds: input.toleranceSeconds,
+    });
+    return { success: true, ...result };
+  } catch (error) {
+    return {
+      success: false,
+      error: error?.message || "Unable to search Blue Iris alerts.",
+    };
+  }
+}
+
+export async function selectBlueIrisVehicleFrame(input = {}) {
+  await requirePermission("system.manage_settings");
+  try {
+    const config = await getConfig();
+    const pool = await getPool();
+    const result = await new BlueIrisVehicleFrameService({
+      client: new BlueIrisClient(config.blueiris),
+      repository: new BlueIrisVehicleFrameRepository(pool),
+      fileStorage,
+    }).processNearestRead({
+      camera: input.camera,
+      cameraName: input.cameraName,
+      timestamp: input.timestamp,
+      toleranceSeconds: Math.min(
+        30,
+        Math.max(1, Number.parseInt(String(input.readToleranceSeconds ?? 3), 10) || 3)
+      ),
+    });
+    revalidatePath("/live_feed");
+    return { success: result.status === "ready", ...result };
+  } catch (error) {
+    console.error("Blue Iris vehicle-frame selection failed", error);
+    const safeCodes = new Set([
+      "CAMERA_REQUIRED",
+      "CONNECTION_FAILED",
+      "CREDENTIALS_REQUIRED",
+      "FRAME_TOO_LARGE",
+      "INVALID_TIMESTAMP",
+      "LOGIN_FAILED",
+      "RECORDING_UNAVAILABLE",
+      "TIMEOUT",
+      "VEHICLE_NOT_VISIBLE",
+    ]);
+    return {
+      success: false,
+      status: "failed",
+      errorCode: error?.code || "FRAME_SELECTION_FAILED",
+      message: safeCodes.has(error?.code)
+        ? error.message
+        : "Unable to select a Blue Iris vehicle frame.",
+    };
+  }
+}
+
+export async function getBlueIrisVehicleFrameQueueStatus() {
+  await requirePermission("system.manage_settings");
+  try {
+    const runtime = await getBlueIrisVehicleFrameRuntime();
+    return { success: true, data: await runtime.queue.getStatus() };
+  } catch (error) {
+    return visualSearchFailure(error, "Unable to load Blue Iris vehicle-frame status.");
+  }
+}
+
+export async function queueBlueIrisVehicleFrameHistory(input = {}) {
+  await requirePermission("maintenance.manage");
+  try {
+    const runtime = await getBlueIrisVehicleFrameRuntime();
+    const queued = await runtime.queue.queueHistorical({
+      cameraName: input.cameraName || null,
+      startDate: input.startDate || null,
+      endDate: input.endDate || null,
+    });
+    await runtime.queue.setHistoricalPaused(false);
+    wakeBlueIrisVehicleFrameWorker();
+    revalidatePath("/settings/vehicle-intelligence");
+    return { success: true, data: { ...queued, status: await runtime.queue.getStatus() } };
+  } catch (error) {
+    return visualSearchFailure(error, "Unable to queue historical Blue Iris vehicle frames.");
+  }
+}
+
+export async function setBlueIrisVehicleFrameHistoryPaused(paused) {
+  await requirePermission("maintenance.manage");
+  try {
+    const runtime = await getBlueIrisVehicleFrameRuntime();
+    const control = await runtime.queue.setHistoricalPaused(paused === true);
+    if (paused !== true) wakeBlueIrisVehicleFrameWorker();
+    revalidatePath("/settings/vehicle-intelligence");
+    return { success: true, data: { control, status: await runtime.queue.getStatus() } };
+  } catch (error) {
+    return visualSearchFailure(error, "Unable to update Blue Iris historical frame processing.");
+  }
+}
+
+export async function runBlueIrisVehicleFrameBatch() {
+  await requirePermission("maintenance.manage");
+  try {
+    const runtime = await getBlueIrisVehicleFrameRuntime();
+    const batch = await runtime.queue.processBatch({ limit: 1 });
+    revalidatePath("/settings/vehicle-intelligence");
+    revalidatePath("/live_feed");
+    return { success: true, data: { batch, status: await runtime.queue.getStatus() } };
+  } catch (error) {
+    return visualSearchFailure(error, "Unable to process a Blue Iris vehicle frame.");
+  }
+}
+
 export async function getPlateViewSettings() {
   await requirePermission("plate.read");
   const config = await getConfig();
@@ -1573,10 +1713,32 @@ export async function updateSettings(formData) {
           : currentConfig.homeassistant?.whitelist || [],
       };
     }
-    if (updateIfExists("bihost")) {
-      newConfig.blueiris = {
+    if (
+      updateIfExists("bihost") ||
+      updateIfExists("biUsername") ||
+      updateIfExists("biPassword") ||
+      updateIfExists("biTimeoutSeconds")
+    ) {
+      const candidateBlueIris = {
         ...currentConfig.blueiris,
-        host: formData.get("bihost"),
+        host: formData.get("bihost") ?? currentConfig.blueiris?.host,
+        username: String(
+          formData.get("biUsername") ?? currentConfig.blueiris?.username ?? ""
+        ).trim(),
+        password: resolveStoredSecretUpdate({
+          currentValue: currentConfig.blueiris?.password,
+          replacement: formData.get("biPassword"),
+          clear: formData.get("clearBiPassword"),
+        }),
+        timeout_seconds: Number(
+          formData.get("biTimeoutSeconds") ??
+            currentConfig.blueiris?.timeout_seconds ??
+            10
+        ),
+      };
+      normalizeBlueIrisSettings(candidateBlueIris);
+      newConfig.blueiris = {
+        ...candidateBlueIris,
       };
     }
     if (updateIfExists("plateMatching")) {
@@ -1594,6 +1756,7 @@ export async function updateSettings(formData) {
     revalidatePath("/settings/integrations/pushover");
     revalidatePath("/settings/integrations/email");
     revalidatePath("/settings/integrations/webhook");
+    revalidatePath("/settings/blue-iris");
     return { success: true };
   } catch (error) {
     console.error("Error updating settings:", error);

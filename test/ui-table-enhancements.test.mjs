@@ -60,6 +60,13 @@ test("live feed image review advances visibly and starts focused on the plate", 
   assert.match(imageViewer, /containerSize\.width \/ 2 - renderedPlateX \* zoom/);
   assert.match(imageViewer, /translate\(\$\{translateX\}px, \$\{translateY\}px\) scale\(\$\{zoom\}\)/);
   assert.match(imageViewer, /transformOrigin: "0 0"/);
+  assert.match(imageViewer, /const handleWheel = useCallback/);
+  assert.match(imageViewer, /event\.preventDefault\(\)/);
+  assert.match(imageViewer, /const wheelStep = \(getSliderMax\(\) - 1\) \/ 6/);
+  assert.match(imageViewer, /setZoom\(\(currentZoom\) => clampZoom\(currentZoom \+ direction \* wheelStep\)\)/);
+  assert.match(imageViewer, /addEventListener\("wheel", handleWheel, \{ passive: false \}\)/);
+  assert.match(imageViewer, /removeEventListener\("wheel", handleWheel\)/);
+  assert.match(imageViewer, /Scroll to zoom/);
   assert.match(imageViewer, />\s*Reset/);
 });
 
@@ -135,6 +142,8 @@ test("live feed date picker remains within the visible viewport", async () => {
   assert.match(plateTable, /overflow-y-auto overscroll-contain/);
   assert.match(plateTable, /collisionPadding=\{16\}/);
   assert.match(plateTable, /sticky="always"/);
+  assert.match(plateTable, /w-\[520px\]/);
+  assert.match(plateTable, /numberOfMonths=\{2\}[\s\S]*?fixedWeeks/);
 });
 
 test("live feed review status filtering is multi-select, URL-backed, and server-side", async () => {

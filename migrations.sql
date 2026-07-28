@@ -2303,3 +2303,99 @@ VALUES (
     'Preserve delivered notification action identities when disabled rules are edited.'
 )
 ON CONFLICT (version) DO NOTHING;
+
+-- Preserve the Blue Iris alert pointer received with new plate reads. This is
+-- metadata only: the continuous BVR recording remains managed by Blue Iris.
+-- Historical reads can be correlated through the read-only alertlist API.
+ALTER TABLE IF EXISTS public.plate_reads
+    ADD COLUMN IF NOT EXISTS bi_alert_clip TEXT,
+    ADD COLUMN IF NOT EXISTS bi_alert_path TEXT,
+    ADD COLUMN IF NOT EXISTS bi_alert_offset_ms BIGINT;
+
+CREATE INDEX IF NOT EXISTS idx_plate_reads_bi_alert_clip
+    ON public.plate_reads (bi_alert_clip)
+    WHERE bi_alert_clip IS NOT NULL;
+
+INSERT INTO public.schema_migrations (version, description)
+VALUES (
+    '2026072704_blue_iris_alert_correlation',
+    'Preserve Blue Iris alert clip and offset metadata for read-only continuous-recording correlation.'
+)
+ON CONFLICT (version) DO NOTHING;
+
+-- Keep at most one derived Blue Iris vehicle-overview frame per plate read.
+-- The source BVR remains in Blue Iris; only the best bounded sample is retained.
+ALTER TABLE IF EXISTS public.plate_reads
+    ADD COLUMN IF NOT EXISTS vehicle_image_status VARCHAR(20),
+    ADD COLUMN IF NOT EXISTS vehicle_image_path TEXT,
+    ADD COLUMN IF NOT EXISTS vehicle_image_timestamp TIMESTAMPTZ,
+    ADD COLUMN IF NOT EXISTS vehicle_image_score REAL,
+    ADD COLUMN IF NOT EXISTS vehicle_image_detection_confidence REAL,
+    ADD COLUMN IF NOT EXISTS vehicle_image_detection_box JSONB,
+    ADD COLUMN IF NOT EXISTS vehicle_image_width INTEGER,
+    ADD COLUMN IF NOT EXISTS vehicle_image_height INTEGER,
+    ADD COLUMN IF NOT EXISTS vehicle_image_sampled_count SMALLINT,
+    ADD COLUMN IF NOT EXISTS vehicle_image_error_code VARCHAR(80),
+    ADD COLUMN IF NOT EXISTS vehicle_image_retryable BOOLEAN NOT NULL DEFAULT TRUE,
+    ADD COLUMN IF NOT EXISTS vehicle_image_updated_at TIMESTAMPTZ;
+
+ALTER TABLE IF EXISTS public.plate_reads
+    DROP CONSTRAINT IF EXISTS plate_reads_vehicle_image_status_check;
+ALTER TABLE IF EXISTS public.plate_reads
+    ADD CONSTRAINT plate_reads_vehicle_image_status_check
+    CHECK (vehicle_image_status IS NULL OR vehicle_image_status IN ('pending', 'ready', 'unavailable', 'failed'));
+
+CREATE INDEX IF NOT EXISTS idx_plate_reads_vehicle_image_work
+    ON public.plate_reads (vehicle_image_status, vehicle_image_retryable, vehicle_image_updated_at, id)
+    WHERE vehicle_image_status IS NOT NULL AND vehicle_image_status <> 'ready';
+
+INSERT INTO public.schema_migrations (version, description)
+VALUES (
+    '2026072801_blue_iris_vehicle_frames',
+    'Retain one best derived Blue Iris vehicle-overview frame per ALPR read with terminal retention-aware states.'
+)
+ON CONFLICT (version) DO NOTHING;
+
+-- New accepted reads are processed automatically while historical work is
+-- explicitly queued and can be paused independently. A short processing lease
+-- lets work recover safely after an application restart.
+ALTER TABLE IF EXISTS public.plate_reads
+    ADD COLUMN IF NOT EXISTS vehicle_image_queue_kind VARCHAR(20),
+    ADD COLUMN IF NOT EXISTS vehicle_image_attempt_count SMALLINT NOT NULL DEFAULT 0;
+
+ALTER TABLE IF EXISTS public.plate_reads
+    DROP CONSTRAINT IF EXISTS plate_reads_vehicle_image_status_check;
+ALTER TABLE IF EXISTS public.plate_reads
+    ADD CONSTRAINT plate_reads_vehicle_image_status_check
+    CHECK (vehicle_image_status IS NULL OR vehicle_image_status IN ('pending', 'processing', 'ready', 'unavailable', 'failed'));
+
+ALTER TABLE IF EXISTS public.plate_reads
+    DROP CONSTRAINT IF EXISTS plate_reads_vehicle_image_queue_kind_check;
+ALTER TABLE IF EXISTS public.plate_reads
+    ADD CONSTRAINT plate_reads_vehicle_image_queue_kind_check
+    CHECK (vehicle_image_queue_kind IS NULL OR vehicle_image_queue_kind IN ('live', 'historical', 'manual'));
+
+CREATE TABLE IF NOT EXISTS public.vehicle_frame_processing_control (
+    singleton BOOLEAN PRIMARY KEY DEFAULT TRUE CHECK (singleton),
+    historical_paused BOOLEAN NOT NULL DEFAULT TRUE,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+INSERT INTO public.vehicle_frame_processing_control (singleton, historical_paused)
+VALUES (TRUE, TRUE)
+ON CONFLICT (singleton) DO NOTHING;
+
+DROP INDEX IF EXISTS public.idx_plate_reads_vehicle_image_work;
+CREATE INDEX IF NOT EXISTS idx_plate_reads_vehicle_image_work
+    ON public.plate_reads (
+        vehicle_image_status, vehicle_image_queue_kind,
+        vehicle_image_retryable, vehicle_image_updated_at, id
+    )
+    WHERE vehicle_image_path IS NULL;
+
+INSERT INTO public.schema_migrations (version, description)
+VALUES (
+    '2026072802_blue_iris_vehicle_frame_queue',
+    'Automatically process live Blue Iris vehicle frames with durable retries and controlled historical backfill.'
+)
+ON CONFLICT (version) DO NOTHING;

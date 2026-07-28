@@ -11,6 +11,11 @@ test("saved Pushover credentials are replaced with configured-state flags for th
   const sanitized = sanitizeSettingsForClient({
     general: { timeFormat: 12 },
     database: { host: "db:5432", password: "secret-database-password" },
+    blueiris: {
+      host: "http://blueiris.local:81",
+      username: "alpr-reader",
+      password: "secret-blue-iris-password",
+    },
     notifications: {
       pushover: {
         enabled: true,
@@ -27,9 +32,12 @@ test("saved Pushover credentials are replaced with configured-state flags for th
   assert.equal(Object.hasOwn(sanitized.notifications.pushover, "user_key"), false);
   assert.equal(sanitized.database.passwordConfigured, true);
   assert.equal(Object.hasOwn(sanitized.database, "password"), false);
+  assert.equal(sanitized.blueiris.passwordConfigured, true);
+  assert.equal(Object.hasOwn(sanitized.blueiris, "password"), false);
   assert.equal(JSON.stringify(sanitized).includes("secret-app-token"), false);
   assert.equal(JSON.stringify(sanitized).includes("secret-user-key"), false);
   assert.equal(JSON.stringify(sanitized).includes("secret-database-password"), false);
+  assert.equal(JSON.stringify(sanitized).includes("secret-blue-iris-password"), false);
 });
 
 test("blank replacements preserve secrets and clearing requires an explicit control", () => {
@@ -61,6 +69,9 @@ test("Pushover settings render replacement-only password fields and never bind s
   assert.equal(form.includes("initialSettings.notifications?.pushover?.app_token"), false);
   assert.equal(form.includes("initialSettings.notifications?.pushover?.user_key"), false);
   assert.doesNotMatch(form, /initialSettings\.database\.password(?!Configured)/);
+  assert.doesNotMatch(form, /initialSettings\.blueiris\.password(?!Configured)/);
+  assert.match(form, /<PasswordInput[\s\S]*name="biPassword"/);
+  assert.match(form, /clearBiPassword/);
   assert.match(actions, /return sanitizeSettingsForClient\(config\)/);
   assert.match(actions, /resolveStoredSecretUpdate/);
   assert.doesNotMatch(
