@@ -51,7 +51,11 @@ export default function BlueIrisConnectionTest() {
   const selectVehicleFrame = () => {
     setVehicleFrame(null);
     const selectedCamera = connection?.cameras?.find((item) => item.id === camera);
-    const parsed = new Date(timestamp);
+    const parsed = new Date(match?.alert?.timestamp || timestamp);
+    if (Number.isNaN(parsed.getTime())) {
+      setVehicleFrame({ success: false, message: "Find a matching Blue Iris alert first." });
+      return;
+    }
     startTransition(async () => {
       setVehicleFrame(await selectBlueIrisVehicleFrame({
         camera,

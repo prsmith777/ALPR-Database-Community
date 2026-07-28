@@ -64,6 +64,7 @@ test("Blue Iris vehicle frames are bounded, read-owned, and exposed as a two-vie
   assert.match(service, /saveDerivedImage/);
   assert.doesNotMatch(service, /\.bvr[^\n]*readFile|readFile[^\n]*\.bvr/);
   assert.match(settings, /Select best vehicle frame/);
+  assert.match(settings, /new Date\(match\?\.alert\?\.timestamp \|\| timestamp\)/);
   assert.match(table, /Plate capture/);
   assert.match(table, /Vehicle view/);
   assert.match(reconciliation, /vehicle_image_path/);
