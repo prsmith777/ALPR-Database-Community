@@ -74,6 +74,25 @@ const ImageViewer = ({
     return Math.round(midpoint * 10) / 10;
   }, [fitPlateOnOpen, getPlateFitZoom, getSliderMax]);
 
+  const clampZoom = useCallback(
+    (value) => Math.min(getSliderMax(), Math.max(1, Math.round(value * 10) / 10)),
+    [getSliderMax]
+  );
+
+  const handleWheel = useCallback((event) => {
+    if (!image?.crop_coordinates || event.deltaY === 0) return;
+    event.preventDefault();
+    const direction = event.deltaY < 0 ? 1 : -1;
+    setZoom((currentZoom) => clampZoom(currentZoom + direction * 0.2));
+  }, [clampZoom, image?.crop_coordinates]);
+
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container) return undefined;
+    container.addEventListener("wheel", handleWheel, { passive: false });
+    return () => container.removeEventListener("wheel", handleWheel);
+  }, [handleWheel]);
+
   useEffect(() => {
     setImageSize(null);
     const img = new Image();
@@ -143,6 +162,7 @@ const ImageViewer = ({
     <div className="flex flex-col h-full">
       <div
         ref={containerRef}
+        title={image?.crop_coordinates ? "Scroll to zoom" : undefined}
         className="relative w-full h-full overflow-hidden flex items-center justify-center"
       >
         <div style={getImageStyle()}>

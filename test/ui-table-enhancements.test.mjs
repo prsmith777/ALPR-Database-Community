@@ -60,6 +60,12 @@ test("live feed image review advances visibly and starts focused on the plate", 
   assert.match(imageViewer, /containerSize\.width \/ 2 - renderedPlateX \* zoom/);
   assert.match(imageViewer, /translate\(\$\{translateX\}px, \$\{translateY\}px\) scale\(\$\{zoom\}\)/);
   assert.match(imageViewer, /transformOrigin: "0 0"/);
+  assert.match(imageViewer, /const handleWheel = useCallback/);
+  assert.match(imageViewer, /event\.preventDefault\(\)/);
+  assert.match(imageViewer, /setZoom\(\(currentZoom\) => clampZoom\(currentZoom \+ direction \* 0\.2\)\)/);
+  assert.match(imageViewer, /addEventListener\("wheel", handleWheel, \{ passive: false \}\)/);
+  assert.match(imageViewer, /removeEventListener\("wheel", handleWheel\)/);
+  assert.match(imageViewer, /Scroll to zoom/);
   assert.match(imageViewer, />\s*Reset/);
 });
 

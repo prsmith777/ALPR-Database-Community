@@ -74,11 +74,13 @@ test("Blue Iris vehicle frames are bounded, read-owned, and exposed as a two-vie
   assert.match(repository, /vehicle_image_attempt_count/);
   assert.match(repository, /historical_paused/);
   assert.match(vehicleSettings, /Vehicle intelligence sections/);
-  assert.match(vehicleSettings, /title="Vehicle Intelligence Setup"/);
-  assert.match(vehicleSettings, /Camera Setup/);
+  assert.match(vehicleSettings, /title="Vehicle Setup"/);
+  assert.match(vehicleSettings, /useRouteTab/);
+  assert.match(vehicleSettings, /Cameras/);
   assert.match(vehicleSettings, /Vehicle Views/);
-  assert.match(vehicleSettings, /Historical Processing/);
+  assert.match(vehicleSettings, /Processing/);
   assert.match(vehicleSettings, /Camera for vehicle-view history/);
+  assert.match(vehicleSettings, /Optional date range/);
   assert.match(vehicleSettings, /Queue \{cameraName \|\| "selected camera"\} history/);
   assert.match(vehicleSettings, /Pause history/);
 });

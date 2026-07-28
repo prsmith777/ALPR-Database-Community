@@ -37,6 +37,14 @@ import { Progress } from "@/components/ui/progress";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { useRouteTab } from "@/components/useRouteTab";
+
+const VEHICLE_SETUP_ROUTES = Object.freeze({
+  cameras: "/settings/vehicle-intelligence",
+  views: "/settings/vehicle-intelligence/vehicle-views",
+  processing: "/settings/vehicle-intelligence/processing",
+  calibration: "/settings/vehicle-intelligence/calibration",
+});
 
 function statusText(profile, minimum) {
   if (!profile.configured) return "Needs direction meanings";
@@ -44,7 +52,17 @@ function statusText(profile, minimum) {
   return profile.enabled ? "Ready to classify" : "Paused";
 }
 
+function compactCount(value) {
+  const number = Number(value || 0);
+  if (number < 1000) return number.toLocaleString();
+  return new Intl.NumberFormat("en", {
+    notation: "compact",
+    maximumFractionDigits: 1,
+  }).format(number);
+}
+
 export default function VehicleIntelligenceSettings({ initialData, initialFrameQueue = null }) {
+  const routeTab = useRouteTab(VEHICLE_SETUP_ROUTES, "cameras");
   const [data, setData] = useState(initialData);
   const [cameraName, setCameraName] = useState(initialData.selectedCamera || "");
   const [draft, setDraft] = useState(null);
@@ -249,20 +267,26 @@ export default function VehicleIntelligenceSettings({ initialData, initialFrameQ
   return (
     <SettingsShell
       activeId="vehicleIntelligence"
-      title="Vehicle Intelligence Setup"
-      description="Configure camera direction, vehicle views, historical processing, and calibration. Use the main Vehicle Intelligence workspace for profiles and review work."
+      title="Vehicle Setup"
+      description="Configure camera behavior, vehicle views, processing, and calibration. Use Vehicle Intelligence for profiles and review work."
     >
-      <Tabs defaultValue="setup" className="space-y-6">
+      <Tabs value={routeTab.active} onValueChange={routeTab.navigate} className="space-y-6">
         <TabsList aria-label="Vehicle intelligence sections" className="grid h-auto w-full grid-cols-2 gap-1 p-1 lg:grid-cols-4">
-          <TabsTrigger value="setup" className="gap-2 py-2"><Settings2 className="h-4 w-4" />Camera Setup</TabsTrigger>
-          <TabsTrigger value="views" className="gap-2 py-2"><Images className="h-4 w-4" />Vehicle Views</TabsTrigger>
-          <TabsTrigger value="history" className="gap-2 py-2"><History className="h-4 w-4" />Historical Processing</TabsTrigger>
+          <TabsTrigger value="cameras" className="gap-2 py-2"><Settings2 className="h-4 w-4" />Cameras</TabsTrigger>
+          <TabsTrigger value="views" className="gap-2 py-2">
+            <Images className="h-4 w-4" />Vehicle Views
+            {Number(frameQueue?.historicalOutstanding || 0) > 0 ? <span className="rounded-full bg-muted px-2 py-0.5 text-xs">{compactCount(frameQueue.historicalOutstanding)}</span> : null}
+          </TabsTrigger>
+          <TabsTrigger value="processing" className="gap-2 py-2">
+            <History className="h-4 w-4" />Processing
+            {Number(data.backfill?.pending || 0) > 0 ? <span className="rounded-full bg-muted px-2 py-0.5 text-xs">{compactCount(data.backfill.pending)}</span> : null}
+          </TabsTrigger>
           <TabsTrigger value="calibration" className="gap-2 py-2"><ScanSearch className="h-4 w-4" />Calibration</TabsTrigger>
         </TabsList>
 
         {message && <p className="rounded-md border p-3 text-sm">{message}</p>}
 
-        <TabsContent value="setup" className="mt-0">
+        <TabsContent value="cameras" className="mt-0">
           <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2"><BrainCircuit className="h-5 w-5" /> Camera direction setup</CardTitle>
@@ -351,8 +375,13 @@ export default function VehicleIntelligenceSettings({ initialData, initialFrameQ
                 </Select>
                 <p className="text-xs text-muted-foreground">This camera is used only by the camera-specific history button below. New live reads are processed automatically for every configured camera.</p>
               </div>
-              <div className="space-y-2"><Label htmlFor="frame-history-start">History start (optional)</Label><Input id="frame-history-start" type="date" value={frameStartDate} onChange={(event) => setFrameStartDate(event.target.value)} /></div>
-              <div className="space-y-2"><Label htmlFor="frame-history-end">History end (optional)</Label><Input id="frame-history-end" type="date" value={frameEndDate} onChange={(event) => setFrameEndDate(event.target.value)} /></div>
+              <details className="rounded-md border sm:col-span-2">
+                <summary className="cursor-pointer px-3 py-2 text-sm font-medium">Optional date range</summary>
+                <div className="grid gap-3 border-t p-3 sm:grid-cols-2">
+                  <div className="space-y-2"><Label htmlFor="frame-history-start">History start</Label><Input id="frame-history-start" type="date" value={frameStartDate} onChange={(event) => setFrameStartDate(event.target.value)} /></div>
+                  <div className="space-y-2"><Label htmlFor="frame-history-end">History end</Label><Input id="frame-history-end" type="date" value={frameEndDate} onChange={(event) => setFrameEndDate(event.target.value)} /></div>
+                </div>
+              </details>
               <div className="flex flex-wrap gap-2 sm:col-span-2">
                 <Button variant="outline" disabled={Boolean(busy) || !cameraName || !frameQueue?.configured} onClick={() => queueFrameHistory(false)}>{busy === "frame-history-camera" ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}Queue {cameraName || "selected camera"} history</Button>
                 <Button variant="outline" disabled={Boolean(busy) || !frameQueue?.configured} onClick={() => queueFrameHistory(true)}>{busy === "frame-history-all" ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}Queue all camera history</Button>
@@ -365,7 +394,7 @@ export default function VehicleIntelligenceSettings({ initialData, initialFrameQ
           </Card>
         </TabsContent>
 
-        <TabsContent value="history" className="mt-0">
+        <TabsContent value="processing" className="mt-0">
           <Card>
           <CardHeader>
             <CardTitle>Historical direction backfill</CardTitle>
@@ -411,14 +440,15 @@ export default function VehicleIntelligenceSettings({ initialData, initialFrameQ
               {busy === "backfill" ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Play className="mr-2 h-4 w-4" />}
               Run one direction batch now
             </Button>
-            <div className="rounded-lg border p-4">
-              <div className="space-y-1">
-                <div className="font-medium">Re-evaluate completed history</div>
+            <details className="rounded-lg border">
+              <summary className="cursor-pointer p-4 font-medium">Advanced: re-evaluate completed history</summary>
+              <div className="border-t p-4">
+                <div className="space-y-1">
                 <p className="text-sm text-muted-foreground">
                   Apply the latest front/rear examples to earlier machine-generated results. Human-reviewed directions remain unchanged, and historical notifications are never sent.
                 </p>
-              </div>
-              <div className="mt-4 flex flex-wrap gap-2">
+                </div>
+                <div className="mt-4 flex flex-wrap gap-2">
                 {backfill.reevaluationPending > 0 && (
                   <Button
                     variant={backfill.reevaluationPaused ? "default" : "secondary"}
@@ -449,8 +479,9 @@ export default function VehicleIntelligenceSettings({ initialData, initialFrameQ
                   {busy === "preview-all" ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <RotateCcw className="mr-2 h-4 w-4" />}
                   Re-evaluate all cameras...
                 </Button>
+                </div>
               </div>
-            </div>
+            </details>
           </CardContent>
           </Card>
         </TabsContent>
