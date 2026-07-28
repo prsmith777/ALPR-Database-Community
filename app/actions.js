@@ -124,6 +124,10 @@ import {
 } from "@/lib/blue-iris.mjs";
 import { BlueIrisVehicleFrameService } from "@/lib/blue-iris-vehicle-frame.mjs";
 import { BlueIrisVehicleFrameRepository } from "@/lib/blue-iris-vehicle-frame-repository.mjs";
+import {
+  getBlueIrisVehicleFrameRuntime,
+  wakeBlueIrisVehicleFrameWorker,
+} from "@/lib/blue-iris-vehicle-frame-runtime.mjs";
 
 async function readServerActionSessionId() {
   const cookieStore = await cookies();
@@ -1511,6 +1515,60 @@ export async function selectBlueIrisVehicleFrame(input = {}) {
         ? error.message
         : "Unable to select a Blue Iris vehicle frame.",
     };
+  }
+}
+
+export async function getBlueIrisVehicleFrameQueueStatus() {
+  await requirePermission("system.manage_settings");
+  try {
+    const runtime = await getBlueIrisVehicleFrameRuntime();
+    return { success: true, data: await runtime.queue.getStatus() };
+  } catch (error) {
+    return visualSearchFailure(error, "Unable to load Blue Iris vehicle-frame status.");
+  }
+}
+
+export async function queueBlueIrisVehicleFrameHistory(input = {}) {
+  await requirePermission("maintenance.manage");
+  try {
+    const runtime = await getBlueIrisVehicleFrameRuntime();
+    const queued = await runtime.queue.queueHistorical({
+      cameraName: input.cameraName || null,
+      startDate: input.startDate || null,
+      endDate: input.endDate || null,
+    });
+    await runtime.queue.setHistoricalPaused(false);
+    wakeBlueIrisVehicleFrameWorker();
+    revalidatePath("/settings/vehicle-intelligence");
+    return { success: true, data: { ...queued, status: await runtime.queue.getStatus() } };
+  } catch (error) {
+    return visualSearchFailure(error, "Unable to queue historical Blue Iris vehicle frames.");
+  }
+}
+
+export async function setBlueIrisVehicleFrameHistoryPaused(paused) {
+  await requirePermission("maintenance.manage");
+  try {
+    const runtime = await getBlueIrisVehicleFrameRuntime();
+    const control = await runtime.queue.setHistoricalPaused(paused === true);
+    if (paused !== true) wakeBlueIrisVehicleFrameWorker();
+    revalidatePath("/settings/vehicle-intelligence");
+    return { success: true, data: { control, status: await runtime.queue.getStatus() } };
+  } catch (error) {
+    return visualSearchFailure(error, "Unable to update Blue Iris historical frame processing.");
+  }
+}
+
+export async function runBlueIrisVehicleFrameBatch() {
+  await requirePermission("maintenance.manage");
+  try {
+    const runtime = await getBlueIrisVehicleFrameRuntime();
+    const batch = await runtime.queue.processBatch({ limit: 1 });
+    revalidatePath("/settings/vehicle-intelligence");
+    revalidatePath("/live_feed");
+    return { success: true, data: { batch, status: await runtime.queue.getStatus() } };
+  } catch (error) {
+    return visualSearchFailure(error, "Unable to process a Blue Iris vehicle frame.");
   }
 }
 

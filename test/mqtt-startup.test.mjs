@@ -174,6 +174,7 @@ test("Node instrumentation starts MQTT and automatic visual indexing together", 
   const { logger } = makeLogger();
   let mqttCalls = 0;
   let visualCalls = 0;
+  let vehicleFrameCalls = 0;
   let notificationCalls = 0;
   let maintenanceCalls = 0;
   const result = await registerNodeInstrumentation({
@@ -187,6 +188,15 @@ test("Node instrumentation starts MQTT and automatic visual indexing together", 
       return {
         async startVisualIndexRuntimeWithRetry(options) {
           visualCalls += 1;
+          assert.equal(options.logger, logger);
+          return { status: "started" };
+        },
+      };
+    },
+    async loadVehicleFrameStartup() {
+      return {
+        async startBlueIrisVehicleFrameRuntimeWithRetry(options) {
+          vehicleFrameCalls += 1;
           assert.equal(options.logger, logger);
           return { status: "started" };
         },
@@ -214,10 +224,12 @@ test("Node instrumentation starts MQTT and automatic visual indexing together", 
   assert.equal(result.status, "started");
   assert.equal(result.mqtt.status, "started");
   assert.equal(result.visualIndex.status, "started");
+  assert.equal(result.vehicleFrames.status, "started");
   assert.equal(result.notificationOperations.status, "started");
   assert.equal(result.maintenance.status, "started");
   assert.equal(mqttCalls, 1);
   assert.equal(visualCalls, 1);
+  assert.equal(vehicleFrameCalls, 1);
   assert.equal(notificationCalls, 1);
   assert.equal(maintenanceCalls, 1);
 });
@@ -233,6 +245,9 @@ test("a visual-index instrumentation import failure cannot prevent MQTT startup"
     },
     async loadVisualStartup() {
       throw new Error("OpenVINO module is temporarily unavailable");
+    },
+    async loadVehicleFrameStartup() {
+      return { async startBlueIrisVehicleFrameRuntimeWithRetry() { return { status: "started" }; } };
     },
     async loadNotificationStartup() {
       return { async startNotificationOperationsRuntimeWithRetry() { return { status: "started" }; } };

@@ -11,6 +11,7 @@ import { NotificationAcceptedReadService } from "@/lib/notification-accepted-rea
 import { NotificationRuntimeRepository } from "@/lib/notification-runtime-repository.mjs";
 import { createPlateReadEventIdentity } from "@/lib/plate-read-event-identity.mjs";
 import { parseBlueIrisAlertPointer } from "@/lib/blue-iris-alert-pointer.mjs";
+import { wakeBlueIrisVehicleFrameWorker } from "@/lib/blue-iris-vehicle-frame-runtime.mjs";
 import {
   recordAliasApplicationWithClient,
   resolvePlateAliasWithClient,
@@ -346,13 +347,19 @@ async function processPlateRead(data) {
             crop_coordinates,
             ocr_annotation,
             plate_annotation,
-            event_identity
+            event_identity,
+            vehicle_image_status,
+            vehicle_image_queue_kind,
+            vehicle_image_attempt_count,
+            vehicle_image_retryable,
+            vehicle_image_updated_at
           )
           SELECT $1, $2::varchar, $3,
                  CASE WHEN $3::bigint IS NULL THEN 'unreviewed' ELSE 'alias_resolved' END,
                  CASE WHEN $3::bigint IS NULL THEN 0 ELSE 1 END,
                  ($3::bigint IS NOT NULL),
-                 $4, $5, $6, $7, $8::varchar, $9, $10, $11, $12, $13, $14, $15, $16, $17
+                 $4, $5, $6, $7, $8::varchar, $9, $10, $11, $12, $13, $14, $15, $16, $17,
+                 'pending', 'live', 0, TRUE, CURRENT_TIMESTAMP
           WHERE NOT EXISTS (
             SELECT 1 FROM plate_reads
             WHERE observed_plate = $2::varchar AND timestamp = $7
@@ -446,6 +453,7 @@ async function processPlateRead(data) {
 
     await dbClient.query("COMMIT");
     transactionOpen = false;
+    if (processedPlates.length > 0) wakeBlueIrisVehicleFrameWorker();
 
     // Unified MQTT and Pushover handoffs committed with each read. The legacy
     // Pushover path remains post-commit until every migrated rule is cut over.
