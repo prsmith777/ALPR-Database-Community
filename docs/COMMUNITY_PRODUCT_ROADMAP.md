@@ -88,6 +88,11 @@ reliable background processing.
   for newly ingested reads. New live work is prioritized and appears as Pending
   rather than Unknown until analysis finishes.
   Historical evaluation does not emit notifications.
+  Settings > Vehicle Intelligence Setup now separates Camera Setup, Vehicle Views,
+  Historical Processing, and Calibration into top tabs. Camera-specific
+  vehicle-view and re-evaluation controls include their own selectors and name
+  the selected camera instead of depending on a selection hidden in another
+  section.
   Blue Iris integration can now correlate a plate-read timestamp with continuous
   BVR metadata and sample a fixed 17-frame, half-second timeline window through the
   read-only JPEG endpoint. Local vehicle detection selects one best overview

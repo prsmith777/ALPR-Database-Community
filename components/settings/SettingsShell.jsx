@@ -31,7 +31,7 @@ const navigationSections = [
       { title: "Database", id: "database", href: "/settings/database", icon: Database },
       { title: "Plate Matching", id: "plateMatching", href: "/settings/plate-matching", icon: ScanSearch },
       { title: "Review & Corrections", id: "plateReview", href: "/settings/review-corrections", icon: ShieldCheck },
-      { title: "Vehicle Intelligence", id: "vehicleIntelligence", href: "/settings/vehicle-intelligence", icon: CarFront },
+      { title: "Vehicle Intelligence Setup", id: "vehicleIntelligence", href: "/settings/vehicle-intelligence", icon: CarFront },
       { title: "Data & Privacy", id: "privacy", href: "/settings/data-privacy", icon: Shield },
       { title: "Release", id: "release", href: "/settings/release", icon: PackageOpen },
     ],

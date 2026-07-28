@@ -277,11 +277,14 @@ test("plate association review is explicit, reversible, and audited", async () =
 });
 
 test("vehicle intelligence settings always navigate to their dedicated route", async () => {
-  const [shell, settingsForm] = await Promise.all([
+  const [shell, settingsForm, mainSidebar] = await Promise.all([
     source("components/settings/SettingsShell.jsx"),
     source("app/settings/SettingsForm.jsx"),
+    source("components/Sidebar.jsx"),
   ]);
   assert.match(shell, /href: "\/settings\/vehicle-intelligence"/);
+  assert.match(shell, /title: "Vehicle Intelligence Setup"/);
+  assert.match(mainSidebar, /label: "Vehicle Intelligence"/);
   assert.match(shell, /<Link key=\{item\.id\} href=\{item\.href\}/);
   assert.doesNotMatch(shell, /isLocalSection|onSelect &&/);
   assert.doesNotMatch(settingsForm, /onSelect=\{setActiveSection\}/);

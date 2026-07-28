@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- Renamed the administrative page to Vehicle Intelligence Setup, distinguishing
+  it from the operational Vehicle Intelligence workspace. Reorganized Settings
+  > Vehicle Intelligence Setup into Camera Setup, Vehicle Views,
+  Historical Processing, and Calibration tabs. Camera-specific vehicle-view
+  and re-evaluation actions now expose their own camera selectors and name the
+  selected camera directly in the action label.
 - Added durable automatic Blue Iris best-vehicle-frame processing after each
   accepted live read. The background worker resolves ALPR camera names to Blue
   Iris camera IDs, samples the bounded 17-frame window without delaying

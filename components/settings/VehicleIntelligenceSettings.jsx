@@ -2,7 +2,7 @@
 
 import NextImage from "next/image";
 import { useEffect, useMemo, useState } from "react";
-import { BrainCircuit, Check, Images, Loader2, Pause, Play, RotateCcw, Save } from "lucide-react";
+import { BrainCircuit, Check, History, Images, Loader2, Pause, Play, RotateCcw, Save, ScanSearch, Settings2 } from "lucide-react";
 
 import {
   getVehicleDirectionSetup,
@@ -36,6 +36,7 @@ import { Label } from "@/components/ui/label";
 import { Progress } from "@/components/ui/progress";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
 function statusText(profile, minimum) {
   if (!profile.configured) return "Needs direction meanings";
@@ -248,11 +249,21 @@ export default function VehicleIntelligenceSettings({ initialData, initialFrameQ
   return (
     <SettingsShell
       activeId="vehicleIntelligence"
-      title="Vehicle Intelligence"
-      description="Teach each camera what front and rear vehicle views mean. Camera names and directions are never hard-coded."
+      title="Vehicle Intelligence Setup"
+      description="Configure camera direction, vehicle views, historical processing, and calibration. Use the main Vehicle Intelligence workspace for profiles and review work."
     >
-      <div className="space-y-6">
-        <Card>
+      <Tabs defaultValue="setup" className="space-y-6">
+        <TabsList aria-label="Vehicle intelligence sections" className="grid h-auto w-full grid-cols-2 gap-1 p-1 lg:grid-cols-4">
+          <TabsTrigger value="setup" className="gap-2 py-2"><Settings2 className="h-4 w-4" />Camera Setup</TabsTrigger>
+          <TabsTrigger value="views" className="gap-2 py-2"><Images className="h-4 w-4" />Vehicle Views</TabsTrigger>
+          <TabsTrigger value="history" className="gap-2 py-2"><History className="h-4 w-4" />Historical Processing</TabsTrigger>
+          <TabsTrigger value="calibration" className="gap-2 py-2"><ScanSearch className="h-4 w-4" />Calibration</TabsTrigger>
+        </TabsList>
+
+        {message && <p className="rounded-md border p-3 text-sm">{message}</p>}
+
+        <TabsContent value="setup" className="mt-0">
+          <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2"><BrainCircuit className="h-5 w-5" /> Camera direction setup</CardTitle>
             <CardDescription>
@@ -306,11 +317,12 @@ export default function VehicleIntelligenceSettings({ initialData, initialFrameQ
                 )}
               </>
             )}
-            {message && <p className="rounded-md border p-3 text-sm">{message}</p>}
           </CardContent>
-        </Card>
+          </Card>
+        </TabsContent>
 
-        <Card>
+        <TabsContent value="views" className="mt-0">
+          <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2"><Images className="h-5 w-5" /> Blue Iris vehicle views</CardTitle>
             <CardDescription>
@@ -329,10 +341,20 @@ export default function VehicleIntelligenceSettings({ initialData, initialFrameQ
               <div className="rounded-md border p-3"><div className="text-xl font-semibold">{Number(frameQueue?.failed || 0).toLocaleString()}</div><div className="text-xs text-muted-foreground">retry failures</div></div>
             </div>
             <div className="grid gap-3 rounded-lg border p-4 sm:grid-cols-2">
+              <div className="space-y-2 sm:col-span-2">
+                <Label>Camera for vehicle-view history</Label>
+                <Select value={cameraName} onValueChange={selectCamera}>
+                  <SelectTrigger><SelectValue placeholder="Select a camera" /></SelectTrigger>
+                  <SelectContent>
+                    {data.profiles.map((item) => <SelectItem key={item.cameraName} value={item.cameraName}>{item.cameraName}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-muted-foreground">This camera is used only by the camera-specific history button below. New live reads are processed automatically for every configured camera.</p>
+              </div>
               <div className="space-y-2"><Label htmlFor="frame-history-start">History start (optional)</Label><Input id="frame-history-start" type="date" value={frameStartDate} onChange={(event) => setFrameStartDate(event.target.value)} /></div>
               <div className="space-y-2"><Label htmlFor="frame-history-end">History end (optional)</Label><Input id="frame-history-end" type="date" value={frameEndDate} onChange={(event) => setFrameEndDate(event.target.value)} /></div>
               <div className="flex flex-wrap gap-2 sm:col-span-2">
-                <Button variant="outline" disabled={Boolean(busy) || !cameraName || !frameQueue?.configured} onClick={() => queueFrameHistory(false)}>{busy === "frame-history-camera" ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}Queue selected camera history</Button>
+                <Button variant="outline" disabled={Boolean(busy) || !cameraName || !frameQueue?.configured} onClick={() => queueFrameHistory(false)}>{busy === "frame-history-camera" ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}Queue {cameraName || "selected camera"} history</Button>
                 <Button variant="outline" disabled={Boolean(busy) || !frameQueue?.configured} onClick={() => queueFrameHistory(true)}>{busy === "frame-history-all" ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}Queue all camera history</Button>
                 <Button variant="secondary" disabled={Boolean(busy) || !frameQueue?.configured} onClick={toggleFrameHistory}>{frameQueue?.historicalPaused ? <Play className="mr-2 h-4 w-4" /> : <Pause className="mr-2 h-4 w-4" />}{frameQueue?.historicalPaused ? "Resume history" : "Pause history"}</Button>
                 <Button variant="secondary" disabled={Boolean(busy) || !frameQueue?.configured} onClick={runFrameBatch}>{busy === "frame-batch" ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Play className="mr-2 h-4 w-4" />}Run one frame now</Button>
@@ -340,9 +362,11 @@ export default function VehicleIntelligenceSettings({ initialData, initialFrameQ
             </div>
             {frameMessage && <p className="rounded-md border p-3 text-sm">{frameMessage}</p>}
           </CardContent>
-        </Card>
+          </Card>
+        </TabsContent>
 
-        <Card>
+        <TabsContent value="history" className="mt-0">
+          <Card>
           <CardHeader>
             <CardTitle>Historical direction backfill</CardTitle>
             <CardDescription>
@@ -350,6 +374,16 @@ export default function VehicleIntelligenceSettings({ initialData, initialFrameQ
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
+            <div className="space-y-2 rounded-lg border p-4">
+              <Label>Camera for selected re-evaluation</Label>
+              <Select value={cameraName} onValueChange={selectCamera}>
+                <SelectTrigger><SelectValue placeholder="Select a camera" /></SelectTrigger>
+                <SelectContent>
+                  {data.profiles.map((item) => <SelectItem key={item.cameraName} value={item.cameraName}>{item.cameraName}</SelectItem>)}
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-muted-foreground">This selection affects only the camera-specific re-evaluation action. The all-cameras action remains separate.</p>
+            </div>
             <div className="flex flex-wrap items-center justify-between gap-3 text-sm">
               <span>{backfill.completed.toLocaleString()} of {backfill.eligible.toLocaleString()} indexed captures completed</span>
               <Badge variant={backfill.pending ? "outline" : "secondary"}>
@@ -405,7 +439,7 @@ export default function VehicleIntelligenceSettings({ initialData, initialFrameQ
                   disabled={Boolean(busy) || !profile}
                 >
                   {busy === "preview-camera" ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <RotateCcw className="mr-2 h-4 w-4" />}
-                  Re-evaluate selected camera...
+                  Re-evaluate {cameraName || "selected camera"}...
                 </Button>
                 <Button
                   variant="outline"
@@ -418,10 +452,12 @@ export default function VehicleIntelligenceSettings({ initialData, initialFrameQ
               </div>
             </div>
           </CardContent>
-        </Card>
+          </Card>
+        </TabsContent>
 
-        {profile && (
-          <Card>
+        <TabsContent value="calibration" className="mt-0">
+          {profile ? (
+            <Card>
             <CardHeader>
               <CardTitle>Front/rear calibration</CardTitle>
               <CardDescription>
@@ -429,6 +465,15 @@ export default function VehicleIntelligenceSettings({ initialData, initialFrameQ
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
+              <div className="space-y-2">
+                <Label>Camera</Label>
+                <Select value={cameraName} onValueChange={selectCamera}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    {data.profiles.map((item) => <SelectItem key={item.cameraName} value={item.cameraName}>{item.cameraName}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              </div>
               <div className="grid grid-cols-2 gap-3 text-center">
                 <div className="rounded-md border p-3"><div className="text-2xl font-semibold">{profile.frontCount}</div><div className="text-xs text-muted-foreground">front examples</div></div>
                 <div className="rounded-md border p-3"><div className="text-2xl font-semibold">{profile.rearCount}</div><div className="text-xs text-muted-foreground">rear examples</div></div>
@@ -455,9 +500,12 @@ export default function VehicleIntelligenceSettings({ initialData, initialFrameQ
                 ))}
               </div>
             </CardContent>
-          </Card>
-        )}
-      </div>
+            </Card>
+          ) : (
+            <Card><CardContent className="p-6 text-sm text-muted-foreground">No cameras with plate reads are available yet.</CardContent></Card>
+          )}
+        </TabsContent>
+      </Tabs>
       <AlertDialog
         open={Boolean(reevaluationPreview)}
         onOpenChange={(open) => { if (!open && busy !== "reevaluate") setReevaluationPreview(null); }}
