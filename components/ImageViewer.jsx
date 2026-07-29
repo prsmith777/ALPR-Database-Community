@@ -50,7 +50,6 @@ const ImageViewer = ({
   const pointerGestureRef = useRef(null);
   const suppressImageClickRef = useRef(false);
   const lastImageClickRef = useRef(null);
-  const lastFullscreenToggleRef = useRef(0);
   const initializedViewRef = useRef(null);
   const canZoom = zoomEnabled || Boolean(image?.crop_coordinates || image?.focus_coordinates);
   const viewResetKey = JSON.stringify([
@@ -325,27 +324,24 @@ const ImageViewer = ({
       && Math.hypot(event.clientX - previous.x, event.clientY - previous.y) <= 24;
     if (previous && closeToPrevious && now - previous.time <= 550) {
       lastImageClickRef.current = null;
-      lastFullscreenToggleRef.current = now;
-      setIsFullscreen((current) => !current);
+      setIsFullscreen(true);
       return;
     }
 
     lastImageClickRef.current = { time: now, x: event.clientX, y: event.clientY };
   };
 
-  const handleImageDoubleClick = (event) => {
+  const handleOpenFullscreen = (event) => {
     event.preventDefault();
-    const now = performance.now();
-    if (now - lastFullscreenToggleRef.current <= 300) return;
+    event.stopPropagation();
     lastImageClickRef.current = null;
-    lastFullscreenToggleRef.current = now;
     setIsFullscreen(true);
   };
 
-  const handleFullscreenDoubleClick = (event) => {
+  const handleCloseFullscreen = (event) => {
     event.preventDefault();
+    event.stopPropagation();
     lastImageClickRef.current = null;
-    lastFullscreenToggleRef.current = performance.now();
     setIsFullscreen(false);
   };
 
@@ -395,7 +391,6 @@ const ImageViewer = ({
   const viewer = (fullscreen = false) => (
     <div
       className={fullscreen ? "fixed inset-0 z-[100] flex flex-col bg-black p-3" : "flex h-full flex-col"}
-      onDoubleClick={fullscreen ? handleFullscreenDoubleClick : undefined}
     >
       {fullscreen ? (
         <Button
@@ -403,7 +398,7 @@ const ImageViewer = ({
           variant="secondary"
           size="icon"
           className="absolute right-5 top-5 z-[110]"
-          onClick={() => setIsFullscreen(false)}
+          onClick={handleCloseFullscreen}
           aria-label="Close full screen image"
         >
           <X className="h-5 w-5" />
@@ -420,8 +415,8 @@ const ImageViewer = ({
         onPointerMove={handlePointerMove}
         onPointerUp={handlePointerUp}
         onPointerCancel={handlePointerCancel}
-        onClick={handleImageClick}
-        onDoubleClick={fullscreen ? undefined : handleImageDoubleClick}
+        onClick={fullscreen ? undefined : handleImageClick}
+        onDoubleClick={fullscreen ? handleCloseFullscreen : handleOpenFullscreen}
       >
         <div style={getImageStyle()}>
           <NextImage
