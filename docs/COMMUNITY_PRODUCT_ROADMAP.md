@@ -317,11 +317,19 @@ remain externally orchestrated.
   volumes. No drive is mounted and no video is copied into ALPR.
 - Durable Blue Iris vehicle-frame processing implemented: every accepted live
   read is queued only after its database transaction commits, then a bounded
-  worker samples 17 timeline JPEGs and retains one best vehicle view. Atomic
+  worker samples an initial 17 timeline JPEGs and retains one best vehicle
+  view. Weak or incomplete initial results expand adaptively to no more than 29
+  samples. Stored plate geometry anchors the event vehicle, Vehicle ReID tracks
+  it through the sampled sequence, and completeness, sharpness, exposure,
+  contrast, useful size, and detector confidence determine the winner. Atomic
   claims, processing leases, capped transient retries, camera-name resolution,
   and explicit terminal reasons make the queue recover safely across restarts.
   Historical reads are opt-in by camera and optional date range, prioritized
   behind live work, and independently pausable in Vehicle Intelligence.
+  Vehicle Views now exposes worker state, live backlog, and the last worker
+  error, while Recognition Feed shows attempt-aware processing failures and
+  lets authorized reviewers explicitly retry an individual failed or
+  unavailable vehicle view.
 - Per-read vehicle color observations and reviewable vehicle profiles are
   implemented as an evidence-gathering phase. Color is stored with confidence
   and local algorithm provenance against the individual read, never copied onto

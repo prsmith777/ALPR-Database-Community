@@ -147,3 +147,108 @@ test("historical claims include only explicitly queued work", async () => {
   assert.match(statement, /FOR UPDATE SKIP LOCKED/);
   assert.match(statement, /vehicle_image_status = 'processing'/);
 });
+
+test("existing vehicle views can be queued for reevaluation without deleting their current image", async () => {
+  let statement = "";
+  let parameters = null;
+  const repository = new BlueIrisVehicleFrameRepository({
+    async query(sql, values) {
+      statement = sql;
+      parameters = values;
+      return { rowCount: 2, rows: [{ id: 1 }, { id: 2 }] };
+    },
+  });
+
+  const result = await repository.queueHistorical({ replaceExisting: true });
+  assert.equal(result.queued, 2);
+  assert.deepEqual(parameters, [null, null, null, true]);
+  assert.match(statement, /\$4::boolean = TRUE AND vehicle_image_path IS NOT NULL/);
+  assert.doesNotMatch(statement, /SET[\s\S]*vehicle_image_path\s*=/);
+});
+
+test("pending historical work can be cancelled by camera and date without touching saved images", async () => {
+  let statement = "";
+  let parameters = null;
+  const repository = new BlueIrisVehicleFrameRepository({
+    async query(sql, values) {
+      statement = sql;
+      parameters = values;
+      return { rowCount: 21_416, rows: [] };
+    },
+  });
+  const result = await repository.cancelHistorical({
+    cameraName: "Street LPR 2",
+    startDate: "2026-07-01T06:00:00.000Z",
+    endDate: "2026-08-01T05:59:59.999Z",
+  });
+  assert.equal(result.cancelled, 21_416);
+  assert.deepEqual(parameters, [
+    "Street LPR 2",
+    "2026-07-01T06:00:00.000Z",
+    "2026-08-01T05:59:59.999Z",
+  ]);
+  assert.match(statement, /vehicle_image_queue_kind = 'historical'/);
+  assert.match(statement, /vehicle_image_status IN \('pending', 'failed'\)/);
+  assert.match(statement, /WHEN vehicle_image_path IS NULL THEN NULL/);
+  assert.match(statement, /ELSE 'ready'/);
+  assert.doesNotMatch(statement, /vehicle_image_path\s*=/);
+});
+
+test("an administrator can explicitly retry a failed or unavailable read", async () => {
+  let statement = "";
+  let parameters = null;
+  const repository = new BlueIrisVehicleFrameRepository({
+    async query(sql, values) {
+      statement = sql;
+      parameters = values;
+      return {
+        rows: [{
+          id: 82,
+          vehicle_image_status: "pending",
+          vehicle_image_queue_kind: "manual",
+          vehicle_image_attempt_count: 0,
+          vehicle_image_retryable: true,
+        }],
+      };
+    },
+  });
+
+  const result = await repository.retryRead(82);
+  assert.equal(result.vehicle_image_status, "pending");
+  assert.deepEqual(parameters, [82]);
+  assert.match(statement, /vehicle_image_queue_kind = 'manual'/);
+  assert.match(statement, /vehicle_image_attempt_count = 0/);
+  assert.match(statement, /vehicle_image_status IN \('failed', 'unavailable'\)/);
+  assert.match(statement, /vehicle_image_path IS NULL/);
+});
+
+test("the selected vehicle frame persists bounded quality and tracking diagnostics", async () => {
+  let statement = "";
+  let parameters = null;
+  const repository = new BlueIrisVehicleFrameRepository({
+    async query(sql, values) {
+      statement = sql;
+      parameters = values;
+      return { rows: [] };
+    },
+  });
+  const selectionMetadata = {
+    algorithm: "blue-iris-vehicle-frame-v2",
+    selectedOffsetMs: 2500,
+    trackedCount: 7,
+    scoreBreakdown: { completenessTier: 2, sharpness: 0.88 },
+  };
+  await repository.markReady(91, {
+    framePath: "derived/vehicle.jpg",
+    frameTimestamp: "2026-07-28T12:00:02.500Z",
+    frameScore: 0.91,
+    detectionConfidence: 0.87,
+    detectionBox: { left: 0.1, top: 0.1, right: 0.8, bottom: 0.8 },
+    imageWidth: 1920,
+    imageHeight: 1080,
+    sampledCount: 29,
+    selectionMetadata,
+  });
+  assert.match(statement, /vehicle_image_selection_metadata = \$10::jsonb/);
+  assert.deepEqual(JSON.parse(parameters[9]), selectionMetadata);
+});
