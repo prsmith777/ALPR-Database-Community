@@ -50,12 +50,12 @@ test("live feed image review advances visibly and starts focused on the plate", 
   assert.match(plateTable, /className="grid w-full gap-2"/);
   assert.match(plateTable, /Show next read \(Right Arrow\)/);
   assert.match(plateTable, /\[role="slider"\]/);
-  assert.match(plateTable, /sm:grid-rows-\[minmax\(0,1fr\)_auto\].*sm:overflow-hidden/);
+  assert.match(plateTable, /lg:grid-cols-\[minmax\(0,1fr\)_11rem\].*lg:grid-rows-\[minmax\(0,1fr\)_auto\].*lg:overflow-hidden/);
   assert.match(plateTable, /<DialogTitle className="sr-only">[\s\S]*?License Plate Image/);
   assert.match(plateTable, /className="flex flex-wrap items-center gap-2"/);
   assert.match(plateTable, /className="ml-auto flex gap-2"/);
   assert.match(imageViewer, /const \[zoom, setZoom\] = useState\(1\)/);
-  assert.match(imageViewer, /image\?\.crop_coordinates \? getFocusZoom\(\) : 1/);
+  assert.match(imageViewer, /image\?\.focus_coordinates \|\| image\?\.crop_coordinates \? getFocusZoom\(\) : 1/);
   assert.match(imageViewer, /const midpoint = \(1 \+ getSliderMax\(\)\) \/ 2/);
   assert.match(imageViewer, /Math\.round\(midpoint \* 10\) \/ 10/);
   assert.match(imageViewer, /new ResizeObserver\(updateContainerSize\)/);
@@ -72,6 +72,13 @@ test("live feed image review advances visibly and starts focused on the plate", 
   assert.match(imageViewer, /removeEventListener\("wheel", handleWheel\)/);
   assert.match(imageViewer, /Scroll to zoom/);
   assert.match(imageViewer, />\s*Reset/);
+  assert.match(imageViewer, /onFullscreenChange\?\.\(isFullscreen\)/);
+  assert.match(plateTable, /onInteractOutside=\{\(event\) => \{[\s\S]*?isImageFullscreen[\s\S]*?event\.preventDefault\(\)/);
+  assert.match(plateTable, /defaultZoom=\{null\}/);
+  assert.match(plateTable, /aria-label="Close image popup"/);
+  assert.match(plateTable, /max-w-7xl gap-3 overflow-y-auto p-3/);
+  assert.match(plateTable, /lg:col-start-2 lg:row-span-2 lg:row-start-1/);
+  assert.match(plateTable, /<DialogFooter className="self-end lg:col-start-1 lg:row-start-2">/);
 });
 
 test("plate correction opens with an editable caret instead of selected text", async () => {

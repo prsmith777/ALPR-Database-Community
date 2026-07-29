@@ -56,6 +56,7 @@ import {
 import {
   Dialog,
   DialogContent,
+  DialogClose,
   DialogDescription,
   DialogFooter,
   DialogHeader,
@@ -311,6 +312,7 @@ export default function PlateTable({
   });
   const [selectedImage, setSelectedImage] = useState(null);
   const [selectedImageView, setSelectedImageView] = useState("plate");
+  const [isImageFullscreen, setIsImageFullscreen] = useState(false);
   const [selectedIndex, setSelectedIndex] = useState(-1);
   const [pendingReviewReadId, setPendingReviewReadId] = useState(null);
   const [pendingReviewTargetValidated, setPendingReviewTargetValidated] = useState(null);
@@ -2495,19 +2497,29 @@ export default function PlateTable({
           open={selectedImage !== null}
           onOpenChange={(open) => {
             if (!open) {
+              setIsImageFullscreen(false);
               setSelectedImage(null);
               setSelectedIndex(-1);
               setPendingViewerNavigation(null);
             }
           }}
         >
-          <DialogContent className="max-h-[calc(100vh-2rem)] w-[calc(100vw-2rem)] max-w-7xl overflow-y-auto sm:h-[calc(100vh-2rem)] sm:w-[calc(100vw-2rem)] sm:max-w-7xl sm:grid-rows-[minmax(0,1fr)_auto] sm:overflow-hidden">
+          <DialogContent
+            showCloseButton={false}
+            onInteractOutside={(event) => {
+              if (isImageFullscreen) event.preventDefault();
+            }}
+            onEscapeKeyDown={(event) => {
+              if (isImageFullscreen) event.preventDefault();
+            }}
+            className="max-h-[calc(100vh-2rem)] w-[calc(100vw-2rem)] max-w-7xl gap-3 overflow-y-auto p-3 lg:h-[calc(100vh-2rem)] lg:grid-cols-[minmax(0,1fr)_11rem] lg:grid-rows-[minmax(0,1fr)_auto] lg:overflow-hidden"
+          >
             <DialogTitle className="sr-only">
               License Plate Image - {selectedImage?.plateNumber}
             </DialogTitle>
             {selectedImage && (
-              <div className="grid min-h-0 items-stretch gap-3 lg:grid-cols-[minmax(0,1fr)_11rem]">
-                <div className="grid min-h-0 grid-rows-[auto_minmax(0,1fr)] gap-3">
+              <div className="contents">
+                <div className="grid min-h-0 grid-rows-[auto_minmax(0,1fr)] gap-3 lg:col-start-1 lg:row-start-1">
                   <div className="grid gap-3 rounded-lg border p-3 text-sm sm:grid-cols-2 lg:grid-cols-6">
                 <div>
                   <div className="text-xs uppercase text-muted-foreground">Observed</div>
@@ -2608,12 +2620,13 @@ export default function PlateTable({
                           : null,
                       }}
                       zoomEnabled={selectedImageView === "vehicle"}
-                      defaultZoom={selectedImageView === "vehicle" ? 1 : null}
+                      defaultZoom={null}
                       zoomLabel={selectedImageView === "vehicle" ? "Zoom to Vehicle" : "Zoom to Plate"}
+                      onFullscreenChange={setIsImageFullscreen}
                     />
                   </div>
                 </div>
-                <aside className="h-full rounded-lg border p-2.5 text-sm lg:min-h-0">
+                <aside className="h-full rounded-lg border p-2.5 text-sm lg:col-start-2 lg:row-span-2 lg:row-start-1 lg:min-h-0">
                   <div className="flex items-center gap-1 text-xs uppercase text-muted-foreground">
                     <span>Direction</span>
                     {canReview && (
@@ -2664,6 +2677,17 @@ export default function PlateTable({
                         </PopoverContent>
                       </Popover>
                     )}
+                    <DialogClose asChild>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        className="ml-auto h-6 w-6 text-muted-foreground hover:text-foreground"
+                        aria-label="Close image popup"
+                      >
+                        <X className="h-4 w-4" />
+                      </Button>
+                    </DialogClose>
                   </div>
                   <div className={selectedImage.directionLabel ? "" : "text-muted-foreground"}>
                     {selectedImage.directionLabel
@@ -2707,7 +2731,7 @@ export default function PlateTable({
                 </aside>
               </div>
             )}
-            <DialogFooter className="self-end">
+            <DialogFooter className="self-end lg:col-start-1 lg:row-start-2">
               <div className="grid w-full gap-2">
                 <div className="flex flex-wrap items-center gap-2">
                   {canRead && selectedImage && <Button asChild variant="outline" size="sm" className="text-xs sm:text-sm">

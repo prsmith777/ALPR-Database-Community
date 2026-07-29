@@ -37,6 +37,7 @@ const ImageViewer = ({
   zoomEnabled = false,
   defaultZoom = null,
   zoomLabel = "Zoom to Plate",
+  onFullscreenChange = null,
 }) => {
   const [zoom, setZoom] = useState(1);
   const [pan, setPan] = useState({ x: 0, y: 0 });
@@ -80,6 +81,12 @@ const ImageViewer = ({
     observer.observe(container);
     return () => observer.disconnect();
   }, [isFullscreen]);
+
+  useEffect(() => {
+    onFullscreenChange?.(isFullscreen);
+  }, [isFullscreen, onFullscreenChange]);
+
+  useEffect(() => () => onFullscreenChange?.(false), [onFullscreenChange]);
 
   const getFocusFitZoom = useCallback(() => {
     if (
@@ -164,7 +171,9 @@ const ImageViewer = ({
   }, [image.url]);
 
   useEffect(() => {
-    const needsFocusMeasurements = defaultZoom === null && Boolean(image?.crop_coordinates);
+    const needsFocusMeasurements = defaultZoom === null && Boolean(
+      image?.focus_coordinates || image?.crop_coordinates
+    );
     if (
       initializedViewRef.current === viewResetKey ||
       (needsFocusMeasurements && (
@@ -177,7 +186,7 @@ const ImageViewer = ({
     }
 
     const initialZoom = defaultZoom === null
-      ? image?.crop_coordinates ? getFocusZoom() : 1
+      ? image?.focus_coordinates || image?.crop_coordinates ? getFocusZoom() : 1
       : defaultZoom;
     initializedViewRef.current = viewResetKey;
     setZoom(clampZoom(initialZoom));
@@ -188,6 +197,7 @@ const ImageViewer = ({
     defaultZoom,
     getFocusZoom,
     image?.crop_coordinates,
+    image?.focus_coordinates,
     image.url,
     imageSize,
     viewResetKey,
