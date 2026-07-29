@@ -2602,6 +2602,18 @@ CREATE INDEX IF NOT EXISTS idx_maintenance_alert_deliveries_due
     ON public.maintenance_alert_deliveries (next_attempt_at, id)
     WHERE status IN ('pending', 'retry');
 
+-- Maintenance webhook destination URLs can contain bearer credentials. Keep
+-- them only in storage_maintenance_config; workers resolve the current value
+-- immediately before delivery. This idempotently removes legacy queue copies
+-- and destination-bearing error details without changing delivery status.
+UPDATE public.maintenance_alert_deliveries
+SET payload = payload - 'url',
+    last_error = CASE WHEN last_error IS NULL THEN NULL
+        ELSE 'Maintenance webhook delivery error details were redacted' END,
+    updated_at = CURRENT_TIMESTAMP
+WHERE channel_type = 'webhook'
+  AND (payload ? 'url' OR last_error IS NOT NULL);
+
 DO $$
 BEGIN
     IF NOT EXISTS (

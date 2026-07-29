@@ -19,6 +19,7 @@ import {
 } from "../lib/storage-breakdown.mjs";
 import { decideMaintenanceAlert } from "../lib/maintenance-alerts.mjs";
 import { MaintenanceAlertRepository } from "../lib/maintenance-alert-repository.mjs";
+import { MaintenanceAlertWorker } from "../lib/maintenance-alert-worker.mjs";
 import {
   STORAGE_CLEANUP_CONFIRMATION,
   processCleanupCandidateTransaction,
@@ -26,7 +27,14 @@ import {
   storageCleanupInternals,
   validateAndDeleteCleanupCandidate,
 } from "../lib/storage-cleanup.mjs";
-import { saveStorageMaintenanceConfig } from "../lib/storage-maintenance-repository.mjs";
+import {
+  clearStorageMaintenanceWebhook,
+  publicStorageMaintenanceConfig,
+  replaceStorageMaintenanceWebhook,
+  saveStorageMaintenanceConfig,
+  storageMaintenanceRepositoryInternals,
+} from "../lib/storage-maintenance-repository.mjs";
+import { deliverStorageMaintenanceWebhookTest } from "../lib/storage-maintenance-webhook.mjs";
 import { withStorageCleanupWriterLock } from "../lib/storage-maintenance-lock.mjs";
 
 function fileStats({ size = 10, mtime = "2026-07-01T00:00:00.000Z", symlink = false, dev = 1, ino = 2 } = {}) {
@@ -131,6 +139,143 @@ test("rate-limited alert observations persist an explicit suppression count with
   const stateWrite = calls.find(({ sql }) => /suppressed_count, details/.test(sql));
   assert.equal(stateWrite.values[7], 1);
   assert.equal(calls.some(({ sql }) => /INSERT INTO public\.maintenance_alert_deliveries/.test(sql)), false);
+});
+
+test("new maintenance webhook deliveries never persist the destination URL", async () => {
+  const calls = [];
+  const client = {
+    async query(sql, values) {
+      calls.push({ sql, values });
+      return { rows: [] };
+    },
+    release() {},
+  };
+  const repository = new MaintenanceAlertRepository({ pool: { connect: async () => client } });
+  await repository.observe({
+    eventKey: "storage.disk-usage",
+    severity: "warning",
+    message: "Storage is high.",
+    details: { usedPercent: 85 },
+    settings: {
+      alertCooldownSeconds: 21_600,
+      webhookEnabled: true,
+      webhookUrl: "https://secret-hook.example.test/old",
+    },
+    now: new Date("2026-07-29T12:00:00.000Z"),
+  });
+  const insert = calls.find(({ sql }) => /INSERT INTO public\.maintenance_alert_deliveries/.test(sql));
+  const payload = JSON.parse(insert.values[3]);
+  assert.equal(Object.hasOwn(payload, "url"), false);
+  assert.equal(JSON.stringify(payload).includes("secret-hook"), false);
+});
+
+test("maintenance webhook overview redacts destination-bearing delivery errors", async () => {
+  const repository = new MaintenanceAlertRepository({
+    pool: {
+      async query(sql) {
+        if (/maintenance_alert_state/.test(sql)) return { rows: [] };
+        return { rows: [{
+          id: 41,
+          event_key: "storage.disk-usage",
+          channel_type: "webhook",
+          status: "dead",
+          attempt_count: 2,
+          max_attempts: 5,
+          last_error: "TLS failed for https://secret-host.example.test/token-value",
+        }] };
+      },
+    },
+  });
+  const overview = await repository.overview();
+  assert.equal(overview.deliveries[0].lastError, "Webhook delivery failed; destination details are hidden.");
+  assert.equal(JSON.stringify(overview).includes("secret-host"), false);
+  assert.equal(JSON.stringify(overview).includes("token-value"), false);
+});
+
+test("maintenance webhook worker resolves the current destination at send time", async () => {
+  const sent = [];
+  const successes = [];
+  let loadCount = 0;
+  const repository = {
+    async releaseExpiredLeases() {},
+    async claimDue() {
+      return [51, 52].map((id) => ({
+        id,
+        channelType: "webhook",
+        payload: { url: "https://stale-secret.example.test/old", body: { event: "storage" } },
+      }));
+    },
+    async recordSuccess(value) { successes.push(value); },
+    async recordFailure() { assert.fail("current destination should deliver"); },
+  };
+  const worker = new MaintenanceAlertWorker({
+    repository,
+    loadConfig: async () => ({ notifications: { webhook: { enabled: true, signing_secret: "signing-secret" } } }),
+    loadMaintenanceConfig: async () => {
+      loadCount += 1;
+      return {
+        webhookEnabled: true,
+        webhookUrl: `https://current-${loadCount}.example.test/new`,
+      };
+    },
+    sendWebhook: async (request) => {
+      sent.push(request);
+      return { status: 204, requestId: request.payload.url };
+    },
+    logger: { warn() {}, error() {} },
+  });
+  const result = await worker.runBatch();
+  assert.equal(loadCount, 2);
+  assert.equal(sent[0].payload.url, "https://current-1.example.test/new");
+  assert.equal(sent[1].payload.url, "https://current-2.example.test/new");
+  assert.equal(JSON.stringify(sent).includes("stale-secret"), false);
+  assert.deepEqual(successes.map((item) => item.response), [{ status: 204 }, { status: 204 }]);
+  assert.equal(result.succeeded, 2);
+});
+
+test("maintenance webhook worker never sends after the destination is cleared", async () => {
+  let failure = null;
+  const repository = {
+    async releaseExpiredLeases() {},
+    async claimDue() { return [{ id: 52, channelType: "webhook", payload: { body: {} } }]; },
+    async recordSuccess() { assert.fail("cleared destination cannot succeed"); },
+    async recordFailure({ error }) { failure = error; return { status: "dead" }; },
+  };
+  const worker = new MaintenanceAlertWorker({
+    repository,
+    loadConfig: async () => ({ notifications: { webhook: { enabled: true, signing_secret: "secret" } } }),
+    loadMaintenanceConfig: async () => ({ webhookEnabled: false, webhookUrl: "" }),
+    sendWebhook: async () => assert.fail("cleared destination cannot be sent"),
+    logger: { warn() {}, error() {} },
+  });
+  const result = await worker.runBatch();
+  assert.equal(failure.retryable, false);
+  assert.equal(result.dead, 1);
+});
+
+test("maintenance webhook worker only absorbs an explicit lease-loss race", async () => {
+  function workerWithFailure(recordFailure) {
+    return new MaintenanceAlertWorker({
+      repository: {
+        async releaseExpiredLeases() {},
+        async claimDue() { return [{ id: 53, channelType: "webhook", payload: { body: {} } }]; },
+        async recordSuccess() {},
+        recordFailure,
+      },
+      loadConfig: async () => ({ notifications: { webhook: { enabled: true, signing_secret: "secret" } } }),
+      loadMaintenanceConfig: async () => ({ webhookEnabled: false, webhookUrl: "" }),
+      sendWebhook: async () => assert.fail("disabled destination cannot send"),
+      logger: { warn() {}, error() {} },
+    });
+  }
+  const retired = await workerWithFailure(async () => {
+    throw new Error("Maintenance alert delivery lease was lost");
+  }).runBatch();
+  assert.equal(retired.retired, 1);
+  await assert.rejects(
+    () => workerWithFailure(async () => { throw new Error("database unavailable"); }).runBatch(),
+    /database unavailable/
+  );
 });
 
 test("host storage snapshots are exact, exclude Docker volumes, and reject stale or symbolic-link inputs", async () => {
@@ -422,6 +567,9 @@ test("maintenance settings update and audit use one transaction and force destru
   const client = {
     async query(sql, values) {
       calls.push({ sql, values });
+      if (/SELECT webhook_url/.test(sql)) {
+        return { rows: [{ webhook_url: "https://saved-secret.example.test/alpr" }] };
+      }
       if (/RETURNING \*/.test(sql)) return { rows: [{
         warning_percent: 75,
         critical_percent: 90,
@@ -429,6 +577,8 @@ test("maintenance settings update and audit use one transaction and force destru
         stale_after_seconds: 10800,
         alert_cooldown_seconds: 21600,
         email_recipients: [],
+        webhook_enabled: false,
+        webhook_url: "https://saved-secret.example.test/alpr",
         cleanup_enabled: false,
         cleanup_interval_seconds: 86400,
         automatic_categories: [],
@@ -445,9 +595,119 @@ test("maintenance settings update and audit use one transaction and force destru
   });
   assert.equal(saved.cleanupEnabled, false);
   assert.deepEqual(saved.automaticCategories, []);
+  assert.equal(saved.webhookConfigured, true);
+  assert.equal(Object.hasOwn(saved, "webhookUrl"), false);
+  assert.equal(JSON.stringify(saved).includes("saved-secret"), false);
   assert.equal(calls[0].sql, "BEGIN");
   assert.equal(calls.at(-2).sql, "COMMIT");
   assert.equal(calls.some(({ sql }) => /maintenance\.storage_config_updated/.test(sql)), true);
+  const update = calls.find(({ sql }) => /UPDATE public\.storage_maintenance_config SET/.test(sql));
+  assert.doesNotMatch(update.sql, /webhook_url\s*=/);
+});
+
+test("maintenance webhook destination is omitted from every public config shape", () => {
+  const privateConfig = storageMaintenanceRepositoryInternals.configFromRow({
+    warning_percent: 80,
+    critical_percent: 90,
+    webhook_enabled: true,
+    webhook_url: "https://secret-hook.example.test/alpr",
+  });
+  const publicConfig = publicStorageMaintenanceConfig(privateConfig);
+  assert.equal(publicConfig.webhookConfigured, true);
+  assert.equal(Object.hasOwn(publicConfig, "webhookUrl"), false);
+  assert.equal(JSON.stringify(publicConfig).includes("secret-hook"), false);
+});
+
+test("maintenance webhook replace and clear are explicit, audited, and never return the URL", async () => {
+  async function run(operation) {
+    const calls = [];
+    const client = {
+      async query(sql, values) {
+        calls.push({ sql, values });
+        if (/RETURNING \*/.test(sql)) {
+          return { rows: [{
+            warning_percent: 80,
+            critical_percent: 90,
+            webhook_enabled: operation === "replace",
+            webhook_url: operation === "replace" ? "https://secret-hook.example.test/alpr" : null,
+          }] };
+        }
+        return { rows: [] };
+      },
+      release() { calls.push({ sql: "RELEASE" }); },
+    };
+    const executor = { connect: async () => client };
+    const result = operation === "replace"
+      ? await replaceStorageMaintenanceWebhook({
+          executor,
+          actor: { id: 9 },
+          webhookUrl: "https://secret-hook.example.test/alpr",
+        })
+      : await clearStorageMaintenanceWebhook({ executor, actor: { id: 9 } });
+    return { calls, result };
+  }
+
+  const replaced = await run("replace");
+  assert.equal(replaced.result.webhookConfigured, true);
+  assert.equal(Object.hasOwn(replaced.result, "webhookUrl"), false);
+  assert.match(replaced.calls.find(({ sql }) => /audit_events/.test(sql)).values[1], /replaced/);
+  assert.equal(JSON.stringify(replaced.calls.find(({ sql }) => /audit_events/.test(sql)).values).includes("secret-hook"), false);
+  const replaceScrub = replaced.calls.find(({ sql }) => /UPDATE public\.maintenance_alert_deliveries/.test(sql));
+  assert.match(replaceScrub.sql, /payload = payload - 'url'/);
+  assert.match(replaceScrub.sql, /Maintenance webhook delivery error details were redacted/);
+  assert.doesNotMatch(replaceScrub.sql, /THEN 'dead'/);
+
+  const cleared = await run("clear");
+  assert.equal(cleared.result.webhookConfigured, false);
+  assert.equal(cleared.result.webhookEnabled, false);
+  assert.match(cleared.calls.find(({ sql }) => /audit_events/.test(sql)).values[1], /cleared/);
+  const clearRetirement = cleared.calls.find(({ sql }) => /UPDATE public\.maintenance_alert_deliveries/.test(sql));
+  assert.match(clearRetirement.sql, /status IN \('pending', 'retry', 'processing'\) THEN 'dead'/);
+  assert.match(clearRetirement.sql, /locked_at = CASE[\s\S]*THEN NULL/);
+  assert.match(clearRetirement.sql, /Maintenance webhook delivery error details were redacted/);
+});
+
+test("maintenance webhook test reuses one event identity and does not return its destination", async () => {
+  let sent = null;
+  const result = await deliverStorageMaintenanceWebhookTest({
+    savedWebhookUrl: "https://secret-hook.example.test/alpr",
+    applicationConfig: { notifications: { webhook: { enabled: true, signing_secret: "signing-secret" } } },
+    now: () => new Date("2026-07-29T12:00:00.000Z"),
+    sendWebhook: async (request) => {
+      sent = request;
+      return { status: 204, requestId: "https://secret-hook.example.test/alpr?reflected=1" };
+    },
+  });
+  assert.equal(sent.payload.eventId, sent.payload.idempotencyKey);
+  assert.equal(sent.payload.url, "https://secret-hook.example.test/alpr");
+  assert.equal(result.usedSavedDestination, true);
+  assert.equal(Object.hasOwn(result, "url"), false);
+  assert.equal(Object.hasOwn(result, "requestId"), false);
+  assert.equal(JSON.stringify(result).includes("secret-hook"), false);
+});
+
+test("maintenance webhook UI exposes configured state and explicit write-only controls", async () => {
+  const [panel, actions, service] = await Promise.all([
+    readFile(new URL("../app/settings/StorageMaintenancePanel.jsx", import.meta.url), "utf8"),
+    readFile(new URL("../app/actions.js", import.meta.url), "utf8"),
+    readFile(new URL("../lib/storage-maintenance-service.mjs", import.meta.url), "utf8"),
+  ]);
+  assert.match(panel, /webhookConfigured \? "Configured" : "Not configured"/);
+  assert.match(panel, />Replace<\/Button>/);
+  assert.match(panel, />Test<\/Button>/);
+  assert.match(panel, />Clear<\/Button>/);
+  assert.match(panel, /request already in flight during either change may still finish/i);
+  assert.doesNotMatch(panel, /settings\.webhookUrl/);
+  assert.match(actions, /replaceStorageMaintenanceWebhookDestination[\s\S]*requirePermission\("maintenance\.manage"\)/);
+  assert.match(actions, /testStorageMaintenanceWebhookDestination[\s\S]*requirePermission\("maintenance\.manage"\)/);
+  assert.match(actions, /clearStorageMaintenanceWebhookDestination[\s\S]*requirePermission\("maintenance\.manage"\)/);
+  assert.match(service, /settings: publicStorageMaintenanceConfig\(settings\)/);
+  const failureHandler = actions.slice(
+    actions.indexOf("function storageMaintenanceFailure"),
+    actions.indexOf("export async function saveStorageMaintenanceSettings")
+  );
+  assert.doesNotMatch(failureHandler, /console\.error[\s\S]*error:\s*candidate/);
+  assert.match(failureHandler, /errorName:/);
 });
 
 test("schema and migration preserve the empty auto allowlist and no domain-record cleanup SQL", async () => {
@@ -469,6 +729,8 @@ test("schema and migration preserve the empty auto allowlist and no domain-recor
   assert.match(migration, /updated_by_user_id BIGINT REFERENCES public\.users\(id\) ON DELETE SET NULL/);
   assert.match(migration, /notification_rule_cutover_events[\s\S]*actor_user_id BIGINT REFERENCES public\.users\(id\) ON DELETE SET NULL/);
   assert.match(migration, /constraint_record\.contype = 'f'[\s\S]*column_record\.attname = 'updated_by_user_id'/);
+  assert.match(migration, /UPDATE public\.maintenance_alert_deliveries[\s\S]*payload = payload - 'url'/);
+  assert.match(migration, /Maintenance webhook delivery error details were redacted/);
   assert.match(cleanup, /maintenance\.storage_cleanup_started/);
   assert.match(cleanup, /maintenance\.storage_cleanup_interrupted/);
   assert.match(captureWriter, /withDerivedStorageWriterLock\(writeReadyAsset\)/);

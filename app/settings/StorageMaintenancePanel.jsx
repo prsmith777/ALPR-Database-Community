@@ -5,9 +5,12 @@ import { useRouter } from "next/navigation";
 import { AlertTriangle, BellRing, Clock3, Mail, Play, ShieldCheck, Webhook } from "lucide-react";
 
 import {
+  clearStorageMaintenanceWebhookDestination,
   previewStorageCleanup,
+  replaceStorageMaintenanceWebhookDestination,
   runConfirmedStorageCleanup,
   saveStorageMaintenanceSettings,
+  testStorageMaintenanceWebhookDestination,
 } from "@/app/actions";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -75,8 +78,9 @@ export default function StorageMaintenancePanel({ overview, canManage }) {
     emailEnabled: settings.emailEnabled === true,
     emailRecipients: (settings.emailRecipients || []).join(", "),
     webhookEnabled: settings.webhookEnabled === true,
-    webhookUrl: settings.webhookUrl || "",
   });
+  const [webhookConfigured, setWebhookConfigured] = useState(settings.webhookConfigured === true);
+  const [webhookReplacement, setWebhookReplacement] = useState("");
   const [preview, setPreview] = useState(null);
   const [confirmation, setConfirmation] = useState("");
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -111,7 +115,6 @@ export default function StorageMaintenancePanel({ overview, canManage }) {
           .map((value) => value.trim())
           .filter(Boolean),
         webhookEnabled: policy.webhookEnabled,
-        webhookUrl: policy.webhookUrl.trim(),
         cleanupEnabled: false,
         automaticCategories: [],
       });
@@ -120,6 +123,59 @@ export default function StorageMaintenancePanel({ overview, canManage }) {
         return;
       }
       setMessage({ kind: "success", text: "Storage maintenance settings saved." });
+      router.refresh();
+    });
+  }
+
+  function replaceWebhook() {
+    setMessage(null);
+    startTransition(async () => {
+      const result = await replaceStorageMaintenanceWebhookDestination({
+        webhookUrl: webhookReplacement.trim(),
+      });
+      if (!result.success) {
+        setMessage({ kind: "error", text: result.error });
+        return;
+      }
+      setWebhookConfigured(result.data.webhookConfigured === true);
+      setWebhookReplacement("");
+      setMessage({ kind: "success", text: "Maintenance webhook destination replaced." });
+      router.refresh();
+    });
+  }
+
+  function testWebhook() {
+    setMessage(null);
+    startTransition(async () => {
+      const result = await testStorageMaintenanceWebhookDestination({
+        webhookUrl: webhookReplacement.trim(),
+      });
+      if (!result.success) {
+        setMessage({ kind: "error", text: result.error });
+        return;
+      }
+      setMessage({
+        kind: "success",
+        text: result.data.usedSavedDestination
+          ? "Test delivered to the saved maintenance webhook destination."
+          : "Test delivered to the replacement destination; it has not been saved.",
+      });
+    });
+  }
+
+  function clearWebhook() {
+    if (!window.confirm("Clear the saved maintenance webhook destination and disable webhook maintenance alerts? Queued deliveries will be retired, but a request already in flight may still finish.")) return;
+    setMessage(null);
+    startTransition(async () => {
+      const result = await clearStorageMaintenanceWebhookDestination();
+      if (!result.success) {
+        setMessage({ kind: "error", text: result.error });
+        return;
+      }
+      setWebhookConfigured(false);
+      setWebhookReplacement("");
+      updatePolicy("webhookEnabled", false);
+      setMessage({ kind: "success", text: "Maintenance webhook destination cleared and alerts disabled." });
       router.refresh();
     });
   }
@@ -220,13 +276,27 @@ export default function StorageMaintenancePanel({ overview, canManage }) {
                 <Input id="storage-alert-recipients" type="text" value={policy.emailRecipients} onChange={(event) => updatePolicy("emailRecipients", event.target.value)} placeholder="owner@example.com, ops@example.com" disabled={!canManage || isPending} />
               </div>
               <div className="space-y-3 rounded-lg border p-4">
-                <div className="flex items-center gap-2 font-medium"><Webhook className="h-4 w-4" aria-hidden="true" />Webhook alerts</div>
+                <div className="flex items-center justify-between gap-3">
+                  <div className="flex items-center gap-2 font-medium"><Webhook className="h-4 w-4" aria-hidden="true" />Webhook alerts</div>
+                  <Badge variant="outline">{webhookConfigured ? "Configured" : "Not configured"}</Badge>
+                </div>
                 <label className="flex items-center gap-2 text-sm">
-                  <input type="checkbox" checked={policy.webhookEnabled} onChange={(event) => updatePolicy("webhookEnabled", event.target.checked)} disabled={!canManage || isPending} />
+                  <input type="checkbox" checked={policy.webhookEnabled} onChange={(event) => updatePolicy("webhookEnabled", event.target.checked)} disabled={!canManage || isPending || (!webhookConfigured && !policy.webhookEnabled)} />
                   Send HMAC-signed maintenance JSON through the configured webhook integration
                 </label>
-                <Label htmlFor="storage-alert-webhook">Destination URL</Label>
-                <Input id="storage-alert-webhook" type="url" value={policy.webhookUrl} onChange={(event) => updatePolicy("webhookUrl", event.target.value)} placeholder="https://automation.example.com/alpr-maintenance" disabled={!canManage || isPending} />
+                <Label htmlFor="storage-alert-webhook-replacement">Replacement destination URL</Label>
+                <Input id="storage-alert-webhook-replacement" type="url" value={webhookReplacement} onChange={(event) => setWebhookReplacement(event.target.value)} placeholder="https://automation.example.com/alpr-maintenance" autoComplete="off" disabled={!canManage || isPending} />
+                <p className="text-xs text-muted-foreground">
+                  The saved URL is write-only and is never returned to this page. Enter a URL only to test or replace it.
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  Replace uses the new destination for queued alerts; Clear retires them. A request already in flight during either change may still finish at the prior destination.
+                </p>
+                <div className="flex flex-wrap gap-2">
+                  <Button type="button" variant="outline" size="sm" onClick={replaceWebhook} disabled={!canManage || isPending || !webhookReplacement.trim()}>Replace</Button>
+                  <Button type="button" variant="outline" size="sm" onClick={testWebhook} disabled={!canManage || isPending || (!webhookConfigured && !webhookReplacement.trim())}>Test</Button>
+                  <Button type="button" variant="outline" size="sm" onClick={clearWebhook} disabled={!canManage || isPending || !webhookConfigured}>Clear</Button>
+                </div>
               </div>
             </div>
 

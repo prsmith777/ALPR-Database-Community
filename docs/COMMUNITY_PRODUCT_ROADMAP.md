@@ -253,8 +253,15 @@ totals, bytes, errors, and a review sample.
 
 Storage maintenance now records run status, duration, reclaimed space,
 scheduler heartbeat, next run, failures, and rate-limited SMTP/signed-webhook
-alert state. Administrators can request a safe preview and separately confirm
-a manual cleanup of generated `derived/` files that remain unreferenced after
+alert state. Maintenance webhook destinations are write-only in browser state,
+survive unrelated policy saves, and have separate Replace, Test, and Clear
+controls; credential changes are audited. New alert queue entries omit the
+destination, legacy entries are scrubbed during migration, current values are
+resolved at send time, and unsent webhook work is retired when the destination
+is cleared; a request already in flight during Replace or Clear may still reach
+the prior destination. Administrators can
+request a safe preview and separately confirm a
+manual cleanup of generated `derived/` files that remain unreferenced after
 an execution-time database and filesystem identity check. Automatic cleanup
 ships disabled with no approved categories. Source images, thumbnails,
 database rows, referenced captures, Docker objects, current releases, and
