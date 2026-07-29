@@ -342,7 +342,10 @@ const ImageViewer = ({
     event.preventDefault();
     event.stopPropagation();
     lastImageClickRef.current = null;
-    setIsFullscreen(false);
+    // Let the browser finish dispatching the double-click before the popup
+    // viewer is mounted again. Otherwise the tail of this gesture can reach
+    // the newly mounted popup and immediately reopen full screen.
+    window.setTimeout(() => setIsFullscreen(false), 0);
   };
 
   const handlePointerCancel = (event) => {
