@@ -331,6 +331,26 @@ const ImageViewer = ({
     lastImageClickRef.current = { time: now, x: event.clientX, y: event.clientY };
   };
 
+  const handleFullscreenClick = (event) => {
+    if (suppressImageClickRef.current) {
+      suppressImageClickRef.current = false;
+      lastImageClickRef.current = null;
+      return;
+    }
+
+    const now = performance.now();
+    const previous = lastImageClickRef.current;
+    const closeToPrevious = previous
+      && Math.hypot(event.clientX - previous.x, event.clientY - previous.y) <= 24;
+    if (previous && closeToPrevious && now - previous.time <= 550) {
+      lastImageClickRef.current = null;
+      setIsFullscreen(false);
+      return;
+    }
+
+    lastImageClickRef.current = { time: now, x: event.clientX, y: event.clientY };
+  };
+
   const handleOpenFullscreen = (event) => {
     event.preventDefault();
     event.stopPropagation();
@@ -415,7 +435,7 @@ const ImageViewer = ({
         onPointerMove={handlePointerMove}
         onPointerUp={handlePointerUp}
         onPointerCancel={handlePointerCancel}
-        onClick={fullscreen ? undefined : handleImageClick}
+        onClick={fullscreen ? handleFullscreenClick : handleImageClick}
         onDoubleClick={fullscreen ? handleCloseFullscreen : handleOpenFullscreen}
       >
         <div style={getImageStyle()}>
