@@ -48,6 +48,7 @@ const ImageViewer = ({
   const containerRef = useRef(null);
   const dragRef = useRef(null);
   const pointerGestureRef = useRef(null);
+  const suppressImageClickRef = useRef(false);
   const lastImageClickRef = useRef(null);
   const initializedViewRef = useRef(null);
   const canZoom = zoomEnabled || Boolean(image?.crop_coordinates || image?.focus_coordinates);
@@ -298,9 +299,13 @@ const ImageViewer = ({
     const gesture = pointerGestureRef.current;
     const wasClick = gesture?.pointerId === event.pointerId && !gesture.moved;
     pointerGestureRef.current = null;
+    suppressImageClickRef.current = !wasClick;
     endDrag(event);
+  };
 
-    if (!wasClick || event.button !== 0) {
+  const handleImageClick = (event) => {
+    if (suppressImageClickRef.current) {
+      suppressImageClickRef.current = false;
       lastImageClickRef.current = null;
       return;
     }
@@ -320,6 +325,7 @@ const ImageViewer = ({
 
   const handlePointerCancel = (event) => {
     pointerGestureRef.current = null;
+    suppressImageClickRef.current = true;
     lastImageClickRef.current = null;
     endDrag(event);
   };
@@ -385,6 +391,7 @@ const ImageViewer = ({
         onPointerMove={handlePointerMove}
         onPointerUp={handlePointerUp}
         onPointerCancel={handlePointerCancel}
+        onClick={handleImageClick}
       >
         <div style={getImageStyle()}>
           <NextImage

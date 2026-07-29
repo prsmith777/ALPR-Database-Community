@@ -111,6 +111,8 @@ test("vehicle images support centered zoom, drag panning, and full-screen inspec
   assert.match(viewer, /onPointerDown=\{handlePointerDown\}/);
   assert.match(viewer, /onPointerMove=\{handlePointerMove\}/);
   assert.match(viewer, /onPointerUp=\{handlePointerUp\}/);
+  assert.match(viewer, /onClick=\{handleImageClick\}/);
+  assert.match(viewer, /suppressImageClickRef\.current = !wasClick/);
   assert.match(viewer, /now - previous\.time <= 550/);
   assert.match(viewer, /setIsFullscreen\(\(current\) => !current\)/);
   assert.match(viewer, /onPointerCancel=\{handlePointerCancel\}/);
