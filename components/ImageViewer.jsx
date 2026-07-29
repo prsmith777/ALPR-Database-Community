@@ -339,7 +339,14 @@ const ImageViewer = ({
     if (now - lastFullscreenToggleRef.current <= 300) return;
     lastImageClickRef.current = null;
     lastFullscreenToggleRef.current = now;
-    setIsFullscreen((current) => !current);
+    setIsFullscreen(true);
+  };
+
+  const handleFullscreenDoubleClick = (event) => {
+    event.preventDefault();
+    lastImageClickRef.current = null;
+    lastFullscreenToggleRef.current = performance.now();
+    setIsFullscreen(false);
   };
 
   const handlePointerCancel = (event) => {
@@ -386,7 +393,10 @@ const ImageViewer = ({
   ) : null;
 
   const viewer = (fullscreen = false) => (
-    <div className={fullscreen ? "fixed inset-0 z-[100] flex flex-col bg-black p-3" : "flex h-full flex-col"}>
+    <div
+      className={fullscreen ? "fixed inset-0 z-[100] flex flex-col bg-black p-3" : "flex h-full flex-col"}
+      onDoubleClick={fullscreen ? handleFullscreenDoubleClick : undefined}
+    >
       {fullscreen ? (
         <Button
           type="button"
@@ -411,7 +421,7 @@ const ImageViewer = ({
         onPointerUp={handlePointerUp}
         onPointerCancel={handlePointerCancel}
         onClick={handleImageClick}
-        onDoubleClick={handleImageDoubleClick}
+        onDoubleClick={fullscreen ? undefined : handleImageDoubleClick}
       >
         <div style={getImageStyle()}>
           <NextImage
