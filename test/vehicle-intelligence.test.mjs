@@ -110,8 +110,19 @@ test("vehicle images support centered zoom, drag panning, and full-screen inspec
   assert.match(viewer, /image\?\.focus_coordinates \|\| image\?\.crop_coordinates/);
   assert.match(viewer, /onPointerDown=\{handlePointerDown\}/);
   assert.match(viewer, /onPointerMove=\{handlePointerMove\}/);
-  assert.match(viewer, /onDoubleClick=\{\(\) => setIsFullscreen/);
+  assert.match(viewer, /onPointerUp=\{handlePointerUp\}/);
+  assert.match(viewer, /now - previous\.time <= 550/);
+  assert.match(viewer, /setIsFullscreen\(\(current\) => !current\)/);
+  assert.match(viewer, /onPointerCancel=\{handlePointerCancel\}/);
   assert.match(viewer, /createPortal\(viewer\(true\), document\.body\)/);
+});
+
+test("plate and vehicle image selectors stack without spanning the image", async () => {
+  const table = await source("components/PlateTable.jsx");
+  assert.match(table, /absolute left-2 top-2 z-20 flex flex-col rounded-md/);
+  assert.match(table, /className="h-7 justify-start px-2 text-xs"/);
+  assert.match(table, />Plate capture<\/Button>/);
+  assert.match(table, />Vehicle view<\/Button>/);
 });
 
 test("live-feed refreshes do not reset a user's vehicle zoom", async () => {

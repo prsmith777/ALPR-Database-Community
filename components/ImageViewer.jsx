@@ -47,6 +47,8 @@ const ImageViewer = ({
   const [isFullscreen, setIsFullscreen] = useState(false);
   const containerRef = useRef(null);
   const dragRef = useRef(null);
+  const pointerGestureRef = useRef(null);
+  const lastImageClickRef = useRef(null);
   const initializedViewRef = useRef(null);
   const canZoom = zoomEnabled || Boolean(image?.crop_coordinates || image?.focus_coordinates);
   const viewResetKey = JSON.stringify([
@@ -253,13 +255,28 @@ const ImageViewer = ({
   };
 
   const handlePointerDown = (event) => {
-    if (zoom <= 1 || event.button !== 0) return;
-    event.currentTarget.setPointerCapture(event.pointerId);
-    dragRef.current = { x: event.clientX, y: event.clientY, pan };
-    setIsDragging(true);
+    if (event.button !== 0) return;
+    pointerGestureRef.current = {
+      pointerId: event.pointerId,
+      x: event.clientX,
+      y: event.clientY,
+      moved: false,
+    };
+    if (zoom > 1) {
+      event.currentTarget.setPointerCapture(event.pointerId);
+      dragRef.current = { x: event.clientX, y: event.clientY, pan };
+      setIsDragging(true);
+    }
   };
 
   const handlePointerMove = (event) => {
+    if (pointerGestureRef.current?.pointerId === event.pointerId) {
+      const movement = Math.hypot(
+        event.clientX - pointerGestureRef.current.x,
+        event.clientY - pointerGestureRef.current.y
+      );
+      if (movement > 8) pointerGestureRef.current.moved = true;
+    }
     if (!dragRef.current) return;
     const maxX = Math.max(containerSize?.width || 0, 1) * zoom;
     const maxY = Math.max(containerSize?.height || 0, 1) * zoom;
@@ -275,6 +292,36 @@ const ImageViewer = ({
     }
     dragRef.current = null;
     setIsDragging(false);
+  };
+
+  const handlePointerUp = (event) => {
+    const gesture = pointerGestureRef.current;
+    const wasClick = gesture?.pointerId === event.pointerId && !gesture.moved;
+    pointerGestureRef.current = null;
+    endDrag(event);
+
+    if (!wasClick || event.button !== 0) {
+      lastImageClickRef.current = null;
+      return;
+    }
+
+    const now = performance.now();
+    const previous = lastImageClickRef.current;
+    const closeToPrevious = previous
+      && Math.hypot(event.clientX - previous.x, event.clientY - previous.y) <= 24;
+    if (previous && closeToPrevious && now - previous.time <= 550) {
+      lastImageClickRef.current = null;
+      setIsFullscreen((current) => !current);
+      return;
+    }
+
+    lastImageClickRef.current = { time: now, x: event.clientX, y: event.clientY };
+  };
+
+  const handlePointerCancel = (event) => {
+    pointerGestureRef.current = null;
+    lastImageClickRef.current = null;
+    endDrag(event);
   };
 
   const controls = canZoom ? (
@@ -336,9 +383,8 @@ const ImageViewer = ({
         style={{ touchAction: "none" }}
         onPointerDown={handlePointerDown}
         onPointerMove={handlePointerMove}
-        onPointerUp={endDrag}
-        onPointerCancel={endDrag}
-        onDoubleClick={() => setIsFullscreen((current) => !current)}
+        onPointerUp={handlePointerUp}
+        onPointerCancel={handlePointerCancel}
       >
         <div style={getImageStyle()}>
           <NextImage

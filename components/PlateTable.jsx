@@ -2569,9 +2569,9 @@ export default function PlateTable({
                   </div>
                   <div className="relative h-[40vh] w-full overflow-hidden rounded-md border bg-black sm:h-auto sm:min-h-0">
                     {selectedImage.vehicleImageUrl && (
-                      <div className="absolute left-2 top-2 z-20 flex rounded-md border bg-background/90 p-1 shadow-sm backdrop-blur">
-                        <Button type="button" size="sm" variant={selectedImageView === "plate" ? "default" : "ghost"} className="h-7 px-2 text-xs" onClick={() => setSelectedImageView("plate")}>Plate capture</Button>
-                        <Button type="button" size="sm" variant={selectedImageView === "vehicle" ? "default" : "ghost"} className="h-7 px-2 text-xs" onClick={() => setSelectedImageView("vehicle")}>Vehicle view</Button>
+                      <div className="absolute left-2 top-2 z-20 flex flex-col rounded-md border bg-background/90 p-1 shadow-sm backdrop-blur">
+                        <Button type="button" size="sm" variant={selectedImageView === "plate" ? "default" : "ghost"} className="h-7 justify-start px-2 text-xs" onClick={() => setSelectedImageView("plate")}>Plate capture</Button>
+                        <Button type="button" size="sm" variant={selectedImageView === "vehicle" ? "default" : "ghost"} className="h-7 justify-start px-2 text-xs" onClick={() => setSelectedImageView("vehicle")}>Vehicle view</Button>
                       </div>
                     )}
                     {!selectedImage.vehicleImageUrl && selectedImage.vehicleImageStatus && (
