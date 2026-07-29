@@ -137,6 +137,8 @@ import {
   testStorageMaintenanceEmailRecipients as testStorageMaintenanceEmailRecipientsService,
   testStorageMaintenanceWebhookDestination as testStorageMaintenanceWebhookDestinationService,
   updateStorageMaintenanceSettings,
+  updateAutomaticCleanupApproval as updateAutomaticCleanupApprovalService,
+  acknowledgeAutomaticCleanup as acknowledgeAutomaticCleanupService,
 } from "@/lib/storage-maintenance-service.mjs";
 
 async function readServerActionSessionId() {
@@ -1468,6 +1470,12 @@ function storageMaintenanceFailure(error, fallback) {
     /^Cleanup preview token has expired$/,
     /^Cleanup confirmation does not match this preview$/,
     /^Another storage cleanup operation is already running$/,
+    /^Type ENABLE AUTOMATIC DERIVED CLEANUP to activate automatic cleanup$/,
+    /^Type ACKNOWLEDGE AUTOMATIC CLEANUP FAILURE to acknowledge the automatic cleanup failure$/,
+    /^Automatic cleanup is not suspended$/,
+    /^Automatic cleanup suspension is missing its failed-run provenance$/,
+    /^Run a fresh, successful storage reconciliation before acknowledging this failure$/,
+    /^Automatic cleanup approval requires an authenticated Administrator$/,
   ];
   const safe = safeMessages.some((pattern) => pattern.test(candidate));
   if (!safe) {
@@ -1590,6 +1598,31 @@ export async function runConfirmedStorageCleanup(input = {}) {
     return { success: true, data };
   } catch (error) {
     return storageMaintenanceFailure(error, "Unable to run storage cleanup.");
+  }
+}
+
+export async function setAutomaticStorageCleanupApproval(input = {}) {
+  const principal = await requirePermission("maintenance.automatic_cleanup.approve");
+  try {
+    const data = await updateAutomaticCleanupApprovalService({ actor: principal, input });
+    revalidatePath("/settings/data-privacy");
+    return { success: true, data };
+  } catch (error) {
+    return storageMaintenanceFailure(error, "Unable to update automatic cleanup approval.");
+  }
+}
+
+export async function acknowledgeAutomaticStorageCleanupFailure(input = {}) {
+  const principal = await requirePermission("maintenance.automatic_cleanup.approve");
+  try {
+    const data = await acknowledgeAutomaticCleanupService({
+      actor: principal,
+      confirmation: String(input.confirmation || ""),
+    });
+    revalidatePath("/settings/data-privacy");
+    return { success: true, data };
+  } catch (error) {
+    return storageMaintenanceFailure(error, "Unable to acknowledge automatic cleanup failure.");
   }
 }
 

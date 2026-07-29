@@ -263,7 +263,13 @@ the prior destination. Administrators can
 request a safe preview and separately confirm a
 manual cleanup of generated `derived/` files that remain unreferenced after
 an execution-time database and filesystem identity check. Automatic cleanup
-ships disabled with no approved categories. Source images, thumbnails,
+now has a separate, append-only Administrator approval history and remains
+off by default. Its sole approved implementation category is generated
+derived orphans. Scheduled runs require fresh zero-error reconciliation
+provenance, enforce file/byte/time caps, revalidate approval and all reference
+and filesystem safeguards, make reconciliation due afterward, and suspend on
+the first failure until a newer successful reconciliation and Administrator
+acknowledgement. Source images, thumbnails,
 database rows, referenced captures, Docker objects, current releases, and
 verified rollback backups have no application deletion path. Docker and backup
 measurements use an optional stale-checked read-only host snapshot; the app
@@ -282,9 +288,16 @@ notes. Updates remain externally orchestrated.
   storage categories, maintenance run/heartbeat visibility, durable
   rate-limited alerts, and confirmed manual cleanup limited to regenerated
   unreferenced derived assets.
-- Add separately approved automatic cleanup categories, `VACUUM ANALYZE`,
-  backup, restore-preflight, and backup-verification jobs. Do not expose an
-  arbitrary SQL or shell console.
+- Delivered increment: separately approved, default-off automatic cleanup for
+  reconciliation-confirmed generated derived orphans only, with immutable
+  100-file/1-GiB caps and a five-minute candidate-admission budget with
+  bounded per-candidate database waits, minimum daily interval, minimum seven-day
+  grace, durable provenance, alert/audit history, and a fail-closed circuit
+  breaker.
+- Delivered increment: read-only PostgreSQL table maintenance and transaction
+  ID age observability. Add controlled `VACUUM ANALYZE`, backup,
+  restore-preflight, and full backup-verification jobs in later increments.
+  Do not expose an arbitrary SQL or shell console.
 - Delivered foundation: display the current version, build- or
   deployment-provided Git SHA, release channel, and local release notes without
   host-control actions.

@@ -6,10 +6,12 @@ import { AlertTriangle, BellRing, Clock3, Mail, Play, ShieldCheck, Webhook } fro
 
 import {
   clearStorageMaintenanceWebhookDestination,
+  acknowledgeAutomaticStorageCleanupFailure,
   previewStorageCleanup,
   replaceStorageMaintenanceWebhookDestination,
   runConfirmedStorageCleanup,
   saveStorageMaintenanceSettings,
+  setAutomaticStorageCleanupApproval,
   testStorageMaintenanceEmailRecipients,
   testStorageMaintenanceWebhookDestination,
 } from "@/app/actions";
@@ -56,7 +58,7 @@ function noticeClass(kind) {
     : "border-emerald-500/40 text-emerald-700 dark:text-emerald-300";
 }
 
-export default function StorageMaintenancePanel({ overview, canManage }) {
+export default function StorageMaintenancePanel({ overview, canManage, canApproveAutomaticCleanup = false }) {
   const router = useRouter();
   const settings = overview?.settings || {};
   const scheduler = overview?.jobs?.scheduler || {};
@@ -69,6 +71,16 @@ export default function StorageMaintenancePanel({ overview, canManage }) {
     0
   );
   const failedAlert = alertDeliveries.find((item) => item.status === "dead") || null;
+  const automatic = overview?.automaticCleanup || {};
+  const automaticApproval = automatic.approval || null;
+  const automaticState = automatic.state || null;
+  const automaticGraceDays = Math.round(
+    (automaticApproval?.graceSeconds ?? automatic?.limits?.minimumGraceSeconds ?? 604800) / 86400
+  );
+  const automaticIntervalHours = Math.round(
+    (automaticApproval?.intervalSeconds ?? automatic?.limits?.minimumIntervalSeconds ?? 86400) / 3600
+  );
+  const postgres = overview?.postgresMaintenance || {};
   const [policy, setPolicy] = useState({
     warningPercent: String(settings.warningPercent ?? 80),
     criticalPercent: String(settings.criticalPercent ?? 90),
@@ -85,6 +97,8 @@ export default function StorageMaintenancePanel({ overview, canManage }) {
   const [preview, setPreview] = useState(null);
   const [confirmation, setConfirmation] = useState("");
   const [dialogOpen, setDialogOpen] = useState(false);
+  const [automaticConfirmation, setAutomaticConfirmation] = useState("");
+  const [acknowledgement, setAcknowledgement] = useState("");
   const [message, setMessage] = useState(null);
   const [emailMessage, setEmailMessage] = useState(null);
   const [webhookMessage, setWebhookMessage] = useState(null);
@@ -241,6 +255,43 @@ export default function StorageMaintenancePanel({ overview, canManage }) {
     });
   }
 
+  function activateAutomaticCleanup() {
+    setMessage(null);
+    startTransition(async () => {
+      const result = await setAutomaticStorageCleanupApproval({
+        enabled: true,
+        confirmation: automaticConfirmation,
+        intervalSeconds: 86400,
+        graceSeconds: Math.max(7, Number(policy.orphanGraceDays) || 7) * 86400,
+      });
+      if (!result.success) { setMessage({ kind: "error", text: result.error }); return; }
+      setAutomaticConfirmation("");
+      setMessage({ kind: "success", text: `Automatic derived-orphan cleanup approved as revision ${result.data.revision}.` });
+      router.refresh();
+    });
+  }
+
+  function disableAutomaticCleanup() {
+    setMessage(null);
+    startTransition(async () => {
+      const result = await setAutomaticStorageCleanupApproval({ enabled: false });
+      if (!result.success) { setMessage({ kind: "error", text: result.error }); return; }
+      setMessage({ kind: "success", text: "Automatic derived-orphan cleanup disabled." });
+      router.refresh();
+    });
+  }
+
+  function acknowledgeAutomaticFailure() {
+    setMessage(null);
+    startTransition(async () => {
+      const result = await acknowledgeAutomaticStorageCleanupFailure({ confirmation: acknowledgement });
+      if (!result.success) { setMessage({ kind: "error", text: result.error }); return; }
+      setAcknowledgement("");
+      setMessage({ kind: "success", text: "Automatic cleanup suspension acknowledged after fresh reconciliation." });
+      router.refresh();
+    });
+  }
+
   return (
     <div className="max-w-5xl space-y-4">
       <Card>
@@ -339,7 +390,7 @@ export default function StorageMaintenancePanel({ overview, canManage }) {
                 <Input id="storage-orphan-grace" type="number" min="1" max="365" value={policy.orphanGraceDays} onChange={(event) => updatePolicy("orphanGraceDays", event.target.value)} disabled={!canManage || isPending} />
               </div>
               <div className="rounded-md border border-blue-500/30 bg-blue-500/10 p-3 text-sm">
-                Automatic cleanup is disabled, with no approved automatic categories. Saving this policy cannot enable deletion.
+                Monitoring policy saves never activate deletion. Automatic cleanup has a separate Administrator-only approval below.
               </div>
             </div>
 
@@ -347,6 +398,79 @@ export default function StorageMaintenancePanel({ overview, canManage }) {
               {isPending ? "Saving" : "Save monitoring policy"}
             </Button>
           </form>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <CardTitle>Automatic derived-orphan cleanup</CardTitle>
+              <CardDescription className="mt-2">Default off, separately approved, and independent from manual cleanup.</CardDescription>
+            </div>
+            <Badge variant={automaticState?.circuitBreakerOpen ? "destructive" : automatic.enabled ? "secondary" : "outline"}>
+              {automaticState?.circuitBreakerOpen ? "Suspended" : automatic.enabled ? "Approved" : "Disabled"}
+            </Badge>
+          </div>
+        </CardHeader>
+        <CardContent className="space-y-4 text-sm">
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+            <div><p className="text-muted-foreground">Approval revision</p><p className="font-medium">{automaticApproval?.revision ?? "None"}</p></div>
+            <div><p className="text-muted-foreground">Approved by user</p><p className="font-medium">{automaticApproval?.actorUserId ?? "Not approved"}</p></div>
+            <div><p className="text-muted-foreground">Next eligible run</p><p className="font-medium">{formatDate(automaticState?.nextRunAt)}</p></div>
+            <div><p className="text-muted-foreground">Source reconciliation</p><p className="font-medium">{automaticState?.sourceReconciliationRunId ?? "Not used"}</p></div>
+            <div><p className="text-muted-foreground">Approved grace</p><p className="font-medium">{automaticGraceDays} day(s)</p></div>
+            <div><p className="text-muted-foreground">Minimum interval</p><p className="font-medium">{automaticIntervalHours} hour(s)</p></div>
+          </div>
+          <p>{automatic.reason}</p>
+          <p className="text-xs text-muted-foreground">
+            Each run requires a fresh, completed, zero-error reconciliation. Candidates must predate that scan and the {automaticGraceDays}-day grace cutoff. The scheduler admits new candidates for at most five minutes, with each database lock and statement bounded by the remaining budget; a filesystem operation already in progress is allowed to finish safely. Runs also stop at 100 files or 1 GiB and recheck all five references, hard links, symbolic links, containment, size, mtime, device, and inode before unlinking.
+          </p>
+          {!automaticApproval?.enabled && !automaticState?.circuitBreakerOpen && (
+            <div className="space-y-2 rounded-md border p-3">
+              <Label htmlFor="automatic-cleanup-confirmation">Type {automatic.activationConfirmation}</Label>
+              <Input id="automatic-cleanup-confirmation" value={automaticConfirmation} onChange={(event) => setAutomaticConfirmation(event.target.value)} disabled={!canApproveAutomaticCleanup || isPending} autoComplete="off" />
+              <Button type="button" variant="destructive" onClick={activateAutomaticCleanup} disabled={!canApproveAutomaticCleanup || isPending || automaticConfirmation !== automatic.activationConfirmation}>Activate automatic derived-orphan cleanup</Button>
+            </div>
+          )}
+          {automaticApproval?.enabled && (
+            <Button type="button" variant="outline" onClick={disableAutomaticCleanup} disabled={!canApproveAutomaticCleanup || isPending}>Disable automatic cleanup</Button>
+          )}
+          {automaticState?.circuitBreakerOpen && (
+            <div className="space-y-2 rounded-md border border-destructive/40 p-3">
+              <p className="text-destructive">{automaticState.circuitBreakerReason || "Cleanup stopped on a failure."}</p>
+              <p className="text-xs text-muted-foreground">A new successful reconciliation must finish after this suspension before acknowledgement succeeds.</p>
+              <Label htmlFor="automatic-cleanup-acknowledgement">Type {automatic.acknowledgementConfirmation}</Label>
+              <Input id="automatic-cleanup-acknowledgement" value={acknowledgement} onChange={(event) => setAcknowledgement(event.target.value)} disabled={!canApproveAutomaticCleanup || isPending} autoComplete="off" />
+              <Button type="button" variant="destructive" onClick={acknowledgeAutomaticFailure} disabled={!canApproveAutomaticCleanup || isPending || acknowledgement !== automatic.acknowledgementConfirmation}>Acknowledge suspension</Button>
+            </div>
+          )}
+          {!canApproveAutomaticCleanup && <p className="text-xs text-muted-foreground">Only Administrators with the automatic-cleanup approval permission can change this state.</p>}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>PostgreSQL maintenance observability</CardTitle>
+          <CardDescription>Read-only statistics. This application does not execute VACUUM, ANALYZE, backup, or restore commands.</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-3 text-sm">
+          {postgres.available ? (
+            <>
+              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                <div><p className="text-muted-foreground">Dead tuples</p><p className="font-medium">{postgres.deadTuples?.toLocaleString?.() ?? 0}</p></div>
+                <div><p className="text-muted-foreground">Live tuples</p><p className="font-medium">{postgres.liveTuples?.toLocaleString?.() ?? 0}</p></div>
+                <div><p className="text-muted-foreground">Last autovacuum</p><p className="font-medium">{formatDate(postgres.lastAutovacuumAt)}</p></div>
+                <div><p className="text-muted-foreground">Last autoanalyze</p><p className="font-medium">{formatDate(postgres.lastAutoanalyzeAt)}</p></div>
+                <div><p className="text-muted-foreground">Transaction ID age</p><p className="font-medium">{postgres.transactionIdAge?.toLocaleString?.() ?? "Unavailable"} / {postgres.freezeMaxAge?.toLocaleString?.() ?? "Unavailable"}</p></div>
+              </div>
+              {(postgres.tables || []).filter((table) => table.needsAttention).map((table) => (
+                <p key={`${table.schema}.${table.table}`} className="rounded-md border border-amber-500/40 p-2 text-amber-700 dark:text-amber-300">
+                  {table.schema}.{table.table}: {table.deadTuples.toLocaleString()} dead tuples ({table.deadPercent}%).
+                </p>
+              ))}
+            </>
+          ) : <p className="text-muted-foreground">PostgreSQL statistics are unavailable.</p>}
         </CardContent>
       </Card>
 
@@ -384,7 +508,16 @@ export default function StorageMaintenancePanel({ overview, canManage }) {
               <div><p className="text-muted-foreground">Duration</p><p className="font-medium">{formatDuration(lastCleanup?.durationMs)}</p></div>
               <div><p className="text-muted-foreground">Reclaimed</p><p className="font-medium">{formatBytes(lastCleanup?.reclaimedBytes)}</p></div>
               <div><p className="text-muted-foreground">Failures</p><p className="font-medium">{lastCleanup?.failureCount ?? 0}</p></div>
-              <div><p className="text-muted-foreground">Next scheduled run</p><p className="font-medium">Automatic cleanup disabled</p></div>
+              <div>
+                <p className="text-muted-foreground">Next scheduled run</p>
+                <p className="font-medium">
+                  {automaticState?.circuitBreakerOpen
+                    ? "Automatic cleanup suspended"
+                    : automatic.enabled
+                      ? formatDate(automaticState?.nextRunAt)
+                      : "Automatic cleanup disabled"}
+                </p>
+              </div>
             </div>
             {lastCleanup?.lastError && <p className="rounded-md border border-destructive/40 p-3 text-destructive">{lastCleanup.lastError}</p>}
             <Button type="button" variant="outline" disabled={!canManage || isPending} onClick={createPreview}>
