@@ -129,10 +129,13 @@ import {
   wakeBlueIrisVehicleFrameWorker,
 } from "@/lib/blue-iris-vehicle-frame-runtime.mjs";
 import { normalizeEmailRecipients } from "@/lib/email-notifications.mjs";
-import { normalizeWebhookUrl } from "@/lib/webhook-notifications.mjs";
 import {
+  clearStorageMaintenanceWebhookDestination as clearStorageMaintenanceWebhookDestinationService,
   executeStorageCleanup,
+  replaceStorageMaintenanceWebhookDestination as replaceStorageMaintenanceWebhookDestinationService,
   runStorageMaintenancePreview,
+  testStorageMaintenanceEmailRecipients as testStorageMaintenanceEmailRecipientsService,
+  testStorageMaintenanceWebhookDestination as testStorageMaintenanceWebhookDestinationService,
   updateStorageMaintenanceSettings,
 } from "@/lib/storage-maintenance-service.mjs";
 
@@ -1457,23 +1460,25 @@ function storageMaintenanceFailure(error, fallback) {
     /^Enter no more than \d+ valid email recipients$/,
     /^Enter a valid webhook URL$/,
     /^Webhook URLs must use HTTP\(S\)/,
-    /^Enter a webhook URL before enabling maintenance webhooks\.$/,
+    /^Configure a maintenance webhook destination before enabling maintenance webhooks\.$/,
+    /^No maintenance webhook destination is configured\.$/,
+    /^SMTP did not accept any maintenance test recipients\.$/,
     /^Type DELETE DERIVED ORPHANS to confirm cleanup$/,
     /^Cleanup preview token is invalid or has already been used$/,
     /^Cleanup preview token has expired$/,
     /^Cleanup confirmation does not match this preview$/,
     /^Another storage cleanup operation is already running$/,
   ];
-  if (!safeMessages.some((pattern) => pattern.test(candidate))) {
+  const safe = safeMessages.some((pattern) => pattern.test(candidate));
+  if (!safe) {
     console.error("Storage maintenance action failed", {
-      error: candidate || String(error?.name || "Error"),
+      errorName: String(error?.name || "Error").replace(/[^A-Za-z0-9_.-]/g, "").slice(0, 100),
+      errorCode: /^[A-Z0-9_]{1,100}$/.test(String(error?.code || "")) ? String(error.code) : undefined,
     });
   }
   return {
     success: false,
-    error: safeMessages.some((pattern) => pattern.test(candidate))
-      ? candidate
-      : fallback,
+    error: safe ? candidate : fallback,
   };
 }
 
@@ -1494,12 +1499,6 @@ export async function saveStorageMaintenanceSettings(input = {}) {
     const emailRecipients = input.emailRecipients?.length || input.emailEnabled
       ? normalizeEmailRecipients(input.emailRecipients)
       : [];
-    const webhookUrl = input.webhookUrl
-      ? normalizeWebhookUrl(input.webhookUrl).toString()
-      : "";
-    if (input.webhookEnabled && !webhookUrl) {
-      throw new Error("Enter a webhook URL before enabling maintenance webhooks.");
-    }
     const data = await updateStorageMaintenanceSettings({
       actor: principal,
       input: {
@@ -1509,7 +1508,6 @@ export async function saveStorageMaintenanceSettings(input = {}) {
         emailEnabled: input.emailEnabled === true,
         emailRecipients,
         webhookEnabled: input.webhookEnabled === true,
-        webhookUrl,
         cleanupEnabled: false,
         automaticCategories: [],
       },
@@ -1518,6 +1516,54 @@ export async function saveStorageMaintenanceSettings(input = {}) {
     return { success: true, data };
   } catch (error) {
     return storageMaintenanceFailure(error, "Unable to save storage maintenance settings.");
+  }
+}
+
+export async function replaceStorageMaintenanceWebhookDestination(input = {}) {
+  const principal = await requirePermission("maintenance.manage");
+  try {
+    const data = await replaceStorageMaintenanceWebhookDestinationService({
+      actor: principal,
+      webhookUrl: String(input.webhookUrl || ""),
+    });
+    revalidatePath("/settings/data-privacy");
+    return { success: true, data };
+  } catch (error) {
+    return storageMaintenanceFailure(error, "Unable to replace the maintenance webhook destination.");
+  }
+}
+
+export async function testStorageMaintenanceEmailRecipients(input = {}) {
+  await requirePermission("maintenance.manage");
+  try {
+    const recipients = normalizeEmailRecipients(input.recipients);
+    const data = await testStorageMaintenanceEmailRecipientsService({ recipients });
+    return { success: true, data };
+  } catch (error) {
+    return storageMaintenanceFailure(error, "Unable to deliver the maintenance email test.");
+  }
+}
+
+export async function testStorageMaintenanceWebhookDestination(input = {}) {
+  await requirePermission("maintenance.manage");
+  try {
+    const data = await testStorageMaintenanceWebhookDestinationService({
+      webhookUrl: String(input.webhookUrl || ""),
+    });
+    return { success: true, data };
+  } catch (error) {
+    return storageMaintenanceFailure(error, "Unable to deliver the maintenance webhook test.");
+  }
+}
+
+export async function clearStorageMaintenanceWebhookDestination() {
+  const principal = await requirePermission("maintenance.manage");
+  try {
+    const data = await clearStorageMaintenanceWebhookDestinationService({ actor: principal });
+    revalidatePath("/settings/data-privacy");
+    return { success: true, data };
+  } catch (error) {
+    return storageMaintenanceFailure(error, "Unable to clear the maintenance webhook destination.");
   }
 }
 
