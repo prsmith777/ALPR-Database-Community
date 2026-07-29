@@ -50,6 +50,7 @@ const ImageViewer = ({
   const pointerGestureRef = useRef(null);
   const suppressImageClickRef = useRef(false);
   const lastImageClickRef = useRef(null);
+  const lastFullscreenToggleRef = useRef(0);
   const initializedViewRef = useRef(null);
   const canZoom = zoomEnabled || Boolean(image?.crop_coordinates || image?.focus_coordinates);
   const viewResetKey = JSON.stringify([
@@ -324,11 +325,21 @@ const ImageViewer = ({
       && Math.hypot(event.clientX - previous.x, event.clientY - previous.y) <= 24;
     if (previous && closeToPrevious && now - previous.time <= 550) {
       lastImageClickRef.current = null;
+      lastFullscreenToggleRef.current = now;
       setIsFullscreen((current) => !current);
       return;
     }
 
     lastImageClickRef.current = { time: now, x: event.clientX, y: event.clientY };
+  };
+
+  const handleImageDoubleClick = (event) => {
+    event.preventDefault();
+    const now = performance.now();
+    if (now - lastFullscreenToggleRef.current <= 300) return;
+    lastImageClickRef.current = null;
+    lastFullscreenToggleRef.current = now;
+    setIsFullscreen((current) => !current);
   };
 
   const handlePointerCancel = (event) => {
@@ -400,6 +411,7 @@ const ImageViewer = ({
         onPointerUp={handlePointerUp}
         onPointerCancel={handlePointerCancel}
         onClick={handleImageClick}
+        onDoubleClick={handleImageDoubleClick}
       >
         <div style={getImageStyle()}>
           <NextImage
