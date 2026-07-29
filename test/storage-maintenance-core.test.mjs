@@ -35,6 +35,7 @@ import {
   storageMaintenanceRepositoryInternals,
 } from "../lib/storage-maintenance-repository.mjs";
 import { deliverStorageMaintenanceWebhookTest } from "../lib/storage-maintenance-webhook.mjs";
+import { deliverStorageMaintenanceEmailTest } from "../lib/storage-maintenance-email.mjs";
 import { withStorageCleanupWriterLock } from "../lib/storage-maintenance-lock.mjs";
 
 function fileStats({ size = 10, mtime = "2026-07-01T00:00:00.000Z", symlink = false, dev = 1, ino = 2 } = {}) {
@@ -648,6 +649,10 @@ test("maintenance webhook replace and clear are explicit, audited, and never ret
   }
 
   const replaced = await run("replace");
+  const replaceConfig = replaced.calls.find(({ sql }) => /UPDATE public\.storage_maintenance_config SET/.test(sql));
+  assert.match(replaceConfig.sql, /webhook_url = \$1::text/);
+  assert.match(replaceConfig.sql, /CASE WHEN \$1::text IS NULL/);
+  assert.equal(replaceConfig.values[0], "https://secret-hook.example.test/alpr");
   assert.equal(replaced.result.webhookConfigured, true);
   assert.equal(Object.hasOwn(replaced.result, "webhookUrl"), false);
   assert.match(replaced.calls.find(({ sql }) => /audit_events/.test(sql)).values[1], /replaced/);
@@ -658,6 +663,8 @@ test("maintenance webhook replace and clear are explicit, audited, and never ret
   assert.doesNotMatch(replaceScrub.sql, /THEN 'dead'/);
 
   const cleared = await run("clear");
+  const clearConfig = cleared.calls.find(({ sql }) => /UPDATE public\.storage_maintenance_config SET/.test(sql));
+  assert.equal(clearConfig.values[0], null);
   assert.equal(cleared.result.webhookConfigured, false);
   assert.equal(cleared.result.webhookEnabled, false);
   assert.match(cleared.calls.find(({ sql }) => /audit_events/.test(sql)).values[1], /cleared/);
@@ -686,7 +693,42 @@ test("maintenance webhook test reuses one event identity and does not return its
   assert.equal(JSON.stringify(result).includes("secret-hook"), false);
 });
 
-test("maintenance webhook UI exposes configured state and explicit write-only controls", async () => {
+test("maintenance email test uses saved SMTP configuration and returns only safe counts", async () => {
+  let sent = null;
+  const result = await deliverStorageMaintenanceEmailTest({
+    recipients: "Owner@Example.com; owner@example.com; ops@example.com",
+    applicationConfig: {
+      notifications: {
+        email: { enabled: true, host: "smtp.secret.test", password: "smtp-password" },
+      },
+    },
+    now: () => new Date("2026-07-29T12:00:00.000Z"),
+    sendEmail: async (request) => {
+      sent = request;
+      return {
+        messageId: "smtp.secret.test/message-id",
+        accepted: ["owner@example.com", "ops@example.com"],
+        rejected: [],
+        response: "smtp-password reflected",
+      };
+    },
+  });
+  assert.equal(sent.config.host, "smtp.secret.test");
+  assert.deepEqual(sent.payload.recipients, ["owner@example.com", "ops@example.com"]);
+  assert.deepEqual(result, { delivered: true, acceptedCount: 2, rejectedCount: 0 });
+  assert.equal(JSON.stringify(result).includes("smtp.secret"), false);
+  assert.equal(JSON.stringify(result).includes("smtp-password"), false);
+  assert.equal(JSON.stringify(result).includes("owner@example.com"), false);
+  assert.equal(Object.hasOwn(result, "messageId"), false);
+  assert.equal(Object.hasOwn(result, "response"), false);
+  await assert.rejects(() => deliverStorageMaintenanceEmailTest({
+    recipients: ["owner@example.com"],
+    applicationConfig: { notifications: { email: { enabled: true } } },
+    sendEmail: async () => ({ accepted: [], rejected: ["owner@example.com"] }),
+  }), /did not accept any/);
+});
+
+test("maintenance notification UI exposes inline test results and explicit write-only controls", async () => {
   const [panel, actions, service] = await Promise.all([
     readFile(new URL("../app/settings/StorageMaintenancePanel.jsx", import.meta.url), "utf8"),
     readFile(new URL("../app/actions.js", import.meta.url), "utf8"),
@@ -697,10 +739,30 @@ test("maintenance webhook UI exposes configured state and explicit write-only co
   assert.match(panel, />Test<\/Button>/);
   assert.match(panel, />Clear<\/Button>/);
   assert.match(panel, /request already in flight during either change may still finish/i);
+  assert.match(panel, /const \[webhookMessage, setWebhookMessage\] = useState\(null\)/);
+  assert.match(panel, /noticeClass\(webhookMessage\.kind\)/);
+  assert.match(panel, /\{webhookMessage\.text\}/);
+  assert.match(panel, /const \[emailMessage, setEmailMessage\] = useState\(null\)/);
+  assert.match(panel, />Test email<\/Button>/);
+  assert.match(panel, /noticeClass\(emailMessage\.kind\)/);
+  assert.match(panel, /\{emailMessage\.text\}/);
   assert.doesNotMatch(panel, /settings\.webhookUrl/);
   assert.match(actions, /replaceStorageMaintenanceWebhookDestination[\s\S]*requirePermission\("maintenance\.manage"\)/);
   assert.match(actions, /testStorageMaintenanceWebhookDestination[\s\S]*requirePermission\("maintenance\.manage"\)/);
   assert.match(actions, /clearStorageMaintenanceWebhookDestination[\s\S]*requirePermission\("maintenance\.manage"\)/);
+  assert.match(actions, /testStorageMaintenanceEmailRecipients[\s\S]*requirePermission\("maintenance\.manage"\)/);
+  assert.match(actions, /testStorageMaintenanceEmailRecipients[\s\S]*normalizeEmailRecipients\(input\.recipients\)/);
+  const emailAction = actions.slice(
+    actions.indexOf("export async function testStorageMaintenanceEmailRecipients"),
+    actions.indexOf("export async function testStorageMaintenanceWebhookDestination")
+  );
+  assert.doesNotMatch(emailAction, /saveStorageMaintenanceSettings|updateStorageMaintenanceSettings/);
+  const emailService = service.slice(
+    service.indexOf("export async function testStorageMaintenanceEmailRecipients"),
+    service.indexOf("export async function runStorageMaintenancePreview")
+  );
+  assert.match(emailService, /loadApplicationConfig\(\)/);
+  assert.doesNotMatch(emailService, /saveStorageMaintenanceConfig|updateStorageMaintenanceSettings/);
   assert.match(service, /settings: publicStorageMaintenanceConfig\(settings\)/);
   const failureHandler = actions.slice(
     actions.indexOf("function storageMaintenanceFailure"),

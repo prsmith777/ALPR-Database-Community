@@ -134,6 +134,7 @@ import {
   executeStorageCleanup,
   replaceStorageMaintenanceWebhookDestination as replaceStorageMaintenanceWebhookDestinationService,
   runStorageMaintenancePreview,
+  testStorageMaintenanceEmailRecipients as testStorageMaintenanceEmailRecipientsService,
   testStorageMaintenanceWebhookDestination as testStorageMaintenanceWebhookDestinationService,
   updateStorageMaintenanceSettings,
 } from "@/lib/storage-maintenance-service.mjs";
@@ -1461,6 +1462,7 @@ function storageMaintenanceFailure(error, fallback) {
     /^Webhook URLs must use HTTP\(S\)/,
     /^Configure a maintenance webhook destination before enabling maintenance webhooks\.$/,
     /^No maintenance webhook destination is configured\.$/,
+    /^SMTP did not accept any maintenance test recipients\.$/,
     /^Type DELETE DERIVED ORPHANS to confirm cleanup$/,
     /^Cleanup preview token is invalid or has already been used$/,
     /^Cleanup preview token has expired$/,
@@ -1528,6 +1530,17 @@ export async function replaceStorageMaintenanceWebhookDestination(input = {}) {
     return { success: true, data };
   } catch (error) {
     return storageMaintenanceFailure(error, "Unable to replace the maintenance webhook destination.");
+  }
+}
+
+export async function testStorageMaintenanceEmailRecipients(input = {}) {
+  await requirePermission("maintenance.manage");
+  try {
+    const recipients = normalizeEmailRecipients(input.recipients);
+    const data = await testStorageMaintenanceEmailRecipientsService({ recipients });
+    return { success: true, data };
+  } catch (error) {
+    return storageMaintenanceFailure(error, "Unable to deliver the maintenance email test.");
   }
 }
 

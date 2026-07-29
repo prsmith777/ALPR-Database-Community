@@ -10,6 +10,7 @@ import {
   replaceStorageMaintenanceWebhookDestination,
   runConfirmedStorageCleanup,
   saveStorageMaintenanceSettings,
+  testStorageMaintenanceEmailRecipients,
   testStorageMaintenanceWebhookDestination,
 } from "@/app/actions";
 import { Badge } from "@/components/ui/badge";
@@ -85,6 +86,8 @@ export default function StorageMaintenancePanel({ overview, canManage }) {
   const [confirmation, setConfirmation] = useState("");
   const [dialogOpen, setDialogOpen] = useState(false);
   const [message, setMessage] = useState(null);
+  const [emailMessage, setEmailMessage] = useState(null);
+  const [webhookMessage, setWebhookMessage] = useState(null);
   const [isPending, startTransition] = useTransition();
 
   const nextExpectedCheck = useMemo(() => {
@@ -128,33 +131,50 @@ export default function StorageMaintenancePanel({ overview, canManage }) {
   }
 
   function replaceWebhook() {
-    setMessage(null);
+    setWebhookMessage(null);
     startTransition(async () => {
       const result = await replaceStorageMaintenanceWebhookDestination({
         webhookUrl: webhookReplacement.trim(),
       });
       if (!result.success) {
-        setMessage({ kind: "error", text: result.error });
+        setWebhookMessage({ kind: "error", text: result.error });
         return;
       }
       setWebhookConfigured(result.data.webhookConfigured === true);
       setWebhookReplacement("");
-      setMessage({ kind: "success", text: "Maintenance webhook destination replaced." });
+      setWebhookMessage({ kind: "success", text: "Maintenance webhook destination replaced." });
       router.refresh();
     });
   }
 
+  function testEmail() {
+    setEmailMessage(null);
+    startTransition(async () => {
+      const result = await testStorageMaintenanceEmailRecipients({
+        recipients: policy.emailRecipients,
+      });
+      if (!result.success) {
+        setEmailMessage({ kind: "error", text: result.error });
+        return;
+      }
+      setEmailMessage({
+        kind: "success",
+        text: `SMTP accepted ${result.data.acceptedCount} test recipient(s); ${result.data.rejectedCount} rejected.`,
+      });
+    });
+  }
+
   function testWebhook() {
-    setMessage(null);
+    setWebhookMessage(null);
     startTransition(async () => {
       const result = await testStorageMaintenanceWebhookDestination({
         webhookUrl: webhookReplacement.trim(),
       });
       if (!result.success) {
-        setMessage({ kind: "error", text: result.error });
+        setWebhookMessage({ kind: "error", text: result.error });
         return;
       }
-      setMessage({
+      setWebhookMessage({
         kind: "success",
         text: result.data.usedSavedDestination
           ? "Test delivered to the saved maintenance webhook destination."
@@ -165,17 +185,17 @@ export default function StorageMaintenancePanel({ overview, canManage }) {
 
   function clearWebhook() {
     if (!window.confirm("Clear the saved maintenance webhook destination and disable webhook maintenance alerts? Queued deliveries will be retired, but a request already in flight may still finish.")) return;
-    setMessage(null);
+    setWebhookMessage(null);
     startTransition(async () => {
       const result = await clearStorageMaintenanceWebhookDestination();
       if (!result.success) {
-        setMessage({ kind: "error", text: result.error });
+        setWebhookMessage({ kind: "error", text: result.error });
         return;
       }
       setWebhookConfigured(false);
       setWebhookReplacement("");
       updatePolicy("webhookEnabled", false);
-      setMessage({ kind: "success", text: "Maintenance webhook destination cleared and alerts disabled." });
+      setWebhookMessage({ kind: "success", text: "Maintenance webhook destination cleared and alerts disabled." });
       router.refresh();
     });
   }
@@ -274,6 +294,14 @@ export default function StorageMaintenancePanel({ overview, canManage }) {
                 </label>
                 <Label htmlFor="storage-alert-recipients">Recipients</Label>
                 <Input id="storage-alert-recipients" type="text" value={policy.emailRecipients} onChange={(event) => updatePolicy("emailRecipients", event.target.value)} placeholder="owner@example.com, ops@example.com" disabled={!canManage || isPending} />
+                <div className="flex flex-wrap gap-2">
+                  <Button type="button" variant="outline" size="sm" onClick={testEmail} disabled={!canManage || isPending || !policy.emailRecipients.trim()}>Test email</Button>
+                </div>
+                {emailMessage && (
+                  <p className={`rounded-md border p-3 text-sm ${noticeClass(emailMessage.kind)}`} role="status">
+                    {emailMessage.text}
+                  </p>
+                )}
               </div>
               <div className="space-y-3 rounded-lg border p-4">
                 <div className="flex items-center justify-between gap-3">
@@ -297,6 +325,11 @@ export default function StorageMaintenancePanel({ overview, canManage }) {
                   <Button type="button" variant="outline" size="sm" onClick={testWebhook} disabled={!canManage || isPending || (!webhookConfigured && !webhookReplacement.trim())}>Test</Button>
                   <Button type="button" variant="outline" size="sm" onClick={clearWebhook} disabled={!canManage || isPending || !webhookConfigured}>Clear</Button>
                 </div>
+                {webhookMessage && (
+                  <p className={`rounded-md border p-3 text-sm ${noticeClass(webhookMessage.kind)}`} role="status">
+                    {webhookMessage.text}
+                  </p>
+                )}
               </div>
             </div>
 
