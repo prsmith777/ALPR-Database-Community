@@ -47,13 +47,13 @@ test("live feed image review advances visibly and starts focused on the plate", 
   assert.match(plateTable, /setIsDeleteConfirmOpen\(true\)/);
   assert.match(plateTable, /<DialogTitle>Confirm Deletion<\/DialogTitle>/);
   assert.match(plateTable, /selectedImage\?\.id === activePlate\.id/);
-  assert.match(plateTable, /className="grid w-full gap-2"/);
+  assert.match(plateTable, /className="flex w-full flex-wrap items-center justify-end gap-1\.5"/);
   assert.match(plateTable, /Show next read \(Right Arrow\)/);
   assert.match(plateTable, /\[role="slider"\]/);
   assert.match(plateTable, /lg:grid-cols-\[minmax\(0,1fr\)_11rem\].*lg:grid-rows-\[minmax\(0,1fr\)_auto\].*lg:overflow-hidden/);
   assert.match(plateTable, /<DialogTitle className="sr-only">[\s\S]*?License Plate Image/);
-  assert.match(plateTable, /className="flex flex-wrap items-center gap-2"/);
-  assert.match(plateTable, /className="ml-auto flex gap-2"/);
+  assert.match(plateTable, /const POPUP_ACTION_BUTTON_CLASS = "h-8 shrink-0 px-2 text-xs"/);
+  assert.match(plateTable, /const POPUP_ACTION_ICON_CLASS = "mr-1 h-3\.5 w-3\.5"/);
   assert.match(imageViewer, /const \[zoom, setZoom\] = useState\(1\)/);
   assert.match(imageViewer, /image\?\.focus_coordinates \|\| image\?\.crop_coordinates \? getFocusZoom\(\) : 1/);
   assert.match(imageViewer, /const midpoint = \(1 \+ getSliderMax\(\)\) \/ 2/);
@@ -246,6 +246,12 @@ test("the image viewer summarizes known-plate and tag associations", async () =>
 
   assert.match(table, />Known plate</);
   assert.match(table, /selectedImage\.knownName \|\| "Not known"/);
+  assert.match(
+    table,
+    />Review status<\/div>[\s\S]*?>Occurrences<\/div>[\s\S]*?>Known plate<\/div>/
+  );
+  assert.match(table, /occurrenceCount: plate\.occurrence_count \?\? null/);
+  assert.match(table, /selectedImage\.occurrenceCount \?\? "—"/);
   assert.match(table, />Tags</);
   assert.match(table, /selectedImage\.tags\.map\(\(tag\)/);
   assert.match(table, /handleSelectedImageAddTag\(tag\)/);

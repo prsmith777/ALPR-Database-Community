@@ -154,6 +154,9 @@ const REVIEW_STATUS_CLASSES = {
   alias_resolved: "border-violet-500/40 text-violet-400",
 };
 
+const POPUP_ACTION_BUTTON_CLASS = "h-8 shrink-0 px-2 text-xs";
+const POPUP_ACTION_ICON_CLASS = "mr-1 h-3.5 w-3.5";
+
 function PlateIdentity({ plate, compact = false }) {
   const status = plate.review_status || (plate.validated ? "confirmed" : "unreviewed");
   const observed = plate.observed_plate || plate.plate_number;
@@ -481,6 +484,7 @@ export default function PlateTable({
       observedPlate: plate.observed_plate || plate.plate_number,
       reviewStatus: plate.review_status || (plate.validated ? "confirmed" : "unreviewed"),
       reviewRevision: plate.review_revision || 0,
+      occurrenceCount: plate.occurrence_count ?? null,
       appliedAliasId: plate.applied_alias_id || null,
       cameraName: plate.camera_name || "",
       knownName: plate.known_name || "",
@@ -639,6 +643,7 @@ export default function PlateTable({
       const selectedReviewRevision = Number(selectedImage.reviewRevision || 0);
       const canSyncReview = currentReviewRevision >= selectedReviewRevision;
       const currentKnownName = currentPlate?.known_name || "";
+      const currentOccurrenceCount = currentPlate?.occurrence_count ?? null;
       const currentTags = Array.isArray(currentPlate?.tags) ? currentPlate.tags : [];
       const selectedImageTags = Array.isArray(selectedImage.tags)
         ? selectedImage.tags
@@ -692,6 +697,7 @@ export default function PlateTable({
             currentReviewStatus !== selectedImage.reviewStatus ||
             currentReviewRevision !== selectedReviewRevision)) ||
           currentKnownName !== selectedImage.knownName ||
+          currentOccurrenceCount !== selectedImage.occurrenceCount ||
           currentTagSignature !== selectedTagSignature ||
           currentDirectionStatus !== selectedImage.directionStatus ||
           currentVehicleOrientation !== selectedImage.vehicleOrientation ||
@@ -729,6 +735,7 @@ export default function PlateTable({
               }
             : {}),
           knownName: currentKnownName,
+          occurrenceCount: currentOccurrenceCount,
           tags: currentTags,
           directionStatus: currentPlate.direction_status || null,
           vehicleOrientation: currentPlate.vehicle_orientation || "unknown",
@@ -2520,7 +2527,7 @@ export default function PlateTable({
             {selectedImage && (
               <div className="contents">
                 <div className="grid min-h-0 grid-rows-[auto_minmax(0,1fr)] gap-3 lg:col-start-1 lg:row-start-1">
-                  <div className="grid gap-3 rounded-lg border p-3 text-sm sm:grid-cols-2 lg:grid-cols-6">
+                  <div className="grid gap-3 rounded-lg border p-3 text-sm sm:grid-cols-2 md:grid-cols-4 lg:grid-cols-7">
                 <div>
                   <div className="text-xs uppercase text-muted-foreground">Observed</div>
                   <div className="font-mono text-lg font-semibold leading-tight">{selectedImage.observedPlate}</div>
@@ -2532,6 +2539,10 @@ export default function PlateTable({
                 <div>
                   <div className="text-xs uppercase text-muted-foreground">Review status</div>
                   <div>{REVIEW_STATUS_LABELS[selectedImage.reviewStatus] || selectedImage.reviewStatus}</div>
+                </div>
+                <div>
+                  <div className="text-xs uppercase text-muted-foreground">Occurrences</div>
+                  <div>{selectedImage.occurrenceCount ?? "—"}</div>
                 </div>
                 <div>
                   <div className="text-xs uppercase text-muted-foreground">Known plate</div>
@@ -2732,28 +2743,27 @@ export default function PlateTable({
               </div>
             )}
             <DialogFooter className="self-end lg:col-start-1 lg:row-start-2">
-              <div className="grid w-full gap-2">
-                <div className="flex flex-wrap items-center gap-2">
-                  {canRead && selectedImage && <Button asChild variant="outline" size="sm" className="text-xs sm:text-sm">
+              <div className="flex w-full flex-wrap items-center justify-end gap-1.5">
+                  {canRead && selectedImage && <Button asChild variant="outline" size="sm" className={POPUP_ACTION_BUTTON_CLASS}>
                     <Link href={`/visual_search?readId=${selectedImage.id}`}>
-                      <ScanSearch className="h-3 w-3 sm:h-4 sm:w-4 mr-1 sm:mr-2" />
+                      <ScanSearch className={POPUP_ACTION_ICON_CLASS} />
                       <span className="whitespace-nowrap">Find similar vehicle</span>
                     </Link>
                   </Button>}
                   {canReview && selectedImage?.vehicleClusterStatus === "suggested" && (
                     <>
-                      <Button variant="outline" size="sm" disabled={Boolean(pendingVehicleReview)} onClick={() => handleVehicleReview("confirm")}>
-                        <CircleCheck className="mr-1 h-3 w-3 sm:h-4 sm:w-4" /> Confirm vehicle
+                      <Button variant="outline" size="sm" className={POPUP_ACTION_BUTTON_CLASS} disabled={Boolean(pendingVehicleReview)} onClick={() => handleVehicleReview("confirm")}>
+                        <CircleCheck className={POPUP_ACTION_ICON_CLASS} /> Confirm vehicle
                       </Button>
-                      <Button variant="outline" size="sm" disabled={Boolean(pendingVehicleReview)} onClick={() => handleVehicleReview("separate")}>
-                        <Split className="mr-1 h-3 w-3 sm:h-4 sm:w-4" /> Different vehicle
+                      <Button variant="outline" size="sm" className={POPUP_ACTION_BUTTON_CLASS} disabled={Boolean(pendingVehicleReview)} onClick={() => handleVehicleReview("separate")}>
+                        <Split className={POPUP_ACTION_ICON_CLASS} /> Different vehicle
                       </Button>
                     </>
                   )}
                   {canReview && <Button
                     variant="outline"
                     size="sm"
-                    className="text-xs sm:text-sm"
+                    className={POPUP_ACTION_BUTTON_CLASS}
                     onClick={() => {
                       setCorrection({
                         id: selectedImage.id,
@@ -2772,26 +2782,26 @@ export default function PlateTable({
                       setIsCorrectPlateOpen(true);
                     }}
                   >
-                    <Edit className="h-3 w-3 sm:h-4 sm:w-4 mr-1 sm:mr-2" />
+                    <Edit className={POPUP_ACTION_ICON_CLASS} />
                     <span className="whitespace-nowrap">Correct Plate</span>
                   </Button>}
                   {canRead && <Button
                     variant="outline"
                     size="sm"
-                    className="text-xs sm:text-sm"
+                    className={POPUP_ACTION_BUTTON_CLASS}
                     onClick={() => openReviewHistory({
                       id: selectedImage.id,
                       plate_number: selectedImage.plateNumber,
                       observed_plate: selectedImage.observedPlate,
                     })}
                   >
-                    <History className="h-3 w-3 sm:h-4 sm:w-4 mr-1 sm:mr-2" />
+                    <History className={POPUP_ACTION_ICON_CLASS} />
                     <span className="whitespace-nowrap">Review History</span>
                   </Button>}
                   {canManageKnownPlates && <Button
                     variant="outline"
                     size="sm"
-                    className="text-xs sm:text-sm"
+                    className={POPUP_ACTION_BUTTON_CLASS}
                     onClick={() => {
                       setActivePlate({
                         ...selectedImage,
@@ -2800,7 +2810,7 @@ export default function PlateTable({
                       setIsAddKnownPlateOpen(true);
                     }}
                   >
-                    <Plus className="h-3 w-3 sm:h-4 sm:w-4 mr-1 sm:mr-2" />
+                    <Plus className={POPUP_ACTION_ICON_CLASS} />
                     <span className="whitespace-nowrap">Add to Known</span>
                   </Button>}
                   {canManageTags && <DropdownMenu>
@@ -2808,9 +2818,9 @@ export default function PlateTable({
                       <Button
                         variant="outline"
                         size="sm"
-                        className="text-xs sm:text-sm"
+                        className={POPUP_ACTION_BUTTON_CLASS}
                       >
-                        <Tag className="h-3 w-3 sm:h-4 sm:w-4 mr-1 sm:mr-2" />
+                        <Tag className={POPUP_ACTION_ICON_CLASS} />
                         Add Tag
                       </Button>
                     </DropdownMenuTrigger>
@@ -2831,23 +2841,21 @@ export default function PlateTable({
                       ))}
                     </DropdownMenuContent>
                   </DropdownMenu>}
-                </div>
-                <div className="flex flex-wrap items-center gap-2">
                     {canReview && <Button
                       variant="outline"
                       size="sm"
                       className={
                         selectedImage?.validated
-                          ? "text-xs sm:text-sm border-green-500/60 bg-green-500/10 text-green-500 hover:bg-green-500/20 hover:text-green-400"
-                          : "text-xs sm:text-sm"
+                          ? `${POPUP_ACTION_BUTTON_CLASS} border-green-500/60 bg-green-500/10 text-green-500 hover:bg-green-500/20 hover:text-green-400`
+                          : POPUP_ACTION_BUTTON_CLASS
                       }
                       onClick={handleSelectedImageValidation}
                       disabled={pendingReviewReadId === selectedImage?.id}
                     >
                       {selectedImage?.validated ? (
-                        <CircleCheck className="h-3 w-3 sm:h-4 sm:w-4 mr-1 sm:mr-2" />
+                        <CircleCheck className={POPUP_ACTION_ICON_CLASS} />
                       ) : (
-                        <Check className="h-3 w-3 sm:h-4 sm:w-4 mr-1 sm:mr-2" />
+                        <Check className={POPUP_ACTION_ICON_CLASS} />
                       )}
                       <span className="whitespace-nowrap">
                         {pendingReviewReadId === selectedImage?.id
@@ -2862,19 +2870,19 @@ export default function PlateTable({
                     <Button
                       variant="outline"
                       size="sm"
-                      className="text-xs sm:text-sm"
+                      className={POPUP_ACTION_BUTTON_CLASS}
                       onClick={handleNextImage}
                       disabled={!hasNextImage || pendingViewerNavigation !== null}
                       aria-label="Show next read in the filtered Live Feed results"
                       title="Show next read (Right Arrow)"
                     >
                       <span className="whitespace-nowrap">Next read</span>
-                      <ChevronRight className="ml-1 h-3 w-3 sm:ml-2 sm:h-4 sm:w-4" />
+                      <ChevronRight className="ml-1 h-3.5 w-3.5" />
                     </Button>
                     {canDelete && <Button
                       variant="outline"
                       size="sm"
-                      className="text-xs text-red-500 hover:text-red-700 sm:text-sm"
+                      className={`${POPUP_ACTION_BUTTON_CLASS} text-red-500 hover:text-red-700`}
                       onClick={() => {
                         setActivePlate({
                           ...selectedImage,
@@ -2885,15 +2893,14 @@ export default function PlateTable({
                       aria-label={`Delete read for ${selectedImage?.plateNumber}`}
                       title="Delete this read"
                     >
-                      <Trash2 className="mr-1 h-3 w-3 sm:mr-2 sm:h-4 sm:w-4" />
+                      <Trash2 className={POPUP_ACTION_ICON_CLASS} />
                       <span className="whitespace-nowrap">Delete</span>
                     </Button>}
-                  <div className="ml-auto flex gap-2">
                   {biHost && selectedImage?.bi_path && (
                     <Button
                       variant="outline"
                       size="sm"
-                      className="text-xs sm:text-sm"
+                      className={POPUP_ACTION_BUTTON_CLASS}
                       onClick={() =>
                         window.open(
                           buildBlueIrisUiUrl(biHost, selectedImage.bi_path),
@@ -2901,21 +2908,19 @@ export default function PlateTable({
                         )
                       }
                     >
-                      <ExternalLink className="h-3 w-3 sm:h-4 sm:w-4 mr-1 sm:mr-2" />
+                      <ExternalLink className={POPUP_ACTION_ICON_CLASS} />
                       <span className="whitespace-nowrap">Blue Iris</span>
                     </Button>
                   )}
                   {canExport && <Button
                     variant="outline"
                     size="sm"
-                    className="text-xs sm:text-sm"
+                    className={POPUP_ACTION_BUTTON_CLASS}
                     onClick={handleDownloadImage}
                   >
-                    <Download className="h-3 w-3 sm:h-4 sm:w-4 mr-1 sm:mr-2" />
+                    <Download className={POPUP_ACTION_ICON_CLASS} />
                     <span className="whitespace-nowrap">Download</span>
                   </Button>}
-                  </div>
-                </div>
               </div>
             </DialogFooter>
           </DialogContent>
