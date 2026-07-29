@@ -89,6 +89,14 @@ const ImageViewer = ({
     onFullscreenChange?.(isFullscreen);
   }, [isFullscreen, onFullscreenChange]);
 
+  useEffect(() => {
+    pointerGestureRef.current = null;
+    suppressImageClickRef.current = false;
+    lastImageClickRef.current = null;
+    dragRef.current = null;
+    setIsDragging(false);
+  }, [isFullscreen]);
+
   useEffect(() => () => onFullscreenChange?.(false), [onFullscreenChange]);
 
   const getFocusFitZoom = useCallback(() => {
@@ -325,7 +333,7 @@ const ImageViewer = ({
 
   const handlePointerCancel = (event) => {
     pointerGestureRef.current = null;
-    suppressImageClickRef.current = true;
+    suppressImageClickRef.current = false;
     lastImageClickRef.current = null;
     endDrag(event);
   };
