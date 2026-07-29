@@ -412,6 +412,7 @@ const ImageViewer = ({
         onPointerUp={handlePointerUp}
         onPointerCancel={handlePointerCancel}
         onClick={handleImageClick}
+        onDoubleClickCapture={fullscreen ? handleCloseFullscreen : undefined}
       >
         <div style={getImageStyle()}>
           <NextImage
