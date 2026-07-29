@@ -47,6 +47,7 @@ import PlateReviewSettings from "./PlateReviewSettings";
 import PushoverUsageCard from "./PushoverUsageCard";
 import ReleaseInformationCard from "./ReleaseInformationCard";
 import StorageHealthCard from "./StorageHealthCard";
+import StorageMaintenancePanel from "./StorageMaintenancePanel";
 import BlueIrisConnectionTest from "./BlueIrisConnectionTest";
 
 export default function SettingsForm({
@@ -54,8 +55,10 @@ export default function SettingsForm({
   initialApiKey,
   initialIdentityState,
   initialStorageHealth,
+  initialStorageMaintenance,
   initialReleaseInfo,
   canManageSettings,
+  canManageMaintenance,
   initialSection,
 }) {
   const [isPending, startTransition] = useTransition(); // For general settings
@@ -665,6 +668,10 @@ export default function SettingsForm({
       </div>
       <div className="max-w-5xl space-y-4">
         <StorageHealthCard snapshot={initialStorageHealth} />
+        <StorageMaintenancePanel
+          overview={initialStorageMaintenance}
+          canManage={canManageMaintenance}
+        />
         <div className="rounded-lg border p-5">
           <h3 className="font-semibold">External reporting is disabled</h3>
           <p className="mt-2 text-sm text-muted-foreground">

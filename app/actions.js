@@ -128,6 +128,13 @@ import {
   getBlueIrisVehicleFrameRuntime,
   wakeBlueIrisVehicleFrameWorker,
 } from "@/lib/blue-iris-vehicle-frame-runtime.mjs";
+import { normalizeEmailRecipients } from "@/lib/email-notifications.mjs";
+import { normalizeWebhookUrl } from "@/lib/webhook-notifications.mjs";
+import {
+  executeStorageCleanup,
+  runStorageMaintenancePreview,
+  updateStorageMaintenanceSettings,
+} from "@/lib/storage-maintenance-service.mjs";
 
 async function readServerActionSessionId() {
   const cookieStore = await cookies();
@@ -1440,6 +1447,104 @@ export async function getSettings() {
   await requirePermission("system.manage_settings");
   const config = await getConfig();
   return sanitizeSettingsForClient(config);
+}
+
+function storageMaintenanceFailure(error, fallback) {
+  const candidate = String(error?.message || "").trim().slice(0, 1000);
+  const safeMessages = [
+    /^Warning must be at least 1%/,
+    /^Enter at least one email recipient$/,
+    /^Enter no more than \d+ valid email recipients$/,
+    /^Enter a valid webhook URL$/,
+    /^Webhook URLs must use HTTP\(S\)/,
+    /^Enter a webhook URL before enabling maintenance webhooks\.$/,
+    /^Type DELETE DERIVED ORPHANS to confirm cleanup$/,
+    /^Cleanup preview token is invalid or has already been used$/,
+    /^Cleanup preview token has expired$/,
+    /^Cleanup confirmation does not match this preview$/,
+    /^Another storage cleanup operation is already running$/,
+  ];
+  if (!safeMessages.some((pattern) => pattern.test(candidate))) {
+    console.error("Storage maintenance action failed", {
+      error: candidate || String(error?.name || "Error"),
+    });
+  }
+  return {
+    success: false,
+    error: safeMessages.some((pattern) => pattern.test(candidate))
+      ? candidate
+      : fallback,
+  };
+}
+
+export async function saveStorageMaintenanceSettings(input = {}) {
+  const principal = await requirePermission("maintenance.manage");
+  try {
+    const warningPercent = Number(input.warningPercent);
+    const criticalPercent = Number(input.criticalPercent);
+    if (
+      !Number.isFinite(warningPercent) ||
+      !Number.isFinite(criticalPercent) ||
+      warningPercent < 1 ||
+      criticalPercent > 99.9 ||
+      warningPercent >= criticalPercent
+    ) {
+      throw new Error("Warning must be at least 1% and lower than the critical threshold.");
+    }
+    const emailRecipients = input.emailRecipients?.length || input.emailEnabled
+      ? normalizeEmailRecipients(input.emailRecipients)
+      : [];
+    const webhookUrl = input.webhookUrl
+      ? normalizeWebhookUrl(input.webhookUrl).toString()
+      : "";
+    if (input.webhookEnabled && !webhookUrl) {
+      throw new Error("Enter a webhook URL before enabling maintenance webhooks.");
+    }
+    const data = await updateStorageMaintenanceSettings({
+      actor: principal,
+      input: {
+        ...input,
+        warningPercent,
+        criticalPercent,
+        emailEnabled: input.emailEnabled === true,
+        emailRecipients,
+        webhookEnabled: input.webhookEnabled === true,
+        webhookUrl,
+        cleanupEnabled: false,
+        automaticCategories: [],
+      },
+    });
+    revalidatePath("/settings/data-privacy");
+    return { success: true, data };
+  } catch (error) {
+    return storageMaintenanceFailure(error, "Unable to save storage maintenance settings.");
+  }
+}
+
+export async function previewStorageCleanup() {
+  const principal = await requirePermission("maintenance.manage");
+  try {
+    const data = await runStorageMaintenancePreview({ actor: principal });
+    revalidatePath("/settings/data-privacy");
+    return { success: true, data };
+  } catch (error) {
+    return storageMaintenanceFailure(error, "Unable to create a storage cleanup preview.");
+  }
+}
+
+export async function runConfirmedStorageCleanup(input = {}) {
+  const principal = await requirePermission("maintenance.manage");
+  try {
+    const data = await executeStorageCleanup({
+      actor: principal,
+      previewToken: String(input.previewToken || ""),
+      confirmation: String(input.confirmation || ""),
+    });
+    revalidatePath("/settings/data-privacy");
+    return { success: true, data };
+  } catch (error) {
+    return storageMaintenanceFailure(error, "Unable to run storage cleanup.");
+  }
 }
 
 export async function testBlueIrisConnection() {

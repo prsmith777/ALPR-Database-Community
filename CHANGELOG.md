@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- Added configurable storage warning/critical thresholds, exact source,
+  thumbnail, derived-image, database, Docker, and backup breakdowns, durable
+  maintenance run/heartbeat/failure reporting, rate-limited SMTP and signed
+  webhook maintenance alerts, and a typed-confirmation manual cleanup limited
+  to reconciliation-confirmed generated derived-file orphans. Automatic
+  cleanup remains disabled with no approved automatic categories.
+
 - Strengthen Blue Iris best-vehicle-frame selection so edge-adjacent detections no longer stop the search early, and add a bounded sparse fallback through 16 seconds when the initial timeline still lacks a clearly framed vehicle.
 
 - Replace the Blue Iris best-frame selector's size-heavy ranking with

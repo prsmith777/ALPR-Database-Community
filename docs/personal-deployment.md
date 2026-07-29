@@ -73,6 +73,41 @@ healthy result. Report the deployed commit.
 Synthetic fixtures are managed independently. Check their status when they
 are relevant, but never load or clear fixtures as part of deployment.
 
+### Optional host storage snapshot
+
+The application measures source images, thumbnails, generated vehicle images,
+and PostgreSQL without host-control access. Docker and rollback-backup totals
+are accepted only from a current schema-versioned JSON snapshot mounted
+read-only into the app container and named by `STORAGE_HOST_SNAPSHOT_PATH`.
+Leave that variable blank when no restricted host collector is installed; the
+Data & Privacy page will label Docker and backups unavailable.
+
+The snapshot contract is:
+
+```json
+{
+  "schemaVersion": 1,
+  "measuredAt": "2026-07-29T18:00:00.000Z",
+  "docker": {
+    "imagesBytes": 0,
+    "containersBytes": 0,
+    "buildCacheBytes": 0,
+    "totalBytes": 0
+  },
+  "backups": {
+    "bytes": 0,
+    "count": 0,
+    "latestVerifiedAt": null
+  }
+}
+```
+
+Write snapshots atomically with restrictive ownership and permissions. Mount
+only the resulting file read-only. Do not give the application the Docker
+socket, a privileged container, or writable access to backup/release trees.
+Docker volumes are excluded from `totalBytes` to avoid double-counting the
+application storage and PostgreSQL categories.
+
 ### 3. Accept staging
 
 Exercise the changed screens and important existing workflows. Check browser

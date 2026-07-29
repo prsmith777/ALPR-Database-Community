@@ -34,6 +34,7 @@ This project serves as a complement to a CodeProject Blue Iris setup, giving you
 - Categorization and filtering
 - Store information on known vehicles
 - Unified MQTT, Pushover, email, and signed webhook notifications
+- Storage thresholds, category breakdowns, maintenance status, and guarded cleanup previews
 - Automation rules
 - Customizable tagging
 - Configurable retention

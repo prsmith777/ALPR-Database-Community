@@ -21,11 +21,12 @@ export async function registerNodeInstrumentation({
   loadVehicleFrameStartup = () => import("./lib/blue-iris-vehicle-frame-startup.mjs"),
   loadNotificationStartup = () => import("./lib/notification-operations-startup.mjs"),
   loadMaintenanceStartup = () => import("./lib/maintenance-startup.mjs"),
+  loadStorageMonitorStartup = () => import("./lib/storage-maintenance-monitor-startup.mjs"),
 } = {}) {
-  if (typeof startMqtt !== "function" || typeof loadVisualStartup !== "function" || typeof loadVehicleFrameStartup !== "function" || typeof loadNotificationStartup !== "function" || typeof loadMaintenanceStartup !== "function") {
+  if (typeof startMqtt !== "function" || typeof loadVisualStartup !== "function" || typeof loadVehicleFrameStartup !== "function" || typeof loadNotificationStartup !== "function" || typeof loadMaintenanceStartup !== "function" || typeof loadStorageMonitorStartup !== "function") {
     throw new Error("Node instrumentation loaders must be functions");
   }
-  const [mqttResult, visualResult, vehicleFrameResult, notificationResult, maintenanceResult] = await Promise.allSettled([
+  const [mqttResult, visualResult, vehicleFrameResult, notificationResult, maintenanceResult, storageMonitorResult] = await Promise.allSettled([
     startMqtt({ logger }),
     (async () => {
       const visualStartup = await loadVisualStartup();
@@ -55,6 +56,13 @@ export async function registerNodeInstrumentation({
       }
       return startup.startMaintenanceRuntimeWithRetry({ logger });
     })(),
+    (async () => {
+      const startup = await loadStorageMonitorStartup();
+      if (typeof startup?.startStorageMaintenanceMonitorWithRetry !== "function") {
+        throw new Error("Storage maintenance monitor startup module did not expose startStorageMaintenanceMonitorWithRetry()");
+      }
+      return startup.startStorageMaintenanceMonitorWithRetry({ logger });
+    })(),
   ]);
   const normalizeResult = (result, name) => {
     if (result.status === "fulfilled") return result.value;
@@ -73,8 +81,9 @@ export async function registerNodeInstrumentation({
   const vehicleFrames = normalizeResult(vehicleFrameResult, "Blue Iris vehicle frames");
   const notificationOperations = normalizeResult(notificationResult, "Notification operations");
   const maintenance = normalizeResult(maintenanceResult, "Maintenance");
+  const storageMonitor = normalizeResult(storageMonitorResult, "Storage maintenance monitor");
   return {
-    status: mqtt.status === "started" && visualIndex.status === "started" && vehicleFrames.status === "started" && notificationOperations.status === "started" && maintenance.status === "started"
+    status: mqtt.status === "started" && visualIndex.status === "started" && vehicleFrames.status === "started" && notificationOperations.status === "started" && maintenance.status === "started" && storageMonitor.status === "started"
       ? "started"
       : "partial",
     mqtt,
@@ -82,5 +91,6 @@ export async function registerNodeInstrumentation({
     vehicleFrames,
     notificationOperations,
     maintenance,
+    storageMonitor,
   };
 }
