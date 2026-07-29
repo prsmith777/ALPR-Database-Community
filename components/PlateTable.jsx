@@ -154,9 +154,9 @@ const REVIEW_STATUS_CLASSES = {
   alias_resolved: "border-violet-500/40 text-violet-400",
 };
 
-const POPUP_ACTION_BUTTON_CLASS =
-  "h-7 shrink-0 gap-1 px-1.5 text-[11px] sm:h-8 sm:px-2 sm:text-xs";
-const POPUP_ACTION_ICON_CLASS = "h-3.5 w-3.5 shrink-0";
+const POPUP_ACTION_BUTTON_CLASS = "h-8 shrink-0 px-2 text-xs";
+const POPUP_ACTION_ICON_CLASS = "mr-1 h-3.5 w-3.5 shrink-0";
+const TABLE_ACTION_BUTTON_CLASS = "h-8 w-8 p-0";
 
 function correctionImageFromRead(plate) {
   let url = null;
@@ -1946,7 +1946,7 @@ export default function PlateTable({
                       onSort={onSort}
                     />
                   </TableHead>
-                  <TableHead className="w-32 text-right hidden sm:table-cell">
+                  <TableHead className="hidden w-px whitespace-nowrap px-2 text-right sm:table-cell">
                     Actions
                   </TableHead>
                 </TableRow>
@@ -2045,8 +2045,8 @@ export default function PlateTable({
                         })}
                       </TableCell>
 
-                      <TableCell className="hidden sm:table-cell">
-                        <div className="flex space-x-2 justify-end">
+                      <TableCell className="hidden w-px whitespace-nowrap px-2 sm:table-cell">
+                        <div className="flex justify-end gap-0.5">
                           {canManageTags && <DropdownMenu>
                             <Tooltip>
                               <TooltipTrigger asChild>
@@ -2054,6 +2054,7 @@ export default function PlateTable({
                                   <Button
                                     variant="ghost"
                                     size="icon"
+                                    className={TABLE_ACTION_BUTTON_CLASS}
                                     aria-label={`Add tag to ${plate.plate_number}`}
                                   >
                                     <Tag className="h-4 w-4" />
@@ -2086,6 +2087,7 @@ export default function PlateTable({
                               <Button
                                 variant="ghost"
                                 size="icon"
+                                className={TABLE_ACTION_BUTTON_CLASS}
                                 aria-label={`Add ${plate.plate_number} to known plates`}
                                 onClick={() => {
                                   setActivePlate(plate);
@@ -2102,6 +2104,7 @@ export default function PlateTable({
                               <Button
                                 variant="ghost"
                                 size="icon"
+                                className={TABLE_ACTION_BUTTON_CLASS}
                                 aria-label={`Correct plate ${plate.plate_number}`}
                                 onClick={() => {
                                   setCorrection(correctionDraft({
@@ -2124,6 +2127,7 @@ export default function PlateTable({
                               <Button
                                 variant="ghost"
                                 size="icon"
+                                className={TABLE_ACTION_BUTTON_CLASS}
                                 aria-label={`Review history for ${plate.plate_number}`}
                                 onClick={() => openReviewHistory(plate)}
                               >
@@ -2138,6 +2142,7 @@ export default function PlateTable({
                                 <Button
                                   variant="ghost"
                                   size="icon"
+                                  className={TABLE_ACTION_BUTTON_CLASS}
                                   aria-label={`Open ${plate.plate_number} in Blue Iris`}
                                   onClick={() =>
                                     window.open(
@@ -2164,6 +2169,7 @@ export default function PlateTable({
                                   <Button
                                     variant="ghost"
                                     size="icon"
+                                    className={TABLE_ACTION_BUTTON_CLASS}
                                     aria-label="Blue Iris link unavailable"
                                     disabled
                                   >
@@ -2186,8 +2192,8 @@ export default function PlateTable({
                                 } ${plate.plate_number}`}
                                 className={
                                   plate?.validated
-                                    ? "text-green-500 hover:text-green-700"
-                                    : ""
+                                    ? `${TABLE_ACTION_BUTTON_CLASS} text-green-500 hover:text-green-700`
+                                    : TABLE_ACTION_BUTTON_CLASS
                                 }
                                 onClick={() => {
                                   onValidate(plate.id, !plate.validated);
@@ -2212,7 +2218,7 @@ export default function PlateTable({
                               <Button
                                 variant="ghost"
                                 size="icon"
-                                className="text-red-500 hover:text-red-700"
+                                className={`${TABLE_ACTION_BUTTON_CLASS} text-red-500 hover:text-red-700`}
                                 aria-label={`Delete record for ${plate.plate_number}`}
                                 onClick={() => {
                                   setActivePlate(plate);
@@ -2772,8 +2778,8 @@ export default function PlateTable({
               </div>
             )}
             <DialogFooter className="self-end lg:col-start-1 lg:row-start-2">
-              <div className="grid w-full gap-1.5">
-                <div className="flex flex-wrap items-center justify-end gap-1 sm:gap-1.5">
+              <div className="grid w-full gap-3">
+                <div className="flex flex-wrap items-center gap-2">
                   {canRead && selectedImage && <Button
                     asChild
                     variant="outline"
@@ -2784,7 +2790,7 @@ export default function PlateTable({
                   >
                     <Link href={`/visual_search?readId=${selectedImage.id}`}>
                       <ScanSearch className={POPUP_ACTION_ICON_CLASS} />
-                      <span className="whitespace-nowrap">Similar</span>
+                      <span className="whitespace-nowrap">Find similar vehicle</span>
                     </Link>
                   </Button>}
                   {canReview && selectedImage?.vehicleClusterStatus === "suggested" && (
@@ -2798,7 +2804,7 @@ export default function PlateTable({
                         aria-label="Confirm suggested vehicle match"
                         title="Confirm suggested vehicle match"
                       >
-                        <CircleCheck className={POPUP_ACTION_ICON_CLASS} /> Accept
+                        <CircleCheck className={POPUP_ACTION_ICON_CLASS} /> Confirm vehicle
                       </Button>
                       <Button
                         variant="outline"
@@ -2809,7 +2815,7 @@ export default function PlateTable({
                         aria-label="Mark as a different vehicle"
                         title="Mark as a different vehicle"
                       >
-                        <Split className={POPUP_ACTION_ICON_CLASS} /> Separate
+                        <Split className={POPUP_ACTION_ICON_CLASS} /> Different vehicle
                       </Button>
                     </>
                   )}
@@ -2835,7 +2841,7 @@ export default function PlateTable({
                     }}
                   >
                     <Edit className={POPUP_ACTION_ICON_CLASS} />
-                    <span className="whitespace-nowrap">Correct</span>
+                    <span className="whitespace-nowrap">Correct Plate</span>
                   </Button>}
                   {canRead && <Button
                     variant="outline"
@@ -2850,7 +2856,7 @@ export default function PlateTable({
                     })}
                   >
                     <History className={POPUP_ACTION_ICON_CLASS} />
-                    <span className="whitespace-nowrap">History</span>
+                    <span className="whitespace-nowrap">Review History</span>
                   </Button>}
                   {canManageKnownPlates && <Button
                     variant="outline"
@@ -2867,7 +2873,7 @@ export default function PlateTable({
                     }}
                   >
                     <Plus className={POPUP_ACTION_ICON_CLASS} />
-                    <span className="whitespace-nowrap">Known</span>
+                    <span className="whitespace-nowrap">Add to Known</span>
                   </Button>}
                   {canManageTags && <DropdownMenu>
                     <DropdownMenuTrigger asChild>
@@ -2879,7 +2885,7 @@ export default function PlateTable({
                         title="Add a tag"
                       >
                         <Tag className={POPUP_ACTION_ICON_CLASS} />
-                        Tag
+                        Add Tag
                       </Button>
                     </DropdownMenuTrigger>
                     <DropdownMenuContent>
@@ -2900,8 +2906,9 @@ export default function PlateTable({
                     </DropdownMenuContent>
                   </DropdownMenu>}
                 </div>
-                <div className="flex flex-wrap items-center justify-end gap-1 sm:gap-1.5">
-                  {canReview && <Button
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div className="flex flex-wrap items-center gap-2">
+                    {canReview && <Button
                       variant="outline"
                       size="sm"
                       className={
@@ -2925,8 +2932,8 @@ export default function PlateTable({
                             ? "Confirming..."
                             : "Reopening..."
                           : selectedImage?.validated
-                            ? "Reopen"
-                            : "Confirm"}
+                            ? "Reopen review"
+                            : "Confirm detected plate"}
                       </span>
                     </Button>}
                     <Button
@@ -2938,7 +2945,7 @@ export default function PlateTable({
                       aria-label="Show next read in the filtered Live Feed results"
                       title="Show next read (Right Arrow)"
                     >
-                      <span className="whitespace-nowrap">Next</span>
+                      <span className="whitespace-nowrap">Next read</span>
                       <ChevronRight className="ml-1 h-3.5 w-3.5" />
                     </Button>
                     {canDelete && <Button
@@ -2958,6 +2965,8 @@ export default function PlateTable({
                       <Trash2 className={POPUP_ACTION_ICON_CLASS} />
                       <span className="whitespace-nowrap">Delete</span>
                     </Button>}
+                  </div>
+                  <div className="ml-auto flex flex-wrap items-center gap-2">
                   {biHost && selectedImage?.bi_path && (
                     <Button
                       variant="outline"
@@ -2973,7 +2982,7 @@ export default function PlateTable({
                       }
                     >
                       <ExternalLink className={POPUP_ACTION_ICON_CLASS} />
-                      <span className="whitespace-nowrap">BI</span>
+                      <span className="whitespace-nowrap">Blue Iris</span>
                     </Button>
                   )}
                   {canExport && <Button
@@ -2987,6 +2996,7 @@ export default function PlateTable({
                     <Download className={POPUP_ACTION_ICON_CLASS} />
                     <span className="whitespace-nowrap">Download</span>
                   </Button>}
+                  </div>
                 </div>
               </div>
             </DialogFooter>

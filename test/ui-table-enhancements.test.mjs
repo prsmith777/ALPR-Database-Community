@@ -39,7 +39,7 @@ test("live feed image review advances visibly and starts focused on the plate", 
   assert.match(plateTable, /onClick=\{handleNextImage\}/);
   assert.match(plateTable, /onViewerPageChange/);
   assert.doesNotMatch(plateTable, /\(selectedIndex \+ 1\) % data\.length/);
-  assert.match(plateTable, />Next</);
+  assert.match(plateTable, />Next read</);
   assert.match(plateTable, /Retry vehicle view/);
   assert.match(plateTable, /retryBlueIrisVehicleFrameForRead/);
   assert.match(plateTable, /Failed after \$\{selectedImage\.vehicleImageAttemptCount \|\| 3\} attempts/);
@@ -47,21 +47,20 @@ test("live feed image review advances visibly and starts focused on the plate", 
   assert.match(plateTable, /setIsDeleteConfirmOpen\(true\)/);
   assert.match(plateTable, /<DialogTitle>Confirm Deletion<\/DialogTitle>/);
   assert.match(plateTable, /selectedImage\?\.id === activePlate\.id/);
-  assert.match(plateTable, /className="grid w-full gap-1\.5"/);
-  assert.equal(
-    [...plateTable.matchAll(/className="flex flex-wrap items-center justify-end gap-1 sm:gap-1\.5"/g)].length,
-    2
-  );
+  assert.match(plateTable, /className="grid w-full gap-3"/);
+  assert.match(plateTable, /className="flex flex-wrap items-center gap-2"/);
+  assert.match(plateTable, /className="flex flex-wrap items-center justify-between gap-2"/);
+  assert.match(plateTable, /className="ml-auto flex flex-wrap items-center gap-2"/);
   assert.match(plateTable, /Show next read \(Right Arrow\)/);
   assert.match(plateTable, /\[role="slider"\]/);
   assert.match(plateTable, /lg:grid-cols-\[minmax\(0,1fr\)_11rem\].*lg:grid-rows-\[minmax\(0,1fr\)_auto\].*lg:overflow-hidden/);
   assert.match(plateTable, /<DialogTitle className="sr-only">[\s\S]*?License Plate Image/);
-  assert.match(plateTable, /"h-7 shrink-0 gap-1 px-1\.5 text-\[11px\] sm:h-8 sm:px-2 sm:text-xs"/);
-  assert.match(plateTable, /const POPUP_ACTION_ICON_CLASS = "h-3\.5 w-3\.5 shrink-0"/);
-  assert.match(plateTable, /aria-label="Find similar vehicle"[\s\S]*?>Similar</);
-  assert.match(plateTable, /aria-label="Correct detected plate"[\s\S]*?>Correct</);
-  assert.match(plateTable, /aria-label="Open review history"[\s\S]*?>History</);
-  assert.match(plateTable, /aria-label="Open recording in Blue Iris"[\s\S]*?>BI</);
+  assert.match(plateTable, /const POPUP_ACTION_BUTTON_CLASS = "h-8 shrink-0 px-2 text-xs"/);
+  assert.match(plateTable, /const POPUP_ACTION_ICON_CLASS = "mr-1 h-3\.5 w-3\.5 shrink-0"/);
+  assert.match(plateTable, /aria-label="Find similar vehicle"[\s\S]*?>Find similar vehicle</);
+  assert.match(plateTable, /aria-label="Correct detected plate"[\s\S]*?>Correct Plate</);
+  assert.match(plateTable, /aria-label="Open review history"[\s\S]*?>Review History</);
+  assert.match(plateTable, /aria-label="Open recording in Blue Iris"[\s\S]*?>Blue Iris</);
   assert.match(imageViewer, /const \[zoom, setZoom\] = useState\(1\)/);
   assert.match(imageViewer, /image\?\.focus_coordinates \|\| image\?\.crop_coordinates \? getFocusZoom\(\) : 1/);
   assert.match(imageViewer, /const midpoint = \(1 \+ getSliderMax\(\)\) \/ 2/);
@@ -87,6 +86,20 @@ test("live feed image review advances visibly and starts focused on the plate", 
   assert.match(plateTable, /max-w-7xl gap-3 overflow-y-auto p-3/);
   assert.match(plateTable, /lg:col-start-2 lg:row-span-2 lg:row-start-1/);
   assert.match(plateTable, /<DialogFooter className="self-end lg:col-start-1 lg:row-start-2">/);
+});
+
+test("records table keeps its action controls compact at the right edge", async () => {
+  const plateTable = await source("components/PlateTable.jsx");
+
+  assert.match(plateTable, /const TABLE_ACTION_BUTTON_CLASS = "h-8 w-8 p-0"/);
+  assert.match(
+    plateTable,
+    /<TableHead className="hidden w-px whitespace-nowrap px-2 text-right sm:table-cell">\s*Actions/
+  );
+  assert.match(
+    plateTable,
+    /<TableCell className="hidden w-px whitespace-nowrap px-2 sm:table-cell">\s*<div className="flex justify-end gap-0\.5">/
+  );
 });
 
 test("plate correction opens with an editable caret instead of selected text", async () => {
