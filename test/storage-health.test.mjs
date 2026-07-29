@@ -123,17 +123,26 @@ test("storage health degrades to partial read-only results when database probes 
   assert.match(snapshot.errors[0], /Database and image-asset measurements/);
 });
 
-test("the administrator storage view is explicitly read-only and has no cleanup controls", async () => {
-  const [page, settings, card] = await Promise.all([
+test("storage measurement stays read-only while maintenance controls are separate and permissioned", async () => {
+  const [page, settings, card, controls, actions] = await Promise.all([
     readFile(new URL("../app/settings/SettingsSectionPage.jsx", import.meta.url), "utf8"),
     readFile(new URL("../app/settings/SettingsForm.jsx", import.meta.url), "utf8"),
     readFile(new URL("../app/settings/StorageHealthCard.jsx", import.meta.url), "utf8"),
+    readFile(new URL("../app/settings/StorageMaintenancePanel.jsx", import.meta.url), "utf8"),
+    readFile(new URL("../app/actions.js", import.meta.url), "utf8"),
   ]);
 
-  assert.match(page, /canManageSettings \? getStorageHealth\(\)/);
+  assert.match(page, /canManageSettings \? getStorageMaintenanceOverview\(\)/);
   assert.match(settings, /<StorageHealthCard snapshot=\{initialStorageHealth\} \/>/);
+  assert.match(settings, /<StorageMaintenancePanel/);
   assert.match(card, /Read only/);
   assert.match(card, /cannot delete or modify data/i);
-  assert.match(card, /No cleanup is performed from this page/);
+  assert.match(card, /Measurement never performs cleanup/);
   assert.doesNotMatch(card, /onClick=.*(?:delete|prune|vacuum|cleanup)/i);
+  assert.match(controls, /Run cleanup preview/);
+  assert.match(controls, /Review and confirm cleanup/);
+  assert.match(controls, /Automatic cleanup is disabled/);
+  assert.match(actions, /saveStorageMaintenanceSettings[\s\S]*?requirePermission\("maintenance\.manage"\)/);
+  assert.match(actions, /previewStorageCleanup[\s\S]*?requirePermission\("maintenance\.manage"\)/);
+  assert.match(actions, /runConfirmedStorageCleanup[\s\S]*?requirePermission\("maintenance\.manage"\)/);
 });

@@ -17,6 +17,7 @@ import {
   classifyAddress,
   sendWebhookNotification,
   validateWebhookDestination,
+  webhookNotificationInternals,
   webhookConfigurationState,
 } from "../lib/webhook-notifications.mjs";
 
@@ -170,6 +171,46 @@ test("webhook target policy blocks loopback and private networks unless explicit
   });
   assert.equal(allowed.hostname, "192.168.0.20");
   assert.equal(webhookConfigurationState({ enabled: true, signing_secret: "secret" }).configured, true);
+});
+
+test("webhook delivery pins the validated DNS answer for the actual connection", async () => {
+  const lookups = [];
+  let pinnedLookup;
+  const result = await sendWebhookNotification({
+    config: { enabled: true, signing_secret: "secret" },
+    payload: { url: "https://alerts.example.com/hook", body: { ok: true } },
+    lookupImpl: async (hostname) => {
+      lookups.push(hostname);
+      return [{ address: "8.8.8.8", family: 4 }];
+    },
+    requestImpl(_url, options, onResponse) {
+      pinnedLookup = options.lookup;
+      const handlers = {};
+      return {
+        setTimeout() {},
+        on(name, handler) { handlers[name] = handler; },
+        end() {
+          onResponse({
+            statusCode: 204,
+            headers: {},
+            resume() {},
+          });
+        },
+        destroy(error) { handlers.error?.(error); },
+      };
+    },
+  });
+  assert.equal(result.status, 204);
+  assert.deepEqual(lookups, ["alerts.example.com"]);
+  await new Promise((resolve, reject) => {
+    pinnedLookup("alerts.example.com", {}, (error, address, family) => {
+      if (error) return reject(error);
+      assert.equal(address, "8.8.8.8");
+      assert.equal(family, 4);
+      resolve();
+    });
+  });
+  assert.equal(typeof webhookNotificationInternals.resolveWebhookDestination, "function");
 });
 
 test("the notification worker delivers queued email and webhook jobs through the shared attempt contract", async () => {

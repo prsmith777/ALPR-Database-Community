@@ -240,29 +240,44 @@ Operational behavior:
 
 ### Phase 4 — Operations, storage, and updates
 
-**Partially delivered:** the administrator-only, read-only Storage Health view
-provides direct filesystem/database measurements, bounded count queries, a
-120-read asset-size sample, and clearly labeled growth projections. It reports
-index-confirmed missing sources and records without image paths separately.
-Retention and record-limit planning now runs outside ingestion in a scheduled,
-PostgreSQL-lock-protected single-flight worker. The first rollout is strictly
-dry-run: Storage Health reports the last result and next run, while database
-rows and files remain untouched. Bounded, resumable filesystem reconciliation
-now inventories the approved image, thumbnail, and derived roots; records exact
-orphaned-file and missing-reference paths; defers post-snapshot files; and
-reports progress, totals, bytes, errors, and a review sample in Storage Health.
-It exposes no destructive maintenance action. Settings now also includes a
-read-only Release view for the application version, build- or
-deployment-provided Git SHA, release channel, and local release notes. Updates
-remain externally orchestrated.
+**Partially delivered:** the administrator Storage Health view provides direct
+filesystem/database measurements, exact source-image, thumbnail, and derived
+asset totals, configurable warning/critical thresholds, and clearly labeled
+growth projections. It reports index-confirmed missing sources and records
+without image paths separately. Retention and record-limit planning runs
+outside ingestion in a scheduled, PostgreSQL-lock-protected single-flight
+worker. Bounded, resumable filesystem reconciliation inventories the approved
+image, thumbnail, and derived roots; records exact orphaned-file and
+missing-reference paths; defers post-snapshot files; and reports progress,
+totals, bytes, errors, and a review sample.
+
+Storage maintenance now records run status, duration, reclaimed space,
+scheduler heartbeat, next run, failures, and rate-limited SMTP/signed-webhook
+alert state. Administrators can request a safe preview and separately confirm
+a manual cleanup of generated `derived/` files that remain unreferenced after
+an execution-time database and filesystem identity check. Automatic cleanup
+ships disabled with no approved categories. Source images, thumbnails,
+database rows, referenced captures, Docker objects, current releases, and
+verified rollback backups have no application deletion path. Docker and backup
+measurements use an optional stale-checked read-only host snapshot; the app
+never receives the Docker socket or writable backup access.
+
+Settings also includes a read-only Release view for the application version,
+build- or deployment-provided Git SHA, release channel, and local release
+notes. Updates remain externally orchestrated.
 
 - Delivered foundation: move retention and record planning out of ingest into
   a scheduled, single-flight, dry-run-only maintenance worker with durable
   status reporting.
 - Delivered foundation: bounded, reviewable, read-only filesystem
   reconciliation with durable exact orphan/missing-reference inventory.
-- Add safe reconcile, prune, `VACUUM ANALYZE`, backup, restore-preflight, and
-  backup-verification jobs. Do not expose an arbitrary SQL or shell console.
+- Delivered foundation: configurable capacity thresholds, exact application
+  storage categories, maintenance run/heartbeat visibility, durable
+  rate-limited alerts, and confirmed manual cleanup limited to regenerated
+  unreferenced derived assets.
+- Add separately approved automatic cleanup categories, `VACUUM ANALYZE`,
+  backup, restore-preflight, and backup-verification jobs. Do not expose an
+  arbitrary SQL or shell console.
 - Delivered foundation: display the current version, build- or
   deployment-provided Git SHA, release channel, and local release notes without
   host-control actions.

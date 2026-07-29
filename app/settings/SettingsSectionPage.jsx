@@ -8,7 +8,7 @@ import {
 } from "@/app/actions";
 import { getAuthConfig } from "@/lib/auth";
 import { getReleaseInfo } from "@/lib/release-info.mjs";
-import { getStorageHealth } from "@/lib/storage-health-runtime.mjs";
+import { getStorageMaintenanceOverview } from "@/lib/storage-maintenance-service.mjs";
 
 const ADMIN_SECTIONS = new Set([
   "general",
@@ -31,6 +31,8 @@ export default async function SettingsSectionPage({ sectionId }) {
     !mustChangePassword && access.permissions.includes("system.manage_settings");
   const canManageUsers =
     !mustChangePassword && access.permissions.includes("system.manage_users");
+  const canManageMaintenance =
+    !mustChangePassword && access.permissions.includes("maintenance.manage");
   if (!canManageSettings && ADMIN_SECTIONS.has(sectionId)) {
     redirect("/settings/security");
   }
@@ -41,13 +43,13 @@ export default async function SettingsSectionPage({ sectionId }) {
     currentUser: access.currentUser,
     canManageUsers: false,
   };
-  const [settings, authConfig, identityState, storageHealth] = await Promise.all([
+  const [settings, authConfig, identityState, storageMaintenance] = await Promise.all([
     canManageSettings ? getSettings() : Promise.resolve(null),
     canManageSettings ? getAuthConfig() : Promise.resolve({ apiKey: "" }),
     canManageUsers
       ? getIdentityAdminState()
       : Promise.resolve(personalIdentityState),
-    canManageSettings ? getStorageHealth() : Promise.resolve(null),
+    canManageSettings ? getStorageMaintenanceOverview() : Promise.resolve(null),
   ]);
 
   if (canManageSettings && !settings) {
@@ -59,9 +61,11 @@ export default async function SettingsSectionPage({ sectionId }) {
       initialSettings={settings}
       initialApiKey={authConfig.apiKey || ""}
       initialIdentityState={identityState}
-      initialStorageHealth={storageHealth}
+      initialStorageHealth={storageMaintenance?.health || null}
+      initialStorageMaintenance={storageMaintenance}
       initialReleaseInfo={getReleaseInfo()}
       canManageSettings={canManageSettings}
+      canManageMaintenance={canManageMaintenance}
       initialSection={sectionId}
     />
   );

@@ -177,6 +177,7 @@ test("Node instrumentation starts MQTT and automatic visual indexing together", 
   let vehicleFrameCalls = 0;
   let notificationCalls = 0;
   let maintenanceCalls = 0;
+  let storageMonitorCalls = 0;
   const result = await registerNodeInstrumentation({
     logger,
     async startMqtt(options) {
@@ -220,6 +221,15 @@ test("Node instrumentation starts MQTT and automatic visual indexing together", 
         },
       };
     },
+    async loadStorageMonitorStartup() {
+      return {
+        async startStorageMaintenanceMonitorWithRetry(options) {
+          storageMonitorCalls += 1;
+          assert.equal(options.logger, logger);
+          return { status: "started" };
+        },
+      };
+    },
   });
   assert.equal(result.status, "started");
   assert.equal(result.mqtt.status, "started");
@@ -227,11 +237,13 @@ test("Node instrumentation starts MQTT and automatic visual indexing together", 
   assert.equal(result.vehicleFrames.status, "started");
   assert.equal(result.notificationOperations.status, "started");
   assert.equal(result.maintenance.status, "started");
+  assert.equal(result.storageMonitor.status, "started");
   assert.equal(mqttCalls, 1);
   assert.equal(visualCalls, 1);
   assert.equal(vehicleFrameCalls, 1);
   assert.equal(notificationCalls, 1);
   assert.equal(maintenanceCalls, 1);
+  assert.equal(storageMonitorCalls, 1);
 });
 
 test("a visual-index instrumentation import failure cannot prevent MQTT startup", async () => {
@@ -254,6 +266,9 @@ test("a visual-index instrumentation import failure cannot prevent MQTT startup"
     },
     async loadMaintenanceStartup() {
       return { async startMaintenanceRuntimeWithRetry() { return { status: "started" }; } };
+    },
+    async loadStorageMonitorStartup() {
+      return { async startStorageMaintenanceMonitorWithRetry() { return { status: "started" }; } };
     },
   });
   assert.equal(mqttCalls, 1);

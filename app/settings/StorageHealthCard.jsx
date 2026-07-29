@@ -82,6 +82,7 @@ export default function StorageHealthCard({ snapshot }) {
   const database = snapshot?.database;
   const assets = snapshot?.assets;
   const growth = snapshot?.growth;
+  const breakdown = snapshot?.breakdown;
   const maintenance = snapshot?.maintenance;
   const preview = maintenance?.lastResult;
   const reconciliation = snapshot?.reconciliation;
@@ -156,6 +157,60 @@ export default function StorageHealthCard({ snapshot }) {
             </p>
           </section>
         )}
+
+        <section aria-labelledby="storage-breakdown-title" className="rounded-lg border p-4">
+          <div>
+            <h3 id="storage-breakdown-title" className="font-semibold">Storage breakdown</h3>
+            <p className="mt-1 text-xs text-muted-foreground">
+              Application categories are measured from their approved roots. Docker and backups require a current read-only host snapshot.
+            </p>
+          </div>
+          <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+            <Metric
+              icon={ImageIcon}
+              label="Source images"
+              value={formatBytes(breakdown?.sourceImages?.bytes)}
+              detail={`${formatCount(breakdown?.sourceImages?.count)} files`}
+            />
+            <Metric
+              icon={ImageIcon}
+              label="Thumbnails"
+              value={formatBytes(breakdown?.thumbnails?.bytes)}
+              detail={`${formatCount(breakdown?.thumbnails?.count)} files`}
+            />
+            <Metric
+              icon={ScanSearch}
+              label="Derived vehicle images"
+              value={formatBytes(breakdown?.derivedVehicleImages?.bytes)}
+              detail={`${formatCount(breakdown?.derivedVehicleImages?.count)} files`}
+            />
+            <Metric
+              icon={Database}
+              label="PostgreSQL"
+              value={formatBytes(breakdown?.database?.bytes)}
+              detail="Current database size"
+            />
+            <Metric
+              icon={HardDrive}
+              label="Docker"
+              value={formatBytes(breakdown?.docker?.bytes)}
+              detail={breakdown?.docker
+                ? `${formatBytes(breakdown.docker.imagesBytes)} images · ${formatBytes(breakdown.docker.buildCacheBytes)} build cache`
+                : "Host snapshot unavailable"}
+            />
+            <Metric
+              icon={ShieldCheck}
+              label="Verified backups"
+              value={formatBytes(breakdown?.backups?.bytes)}
+              detail={breakdown?.backups
+                ? `${formatCount(breakdown.backups.count)} backups · latest ${formatDate(breakdown.backups.latestVerifiedAt)}`
+                : "Host snapshot unavailable"}
+            />
+          </div>
+          <p className="mt-3 text-xs text-muted-foreground">
+            Category measurement: {formatDate(breakdown?.measuredAt)}. Host snapshot: {formatDate(breakdown?.hostSnapshotMeasuredAt)}.
+          </p>
+        </section>
 
         <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
           <Metric
@@ -347,9 +402,9 @@ export default function StorageHealthCard({ snapshot }) {
         </section>
 
         <div className="rounded-lg border border-blue-500/30 bg-blue-500/10 p-4 text-sm">
-          <p className="font-medium text-blue-700 dark:text-blue-300">No cleanup is performed from this page</p>
+          <p className="font-medium text-blue-700 dark:text-blue-300">Measurement never performs cleanup</p>
           <p className="mt-1 text-muted-foreground">
-            Images, captures, volumes, database rows, backups, and rollback assets remain untouched. The scheduled worker reports a dry-run preview only; any future deletion workflow requires separate approval.
+            Refresh, retention previews, reconciliation, and category measurement do not delete anything. Guarded cleanup is a separate confirmed action below and is limited to generated, still-unreferenced derived files.
           </p>
         </div>
 
