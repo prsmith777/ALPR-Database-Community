@@ -2,7 +2,7 @@
 
 import NextImage from "next/image";
 import { useEffect, useMemo, useState } from "react";
-import { BrainCircuit, Check, History, Images, Loader2, Pause, Play, RotateCcw, Save, ScanSearch, Settings2 } from "lucide-react";
+import { BrainCircuit, Check, History, Images, Loader2, Pause, Play, RotateCcw, Save, ScanSearch, Settings2, XCircle } from "lucide-react";
 
 import {
   getVehicleDirectionSetup,
@@ -12,6 +12,7 @@ import {
   queueVehicleDirectionReevaluation,
   runVehicleDirectionBackfillBatch,
   saveVehicleDirectionProfile,
+  cancelBlueIrisVehicleFrameHistory,
   queueBlueIrisVehicleFrameHistory,
   runBlueIrisVehicleFrameBatch,
   setBlueIrisVehicleFrameHistoryPaused,
@@ -73,6 +74,7 @@ export default function VehicleIntelligenceSettings({ initialData, initialFrameQ
   const [frameMessage, setFrameMessage] = useState("");
   const [frameStartDate, setFrameStartDate] = useState("");
   const [frameEndDate, setFrameEndDate] = useState("");
+  const [cancelFrameHistoryOpen, setCancelFrameHistoryOpen] = useState(false);
   const profile = useMemo(
     () => data.profiles.find((item) => item.cameraName === cameraName) || data.profiles[0] || null,
     [cameraName, data.profiles]
@@ -223,18 +225,38 @@ export default function VehicleIntelligenceSettings({ initialData, initialFrameQ
     ? Math.round(backfill.completed / backfill.eligible * 100)
     : 100;
 
-  const queueFrameHistory = async (allCameras = false) => {
-    setBusy(allCameras ? "frame-history-all" : "frame-history-camera");
+  const queueFrameHistory = async (allCameras = false, replaceExisting = false) => {
+    setBusy(replaceExisting ? "frame-history-reevaluate" : allCameras ? "frame-history-all" : "frame-history-camera");
     setFrameMessage("");
     try {
       const result = await queueBlueIrisVehicleFrameHistory({
         cameraName: allCameras ? null : cameraName,
         startDate: frameStartDate ? new Date(`${frameStartDate}T00:00:00`).toISOString() : null,
         endDate: frameEndDate ? new Date(`${frameEndDate}T23:59:59.999`).toISOString() : null,
+        replaceExisting,
       });
       if (!result.success) throw new Error(result.error);
       setFrameQueue(result.data.status);
-      setFrameMessage(`Queued ${result.data.queued.toLocaleString()} missing vehicle view${result.data.queued === 1 ? "" : "s"}. Live reads remain prioritized.`);
+      setFrameMessage(replaceExisting
+        ? `Queued ${result.data.queued.toLocaleString()} existing vehicle view${result.data.queued === 1 ? "" : "s"} for reevaluation. History remains paused until you explicitly resume it, and each prior image remains available until its replacement succeeds.`
+        : `Queued ${result.data.queued.toLocaleString()} missing vehicle view${result.data.queued === 1 ? "" : "s"}. History remains paused until you explicitly resume it; live reads continue automatically.`);
+    } catch (error) { setFrameMessage(error.message); }
+    finally { setBusy(""); }
+  };
+
+  const cancelFrameHistory = async () => {
+    setBusy("frame-history-cancel");
+    setFrameMessage("");
+    try {
+      const result = await cancelBlueIrisVehicleFrameHistory({
+        cameraName,
+        startDate: frameStartDate ? new Date(`${frameStartDate}T00:00:00`).toISOString() : null,
+        endDate: frameEndDate ? new Date(`${frameEndDate}T23:59:59.999`).toISOString() : null,
+      });
+      if (!result.success) throw new Error(result.error);
+      setFrameQueue(result.data.status);
+      setCancelFrameHistoryOpen(false);
+      setFrameMessage(`Cancelled ${result.data.cancelled.toLocaleString()} pending historical vehicle-view job${result.data.cancelled === 1 ? "" : "s"} for ${cameraName || "the selected scope"}. Live work was not changed.`);
     } catch (error) { setFrameMessage(error.message); }
     finally { setBusy(""); }
   };
@@ -357,6 +379,35 @@ export default function VehicleIntelligenceSettings({ initialData, initialFrameQ
             {!frameQueue?.configured && (
               <p className="rounded-md border border-amber-500/40 bg-amber-500/10 p-3 text-sm">Configure and test Blue Iris before vehicle views can be extracted.</p>
             )}
+            {frameQueue?.configured && (
+              <div className="flex flex-wrap items-center justify-between gap-3 rounded-md border p-3 text-sm">
+                <div>
+                  <div className="font-medium">
+                    Live worker: {{
+                      starting: "Starting",
+                      processing: "Processing a read",
+                      sleeping: "Running",
+                      idle: "Idle",
+                      busy: "Already processing",
+                      error: "Needs attention",
+                      "not-configured": "Blue Iris not configured",
+                      stopped: "Stopped",
+                    }[frameQueue?.worker?.phase] || "Running"}
+                  </div>
+                  <div className="text-xs text-muted-foreground">
+                    Live reads continue automatically even when historical processing is paused.
+                  </div>
+                </div>
+                <Badge variant={frameQueue?.worker?.phase === "error" ? "destructive" : "secondary"}>
+                  {Number(frameQueue?.liveOutstanding || 0).toLocaleString()} live waiting
+                </Badge>
+              </div>
+            )}
+            {frameQueue?.worker?.lastError?.message ? (
+              <p className="rounded-md border border-destructive/40 bg-destructive/10 p-3 text-sm text-destructive">
+                Blue Iris worker error: {frameQueue.worker.lastError.message}
+              </p>
+            ) : null}
             <div className="grid grid-cols-2 gap-3 text-center sm:grid-cols-5">
               <div className="rounded-md border p-3"><div className="text-xl font-semibold">{Number(frameQueue?.ready || 0).toLocaleString()}</div><div className="text-xs text-muted-foreground">vehicle views ready</div></div>
               <div className="rounded-md border p-3"><div className="text-xl font-semibold">{Number(frameQueue?.pending || 0).toLocaleString()}</div><div className="text-xs text-muted-foreground">processing or queued</div></div>
@@ -385,7 +436,9 @@ export default function VehicleIntelligenceSettings({ initialData, initialFrameQ
               <div className="flex flex-wrap gap-2 sm:col-span-2">
                 <Button variant="outline" disabled={Boolean(busy) || !cameraName || !frameQueue?.configured} onClick={() => queueFrameHistory(false)}>{busy === "frame-history-camera" ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}Queue {cameraName || "selected camera"} history</Button>
                 <Button variant="outline" disabled={Boolean(busy) || !frameQueue?.configured} onClick={() => queueFrameHistory(true)}>{busy === "frame-history-all" ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}Queue all camera history</Button>
+                <Button variant="outline" disabled={Boolean(busy) || !frameQueue?.configured} onClick={() => queueFrameHistory(true, true)}>{busy === "frame-history-reevaluate" ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}Reevaluate existing views</Button>
                 <Button variant="secondary" disabled={Boolean(busy) || !frameQueue?.configured} onClick={toggleFrameHistory}>{frameQueue?.historicalPaused ? <Play className="mr-2 h-4 w-4" /> : <Pause className="mr-2 h-4 w-4" />}{frameQueue?.historicalPaused ? "Resume history" : "Pause history"}</Button>
+                <Button variant="destructive" disabled={Boolean(busy) || !cameraName || !frameQueue?.historicalOutstanding} onClick={() => setCancelFrameHistoryOpen(true)}><XCircle className="mr-2 h-4 w-4" />Cancel pending {cameraName || "camera"} history</Button>
                 <Button variant="secondary" disabled={Boolean(busy) || !frameQueue?.configured} onClick={runFrameBatch}>{busy === "frame-batch" ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Play className="mr-2 h-4 w-4" />}Run one frame now</Button>
               </div>
             </div>
@@ -537,6 +590,23 @@ export default function VehicleIntelligenceSettings({ initialData, initialFrameQ
           )}
         </TabsContent>
       </Tabs>
+      <AlertDialog open={cancelFrameHistoryOpen} onOpenChange={(open) => { if (busy !== "frame-history-cancel") setCancelFrameHistoryOpen(open); }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Cancel pending historical vehicle views?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This pauses history and removes only pending or retryable historical jobs for {cameraName || "the selected camera"}{frameStartDate || frameEndDate ? " within the selected date range" : ""}. Live reads, completed vehicle images, and manual retries are preserved. One frame already in progress may still finish.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={busy === "frame-history-cancel"}>Keep jobs</AlertDialogCancel>
+            <AlertDialogAction onClick={(event) => { event.preventDefault(); cancelFrameHistory(); }} disabled={busy === "frame-history-cancel"}>
+              {busy === "frame-history-cancel" ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <XCircle className="mr-2 h-4 w-4" />}
+              Cancel pending history
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
       <AlertDialog
         open={Boolean(reevaluationPreview)}
         onOpenChange={(open) => { if (!open && busy !== "reevaluate") setReevaluationPreview(null); }}

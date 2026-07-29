@@ -56,6 +56,7 @@ import {
 import {
   Dialog,
   DialogContent,
+  DialogClose,
   DialogDescription,
   DialogFooter,
   DialogHeader,
@@ -97,10 +98,15 @@ import { useRouter } from "next/navigation";
 import PlateMatchModeSelect from "@/components/PlateMatchModeSelect";
 import PlateImage from "@/components/PlateImage";
 import MultiSelectFilter from "@/components/MultiSelectFilter";
-import { getSettings, reviewVehicleClusterSuggestion } from "@/app/actions";
+import {
+  getSettings,
+  retryBlueIrisVehicleFrameForRead,
+  reviewVehicleClusterSuggestion,
+} from "@/app/actions";
 import ImageViewer from "./ImageViewer";
 import { useAccess } from "@/components/auth/AccessProvider";
 import { resolveReadViewerNavigation } from "@/lib/read-viewer-navigation.mjs";
+import { buildBlueIrisUiUrl } from "@/lib/blue-iris-ui-url.mjs";
 import {
   Sheet,
   SheetContent,
@@ -147,6 +153,52 @@ const REVIEW_STATUS_CLASSES = {
   rejected: "border-red-500/40 text-red-500",
   alias_resolved: "border-violet-500/40 text-violet-400",
 };
+
+const POPUP_ACTION_BUTTON_CLASS = "h-8 shrink-0 px-2 text-xs";
+const POPUP_ACTION_ICON_CLASS = "mr-1 h-3.5 w-3.5 shrink-0";
+const TABLE_ACTION_BUTTON_CLASS = "h-8 w-8 p-0";
+
+function correctionImageFromRead(plate) {
+  let url = null;
+  if (plate?.image_path) {
+    url = `/images/${plate.image_path}`;
+  } else if (plate?.image_data) {
+    url = plate.image_data.startsWith("data:image/jpeg;base64,")
+      ? plate.image_data
+      : `data:image/jpeg;base64,${plate.image_data}`;
+  }
+
+  if (!url) return null;
+  return {
+    url,
+    plateNumber: plate.plate_number,
+    crop_coordinates: plate.crop_coordinates || null,
+  };
+}
+
+function correctionDraft({
+  id,
+  plateNumber,
+  observedPlate,
+  cameraName,
+  image,
+}) {
+  return {
+    id,
+    plateNumber,
+    observedPlate: observedPlate || plateNumber,
+    cameraName: cameraName || "",
+    image: image || null,
+    newPlateNumber: plateNumber,
+    correctAll: false,
+    unreviewedOnly: true,
+    batchCameraOnly: false,
+    rememberAlias: false,
+    aliasScope: "all",
+    reason: "ocr_character_error",
+    notes: "",
+  };
+}
 
 function PlateIdentity({ plate, compact = false }) {
   const status = plate.review_status || (plate.validated ? "confirmed" : "unreviewed");
@@ -306,12 +358,15 @@ export default function PlateTable({
   });
   const [selectedImage, setSelectedImage] = useState(null);
   const [selectedImageView, setSelectedImageView] = useState("plate");
+  const [isImageFullscreen, setIsImageFullscreen] = useState(false);
   const [selectedIndex, setSelectedIndex] = useState(-1);
   const [pendingReviewReadId, setPendingReviewReadId] = useState(null);
   const [pendingReviewTargetValidated, setPendingReviewTargetValidated] = useState(null);
   const [pendingViewerNavigation, setPendingViewerNavigation] = useState(null);
   const [pendingVehicleReview, setPendingVehicleReview] = useState("");
   const [pendingDirectionReview, setPendingDirectionReview] = useState("");
+  const [pendingVehicleImageRetry, setPendingVehicleImageRetry] = useState(false);
+  const [vehicleImageRetryError, setVehicleImageRetryError] = useState("");
   const [isDirectionReviewOpen, setIsDirectionReviewOpen] = useState(false);
   const [directionReviewError, setDirectionReviewError] = useState("");
   const [searchInput, setSearchInput] = useState(filters.search || "");
@@ -321,10 +376,6 @@ export default function PlateTable({
   const [isFilterSheetOpen, setIsFilterSheetOpen] = useState(false);
   const [isSearchOptionsOpen, setIsSearchOptionsOpen] = useState(false);
 
-  //zoom/crop stuff
-  const [zoom, setZoom] = useState(1);
-  const [position, setPosition] = useState({ x: 0, y: 0 });
-  const imageContainerRef = useRef(null);
   const correctionInputRef = useRef(null);
 
   const router = useRouter();
@@ -373,9 +424,33 @@ export default function PlateTable({
     }
   };
 
+  const handleVehicleImageRetry = async () => {
+    if (!selectedImage?.id || pendingVehicleImageRetry) return;
+    setPendingVehicleImageRetry(true);
+    setVehicleImageRetryError("");
+    try {
+      const result = await retryBlueIrisVehicleFrameForRead(selectedImage.id);
+      if (!result?.success) {
+        setVehicleImageRetryError(result?.error || "Unable to retry this vehicle view.");
+        return;
+      }
+      setSelectedImage((previous) => previous ? {
+        ...previous,
+        vehicleImageStatus: "pending",
+        vehicleImageErrorCode: null,
+        vehicleImageAttemptCount: 0,
+        vehicleImageRetryable: true,
+      } : previous);
+      router.refresh();
+    } finally {
+      setPendingVehicleImageRetry(false);
+    }
+  };
+
   useEffect(() => {
     setIsDirectionReviewOpen(false);
     setDirectionReviewError("");
+    setVehicleImageRetryError("");
   }, [selectedImage?.id]);
 
   useEffect(() => {
@@ -441,12 +516,18 @@ export default function PlateTable({
       vehicleImageUrl: plate.vehicle_image_path ? `/images/${plate.vehicle_image_path}` : null,
       vehicleImageStatus: plate.vehicle_image_status || null,
       vehicleImageErrorCode: plate.vehicle_image_error_code || null,
+      vehicleImageAttemptCount: Number(plate.vehicle_image_attempt_count || 0),
+      vehicleImageRetryable: plate.vehicle_image_retryable !== false,
       vehicleImageTimestamp: plate.vehicle_image_timestamp || null,
+      vehicleImageDetectionBox: plate.vehicle_image_detection_box || null,
+      vehicleImageWidth: Number(plate.vehicle_image_width || 0) || null,
+      vehicleImageHeight: Number(plate.vehicle_image_height || 0) || null,
       thumbnail: thumbnailUrl,
       plateNumber: plate.plate_number,
       observedPlate: plate.observed_plate || plate.plate_number,
       reviewStatus: plate.review_status || (plate.validated ? "confirmed" : "unreviewed"),
       reviewRevision: plate.review_revision || 0,
+      occurrenceCount: plate.occurrence_count ?? null,
       appliedAliasId: plate.applied_alias_id || null,
       cameraName: plate.camera_name || "",
       knownName: plate.known_name || "",
@@ -479,9 +560,6 @@ export default function PlateTable({
       crop_coordinates: plate.crop_coordinates,
     });
 
-    // Reset zoom and position when opening new image
-    setZoom(1);
-    setPosition({ x: 0, y: 0 });
     setSelectedImageView("plate");
   }, [data]);
 
@@ -608,6 +686,7 @@ export default function PlateTable({
       const selectedReviewRevision = Number(selectedImage.reviewRevision || 0);
       const canSyncReview = currentReviewRevision >= selectedReviewRevision;
       const currentKnownName = currentPlate?.known_name || "";
+      const currentOccurrenceCount = currentPlate?.occurrence_count ?? null;
       const currentTags = Array.isArray(currentPlate?.tags) ? currentPlate.tags : [];
       const selectedImageTags = Array.isArray(selectedImage.tags)
         ? selectedImage.tags
@@ -644,7 +723,14 @@ export default function PlateTable({
         : null;
       const currentVehicleImageStatus = currentPlate?.vehicle_image_status || null;
       const currentVehicleImageErrorCode = currentPlate?.vehicle_image_error_code || null;
+      const currentVehicleImageAttemptCount = Number(currentPlate?.vehicle_image_attempt_count || 0);
+      const currentVehicleImageRetryable = currentPlate?.vehicle_image_retryable !== false;
       const currentVehicleImageTimestamp = currentPlate?.vehicle_image_timestamp || null;
+      const currentVehicleImageDetectionBox = currentPlate?.vehicle_image_detection_box || null;
+      const currentVehicleImageWidth = Number(currentPlate?.vehicle_image_width || 0) || null;
+      const currentVehicleImageHeight = Number(currentPlate?.vehicle_image_height || 0) || null;
+      const currentVehicleImageDetectionSignature = JSON.stringify(currentVehicleImageDetectionBox);
+      const selectedVehicleImageDetectionSignature = JSON.stringify(selectedImage.vehicleImageDetectionBox);
 
       if (
         currentPlate &&
@@ -654,6 +740,7 @@ export default function PlateTable({
             currentReviewStatus !== selectedImage.reviewStatus ||
             currentReviewRevision !== selectedReviewRevision)) ||
           currentKnownName !== selectedImage.knownName ||
+          currentOccurrenceCount !== selectedImage.occurrenceCount ||
           currentTagSignature !== selectedTagSignature ||
           currentDirectionStatus !== selectedImage.directionStatus ||
           currentVehicleOrientation !== selectedImage.vehicleOrientation ||
@@ -671,7 +758,12 @@ export default function PlateTable({
           currentVehicleImageUrl !== selectedImage.vehicleImageUrl ||
           currentVehicleImageStatus !== selectedImage.vehicleImageStatus ||
           currentVehicleImageErrorCode !== selectedImage.vehicleImageErrorCode ||
-          currentVehicleImageTimestamp !== selectedImage.vehicleImageTimestamp)
+          currentVehicleImageAttemptCount !== selectedImage.vehicleImageAttemptCount ||
+          currentVehicleImageRetryable !== selectedImage.vehicleImageRetryable ||
+          currentVehicleImageTimestamp !== selectedImage.vehicleImageTimestamp ||
+          currentVehicleImageDetectionSignature !== selectedVehicleImageDetectionSignature ||
+          currentVehicleImageWidth !== selectedImage.vehicleImageWidth ||
+          currentVehicleImageHeight !== selectedImage.vehicleImageHeight)
       ) {
         setSelectedImage((previous) => ({
           ...previous,
@@ -686,6 +778,7 @@ export default function PlateTable({
               }
             : {}),
           knownName: currentKnownName,
+          occurrenceCount: currentOccurrenceCount,
           tags: currentTags,
           directionStatus: currentPlate.direction_status || null,
           vehicleOrientation: currentPlate.vehicle_orientation || "unknown",
@@ -703,7 +796,12 @@ export default function PlateTable({
           vehicleImageUrl: currentVehicleImageUrl,
           vehicleImageStatus: currentVehicleImageStatus,
           vehicleImageErrorCode: currentVehicleImageErrorCode,
+          vehicleImageAttemptCount: currentVehicleImageAttemptCount,
+          vehicleImageRetryable: currentVehicleImageRetryable,
           vehicleImageTimestamp: currentVehicleImageTimestamp,
+          vehicleImageDetectionBox: currentVehicleImageDetectionBox,
+          vehicleImageWidth: currentVehicleImageWidth,
+          vehicleImageHeight: currentVehicleImageHeight,
         }));
       }
     }
@@ -1848,7 +1946,7 @@ export default function PlateTable({
                       onSort={onSort}
                     />
                   </TableHead>
-                  <TableHead className="w-32 text-right hidden sm:table-cell">
+                  <TableHead className="hidden w-px whitespace-nowrap px-2 text-right sm:table-cell">
                     Actions
                   </TableHead>
                 </TableRow>
@@ -1947,8 +2045,8 @@ export default function PlateTable({
                         })}
                       </TableCell>
 
-                      <TableCell className="hidden sm:table-cell">
-                        <div className="flex space-x-2 justify-end">
+                      <TableCell className="hidden w-px whitespace-nowrap px-2 sm:table-cell">
+                        <div className="flex justify-end gap-0.5">
                           {canManageTags && <DropdownMenu>
                             <Tooltip>
                               <TooltipTrigger asChild>
@@ -1956,6 +2054,7 @@ export default function PlateTable({
                                   <Button
                                     variant="ghost"
                                     size="icon"
+                                    className={TABLE_ACTION_BUTTON_CLASS}
                                     aria-label={`Add tag to ${plate.plate_number}`}
                                   >
                                     <Tag className="h-4 w-4" />
@@ -1988,6 +2087,7 @@ export default function PlateTable({
                               <Button
                                 variant="ghost"
                                 size="icon"
+                                className={TABLE_ACTION_BUTTON_CLASS}
                                 aria-label={`Add ${plate.plate_number} to known plates`}
                                 onClick={() => {
                                   setActivePlate(plate);
@@ -2004,22 +2104,16 @@ export default function PlateTable({
                               <Button
                                 variant="ghost"
                                 size="icon"
+                                className={TABLE_ACTION_BUTTON_CLASS}
                                 aria-label={`Correct plate ${plate.plate_number}`}
                                 onClick={() => {
-                                  setCorrection({
+                                  setCorrection(correctionDraft({
                                     id: plate.id,
                                     plateNumber: plate.plate_number,
                                     observedPlate: plate.observed_plate || plate.plate_number,
                                     cameraName: plate.camera_name || "",
-                                    newPlateNumber: plate.plate_number,
-                                    correctAll: false,
-                                    unreviewedOnly: true,
-                                    batchCameraOnly: false,
-                                    rememberAlias: false,
-                                    aliasScope: "all",
-                                    reason: "ocr_character_error",
-                                    notes: "",
-                                  });
+                                    image: correctionImageFromRead(plate),
+                                  }));
                                   setIsCorrectPlateOpen(true);
                                 }}
                               >
@@ -2033,6 +2127,7 @@ export default function PlateTable({
                               <Button
                                 variant="ghost"
                                 size="icon"
+                                className={TABLE_ACTION_BUTTON_CLASS}
                                 aria-label={`Review history for ${plate.plate_number}`}
                                 onClick={() => openReviewHistory(plate)}
                               >
@@ -2047,10 +2142,11 @@ export default function PlateTable({
                                 <Button
                                   variant="ghost"
                                   size="icon"
+                                  className={TABLE_ACTION_BUTTON_CLASS}
                                   aria-label={`Open ${plate.plate_number} in Blue Iris`}
                                   onClick={() =>
                                     window.open(
-                                      `http://${biHost}/${plate.bi_path}`,
+                                      buildBlueIrisUiUrl(biHost, plate.bi_path),
                                       "_blank"
                                     )
                                   }
@@ -2073,6 +2169,7 @@ export default function PlateTable({
                                   <Button
                                     variant="ghost"
                                     size="icon"
+                                    className={TABLE_ACTION_BUTTON_CLASS}
                                     aria-label="Blue Iris link unavailable"
                                     disabled
                                   >
@@ -2095,8 +2192,8 @@ export default function PlateTable({
                                 } ${plate.plate_number}`}
                                 className={
                                   plate?.validated
-                                    ? "text-green-500 hover:text-green-700"
-                                    : ""
+                                    ? `${TABLE_ACTION_BUTTON_CLASS} text-green-500 hover:text-green-700`
+                                    : TABLE_ACTION_BUTTON_CLASS
                                 }
                                 onClick={() => {
                                   onValidate(plate.id, !plate.validated);
@@ -2121,7 +2218,7 @@ export default function PlateTable({
                               <Button
                                 variant="ghost"
                                 size="icon"
-                                className="text-red-500 hover:text-red-700"
+                                className={`${TABLE_ACTION_BUTTON_CLASS} text-red-500 hover:text-red-700`}
                                 aria-label={`Delete record for ${plate.plate_number}`}
                                 onClick={() => {
                                   setActivePlate(plate);
@@ -2203,20 +2300,13 @@ export default function PlateTable({
                               </DropdownMenuItem>}
                               {canReview && <DropdownMenuItem
                                 onClick={() => {
-                                  setCorrection({
+                                  setCorrection(correctionDraft({
                                     id: plate.id,
                                     plateNumber: plate.plate_number,
                                     observedPlate: plate.observed_plate || plate.plate_number,
                                     cameraName: plate.camera_name || "",
-                                    newPlateNumber: plate.plate_number,
-                                    correctAll: false,
-                                    unreviewedOnly: true,
-                                    batchCameraOnly: false,
-                                    rememberAlias: false,
-                                    aliasScope: "all",
-                                    reason: "ocr_character_error",
-                                    notes: "",
-                                  });
+                                    image: correctionImageFromRead(plate),
+                                  }));
                                   setIsCorrectPlateOpen(true);
                                 }}
                               >
@@ -2231,7 +2321,7 @@ export default function PlateTable({
                                 <DropdownMenuItem
                                   onClick={() =>
                                     window.open(
-                                      `http://${biHost}/${plate.bi_path}`,
+                                      buildBlueIrisUiUrl(biHost, plate.bi_path),
                                       "_blank"
                                     )
                                   }
@@ -2449,31 +2539,45 @@ export default function PlateTable({
           open={selectedImage !== null}
           onOpenChange={(open) => {
             if (!open) {
+              setIsImageFullscreen(false);
               setSelectedImage(null);
               setSelectedIndex(-1);
               setPendingViewerNavigation(null);
             }
           }}
         >
-          <DialogContent className="max-h-[calc(100vh-2rem)] w-[calc(100vw-2rem)] max-w-7xl overflow-y-auto sm:h-[calc(100vh-2rem)] sm:w-[calc(100vw-2rem)] sm:max-w-7xl sm:grid-rows-[minmax(0,1fr)_auto] sm:overflow-hidden">
+          <DialogContent
+            showCloseButton={false}
+            onInteractOutside={(event) => {
+              if (isImageFullscreen) event.preventDefault();
+            }}
+            onEscapeKeyDown={(event) => {
+              if (isImageFullscreen) event.preventDefault();
+            }}
+            className="max-h-[calc(100vh-2rem)] w-[calc(100vw-2rem)] max-w-7xl gap-3 overflow-y-auto p-3 lg:h-[calc(100vh-2rem)] lg:grid-cols-[minmax(0,1fr)_11rem] lg:grid-rows-[minmax(0,1fr)_auto] lg:overflow-hidden"
+          >
             <DialogTitle className="sr-only">
               License Plate Image - {selectedImage?.plateNumber}
             </DialogTitle>
             {selectedImage && (
-              <div className="grid min-h-0 items-stretch gap-3 lg:grid-cols-[minmax(0,1fr)_11rem]">
-                <div className="grid min-h-0 grid-rows-[auto_minmax(0,1fr)] gap-3">
-                  <div className="grid gap-3 rounded-lg border p-3 text-sm sm:grid-cols-2 lg:grid-cols-6">
+              <div className="contents">
+                <div className="grid min-h-0 grid-rows-[auto_minmax(0,1fr)] gap-3 lg:col-start-1 lg:row-start-1">
+                  <div className="grid gap-3 rounded-lg border p-3 text-sm sm:grid-cols-2 md:grid-cols-4 lg:grid-cols-7">
                 <div>
                   <div className="text-xs uppercase text-muted-foreground">Observed</div>
-                  <div className="font-mono">{selectedImage.observedPlate}</div>
+                  <div className="font-mono text-lg font-semibold leading-tight">{selectedImage.observedPlate}</div>
                 </div>
                 <div>
                   <div className="text-xs uppercase text-muted-foreground">Effective</div>
-                  <div className="font-mono">{selectedImage.plateNumber}</div>
+                  <div className="font-mono text-lg font-semibold leading-tight">{selectedImage.plateNumber}</div>
                 </div>
                 <div>
                   <div className="text-xs uppercase text-muted-foreground">Review status</div>
                   <div>{REVIEW_STATUS_LABELS[selectedImage.reviewStatus] || selectedImage.reviewStatus}</div>
+                </div>
+                <div>
+                  <div className="text-xs uppercase text-muted-foreground">Occurrences</div>
+                  <div>{selectedImage.occurrenceCount ?? "—"}</div>
                 </div>
                 <div>
                   <div className="text-xs uppercase text-muted-foreground">Known plate</div>
@@ -2501,6 +2605,74 @@ export default function PlateTable({
                   )}
                 </div>
                 <div>
+                  <div className="text-xs uppercase text-muted-foreground">Vehicle</div>
+                  {selectedImage.vehicleClusterId ? (
+                    <Link href={`/visual_search/vehicles/${selectedImage.vehicleClusterId}`} className="text-blue-500 hover:underline">
+                      Vehicle #{selectedImage.vehicleClusterId}
+                    </Link>
+                  ) : <div className="text-muted-foreground">Unassigned</div>}
+                </div>
+                  </div>
+                  <div className="relative h-[40vh] w-full overflow-hidden rounded-md border bg-black sm:h-auto sm:min-h-0">
+                    {selectedImage.vehicleImageUrl && (
+                      <div className="absolute left-2 top-2 z-20 flex flex-col rounded-md border bg-background/90 p-1 shadow-sm backdrop-blur">
+                        <Button type="button" size="sm" variant={selectedImageView === "plate" ? "default" : "ghost"} className="h-7 justify-start px-2 text-xs" onClick={() => setSelectedImageView("plate")}>Plate capture</Button>
+                        <Button type="button" size="sm" variant={selectedImageView === "vehicle" ? "default" : "ghost"} className="h-7 justify-start px-2 text-xs" onClick={() => setSelectedImageView("vehicle")}>Vehicle view</Button>
+                      </div>
+                    )}
+                    {!selectedImage.vehicleImageUrl && selectedImage.vehicleImageStatus && (
+                      <div className="absolute left-2 top-2 z-20 max-w-[min(26rem,calc(100%-1rem))] space-y-2 rounded-md border bg-background/90 px-3 py-2 text-xs shadow-sm backdrop-blur">
+                        <div>
+                          Vehicle view: {{
+                            pending: "Queued",
+                            processing: "Processing",
+                            failed: selectedImage.vehicleImageRetryable && selectedImage.vehicleImageAttemptCount < 3
+                              ? `Retry pending (attempt ${selectedImage.vehicleImageAttemptCount} of 3)`
+                              : `Failed after ${selectedImage.vehicleImageAttemptCount || 3} attempts`,
+                            unavailable: {
+                              RECORDING_UNAVAILABLE: "Recording unavailable or expired",
+                              VEHICLE_NOT_VISIBLE: "Vehicle not visible in the sample window",
+                              CAMERA_NOT_MAPPED: "Camera not mapped in Blue Iris",
+                            }[selectedImage.vehicleImageErrorCode] || "Unavailable",
+                          }[selectedImage.vehicleImageStatus] || selectedImage.vehicleImageStatus}
+                        </div>
+                        {canReview && ["failed", "unavailable"].includes(selectedImage.vehicleImageStatus) ? (
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="outline"
+                            className="h-7 px-2 text-xs"
+                            disabled={pendingVehicleImageRetry}
+                            onClick={handleVehicleImageRetry}
+                          >
+                            <RotateCcw className="mr-1.5 h-3.5 w-3.5" />
+                            {pendingVehicleImageRetry ? "Queueing..." : "Retry vehicle view"}
+                          </Button>
+                        ) : null}
+                        {vehicleImageRetryError ? (
+                          <div className="text-destructive">{vehicleImageRetryError}</div>
+                        ) : null}
+                      </div>
+                    )}
+                    <ImageViewer
+                      image={{
+                        ...selectedImage,
+                        url: selectedImageView === "vehicle" && selectedImage.vehicleImageUrl
+                          ? selectedImage.vehicleImageUrl
+                          : selectedImage.plateCaptureUrl,
+                        crop_coordinates: selectedImageView === "vehicle" ? null : selectedImage.crop_coordinates,
+                        focus_coordinates: selectedImageView === "vehicle"
+                          ? selectedImage.vehicleImageDetectionBox
+                          : null,
+                      }}
+                      zoomEnabled={selectedImageView === "vehicle"}
+                      defaultZoom={null}
+                      zoomLabel={selectedImageView === "vehicle" ? "Zoom to Vehicle" : "Zoom to Plate"}
+                      onFullscreenChange={setIsImageFullscreen}
+                    />
+                  </div>
+                </div>
+                <aside className="h-full rounded-lg border p-2.5 text-sm lg:col-start-2 lg:row-span-2 lg:row-start-1 lg:min-h-0">
                   <div className="flex items-center gap-1 text-xs uppercase text-muted-foreground">
                     <span>Direction</span>
                     {canReview && (
@@ -2516,7 +2688,7 @@ export default function PlateTable({
                             <Pencil className="h-2.5 w-2.5" />
                           </Button>
                         </PopoverTrigger>
-                        <PopoverContent align="start" className="w-64 p-3">
+                        <PopoverContent align="end" className="w-64 p-3">
                           <div className="space-y-3">
                             <div>
                               <div className="text-sm font-medium">Review vehicle direction</div>
@@ -2551,6 +2723,17 @@ export default function PlateTable({
                         </PopoverContent>
                       </Popover>
                     )}
+                    <DialogClose asChild>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        className="ml-auto h-6 w-6 text-muted-foreground hover:text-foreground"
+                        aria-label="Close image popup"
+                      >
+                        <X className="h-4 w-4" />
+                      </Button>
+                    </DialogClose>
                   </div>
                   <div className={selectedImage.directionLabel ? "" : "text-muted-foreground"}>
                     {selectedImage.directionLabel
@@ -2563,52 +2746,6 @@ export default function PlateTable({
                       {selectedImage.vehicleOrientation} view · {Math.round(selectedImage.directionConfidence * 100)}%
                     </div>
                   ) : null}
-                </div>
-                  </div>
-                  <div className="relative h-[40vh] w-full overflow-hidden rounded-md border bg-black sm:h-auto sm:min-h-0">
-                    {selectedImage.vehicleImageUrl && (
-                      <div className="absolute left-2 top-2 z-20 flex rounded-md border bg-background/90 p-1 shadow-sm backdrop-blur">
-                        <Button type="button" size="sm" variant={selectedImageView === "plate" ? "default" : "ghost"} className="h-7 px-2 text-xs" onClick={() => setSelectedImageView("plate")}>Plate capture</Button>
-                        <Button type="button" size="sm" variant={selectedImageView === "vehicle" ? "default" : "ghost"} className="h-7 px-2 text-xs" onClick={() => setSelectedImageView("vehicle")}>Vehicle view</Button>
-                      </div>
-                    )}
-                    {!selectedImage.vehicleImageUrl && selectedImage.vehicleImageStatus && (
-                      <div className="absolute left-2 top-2 z-20 rounded-md border bg-background/90 px-3 py-2 text-xs shadow-sm backdrop-blur">
-                        Vehicle view: {{
-                          pending: "Queued",
-                          processing: "Processing",
-                          failed: "Retry pending",
-                          unavailable: {
-                            RECORDING_UNAVAILABLE: "Recording unavailable",
-                            VEHICLE_NOT_VISIBLE: "Vehicle not visible",
-                            CAMERA_NOT_MAPPED: "Camera not mapped",
-                          }[selectedImage.vehicleImageErrorCode] || "Unavailable",
-                        }[selectedImage.vehicleImageStatus] || selectedImage.vehicleImageStatus}
-                      </div>
-                    )}
-                    <ImageViewer
-                      image={{
-                        ...selectedImage,
-                        url: selectedImageView === "vehicle" && selectedImage.vehicleImageUrl
-                          ? selectedImage.vehicleImageUrl
-                          : selectedImage.plateCaptureUrl,
-                        crop_coordinates: selectedImageView === "vehicle" ? null : selectedImage.crop_coordinates,
-                      }}
-                      onClose={() => setSelectedImage(null)}
-                    />
-                  </div>
-                </div>
-                <aside className="h-full rounded-lg border p-2.5 text-sm lg:min-h-0">
-                  <div className="text-xs uppercase text-muted-foreground">Vehicle</div>
-                  {selectedImage.vehicleClusterId ? (
-                    <>
-                      <Link href={`/visual_search/vehicles/${selectedImage.vehicleClusterId}`} className="text-blue-500 hover:underline">Vehicle #{selectedImage.vehicleClusterId}</Link>
-                      <div className="text-xs capitalize text-muted-foreground">
-                        {selectedImage.vehicleClusterStatus}
-                        {selectedImage.vehicleClusterSimilarity !== null ? ` · ${Math.round(selectedImage.vehicleClusterSimilarity * 100)}%` : ""}
-                      </div>
-                    </>
-                  ) : <div className="text-muted-foreground">Unassigned</div>}
                   <div className="mt-4 space-y-3 border-t pt-3">
                     <div>
                       <div className="text-xs uppercase text-muted-foreground">Type</div>
@@ -2640,67 +2777,93 @@ export default function PlateTable({
                 </aside>
               </div>
             )}
-            <DialogFooter className="self-end">
-              <div className="grid w-full gap-2">
+            <DialogFooter className="self-end lg:col-start-1 lg:row-start-2">
+              <div className="grid w-full gap-3">
                 <div className="flex flex-wrap items-center gap-2">
-                  {canRead && selectedImage && <Button asChild variant="outline" size="sm" className="text-xs sm:text-sm">
+                  {canRead && selectedImage && <Button
+                    asChild
+                    variant="outline"
+                    size="sm"
+                    className={POPUP_ACTION_BUTTON_CLASS}
+                    aria-label="Find similar vehicle"
+                    title="Find similar vehicle"
+                  >
                     <Link href={`/visual_search?readId=${selectedImage.id}`}>
-                      <ScanSearch className="h-3 w-3 sm:h-4 sm:w-4 mr-1 sm:mr-2" />
+                      <ScanSearch className={POPUP_ACTION_ICON_CLASS} />
                       <span className="whitespace-nowrap">Find similar vehicle</span>
                     </Link>
                   </Button>}
                   {canReview && selectedImage?.vehicleClusterStatus === "suggested" && (
                     <>
-                      <Button variant="outline" size="sm" disabled={Boolean(pendingVehicleReview)} onClick={() => handleVehicleReview("confirm")}>
-                        <CircleCheck className="mr-1 h-3 w-3 sm:h-4 sm:w-4" /> Confirm vehicle
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className={POPUP_ACTION_BUTTON_CLASS}
+                        disabled={Boolean(pendingVehicleReview)}
+                        onClick={() => handleVehicleReview("confirm")}
+                        aria-label="Confirm suggested vehicle match"
+                        title="Confirm suggested vehicle match"
+                      >
+                        <CircleCheck className={POPUP_ACTION_ICON_CLASS} /> Confirm vehicle
                       </Button>
-                      <Button variant="outline" size="sm" disabled={Boolean(pendingVehicleReview)} onClick={() => handleVehicleReview("separate")}>
-                        <Split className="mr-1 h-3 w-3 sm:h-4 sm:w-4" /> Different vehicle
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className={POPUP_ACTION_BUTTON_CLASS}
+                        disabled={Boolean(pendingVehicleReview)}
+                        onClick={() => handleVehicleReview("separate")}
+                        aria-label="Mark as a different vehicle"
+                        title="Mark as a different vehicle"
+                      >
+                        <Split className={POPUP_ACTION_ICON_CLASS} /> Different vehicle
                       </Button>
                     </>
                   )}
                   {canReview && <Button
                     variant="outline"
                     size="sm"
-                    className="text-xs sm:text-sm"
+                    className={POPUP_ACTION_BUTTON_CLASS}
+                    aria-label="Correct detected plate"
+                    title="Correct detected plate"
                     onClick={() => {
-                      setCorrection({
+                      setCorrection(correctionDraft({
                         id: selectedImage.id,
                         plateNumber: selectedImage.plateNumber,
                         observedPlate: selectedImage.observedPlate || selectedImage.plateNumber,
                         cameraName: selectedImage.cameraName || "",
-                        newPlateNumber: selectedImage.plateNumber,
-                        correctAll: false,
-                        unreviewedOnly: true,
-                        batchCameraOnly: false,
-                        rememberAlias: false,
-                        aliasScope: "all",
-                        reason: "ocr_character_error",
-                        notes: "",
-                      });
+                        image: {
+                          ...selectedImage,
+                          url: selectedImage.plateCaptureUrl || selectedImage.url,
+                          crop_coordinates: selectedImage.crop_coordinates || null,
+                        },
+                      }));
                       setIsCorrectPlateOpen(true);
                     }}
                   >
-                    <Edit className="h-3 w-3 sm:h-4 sm:w-4 mr-1 sm:mr-2" />
+                    <Edit className={POPUP_ACTION_ICON_CLASS} />
                     <span className="whitespace-nowrap">Correct Plate</span>
                   </Button>}
                   {canRead && <Button
                     variant="outline"
                     size="sm"
-                    className="text-xs sm:text-sm"
+                    className={POPUP_ACTION_BUTTON_CLASS}
+                    aria-label="Open review history"
+                    title="Open review history"
                     onClick={() => openReviewHistory({
                       id: selectedImage.id,
                       plate_number: selectedImage.plateNumber,
                       observed_plate: selectedImage.observedPlate,
                     })}
                   >
-                    <History className="h-3 w-3 sm:h-4 sm:w-4 mr-1 sm:mr-2" />
+                    <History className={POPUP_ACTION_ICON_CLASS} />
                     <span className="whitespace-nowrap">Review History</span>
                   </Button>}
                   {canManageKnownPlates && <Button
                     variant="outline"
                     size="sm"
-                    className="text-xs sm:text-sm"
+                    className={POPUP_ACTION_BUTTON_CLASS}
+                    aria-label="Add plate to Known Plates"
+                    title="Add plate to Known Plates"
                     onClick={() => {
                       setActivePlate({
                         ...selectedImage,
@@ -2709,7 +2872,7 @@ export default function PlateTable({
                       setIsAddKnownPlateOpen(true);
                     }}
                   >
-                    <Plus className="h-3 w-3 sm:h-4 sm:w-4 mr-1 sm:mr-2" />
+                    <Plus className={POPUP_ACTION_ICON_CLASS} />
                     <span className="whitespace-nowrap">Add to Known</span>
                   </Button>}
                   {canManageTags && <DropdownMenu>
@@ -2717,9 +2880,11 @@ export default function PlateTable({
                       <Button
                         variant="outline"
                         size="sm"
-                        className="text-xs sm:text-sm"
+                        className={POPUP_ACTION_BUTTON_CLASS}
+                        aria-label="Add a tag"
+                        title="Add a tag"
                       >
-                        <Tag className="h-3 w-3 sm:h-4 sm:w-4 mr-1 sm:mr-2" />
+                        <Tag className={POPUP_ACTION_ICON_CLASS} />
                         Add Tag
                       </Button>
                     </DropdownMenuTrigger>
@@ -2741,22 +2906,25 @@ export default function PlateTable({
                     </DropdownMenuContent>
                   </DropdownMenu>}
                 </div>
-                <div className="flex flex-wrap items-center gap-2">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div className="flex flex-wrap items-center gap-2">
                     {canReview && <Button
                       variant="outline"
                       size="sm"
                       className={
                         selectedImage?.validated
-                          ? "text-xs sm:text-sm border-green-500/60 bg-green-500/10 text-green-500 hover:bg-green-500/20 hover:text-green-400"
-                          : "text-xs sm:text-sm"
+                          ? `${POPUP_ACTION_BUTTON_CLASS} border-green-500/60 bg-green-500/10 text-green-500 hover:bg-green-500/20 hover:text-green-400`
+                          : POPUP_ACTION_BUTTON_CLASS
                       }
                       onClick={handleSelectedImageValidation}
                       disabled={pendingReviewReadId === selectedImage?.id}
+                      aria-label={selectedImage?.validated ? "Reopen plate review" : "Confirm detected plate"}
+                      title={selectedImage?.validated ? "Reopen plate review" : "Confirm detected plate"}
                     >
                       {selectedImage?.validated ? (
-                        <CircleCheck className="h-3 w-3 sm:h-4 sm:w-4 mr-1 sm:mr-2" />
+                        <CircleCheck className={POPUP_ACTION_ICON_CLASS} />
                       ) : (
-                        <Check className="h-3 w-3 sm:h-4 sm:w-4 mr-1 sm:mr-2" />
+                        <Check className={POPUP_ACTION_ICON_CLASS} />
                       )}
                       <span className="whitespace-nowrap">
                         {pendingReviewReadId === selectedImage?.id
@@ -2771,19 +2939,19 @@ export default function PlateTable({
                     <Button
                       variant="outline"
                       size="sm"
-                      className="text-xs sm:text-sm"
+                      className={POPUP_ACTION_BUTTON_CLASS}
                       onClick={handleNextImage}
                       disabled={!hasNextImage || pendingViewerNavigation !== null}
                       aria-label="Show next read in the filtered Live Feed results"
                       title="Show next read (Right Arrow)"
                     >
                       <span className="whitespace-nowrap">Next read</span>
-                      <ChevronRight className="ml-1 h-3 w-3 sm:ml-2 sm:h-4 sm:w-4" />
+                      <ChevronRight className="ml-1 h-3.5 w-3.5" />
                     </Button>
                     {canDelete && <Button
                       variant="outline"
                       size="sm"
-                      className="text-xs text-red-500 hover:text-red-700 sm:text-sm"
+                      className={`${POPUP_ACTION_BUTTON_CLASS} text-red-500 hover:text-red-700`}
                       onClick={() => {
                         setActivePlate({
                           ...selectedImage,
@@ -2794,33 +2962,38 @@ export default function PlateTable({
                       aria-label={`Delete read for ${selectedImage?.plateNumber}`}
                       title="Delete this read"
                     >
-                      <Trash2 className="mr-1 h-3 w-3 sm:mr-2 sm:h-4 sm:w-4" />
+                      <Trash2 className={POPUP_ACTION_ICON_CLASS} />
                       <span className="whitespace-nowrap">Delete</span>
                     </Button>}
-                  <div className="ml-auto flex gap-2">
+                  </div>
+                  <div className="ml-auto flex flex-wrap items-center gap-2">
                   {biHost && selectedImage?.bi_path && (
                     <Button
                       variant="outline"
                       size="sm"
-                      className="text-xs sm:text-sm"
+                      className={POPUP_ACTION_BUTTON_CLASS}
+                      aria-label="Open recording in Blue Iris"
+                      title="Open recording in Blue Iris"
                       onClick={() =>
                         window.open(
-                          `http://${biHost}/${selectedImage.bi_path}`,
+                          buildBlueIrisUiUrl(biHost, selectedImage.bi_path),
                           "_blank"
                         )
                       }
                     >
-                      <ExternalLink className="h-3 w-3 sm:h-4 sm:w-4 mr-1 sm:mr-2" />
+                      <ExternalLink className={POPUP_ACTION_ICON_CLASS} />
                       <span className="whitespace-nowrap">Blue Iris</span>
                     </Button>
                   )}
                   {canExport && <Button
                     variant="outline"
                     size="sm"
-                    className="text-xs sm:text-sm"
+                    className={POPUP_ACTION_BUTTON_CLASS}
                     onClick={handleDownloadImage}
+                    aria-label="Download image"
+                    title="Download image"
                   >
-                    <Download className="h-3 w-3 sm:h-4 sm:w-4 mr-1 sm:mr-2" />
+                    <Download className={POPUP_ACTION_ICON_CLASS} />
                     <span className="whitespace-nowrap">Download</span>
                   </Button>}
                   </div>
@@ -2946,19 +3119,20 @@ export default function PlateTable({
             <div className="grid gap-5 py-2">
               <div
                 className={
-                  selectedImage && selectedImage.id === correction?.id
+                  correction?.image
                     ? "grid gap-4 sm:grid-cols-[minmax(0,0.8fr)_minmax(0,1.2fr)]"
                     : "grid gap-4"
                 }
               >
-                {selectedImage && selectedImage.id === correction?.id && (
+                {correction?.image && (
                   <div className="grid gap-2">
                     <div className="text-xs uppercase tracking-wide text-muted-foreground">
                       Plate image
                     </div>
                     <div className="relative h-56 overflow-hidden rounded-lg border bg-black p-2">
                       <ImageViewer
-                        image={selectedImage}
+                        image={correction.image}
+                        zoomEnabled
                         compactControls
                         fitPlateOnOpen
                       />

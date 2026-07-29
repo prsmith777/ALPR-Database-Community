@@ -1522,9 +1522,46 @@ export async function getBlueIrisVehicleFrameQueueStatus() {
   await requirePermission("system.manage_settings");
   try {
     const runtime = await getBlueIrisVehicleFrameRuntime();
-    return { success: true, data: await runtime.queue.getStatus() };
+    return {
+      success: true,
+      data: {
+        ...await runtime.queue.getStatus(),
+        worker: runtime.worker.snapshot(),
+      },
+    };
   } catch (error) {
     return visualSearchFailure(error, "Unable to load Blue Iris vehicle-frame status.");
+  }
+}
+
+export async function retryBlueIrisVehicleFrameForRead(readId) {
+  await requirePermission("plate.review");
+  try {
+    const normalizedReadId = Number.parseInt(String(readId), 10);
+    if (!Number.isSafeInteger(normalizedReadId) || normalizedReadId <= 0) {
+      return { success: false, error: "A valid plate read is required." };
+    }
+    const runtime = await getBlueIrisVehicleFrameRuntime();
+    const queued = await runtime.repository.retryRead(normalizedReadId);
+    if (!queued) {
+      return {
+        success: false,
+        error: "This vehicle view is no longer eligible for a retry. Refresh the read and try again.",
+      };
+    }
+    wakeBlueIrisVehicleFrameWorker();
+    revalidatePath("/live_feed");
+    return {
+      success: true,
+      data: {
+        readId: normalizedReadId,
+        status: queued.vehicle_image_status,
+        queueKind: queued.vehicle_image_queue_kind,
+        attemptCount: Number(queued.vehicle_image_attempt_count || 0),
+      },
+    };
+  } catch (error) {
+    return visualSearchFailure(error, "Unable to retry this Blue Iris vehicle view.");
   }
 }
 
@@ -1532,17 +1569,51 @@ export async function queueBlueIrisVehicleFrameHistory(input = {}) {
   await requirePermission("maintenance.manage");
   try {
     const runtime = await getBlueIrisVehicleFrameRuntime();
+    await runtime.queue.setHistoricalPaused(true);
     const queued = await runtime.queue.queueHistorical({
       cameraName: input.cameraName || null,
       startDate: input.startDate || null,
       endDate: input.endDate || null,
+      replaceExisting: input.replaceExisting === true,
     });
-    await runtime.queue.setHistoricalPaused(false);
-    wakeBlueIrisVehicleFrameWorker();
     revalidatePath("/settings/vehicle-intelligence");
-    return { success: true, data: { ...queued, status: await runtime.queue.getStatus() } };
+    return {
+      success: true,
+      data: {
+        ...queued,
+        status: {
+          ...await runtime.queue.getStatus(),
+          worker: runtime.worker.snapshot(),
+        },
+      },
+    };
   } catch (error) {
     return visualSearchFailure(error, "Unable to queue historical Blue Iris vehicle frames.");
+  }
+}
+
+export async function cancelBlueIrisVehicleFrameHistory(input = {}) {
+  await requirePermission("maintenance.manage");
+  try {
+    const runtime = await getBlueIrisVehicleFrameRuntime();
+    const cancelled = await runtime.queue.cancelHistorical({
+      cameraName: input.cameraName || null,
+      startDate: input.startDate || null,
+      endDate: input.endDate || null,
+    });
+    revalidatePath("/settings/vehicle-intelligence");
+    return {
+      success: true,
+      data: {
+        ...cancelled,
+        status: {
+          ...await runtime.queue.getStatus(),
+          worker: runtime.worker.snapshot(),
+        },
+      },
+    };
+  } catch (error) {
+    return visualSearchFailure(error, "Unable to cancel historical Blue Iris vehicle frames.");
   }
 }
 
@@ -1553,7 +1624,16 @@ export async function setBlueIrisVehicleFrameHistoryPaused(paused) {
     const control = await runtime.queue.setHistoricalPaused(paused === true);
     if (paused !== true) wakeBlueIrisVehicleFrameWorker();
     revalidatePath("/settings/vehicle-intelligence");
-    return { success: true, data: { control, status: await runtime.queue.getStatus() } };
+    return {
+      success: true,
+      data: {
+        control,
+        status: {
+          ...await runtime.queue.getStatus(),
+          worker: runtime.worker.snapshot(),
+        },
+      },
+    };
   } catch (error) {
     return visualSearchFailure(error, "Unable to update Blue Iris historical frame processing.");
   }
@@ -1566,7 +1646,16 @@ export async function runBlueIrisVehicleFrameBatch() {
     const batch = await runtime.queue.processBatch({ limit: 1 });
     revalidatePath("/settings/vehicle-intelligence");
     revalidatePath("/live_feed");
-    return { success: true, data: { batch, status: await runtime.queue.getStatus() } };
+    return {
+      success: true,
+      data: {
+        batch,
+        status: {
+          ...await runtime.queue.getStatus(),
+          worker: runtime.worker.snapshot(),
+        },
+      },
+    };
   } catch (error) {
     return visualSearchFailure(error, "Unable to process a Blue Iris vehicle frame.");
   }

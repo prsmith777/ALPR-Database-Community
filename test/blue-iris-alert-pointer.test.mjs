@@ -45,6 +45,7 @@ test("ingestion and migrations preserve Blue Iris pointers without storing BVR c
   assert.match(migrations, /2026072704_blue_iris_alert_correlation/);
   assert.match(migrations, /2026072801_blue_iris_vehicle_frames/);
   assert.match(migrations, /2026072802_blue_iris_vehicle_frame_queue/);
+  assert.match(migrations, /2026072803_blue_iris_vehicle_frame_quality/);
   assert.match(route, /vehicle_image_status[\s\S]*'pending', 'live'/);
   assert.match(route, /wakeBlueIrisVehicleFrameWorker/);
   assert.doesNotMatch(route, /readFile\([^)]*ALERT_CLIP/);
@@ -63,6 +64,7 @@ test("Blue Iris vehicle frames are bounded, read-owned, and exposed as a two-vie
   assert.match(service, /saveDerivedImage/);
   assert.doesNotMatch(service, /\.bvr[^\n]*readFile|readFile[^\n]*\.bvr/);
   assert.match(settings, /Select best vehicle frame/);
+  assert.match(settings, /new Date\(match\?\.alert\?\.timestamp \|\| timestamp\)/);
   assert.match(table, /Plate capture/);
   assert.match(table, /Vehicle view/);
   assert.match(reconciliation, /vehicle_image_path/);
@@ -83,4 +85,7 @@ test("Blue Iris vehicle frames are bounded, read-owned, and exposed as a two-vie
   assert.match(vehicleSettings, /Optional date range/);
   assert.match(vehicleSettings, /Queue \{cameraName \|\| "selected camera"\} history/);
   assert.match(vehicleSettings, /Pause history/);
+  assert.match(vehicleSettings, /Cancel pending \{cameraName \|\| "camera"\} history/);
+  assert.match(repository, /cancelHistorical/);
+  assert.match(repository, /vehicle_image_status IN \('pending', 'failed'\)/);
 });

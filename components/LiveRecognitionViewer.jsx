@@ -9,6 +9,7 @@ import { Separator } from "@/components/ui/separator";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
+import { buildBlueIrisUiUrl } from "@/lib/blue-iris-ui-url.mjs";
 import {
   Calendar,
   Clock,
@@ -311,7 +312,7 @@ export default function LiveRecognitionViewer({
                   <Button
                     onClick={() =>
                       window.open(
-                        `http://${biHost}/${latestPlate.bi_path}`,
+                        buildBlueIrisUiUrl(biHost, latestPlate.bi_path),
                         "_blank"
                       )
                     }

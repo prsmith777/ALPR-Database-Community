@@ -84,14 +84,65 @@ test("color assessment remains enabled for genuinely chromatic captures", () => 
 
 test("live-feed vehicle descriptors use a side rail without reducing image height", async () => {
   const table = await source("components/PlateTable.jsx");
-  assert.match(table, /sm:w-\[calc\(100vw-2rem\)\][^\n]*sm:max-w-7xl/);
-  assert.match(table, /sm:grid-rows-\[minmax\(0,1fr\)_auto\]/);
-  assert.match(table, /grid min-h-0 items-stretch gap-3 lg:grid-cols-\[minmax\(0,1fr\)_11rem\]/);
-  assert.match(table, /<ImageViewer[\s\S]*?<aside className="h-full rounded-lg border p-2\.5 text-sm lg:min-h-0">/);
+  assert.match(table, /w-\[calc\(100vw-2rem\)\][^\n]*max-w-7xl/);
+  assert.match(table, /lg:grid-cols-\[minmax\(0,1fr\)_11rem\]/);
+  assert.match(table, /<div className="contents">/);
+  assert.match(table, /lg:col-start-2 lg:row-span-2 lg:row-start-1/);
+  assert.match(table, /<ImageViewer[\s\S]*?<aside className="h-full rounded-lg border p-2\.5 text-sm [^"]*lg:min-h-0">/);
   assert.match(table, /<aside[\s\S]*?<div className="text-xs uppercase text-muted-foreground">Type<\/div>[\s\S]*?<div className="text-xs uppercase text-muted-foreground">Color<\/div>/);
-  assert.match(table, /<DialogFooter className="self-end">[\s\S]*?className="grid w-full gap-2"/);
+  assert.match(table, /<aside[\s\S]*?<span>Direction<\/span>/);
+  assert.match(table, /text-lg font-semibold leading-tight/);
+  assert.match(table, /focus_coordinates: selectedImageView === "vehicle"/);
+  assert.match(table, /zoomLabel=\{selectedImageView === "vehicle" \? "Zoom to Vehicle" : "Zoom to Plate"\}/);
+  assert.match(table, /<DialogFooter className="self-end lg:col-start-1 lg:row-start-2">[\s\S]*?className="grid w-full gap-3"/);
+  assert.match(table, /className="flex flex-wrap items-center gap-2"/);
+  assert.match(table, /className="flex flex-wrap items-center justify-between gap-2"/);
+  assert.match(table, /className="ml-auto flex flex-wrap items-center gap-2"/);
   const directionSection = table.slice(table.indexOf("<span>Direction</span>"), table.indexOf("<aside"));
   assert.doesNotMatch(directionSection, /vehicleColor|vehicleBodyType/);
+  const vehicleMetadata = table.slice(
+    table.indexOf('<div className="text-xs uppercase text-muted-foreground">Vehicle</div>'),
+    table.indexOf('<div className="relative h-[40vh]')
+  );
+  assert.match(vehicleMetadata, /Vehicle #\{selectedImage\.vehicleClusterId\}/);
+  assert.doesNotMatch(vehicleMetadata, /vehicleClusterStatus|vehicleClusterSimilarity/);
+});
+
+test("vehicle images support centered zoom, drag panning, and full-screen inspection", async () => {
+  const viewer = await source("components/ImageViewer.jsx");
+  assert.match(viewer, /image\?\.focus_coordinates \|\| image\?\.crop_coordinates/);
+  assert.match(viewer, /onPointerDown=\{handlePointerDown\}/);
+  assert.match(viewer, /onPointerMove=\{handlePointerMove\}/);
+  assert.match(viewer, /onPointerUp=\{handlePointerUp\}/);
+  assert.match(viewer, /data-testid=\{fullscreen \? "image-viewer-fullscreen" : "image-viewer-popup"\}/);
+  assert.match(viewer, /pointer-events-auto fixed inset-0/);
+  assert.match(viewer, /onClick=\{handleImageClick\}/);
+  assert.match(viewer, /onDoubleClickCapture=\{fullscreen \? handleCloseFullscreen : undefined\}/);
+  assert.doesNotMatch(viewer, /onDoubleClick=\{/);
+  assert.match(viewer, /now - previous\.time <= 550[\s\S]*?setIsFullscreen\(\(current\) => !current\)/);
+  assert.match(viewer, /const handleCloseFullscreen[\s\S]*?event\.stopPropagation\(\)[\s\S]*?setIsFullscreen\(false\)/);
+  assert.match(viewer, /onClick=\{handleCloseFullscreen\}[\s\S]*?aria-label="Close full screen image"/);
+  assert.match(viewer, /suppressImageClickRef\.current = !wasClick/);
+  assert.match(viewer, /now - previous\.time <= 550/);
+  assert.match(viewer, /onPointerCancel=\{handlePointerCancel\}/);
+  assert.match(viewer, /suppressImageClickRef\.current = false;[\s\S]*?lastImageClickRef\.current = null;[\s\S]*?\}, \[isFullscreen\]\)/);
+  assert.match(viewer, /createPortal\(viewer\(true\), document\.body\)/);
+});
+
+test("plate and vehicle image selectors stack without spanning the image", async () => {
+  const table = await source("components/PlateTable.jsx");
+  assert.match(table, /absolute left-2 top-2 z-20 flex flex-col rounded-md/);
+  assert.match(table, /className="h-7 justify-start px-2 text-xs"/);
+  assert.match(table, />Plate capture<\/Button>/);
+  assert.match(table, />Vehicle view<\/Button>/);
+});
+
+test("live-feed refreshes do not reset a user's vehicle zoom", async () => {
+  const viewer = await source("components/ImageViewer.jsx");
+  assert.match(viewer, /const initializedViewRef = useRef\(null\)/);
+  assert.match(viewer, /initializedViewRef\.current === viewResetKey/);
+  assert.match(viewer, /initializedViewRef\.current = viewResetKey;[\s\S]*?setZoom\(clampZoom\(initialZoom\)\)/);
+  assert.match(viewer, /setImageSize\(\{ url: image\.url, width: img\.width, height: img\.height \}\)/);
 });
 
 test("local vehicle type inference preserves confidence and model provenance", async () => {
