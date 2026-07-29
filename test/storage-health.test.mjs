@@ -141,8 +141,10 @@ test("storage measurement stays read-only while maintenance controls are separat
   assert.doesNotMatch(card, /onClick=.*(?:delete|prune|vacuum|cleanup)/i);
   assert.match(controls, /Run cleanup preview/);
   assert.match(controls, /Review and confirm cleanup/);
-  assert.match(controls, /Automatic cleanup is disabled/);
+  assert.match(controls, /Automatic derived-orphan cleanup/);
+  assert.match(controls, /Default off, separately approved/);
   assert.match(actions, /saveStorageMaintenanceSettings[\s\S]*?requirePermission\("maintenance\.manage"\)/);
   assert.match(actions, /previewStorageCleanup[\s\S]*?requirePermission\("maintenance\.manage"\)/);
   assert.match(actions, /runConfirmedStorageCleanup[\s\S]*?requirePermission\("maintenance\.manage"\)/);
+  assert.match(actions, /setAutomaticStorageCleanupApproval[\s\S]*?requirePermission\("maintenance\.automatic_cleanup\.approve"\)/);
 });

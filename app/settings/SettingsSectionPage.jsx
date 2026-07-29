@@ -33,6 +33,8 @@ export default async function SettingsSectionPage({ sectionId }) {
     !mustChangePassword && access.permissions.includes("system.manage_users");
   const canManageMaintenance =
     !mustChangePassword && access.permissions.includes("maintenance.manage");
+  const canApproveAutomaticCleanup =
+    !mustChangePassword && access.permissions.includes("maintenance.automatic_cleanup.approve");
   if (!canManageSettings && ADMIN_SECTIONS.has(sectionId)) {
     redirect("/settings/security");
   }
@@ -66,6 +68,7 @@ export default async function SettingsSectionPage({ sectionId }) {
       initialReleaseInfo={getReleaseInfo()}
       canManageSettings={canManageSettings}
       canManageMaintenance={canManageMaintenance}
+      canApproveAutomaticCleanup={canApproveAutomaticCleanup}
       initialSection={sectionId}
     />
   );

@@ -59,6 +59,7 @@ export default function SettingsForm({
   initialReleaseInfo,
   canManageSettings,
   canManageMaintenance,
+  canApproveAutomaticCleanup,
   initialSection,
 }) {
   const [isPending, startTransition] = useTransition(); // For general settings
@@ -671,6 +672,7 @@ export default function SettingsForm({
         <StorageMaintenancePanel
           overview={initialStorageMaintenance}
           canManage={canManageMaintenance}
+          canApproveAutomaticCleanup={canApproveAutomaticCleanup}
         />
         <div className="rounded-lg border p-5">
           <h3 className="font-semibold">External reporting is disabled</h3>
@@ -686,8 +688,9 @@ export default function SettingsForm({
             Pushover, MQTT, Blue Iris, Home Assistant, and AI-agent connections
             communicate only when you configure and use those integrations.
             Local retention planning and storage reconciliation are read-only.
-            No automated deletion is enabled; future destructive maintenance
-            requires separate safety design and approval.
+            Automatic deletion remains off until separately activated by an
+            Administrator and is limited to reconciliation-confirmed generated
+            derived orphans.
           </p>
         </div>
       </div>

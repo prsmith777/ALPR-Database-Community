@@ -6,8 +6,15 @@
   thumbnail, derived-image, database, Docker, and backup breakdowns, durable
   maintenance run/heartbeat/failure reporting, rate-limited SMTP and signed
   webhook maintenance alerts, and a typed-confirmation manual cleanup limited
-  to reconciliation-confirmed generated derived-file orphans. Automatic
-  cleanup remains disabled with no approved automatic categories.
+  to reconciliation-confirmed generated derived-file orphans.
+- Added default-off, separately Administrator-approved automatic cleanup for
+  generated derived orphans only. Runs require fresh zero-error reconciliation
+  provenance, enforce 100-file/1-GiB caps and a five-minute candidate-admission
+  budget with bounded database waits, reject links and changed or
+  referenced files, and suspend after failure until a fresh reconciliation and
+  typed acknowledgement. Added read-only PostgreSQL dead/live tuple,
+  autovacuum/autoanalyze, and transaction-ID-age observability; no VACUUM,
+  backup, restore, shell, Docker, or release controls were added.
 
 - Strengthen Blue Iris best-vehicle-frame selection so edge-adjacent detections no longer stop the search early, and add a bounded sparse fallback through 16 seconds when the initial timeline still lacks a clearly framed vehicle.
 

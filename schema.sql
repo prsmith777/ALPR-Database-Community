@@ -557,6 +557,10 @@ CREATE TABLE IF NOT EXISTS public.maintenance_runs (
     status VARCHAR(20) NOT NULL CHECK (status IN ('previewed', 'queued', 'running', 'completed', 'failed', 'cancelled')),
     actor_user_id BIGINT,
     preview_run_id BIGINT REFERENCES public.maintenance_runs(id) ON DELETE RESTRICT,
+    -- The reconciliation tables are installed by migrations.sql after this
+    -- legacy baseline schema. The migration adds the foreign key once the
+    -- referenced table exists.
+    source_reconciliation_run_id BIGINT,
     started_at TIMESTAMPTZ,
     completed_at TIMESTAMPTZ,
     duration_ms BIGINT CHECK (duration_ms IS NULL OR duration_ms >= 0),
@@ -582,7 +586,7 @@ CREATE TABLE IF NOT EXISTS public.maintenance_cleanup_items (
     observed_size_bytes BIGINT NOT NULL CHECK (observed_size_bytes >= 0),
     observed_modified_at TIMESTAMPTZ NOT NULL,
     status VARCHAR(40) NOT NULL DEFAULT 'candidate' CHECK (
-        status IN ('candidate', 'deleted', 'skipped-missing', 'skipped-changed', 'skipped-referenced', 'skipped-unsafe', 'failed')
+        status IN ('candidate', 'deleted', 'skipped-missing', 'skipped-changed', 'skipped-referenced', 'skipped-unsafe', 'skipped-limit', 'failed')
     ),
     reclaimed_bytes BIGINT NOT NULL DEFAULT 0 CHECK (reclaimed_bytes >= 0),
     error TEXT,
@@ -601,6 +605,44 @@ CREATE TABLE IF NOT EXISTS public.maintenance_cleanup_tokens (
     consumed_at TIMESTAMPTZ,
     created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     CONSTRAINT maintenance_cleanup_token_lifecycle CHECK (consumed_at IS NULL OR consumed_at >= created_at)
+);
+
+-- Automatic cleanup approvals are append-only revisions. Only generated,
+-- reconciliation-confirmed derived orphans are supported in this release.
+CREATE TABLE IF NOT EXISTS public.storage_cleanup_automatic_approvals (
+    id BIGSERIAL PRIMARY KEY,
+    category VARCHAR(40) NOT NULL CHECK (category = 'derived-orphans'),
+    revision BIGINT NOT NULL CHECK (revision > 0),
+    enabled BOOLEAN NOT NULL DEFAULT FALSE,
+    interval_seconds INTEGER NOT NULL DEFAULT 86400 CHECK (interval_seconds BETWEEN 86400 AND 604800),
+    grace_seconds INTEGER NOT NULL DEFAULT 604800 CHECK (grace_seconds BETWEEN 604800 AND 31536000),
+    actor_user_id BIGINT NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE (category, revision)
+);
+
+CREATE TABLE IF NOT EXISTS public.storage_cleanup_automatic_state (
+    category VARCHAR(40) PRIMARY KEY CHECK (category = 'derived-orphans'),
+    next_run_at TIMESTAMPTZ,
+    last_run_id BIGINT REFERENCES public.maintenance_runs(id) ON DELETE SET NULL,
+    source_reconciliation_run_id BIGINT,
+    circuit_breaker_open BOOLEAN NOT NULL DEFAULT FALSE,
+    circuit_breaker_opened_at TIMESTAMPTZ,
+    circuit_breaker_reason TEXT,
+    circuit_breaker_run_id BIGINT REFERENCES public.maintenance_runs(id) ON DELETE SET NULL,
+    acknowledged_at TIMESTAMPTZ,
+    acknowledged_by_user_id BIGINT,
+    acknowledged_run_id BIGINT,
+    acknowledgement_reconciliation_run_id BIGINT,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT storage_cleanup_breaker_state CHECK (
+        (circuit_breaker_open AND circuit_breaker_opened_at IS NOT NULL AND circuit_breaker_reason IS NOT NULL)
+        OR (NOT circuit_breaker_open)
+    ),
+    CONSTRAINT storage_cleanup_ack_evidence CHECK (
+        (acknowledged_at IS NULL AND acknowledged_run_id IS NULL AND acknowledgement_reconciliation_run_id IS NULL)
+        OR (acknowledged_at IS NOT NULL AND acknowledged_run_id IS NOT NULL AND acknowledgement_reconciliation_run_id IS NOT NULL)
+    )
 );
 
 CREATE TABLE IF NOT EXISTS public.storage_measurements (
