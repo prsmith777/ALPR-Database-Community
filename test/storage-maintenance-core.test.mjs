@@ -376,6 +376,25 @@ test("interrupted cleanup recovery returns without marking while the cleanup adv
   assert.equal(calls.at(-1).sql, "RELEASE");
 });
 
+test("interrupted cleanup recovery casts its timestamp parameter explicitly", async () => {
+  const calls = [];
+  const client = {
+    async query(sql) {
+      calls.push(sql);
+      if (/pg_try_advisory_lock/.test(sql)) return { rows: [{ locked: true }] };
+      return { rows: [] };
+    },
+    release() {},
+  };
+  await recoverInterruptedStorageCleanupRuns({
+    executor: { connect: async () => client },
+    now: new Date("2026-07-29T19:00:00.000Z"),
+  });
+  const recoverySql = calls.find((sql) => /WITH interrupted/.test(sql));
+  assert.match(recoverySql, /completed_at = \$1::timestamptz/);
+  assert.match(recoverySql, /started_at < \$1::timestamptz - make_interval/);
+});
+
 test("cleanup preview tokens are actor-bound when claimed", async () => {
   let actorParameter = null;
   const client = {
