@@ -112,6 +112,7 @@ test("vehicle images support centered zoom, drag panning, and full-screen inspec
   assert.match(viewer, /onPointerMove=\{handlePointerMove\}/);
   assert.match(viewer, /onPointerUp=\{handlePointerUp\}/);
   assert.match(viewer, /data-testid=\{fullscreen \? "image-viewer-fullscreen" : "image-viewer-popup"\}/);
+  assert.match(viewer, /pointer-events-auto fixed inset-0/);
   assert.match(viewer, /onClick=\{handleImageClick\}/);
   assert.match(viewer, /onDoubleClickCapture=\{fullscreen \? handleCloseFullscreen : undefined\}/);
   assert.doesNotMatch(viewer, /onDoubleClick=\{/);

@@ -386,7 +386,7 @@ const ImageViewer = ({
   const viewer = (fullscreen = false) => (
     <div
       data-testid={fullscreen ? "image-viewer-fullscreen" : "image-viewer-popup"}
-      className={fullscreen ? "fixed inset-0 z-[100] flex flex-col bg-black p-3" : "flex h-full flex-col"}
+      className={fullscreen ? "pointer-events-auto fixed inset-0 z-[100] flex flex-col bg-black p-3" : "flex h-full flex-col"}
     >
       {fullscreen ? (
         <Button
