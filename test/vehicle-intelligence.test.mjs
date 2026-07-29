@@ -112,14 +112,13 @@ test("vehicle images support centered zoom, drag panning, and full-screen inspec
   assert.match(viewer, /onPointerMove=\{handlePointerMove\}/);
   assert.match(viewer, /onPointerUp=\{handlePointerUp\}/);
   assert.match(viewer, /data-testid=\{fullscreen \? "image-viewer-fullscreen" : "image-viewer-popup"\}/);
-  assert.match(viewer, /onClick=\{fullscreen \? undefined : handleImageClick\}/);
-  assert.match(viewer, /onDoubleClick=\{fullscreen \? handleCloseFullscreen : handleOpenFullscreen\}/);
-  assert.match(viewer, /const handleOpenFullscreen[\s\S]*?setIsFullscreen\(true\)/);
-  assert.match(viewer, /const handleCloseFullscreen[\s\S]*?event\.stopPropagation\(\)[\s\S]*?window\.setTimeout\(\(\) => setIsFullscreen\(false\), 0\)/);
+  assert.match(viewer, /onClick=\{handleImageClick\}/);
+  assert.doesNotMatch(viewer, /onDoubleClick=/);
+  assert.match(viewer, /now - previous\.time <= 550[\s\S]*?setIsFullscreen\(\(current\) => !current\)/);
+  assert.match(viewer, /const handleCloseFullscreen[\s\S]*?event\.stopPropagation\(\)[\s\S]*?setIsFullscreen\(false\)/);
   assert.match(viewer, /onClick=\{handleCloseFullscreen\}[\s\S]*?aria-label="Close full screen image"/);
   assert.match(viewer, /suppressImageClickRef\.current = !wasClick/);
   assert.match(viewer, /now - previous\.time <= 550/);
-  assert.match(viewer, /now - previous\.time <= 550[\s\S]*?setIsFullscreen\(true\)/);
   assert.match(viewer, /onPointerCancel=\{handlePointerCancel\}/);
   assert.match(viewer, /suppressImageClickRef\.current = false;[\s\S]*?lastImageClickRef\.current = null;[\s\S]*?\}, \[isFullscreen\]\)/);
   assert.match(viewer, /createPortal\(viewer\(true\), document\.body\)/);

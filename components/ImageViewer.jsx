@@ -323,29 +323,21 @@ const ImageViewer = ({
     const closeToPrevious = previous
       && Math.hypot(event.clientX - previous.x, event.clientY - previous.y) <= 24;
     if (previous && closeToPrevious && now - previous.time <= 550) {
+      event.preventDefault();
+      event.stopPropagation();
       lastImageClickRef.current = null;
-      setIsFullscreen(true);
+      setIsFullscreen((current) => !current);
       return;
     }
 
     lastImageClickRef.current = { time: now, x: event.clientX, y: event.clientY };
   };
 
-  const handleOpenFullscreen = (event) => {
-    event.preventDefault();
-    event.stopPropagation();
-    lastImageClickRef.current = null;
-    setIsFullscreen(true);
-  };
-
   const handleCloseFullscreen = (event) => {
     event.preventDefault();
     event.stopPropagation();
     lastImageClickRef.current = null;
-    // Let the browser finish dispatching the double-click before the popup
-    // viewer is mounted again. Otherwise the tail of this gesture can reach
-    // the newly mounted popup and immediately reopen full screen.
-    window.setTimeout(() => setIsFullscreen(false), 0);
+    setIsFullscreen(false);
   };
 
   const handlePointerCancel = (event) => {
@@ -410,7 +402,7 @@ const ImageViewer = ({
       ) : null}
       <div
         ref={containerRef}
-        title={`${canZoom ? "Scroll to zoom; drag to pan; " : ""}double-click for full screen`}
+        title={`${canZoom ? "Scroll to zoom; drag to pan; " : ""}double-click ${fullscreen ? "to exit full screen" : "for full screen"}`}
         className={`relative flex min-h-0 flex-1 w-full items-center justify-center overflow-hidden select-none ${
           zoom > 1 ? isDragging ? "cursor-grabbing" : "cursor-grab" : "cursor-zoom-in"
         }`}
@@ -419,8 +411,7 @@ const ImageViewer = ({
         onPointerMove={handlePointerMove}
         onPointerUp={handlePointerUp}
         onPointerCancel={handlePointerCancel}
-        onClick={fullscreen ? undefined : handleImageClick}
-        onDoubleClick={fullscreen ? handleCloseFullscreen : handleOpenFullscreen}
+        onClick={handleImageClick}
       >
         <div style={getImageStyle()}>
           <NextImage
