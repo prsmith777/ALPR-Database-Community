@@ -666,6 +666,17 @@ INSERT INTO public.host_maintenance_config (category, automation_supported, mini
     ('docker-build-cache', TRUE, 7), ('unused-alpr-images', FALSE, 7), ('rollout-backups', TRUE, 30)
 ON CONFLICT (category) DO NOTHING;
 
+-- Installed once by the fixed host-worker installer. Keeping this identity in
+-- the database (not only in environment files) makes a foreign logical restore
+-- fail closed. The row is immutable after initialization.
+CREATE TABLE IF NOT EXISTS public.host_maintenance_environment_identity (
+    singleton BOOLEAN PRIMARY KEY DEFAULT TRUE CHECK (singleton),
+    environment_id VARCHAR(200) NOT NULL,
+    database_identity VARCHAR(200) NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE (environment_id, database_identity)
+);
+
 CREATE TABLE IF NOT EXISTS public.host_maintenance_intents (
     id BIGSERIAL PRIMARY KEY,
     intent_type VARCHAR(20) NOT NULL CHECK (intent_type IN ('preview', 'execute', 'scheduled')),
@@ -861,7 +872,7 @@ DO $$
 DECLARE table_name TEXT;
 BEGIN
   FOREACH table_name IN ARRAY ARRAY[
-    'host_maintenance_approvals','host_maintenance_previews','host_maintenance_preview_items',
+    'host_maintenance_environment_identity','host_maintenance_approvals','host_maintenance_previews','host_maintenance_preview_items',
     'host_maintenance_preview_consumptions','host_maintenance_receipts','host_maintenance_receipt_items',
     'host_maintenance_acknowledgements'
   ] LOOP

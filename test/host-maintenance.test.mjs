@@ -6,7 +6,10 @@ import {
   assertFreshHostMaintenanceInventory, buildHostMaintenancePlan, candidateSetHash, canonicalHostInventoryRevision, HOST_MAINTENANCE_ACTIVATIONS,
   HOST_MAINTENANCE_CAPS, HOST_MAINTENANCE_CONFIRMATIONS, planForCategory,
 } from "../lib/host-maintenance-policy.mjs";
-import { validateHostMaintenanceReceipt } from "../lib/host-maintenance.mjs";
+import { inspectAndHeartbeatHostMaintenanceWorker, validateHostMaintenanceReceipt } from "../lib/host-maintenance.mjs";
+import {
+  getHostMaintenanceRequestStatus, requestHostMaintenanceExecution, setScheduledHostMaintenance,
+} from "../lib/host-maintenance-control.mjs";
 
 const GiB = 1024 ** 3;
 function inventory(overrides={}) {
@@ -105,7 +108,7 @@ test("application graph imports control plane only and control plane has no host
 test("schema uses append-only evidence and three restrictive category boundaries",async()=>{
   const [schema,migrations]=await Promise.all([readFile(new URL("../schema.sql",import.meta.url),"utf8"),readFile(new URL("../migrations.sql",import.meta.url),"utf8")]);
   for(const source of [schema,migrations]){
-    for(const table of ["host_maintenance_approvals","host_maintenance_previews","host_maintenance_preview_consumptions","host_maintenance_receipts","host_maintenance_acknowledgements","host_maintenance_worker_state"])assert.match(source,new RegExp(table));
+    for(const table of ["host_maintenance_environment_identity","host_maintenance_approvals","host_maintenance_previews","host_maintenance_preview_consumptions","host_maintenance_receipts","host_maintenance_acknowledgements","host_maintenance_worker_state"])assert.match(source,new RegExp(table));
     assert.match(source,/unused-alpr-images/);assert.match(source,/unused-alpr-image/);assert.match(source,/ON DELETE RESTRICT/);
   }
   assert.match(migrations,/conrelid='public\.host_maintenance_approvals'::regclass/);
@@ -188,6 +191,7 @@ test("schema evidence tables are append-only and environment bindings are durabl
     assert.match(source,/host_maintenance_preview_intent_binding_fkey/);
     assert.match(source,/environment_id VARCHAR\(200\) NOT NULL/);
     assert.match(source,/inventory_measured_at TIMESTAMPTZ NOT NULL/);
+    assert.match(source,/'host_maintenance_environment_identity','host_maintenance_approvals'/);
   }
 });
 
@@ -196,8 +200,46 @@ test("control plane requires explicit environment and uses worker-owned ack evid
     readFile(new URL("../lib/host-maintenance-control.mjs",import.meta.url),"utf8"),readFile(new URL("../app/actions.js",import.meta.url),"utf8"),
     readFile(new URL("../docker-compose.yml",import.meta.url),"utf8"),readFile(new URL("../.env.example",import.meta.url),"utf8")]);
   assert.match(control,/HOST_MAINTENANCE_ENVIRONMENT_ID/);assert.match(control,/last_error IS NULL/);assert.match(control,/inventoryMeasuredAt:worker\.inventory_measured_at/);
+  assert.match(control,/SELECT 1 FROM public\.host_maintenance_environment_identity/);
+  const worker=await readFile(new URL("../lib/host-maintenance.mjs",import.meta.url),"utf8");
+  assert.match(worker,/Host worker database identity mismatch/);
+  assert.match(worker,/await assertDatabaseIdentity\(pool,bindings\)/);
   assert.doesNotMatch(actions,/evidence: input\.evidence/);assert.match(control,/HOST_MAINTENANCE_FAILED/);
   assert.match(compose,/HOST_MAINTENANCE_DATABASE_IDENTITY/);assert.match(example,/HOST_MAINTENANCE_ENVIRONMENT_ID=/);
+});
+
+test("database identity mismatch prevents token delivery, mutations, and worker-state writes",async()=>{
+  const priorEnvironment=process.env.HOST_MAINTENANCE_ENVIRONMENT_ID;
+  const priorDatabase=process.env.HOST_MAINTENANCE_DATABASE_IDENTITY;
+  process.env.HOST_MAINTENANCE_ENVIRONMENT_ID="staging";
+  process.env.HOST_MAINTENANCE_DATABASE_IDENTITY="db-staging";
+  try{
+    const directQueries=[];
+    const direct={query:async(sql)=>{directQueries.push(sql);return{rowCount:0,rows:[]};}};
+    await assert.rejects(()=>getHostMaintenanceRequestStatus({executor:direct,requestId:1,actor:{id:1}}),/identity/);
+    assert.equal(directQueries.length,1);
+    assert.doesNotMatch(directQueries.join("\n"),/DELETE FROM public\.host_maintenance_preview_deliveries/);
+
+    for(const operation of[
+      (executor)=>requestHostMaintenanceExecution({executor,actor:{id:1},previewToken:"token",confirmation:"no"}),
+      (executor)=>setScheduledHostMaintenance({executor,actor:{id:1},category:"docker-build-cache",enabled:false}),
+    ]){
+      const queries=[];
+      const client={query:async(sql)=>{queries.push(sql);return /host_maintenance_environment_identity/.test(sql)?{rowCount:0,rows:[]}:{rowCount:0,rows:[]};},release(){}};
+      await assert.rejects(()=>operation({connect:async()=>client}),/identity/);
+      assert.doesNotMatch(queries.join("\n"),/INSERT INTO public\.host_maintenance_intents|UPDATE public\.host_maintenance_config|INSERT INTO public\.host_maintenance_preview_consumptions/);
+    }
+
+    const workerQueries=[];
+    const workerExecutor={query:async(sql)=>{workerQueries.push(sql);return{rowCount:0,rows:[]};}};
+    let inspected=false;
+    await assert.rejects(()=>inspectAndHeartbeatHostMaintenanceWorker({executor:workerExecutor,adapter:{inspect:async()=>{inspected=true;}},now:new Date()}),/identity/);
+    assert.equal(inspected,false);
+    assert.doesNotMatch(workerQueries.join("\n"),/UPDATE public\.host_maintenance_worker_state/);
+  }finally{
+    if(priorEnvironment===undefined)delete process.env.HOST_MAINTENANCE_ENVIRONMENT_ID;else process.env.HOST_MAINTENANCE_ENVIRONMENT_ID=priorEnvironment;
+    if(priorDatabase===undefined)delete process.env.HOST_MAINTENANCE_DATABASE_IDENTITY;else process.env.HOST_MAINTENANCE_DATABASE_IDENTITY=priorDatabase;
+  }
 });
 
 test("worker-only entry exports idle heartbeat and worker operations only",async()=>{
