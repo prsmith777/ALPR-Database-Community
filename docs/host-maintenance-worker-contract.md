@@ -55,7 +55,10 @@ configured environment and database identity, acquire the shared host lock,
 and validate an exact receipt even if database rows were modified by an
 administrator. Configure both `HOST_MAINTENANCE_ENVIRONMENT_ID` and
 `HOST_MAINTENANCE_DATABASE_IDENTITY` identically for the control-plane service
-and worker. Missing or mismatched bindings fail closed.
+and worker. The installer must also insert those exact values once into the
+immutable `host_maintenance_environment_identity` singleton; every control and
+worker cycle verifies that database-resident identity so a foreign logical
+restore fails closed. Missing or mismatched bindings fail closed.
 
 ## Cache policy
 
