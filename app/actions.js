@@ -139,6 +139,11 @@ import {
   updateStorageMaintenanceSettings,
   updateAutomaticCleanupApproval as updateAutomaticCleanupApprovalService,
   acknowledgeAutomaticCleanup as acknowledgeAutomaticCleanupService,
+  acknowledgeHostMaintenanceFailure,
+  createHostMaintenanceExecution,
+  createHostMaintenancePreview,
+  readHostMaintenanceRequest,
+  updateScheduledHostMaintenance,
 } from "@/lib/storage-maintenance-service.mjs";
 
 async function readServerActionSessionId() {
@@ -1476,6 +1481,15 @@ function storageMaintenanceFailure(error, fallback) {
     /^Automatic cleanup suspension is missing its failed-run provenance$/,
     /^Run a fresh, successful storage reconciliation before acknowledging this failure$/,
     /^Automatic cleanup approval requires an authenticated Administrator$/,
+    /^Unsupported host maintenance category$/,
+    /^Host maintenance requires an authenticated actor$/,
+    /^Host maintenance request is invalid$/,
+    /^Host maintenance preview is incomplete, expired, or invalid$/,
+    /^The fixed host maintenance worker is unavailable or stale$/,
+    /^Scheduled unused-image pruning is unsupported until independently approved$/,
+    /^Type (?:PRUNE UNUSED ALPR BUILD CACHE|PRUNE RETIRED ALPR IMAGES|PRUNE EXPIRED VERIFIED ROLLOUT BACKUPS) to request this category$/,
+    /^Type ENABLE SCHEDULED (?:DOCKER CACHE PRUNING|UNUSED ALPR IMAGE PRUNING|ROLLOUT BACKUP RETENTION) to activate scheduled/,
+    /^Type ACKNOWLEDGE (?:DOCKER CACHE|UNUSED IMAGE|ROLLOUT BACKUP) FAILURE to acknowledge this failure$/,
   ];
   const safe = safeMessages.some((pattern) => pattern.test(candidate));
   if (!safe) {
@@ -1624,6 +1638,49 @@ export async function acknowledgeAutomaticStorageCleanupFailure(input = {}) {
   } catch (error) {
     return storageMaintenanceFailure(error, "Unable to acknowledge automatic cleanup failure.");
   }
+}
+
+export async function previewHostMaintenance(input = {}) {
+  const principal = await requirePermission("maintenance.manage");
+  try {
+    return { success: true, data: await createHostMaintenancePreview({ actor: principal, category: input.category }) };
+  } catch (error) { return storageMaintenanceFailure(error, "Unable to queue host maintenance preview."); }
+}
+
+export async function refreshHostMaintenancePreview(input = {}) {
+  const principal = await requirePermission("maintenance.manage");
+  try {
+    return { success: true, data: await readHostMaintenanceRequest({ actor: principal, requestId: input.requestId }) };
+  } catch (error) { return storageMaintenanceFailure(error, "Unable to read host maintenance preview."); }
+}
+
+export async function runConfirmedHostMaintenance(input = {}) {
+  const principal = await requirePermission("maintenance.manage");
+  try {
+    const data = await createHostMaintenanceExecution({ actor: principal, requestId: input.requestId, previewToken: String(input.previewToken || ""), confirmation: String(input.confirmation || "") });
+    revalidatePath("/settings/data-privacy");
+    return { success: true, data };
+  } catch (error) { return storageMaintenanceFailure(error, "Unable to queue host maintenance execution."); }
+}
+
+export async function setScheduledHostMaintenancePolicy(input = {}) {
+  const principal = await requirePermission("maintenance.automatic_cleanup.approve");
+  try {
+    const data = await updateScheduledHostMaintenance({ actor: principal, input });
+    revalidatePath("/settings/data-privacy");
+    return { success: true, data };
+  } catch (error) { return storageMaintenanceFailure(error, "Unable to update scheduled host maintenance."); }
+}
+
+export async function acknowledgeHostMaintenanceFailureAction(input = {}) {
+  const principal = await requirePermission("maintenance.automatic_cleanup.approve");
+  try {
+    const data = await acknowledgeHostMaintenanceFailure({ actor: principal, input: {
+      category: input.category, confirmation: String(input.confirmation || ""),
+    } });
+    revalidatePath("/settings");
+    return { success: true, data };
+  } catch (error) { return storageMaintenanceFailure(error, "Unable to acknowledge host maintenance failure."); }
 }
 
 export async function testBlueIrisConnection() {

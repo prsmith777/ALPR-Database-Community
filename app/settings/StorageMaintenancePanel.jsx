@@ -28,6 +28,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import HostMaintenancePanel from "./HostMaintenancePanel";
 
 function formatBytes(value) {
   if (!Number.isFinite(value)) return "Unavailable";
@@ -448,6 +449,12 @@ export default function StorageMaintenancePanel({ overview, canManage, canApprov
           {!canApproveAutomaticCleanup && <p className="text-xs text-muted-foreground">Only Administrators with the automatic-cleanup approval permission can change this state.</p>}
         </CardContent>
       </Card>
+
+      <HostMaintenancePanel
+        overview={overview?.hostMaintenance}
+        canManage={canManage}
+        canApproveAutomaticCleanup={canApproveAutomaticCleanup}
+      />
 
       <Card>
         <CardHeader>
