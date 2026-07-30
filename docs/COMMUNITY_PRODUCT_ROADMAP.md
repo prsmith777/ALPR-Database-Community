@@ -18,7 +18,7 @@ reliable background processing.
 6. Audit sensitive searches, exports, corrections, rule changes, and
    destructive maintenance.
 
-## Release baseline — July 29, 2026
+## Release baseline — July 30, 2026
 
 - Application `0.1.13` includes named users and roles, evidence-preserving plate
   review, filter-respecting exports, the searchable help center, local privacy
@@ -136,6 +136,17 @@ reliable background processing.
   plate. Known Plate values link directly to exact individual reads, and
   plate-oriented typography requests a slashed-zero glyph to distinguish `0`
   from `O`.
+- The application now contains a distinct, no-input manual database-backup
+  request/status control plane. It can request only a PostgreSQL custom-format
+  backup in a worker-owned approved root and reports only sanitized status,
+  time, basename, verified size, and error state. It exposes no path, command,
+  arguments, schedule, or restore operation. The button fails closed unless a
+  fresh worker explicitly advertises `database-backup-create-v1`; the current
+  separately installed worker still requires a reviewed fixed adapter and
+  runtime tooling update before this control can become operational. Its role
+  needs only narrow SELECT/UPDATE access to the dedicated request queue and no
+  application-table read or dump privileges; the adapter must use fixed Docker
+  execution against the exact database container.
 - Recurring plate-correction aliases now default to All cameras while retaining
   an explicit current-camera-only scope for camera-specific OCR errors. An
   alias-only save repairs mappings without changing historical reads, conflicts
@@ -289,6 +300,20 @@ privileged worker, so these controls remain unavailable until the documented
 fixed host service is independently installed. See
 `docs/host-maintenance-worker-contract.md`.
 
+The repo-side manual database-backup increment uses its own one-active-request
+queue rather than a cleanup category. A fixed adapter must create and verify a
+PostgreSQL custom-format dump in the approved backup root, then return only a
+bound basename, size, checksum, verification marker, and timing receipt. The
+operation has a fixed 50 GiB output ceiling. The UI stays disabled until the
+worker heartbeat advertises the exact versioned
+  capability. The installed worker plugin's fixed adapter and runtime image
+  still need a separate reviewed update using fixed Docker execution against
+  the exact database container. The installer must extend its restricted ACL
+  only with SELECT/UPDATE access to the dedicated request queue, without any
+  application-table read or dump privilege. This roadmap does
+not claim that adapter is currently deployed. Backup catalog integration,
+restore preflight, restore execution, and automatic scheduling remain pending.
+
 Settings also includes a read-only Release view for the application version,
 build- or deployment-provided Git SHA, release channel, and local release
 notes. Updates remain externally orchestrated.
@@ -309,8 +334,10 @@ notes. Updates remain externally orchestrated.
   grace, durable provenance, alert/audit history, and a fail-closed circuit
   breaker.
 - Delivered increment: read-only PostgreSQL table maintenance and transaction
-  ID age observability. Add controlled `VACUUM ANALYZE`, backup,
-  restore-preflight, and full backup-verification jobs in later increments.
+  ID age observability, plus the fail-closed application control plane for one
+  manual custom-format database backup. Add the reviewed fixed worker adapter,
+  controlled `VACUUM ANALYZE`, catalog integration, restore preflight, restore
+  execution, and broader backup-verification jobs in later increments.
   Do not expose an arbitrary SQL or shell console.
 - Delivered foundation: display the current version, build- or
   deployment-provided Git SHA, release channel, and local release notes without

@@ -140,8 +140,10 @@ import {
   updateAutomaticCleanupApproval as updateAutomaticCleanupApprovalService,
   acknowledgeAutomaticCleanup as acknowledgeAutomaticCleanupService,
   acknowledgeHostMaintenanceFailure,
+  createDatabaseBackup as createDatabaseBackupService,
   createHostMaintenanceExecution,
   createHostMaintenancePreview,
+  readDatabaseBackupRequest,
   readHostMaintenanceRequest,
   updateScheduledHostMaintenance,
 } from "@/lib/storage-maintenance-service.mjs";
@@ -1645,6 +1647,22 @@ export async function previewHostMaintenance(input = {}) {
   try {
     return { success: true, data: await createHostMaintenancePreview({ actor: principal, category: input.category }) };
   } catch (error) { return storageMaintenanceFailure(error, "Unable to queue host maintenance preview."); }
+}
+
+export async function createDatabaseBackup() {
+  const principal = await requirePermission("maintenance.manage");
+  try {
+    const data = await createDatabaseBackupService({ actor: principal });
+    revalidatePath("/settings/data-privacy");
+    return { success: true, data };
+  } catch (error) { return storageMaintenanceFailure(error, "Unable to queue database backup."); }
+}
+
+export async function refreshDatabaseBackup(input = {}) {
+  const principal = await requirePermission("maintenance.manage");
+  try {
+    return { success: true, data: await readDatabaseBackupRequest({ actor: principal, requestId: input.requestId }) };
+  } catch (error) { return storageMaintenanceFailure(error, "Unable to read database-backup status."); }
 }
 
 export async function refreshHostMaintenancePreview(input = {}) {
