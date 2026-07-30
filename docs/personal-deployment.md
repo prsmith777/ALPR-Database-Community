@@ -108,6 +108,13 @@ socket, a privileged container, or writable access to backup/release trees.
 Docker volumes are excluded from `totalBytes` to avoid double-counting the
 application storage and PostgreSQL categories.
 
+Host-maintenance controls additionally require explicit, stable
+`HOST_MAINTENANCE_ENVIRONMENT_ID` and `HOST_MAINTENANCE_DATABASE_IDENTITY`
+values in `.env` and the separately installed worker. Give staging and
+production different environment IDs. Leave both blank until the reviewed
+worker is installed; controls then remain fail-closed. Do not infer either
+identity from `ALPR_RELEASE_CHANNEL`, an image tag, hostname, or branch name.
+
 ### 3. Accept staging
 
 Exercise the changed screens and important existing workflows. Check browser

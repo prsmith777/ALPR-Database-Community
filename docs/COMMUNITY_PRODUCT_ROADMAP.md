@@ -275,6 +275,17 @@ verified rollback backups have no application deletion path. Docker and backup
 measurements use an optional stale-checked read-only host snapshot; the app
 never receives the Docker socket or writable backup access.
 
+Phase 3 now supplies a fail-closed database intent/receipt control plane for
+three independent host categories: dedicated ALPR Docker build cache,
+worker-ledger-confirmed retired ALPR images, and verified rollout backups.
+Candidate discovery and opaque preview tokens are worker-owned; previews are
+short-lived, single-use, exact-set and environment/policy/generation bound.
+Cache and backup schedules remain separately approved and default off, while
+unused-image automation remains unsupported. The shipped application has no
+privileged worker, so these controls remain unavailable until the documented
+fixed host service is independently installed. See
+`docs/host-maintenance-worker-contract.md`.
+
 Settings also includes a read-only Release view for the application version,
 build- or deployment-provided Git SHA, release channel, and local release
 notes. Updates remain externally orchestrated.
