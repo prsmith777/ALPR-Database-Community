@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useTransition, useOptimistic } from "react";
-import { X } from "lucide-react";
+import { BellRing, HardDrive, Shield, Trash2, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { PasswordInput } from "@/components/ui/password-input";
@@ -33,6 +33,8 @@ import {
 } from "@/app/actions";
 import { Switch } from "@/components/ui/switch";
 import { Badge } from "@/components/ui/badge";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { useRouteTab } from "@/components/useRouteTab";
 import {
   Select,
   SelectContent,
@@ -50,6 +52,13 @@ import StorageHealthCard from "./StorageHealthCard";
 import StorageMaintenancePanel from "./StorageMaintenancePanel";
 import BlueIrisConnectionTest from "./BlueIrisConnectionTest";
 
+const DATA_PRIVACY_ROUTES = Object.freeze({
+  storage: "/settings/data-privacy",
+  monitoring: "/settings/data-privacy/monitoring",
+  cleanup: "/settings/data-privacy/cleanup",
+  privacy: "/settings/data-privacy/privacy",
+});
+
 export default function SettingsForm({
   initialSettings,
   initialApiKey,
@@ -66,6 +75,7 @@ export default function SettingsForm({
   const [error, setError] = useState(""); // General error for main form
   const [success, setSuccess] = useState(false); // General success for main form
   const activeSection = initialSection || (canManageSettings ? "general" : "security");
+  const privacyTab = useRouteTab(DATA_PRIVACY_ROUTES, "storage");
   const [showApiKey, setShowApiKey] = useState(false); // This is local state for general form (will be managed by SecuritySettings itself now)
   const [showDialog, setShowDialog] = useState(false); // This is local state for general form (will be managed by SecuritySettings itself now)
 
@@ -667,33 +677,76 @@ export default function SettingsForm({
           Review how this community build handles information leaving the app.
         </p>
       </div>
-      <div className="max-w-5xl space-y-4">
-        <StorageHealthCard snapshot={initialStorageHealth} />
-        <StorageMaintenancePanel
-          overview={initialStorageMaintenance}
-          canManage={canManageMaintenance}
-          canApproveAutomaticCleanup={canApproveAutomaticCleanup}
-        />
-        <div className="rounded-lg border p-5">
-          <h3 className="font-semibold">External reporting is disabled</h3>
-          <p className="mt-2 text-sm text-muted-foreground">
-            This build does not send usage telemetry or upload plate images and
-            annotations for model training. It also does not contact the former
-            upstream project to check for application updates.
-          </p>
-        </div>
-        <div className="rounded-lg border p-5">
-          <h3 className="font-semibold">Configured integrations remain explicit</h3>
-          <p className="mt-2 text-sm text-muted-foreground">
-            Pushover, MQTT, Blue Iris, Home Assistant, and AI-agent connections
-            communicate only when you configure and use those integrations.
-            Local retention planning and storage reconciliation are read-only.
-            Automatic deletion remains off until separately activated by an
-            Administrator and is limited to reconciliation-confirmed generated
-            derived orphans.
-          </p>
-        </div>
-      </div>
+      <Tabs value={privacyTab.active} onValueChange={privacyTab.navigate} className="max-w-5xl space-y-6">
+        <TabsList aria-label="Data and privacy sections" className="grid h-auto w-full grid-cols-2 gap-1 p-1 lg:grid-cols-4">
+          <TabsTrigger value="storage" className="gap-2 py-2">
+            <HardDrive className="h-4 w-4" aria-hidden="true" />Storage Health
+          </TabsTrigger>
+          <TabsTrigger value="monitoring" className="gap-2 py-2">
+            <BellRing className="h-4 w-4" aria-hidden="true" />Monitoring
+          </TabsTrigger>
+          <TabsTrigger value="cleanup" className="gap-2 py-2">
+            <Trash2 className="h-4 w-4" aria-hidden="true" />Cleanup
+            <span className="rounded-full bg-muted px-2 py-0.5 text-xs">
+              {initialStorageMaintenance?.hostMaintenance?.worker?.status === "healthy" ? "Ready" : "Unavailable"}
+            </span>
+          </TabsTrigger>
+          <TabsTrigger value="privacy" className="gap-2 py-2">
+            <Shield className="h-4 w-4" aria-hidden="true" />Privacy
+          </TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="storage" className="mt-0 space-y-4">
+          <StorageHealthCard snapshot={initialStorageHealth} view="storage" />
+          <StorageMaintenancePanel
+            overview={initialStorageMaintenance}
+            canManage={canManageMaintenance}
+            canApproveAutomaticCleanup={canApproveAutomaticCleanup}
+            view="storage"
+          />
+        </TabsContent>
+
+        <TabsContent value="monitoring" className="mt-0 space-y-4">
+          <StorageHealthCard snapshot={initialStorageHealth} view="monitoring" />
+          <StorageMaintenancePanel
+            overview={initialStorageMaintenance}
+            canManage={canManageMaintenance}
+            canApproveAutomaticCleanup={canApproveAutomaticCleanup}
+            view="monitoring"
+          />
+        </TabsContent>
+
+        <TabsContent value="cleanup" className="mt-0">
+          <StorageMaintenancePanel
+            overview={initialStorageMaintenance}
+            canManage={canManageMaintenance}
+            canApproveAutomaticCleanup={canApproveAutomaticCleanup}
+            view="cleanup"
+          />
+        </TabsContent>
+
+        <TabsContent value="privacy" className="mt-0 space-y-4">
+          <div className="rounded-lg border p-5">
+            <h3 className="font-semibold">External reporting is disabled</h3>
+            <p className="mt-2 text-sm text-muted-foreground">
+              This build does not send usage telemetry or upload plate images and
+              annotations for model training. It also does not contact the former
+              upstream project to check for application updates.
+            </p>
+          </div>
+          <div className="rounded-lg border p-5">
+            <h3 className="font-semibold">Configured integrations remain explicit</h3>
+            <p className="mt-2 text-sm text-muted-foreground">
+              Pushover, MQTT, Blue Iris, Home Assistant, and AI-agent connections
+              communicate only when you configure and use those integrations.
+              Local retention planning and storage reconciliation are read-only.
+              Automatic deletion remains off until separately activated by an
+              Administrator and is limited to reconciliation-confirmed generated
+              derived orphans.
+            </p>
+          </div>
+        </TabsContent>
+      </Tabs>
     </div>
   );
 

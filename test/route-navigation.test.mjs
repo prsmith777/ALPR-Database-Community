@@ -34,13 +34,14 @@ test("settings navigation uses dedicated paths without legacy section queries", 
 });
 
 test("page-level tabs use clean route segments site-wide", async () => {
-  const [hook, known, notifications, mqtt, channels, vehicleSettings] = await Promise.all([
+  const [hook, known, notifications, mqtt, channels, vehicleSettings, settingsForm] = await Promise.all([
     source("components/useRouteTab.js"),
     source("components/KnownPlatesWorkspace.jsx"),
     source("components/NotificationRulesWorkspace.jsx"),
     source("components/mqtt/MqttAdmin.jsx"),
     source("components/settings/IntegrationChannelSettings.jsx"),
     source("components/settings/VehicleIntelligenceSettings.jsx"),
+    source("app/settings/SettingsForm.jsx"),
   ]);
 
   assert.match(hook, /router\.push\(href, \{ scroll: false \}\)/);
@@ -56,6 +57,10 @@ test("page-level tabs use clean route segments site-wide", async () => {
   assert.match(vehicleSettings, /processing: "\/settings\/vehicle-intelligence\/processing"/);
   assert.match(vehicleSettings, /calibration: "\/settings\/vehicle-intelligence\/calibration"/);
   assert.doesNotMatch(vehicleSettings, /\?tab=/);
+  assert.match(settingsForm, /monitoring: "\/settings\/data-privacy\/monitoring"/);
+  assert.match(settingsForm, /cleanup: "\/settings\/data-privacy\/cleanup"/);
+  assert.match(settingsForm, /privacy: "\/settings\/data-privacy\/privacy"/);
+  assert.match(settingsForm, /aria-label="Data and privacy sections"/);
 });
 
 test("every clean page-level tab path has an application route", async () => {
@@ -74,6 +79,9 @@ test("every clean page-level tab path has an application route", async () => {
     "app/settings/vehicle-intelligence/vehicle-views/page.jsx",
     "app/settings/vehicle-intelligence/processing/page.jsx",
     "app/settings/vehicle-intelligence/calibration/page.jsx",
+    "app/settings/data-privacy/monitoring/page.jsx",
+    "app/settings/data-privacy/cleanup/page.jsx",
+    "app/settings/data-privacy/privacy/page.jsx",
   ];
   await Promise.all(routeFiles.map((path) => access(new URL(`../${path}`, import.meta.url))));
 });

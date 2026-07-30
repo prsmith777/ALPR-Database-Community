@@ -18,7 +18,7 @@ reliable background processing.
 6. Audit sensitive searches, exports, corrections, rule changes, and
    destructive maintenance.
 
-## Release baseline — July 28, 2026
+## Release baseline — July 29, 2026
 
 - Application `0.1.13` includes named users and roles, evidence-preserving plate
   review, filter-respecting exports, the searchable help center, local privacy
@@ -123,6 +123,9 @@ reliable background processing.
   record/image-path counts, recent ingestion, visual-index state,
   index-confirmed missing sources, a bounded recent-file bytes/read sample,
   and estimated 70/80/90% capacity dates. It performs no cleanup or mutation.
+  Data & Privacy now separates Storage Health, Monitoring, Cleanup, and Privacy
+  into route-backed top tabs so operational controls, read-only measurements,
+  and policy explanations no longer form one continuous page.
 - Administrators can now open Settings > Release to identify the installed
   application version, build- or deployment-provided Git SHA, release channel,
   and local release notes. The view is read-only and does not fetch source, run

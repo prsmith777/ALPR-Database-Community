@@ -59,7 +59,7 @@ function noticeClass(kind) {
     : "border-emerald-500/40 text-emerald-700 dark:text-emerald-300";
 }
 
-export default function StorageMaintenancePanel({ overview, canManage, canApproveAutomaticCleanup = false }) {
+export default function StorageMaintenancePanel({ overview, canManage, canApproveAutomaticCleanup = false, view = "all" }) {
   const router = useRouter();
   const settings = overview?.settings || {};
   const scheduler = overview?.jobs?.scheduler || {};
@@ -104,6 +104,10 @@ export default function StorageMaintenancePanel({ overview, canManage, canApprov
   const [emailMessage, setEmailMessage] = useState(null);
   const [webhookMessage, setWebhookMessage] = useState(null);
   const [isPending, startTransition] = useTransition();
+  const showStorage = view === "all" || view === "storage";
+  const showMonitoring = view === "all" || view === "monitoring";
+  const showCleanup = view === "all" || view === "cleanup";
+  const hostWorkerStatus = overview?.hostMaintenance?.worker?.status || "unavailable";
 
   const nextExpectedCheck = useMemo(() => {
     if (!scheduler.heartbeatAt || !settings.checkIntervalSeconds) return null;
@@ -295,6 +299,7 @@ export default function StorageMaintenancePanel({ overview, canManage, canApprov
 
   return (
     <div className="max-w-5xl space-y-4">
+      {showMonitoring && (
       <Card>
         <CardHeader>
           <div className="flex flex-wrap items-start justify-between gap-3">
@@ -385,14 +390,8 @@ export default function StorageMaintenancePanel({ overview, canManage, canApprov
               </div>
             </div>
 
-            <div className="grid gap-4 sm:grid-cols-[minmax(0,220px)_1fr] sm:items-end">
-              <div className="space-y-2">
-                <Label htmlFor="storage-orphan-grace">Derived orphan grace (days)</Label>
-                <Input id="storage-orphan-grace" type="number" min="1" max="365" value={policy.orphanGraceDays} onChange={(event) => updatePolicy("orphanGraceDays", event.target.value)} disabled={!canManage || isPending} />
-              </div>
-              <div className="rounded-md border border-blue-500/30 bg-blue-500/10 p-3 text-sm">
-                Monitoring policy saves never activate deletion. Automatic cleanup has a separate Administrator-only approval below.
-              </div>
+            <div className="rounded-md border border-blue-500/30 bg-blue-500/10 p-3 text-sm">
+              Monitoring policy saves never activate deletion. Cleanup safety and approval remain separate on the Cleanup tab.
             </div>
 
             <Button type="submit" disabled={!canManage || isPending}>
@@ -401,7 +400,55 @@ export default function StorageMaintenancePanel({ overview, canManage, canApprov
           </form>
         </CardContent>
       </Card>
+      )}
 
+      {showCleanup && (
+      <Card>
+        <CardHeader>
+          <CardTitle>Cleanup safety status</CardTitle>
+          <CardDescription>Current worker readiness, automatic-cleanup approval, and most recent execution.</CardDescription>
+        </CardHeader>
+        <CardContent className="grid gap-3 text-sm sm:grid-cols-3">
+          <div className="rounded-md border p-3">
+            <p className="text-muted-foreground">Host worker</p>
+            <p className="mt-1 font-medium">{hostWorkerStatus === "healthy" ? "Healthy" : hostWorkerStatus === "stale" ? "Stale" : "Unavailable"}</p>
+          </div>
+          <div className="rounded-md border p-3">
+            <p className="text-muted-foreground">Automatic derived cleanup</p>
+            <p className="mt-1 font-medium">{automaticState?.circuitBreakerOpen ? "Suspended" : automatic.enabled ? "Approved" : "Disabled"}</p>
+          </div>
+          <div className="rounded-md border p-3">
+            <p className="text-muted-foreground">Last cleanup</p>
+            <p className="mt-1 font-medium">{lastCleanup?.status || "Never run"}</p>
+          </div>
+        </CardContent>
+      </Card>
+      )}
+
+      {showCleanup && (
+      <Card>
+        <CardHeader>
+          <CardTitle>Derived-orphan safety policy</CardTitle>
+          <CardDescription>Set the minimum age before a reconciliation-confirmed generated file can become eligible.</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <form className="space-y-4" onSubmit={savePolicy}>
+            <div className="max-w-xs space-y-2">
+              <Label htmlFor="storage-orphan-grace">Derived orphan grace (days)</Label>
+              <Input id="storage-orphan-grace" type="number" min="1" max="365" value={policy.orphanGraceDays} onChange={(event) => updatePolicy("orphanGraceDays", event.target.value)} disabled={!canManage || isPending} />
+            </div>
+            <p className="rounded-md border border-blue-500/30 bg-blue-500/10 p-3 text-sm">
+              Saving this safety policy does not approve automatic cleanup or schedule a host category.
+            </p>
+            <Button type="submit" disabled={!canManage || isPending}>
+              {isPending ? "Saving" : "Save cleanup safety policy"}
+            </Button>
+          </form>
+        </CardContent>
+      </Card>
+      )}
+
+      {showCleanup && (
       <Card>
         <CardHeader>
           <div className="flex flex-wrap items-start justify-between gap-3">
@@ -449,13 +496,15 @@ export default function StorageMaintenancePanel({ overview, canManage, canApprov
           {!canApproveAutomaticCleanup && <p className="text-xs text-muted-foreground">Only Administrators with the automatic-cleanup approval permission can change this state.</p>}
         </CardContent>
       </Card>
+      )}
 
-      <HostMaintenancePanel
+      {showCleanup && <HostMaintenancePanel
         overview={overview?.hostMaintenance}
         canManage={canManage}
         canApproveAutomaticCleanup={canApproveAutomaticCleanup}
-      />
+      />}
 
+      {showStorage && (
       <Card>
         <CardHeader>
           <CardTitle>PostgreSQL maintenance observability</CardTitle>
@@ -480,8 +529,11 @@ export default function StorageMaintenancePanel({ overview, canManage, canApprov
           ) : <p className="text-muted-foreground">PostgreSQL statistics are unavailable.</p>}
         </CardContent>
       </Card>
+      )}
 
-      <div className="grid gap-4 lg:grid-cols-2">
+      {(showMonitoring || showCleanup) && (
+      <div className={`grid gap-4 ${showMonitoring && showCleanup ? "lg:grid-cols-2" : ""}`}>
+        {showMonitoring && (
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2"><Clock3 className="h-5 w-5 text-primary" aria-hidden="true" />Maintenance runtime</CardTitle>
@@ -502,7 +554,9 @@ export default function StorageMaintenancePanel({ overview, canManage, canApprov
             </p>
           </CardContent>
         </Card>
+        )}
 
+        {showCleanup && (
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2"><ShieldCheck className="h-5 w-5 text-primary" aria-hidden="true" />Guarded cleanup</CardTitle>
@@ -547,11 +601,13 @@ export default function StorageMaintenancePanel({ overview, canManage, canApprov
             </p>
           </CardContent>
         </Card>
+        )}
       </div>
+      )}
 
-      {message && <p className={`rounded-md border p-3 text-sm ${noticeClass(message.kind)}`}>{message.text}</p>}
+      {view !== "storage" && message && <p className={`rounded-md border p-3 text-sm ${noticeClass(message.kind)}`}>{message.text}</p>}
 
-      <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+      {showCleanup && <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
         <DialogContent>
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2"><AlertTriangle className="h-5 w-5 text-destructive" aria-hidden="true" />Confirm derived-file cleanup</DialogTitle>
@@ -572,7 +628,7 @@ export default function StorageMaintenancePanel({ overview, canManage, canApprov
             </Button>
           </DialogFooter>
         </DialogContent>
-      </Dialog>
+      </Dialog>}
     </div>
   );
 }

@@ -133,7 +133,9 @@ test("storage measurement stays read-only while maintenance controls are separat
   ]);
 
   assert.match(page, /canManageSettings \? getStorageMaintenanceOverview\(\)/);
-  assert.match(settings, /<StorageHealthCard snapshot=\{initialStorageHealth\} \/>/);
+  assert.match(settings, /<StorageHealthCard snapshot=\{initialStorageHealth\} view="storage" \/>/);
+  assert.match(settings, /<StorageHealthCard snapshot=\{initialStorageHealth\} view="monitoring" \/>/);
+  assert.match(card, /view === "monitoring" \? "Maintenance previews" : "Storage health"/);
   assert.match(settings, /<StorageMaintenancePanel/);
   assert.match(card, /Read only/);
   assert.match(card, /cannot delete or modify data/i);
@@ -143,6 +145,9 @@ test("storage measurement stays read-only while maintenance controls are separat
   assert.match(controls, /Review and confirm cleanup/);
   assert.match(controls, /Automatic derived-orphan cleanup/);
   assert.match(controls, /Default off, separately approved/);
+  assert.match(controls, /Cleanup safety status/);
+  assert.match(controls, /Derived-orphan safety policy/);
+  assert.match(controls, /Save cleanup safety policy/);
   assert.match(actions, /saveStorageMaintenanceSettings[\s\S]*?requirePermission\("maintenance\.manage"\)/);
   assert.match(actions, /previewStorageCleanup[\s\S]*?requirePermission\("maintenance\.manage"\)/);
   assert.match(actions, /runConfirmedStorageCleanup[\s\S]*?requirePermission\("maintenance\.manage"\)/);
