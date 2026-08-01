@@ -385,7 +385,9 @@ test("worker heartbeat explicitly binds reused timestamp parameters as timestamp
     const heartbeatQuery=queries.find(({sql})=>/INSERT INTO public\.host_maintenance_worker_state/.test(sql));
     assert.ok(heartbeatQuery);
     assert.equal(heartbeatQuery.sql.match(/\$5::timestamptz/g)?.length,3);
+    assert.equal(heartbeatQuery.sql.match(/\$8::varchar\(80\)/g)?.length,2);
     assert.doesNotMatch(heartbeatQuery.sql,/ELSE \$5 END|,\$5,\$6/);
+    assert.doesNotMatch(heartbeatQuery.sql,/,\$8,|WHEN \$8 IS NULL/);
     assert.equal(heartbeatQuery.values[4],now);
     assert.equal(heartbeatQuery.values[7],"database-backup-create-v1");
 
@@ -399,6 +401,8 @@ test("worker heartbeat explicitly binds reused timestamp parameters as timestamp
     const unsupportedHeartbeat=queries.filter(({sql})=>/INSERT INTO public\.host_maintenance_worker_state/.test(sql))[1];
     assert.ok(unsupportedHeartbeat);
     assert.equal(unsupportedHeartbeat.sql.match(/\$5::timestamptz/g)?.length,3);
+    assert.equal(unsupportedHeartbeat.sql.match(/\$8::varchar\(80\)/g)?.length,2);
+    assert.doesNotMatch(unsupportedHeartbeat.sql,/,\$8,|WHEN \$8 IS NULL/);
     assert.equal(unsupportedHeartbeat.values[4],now);
     assert.equal(unsupportedHeartbeat.values[7],null);
   }finally{
