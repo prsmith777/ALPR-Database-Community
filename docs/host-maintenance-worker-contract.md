@@ -115,16 +115,19 @@ size, checksum and verification marker, timing, and sanitized failure state.
 The worker database role has only narrow SELECT/UPDATE access to the dedicated
 request queue; it has no application-table read or dump privilege.
 
-As of July 31, 2026, the reviewed adapter and runtime are installed on staging.
+As of August 1, 2026, the reviewed adapter and runtime are installed on staging.
 The installer passed PostgreSQL 17 readiness checks with the capability both
 absent and present, and the activated worker completed a locked cycle before
-publishing the capability. Staging acceptance was preview-only and did not
-create a real backup. A subsequent authorized create attempt rolled back before
-enqueue because its audit insert used labels outside the `audit_events` source
-and outcome vocabulary. No backup artifact was created. This release uses
-`browser`/`succeeded` for the request and `system` with `succeeded` or `failed`
-for worker events. One explicit staging retry remains pending. Production has no
-deployed adapter or advertised capability.
+publishing the capability. Initial staging validation was preview-only and did
+not create a real backup. A subsequent authorized create attempt rolled back
+before enqueue because its audit insert used labels outside the `audit_events`
+source and outcome vocabulary. No backup artifact was created. This release
+uses `browser`/`succeeded` for the request and `system` with `succeeded` or
+`failed` for worker events. After that correction, one separately authorized
+August 1 staging request completed once and verified
+`alpr-postgres-20260801T120648Z-5.dump` at 59.2 MB with `Error: None`.
+Phase 3 staging acceptance is complete. Production has no deployed adapter or
+advertised capability and remains separately approval-gated.
 
 ## Installation and recovery
 

@@ -18,7 +18,7 @@ reliable background processing.
 6. Audit sensitive searches, exports, corrections, rule changes, and
    destructive maintenance.
 
-## Release baseline — July 31, 2026
+## Release baseline — August 1, 2026
 
 - Application `0.1.13` includes named users and roles, evidence-preserving plate
   review, filter-respecting exports, the searchable help center, local privacy
@@ -146,13 +146,13 @@ reliable background processing.
   capability-present and capability-absent PostgreSQL 17 heartbeat gates. Its
   role has only narrow SELECT/UPDATE access to the dedicated request queue and
   no application-table read or dump privileges; the adapter uses fixed Docker
-  execution against the exact database container. Preview-only staging
-  acceptance did not create a real backup. A later explicitly authorized create
-  attempt rolled back before enqueue because the request audit row used obsolete
-  source/outcome labels; no backup artifact was created. This release corrects
-  request and worker audit writes to the schema's accepted vocabulary. One
-  explicit staging retry remains pending. The adapter is not deployed to
-  production.
+  execution against the exact database container. The first authorized request
+  exposed an audit-vocabulary defect and rolled back before enqueue without an
+  artifact. After that defect was corrected, one separately authorized August 1
+  staging request completed once and verified a 59.2 MB custom-format backup
+  with no reported error. Phase 3 staging acceptance is complete. The adapter
+  is not deployed to production; any production work remains separately
+  approval-gated.
 - Recurring plate-correction aliases now default to All cameras while retaining
   an explicit current-camera-only scope for camera-specific OCR errors. An
   alias-only save repairs mappings without changing historical reads, conflicts
@@ -318,12 +318,15 @@ image using fixed Docker execution against the exact database container. Its
 installer extends the restricted ACL only with SELECT/UPDATE access to the
 dedicated request queue, without application-table read or dump privilege.
 Capability gating, identity binding, one locked worker cycle, timer activation,
-and preview-only maintenance validation passed on staging. One later authorized
+and preview-only maintenance validation passed on staging. The first authorized
 backup request rolled back atomically on an audit-vocabulary constraint before
-enqueue and created no artifact. This release corrects both the browser request
-and subsequent worker audit events; one explicit staging retry remains pending.
-Production does not have this adapter. Backup catalog integration, restore
-preflight, restore execution, and automatic scheduling remain pending.
+enqueue and created no artifact. After the browser and worker audit events were
+corrected, one separately authorized August 1 staging request completed once
+and verified a 59.2 MB custom-format backup with `Error: None`. Phase 3 staging
+acceptance is complete. Production does not have this adapter and remains
+separately approval-gated. Backup catalog integration, in-app restore, and
+automatic scheduling are intentionally deferred for this single-owner
+deployment; restore remains an external recovery procedure.
 
 Settings also includes a read-only Release view for the application version,
 build- or deployment-provided Git SHA, release channel, and local release
@@ -349,10 +352,13 @@ notes. Updates remain externally orchestrated.
   manual custom-format database backup. The reviewed fixed worker adapter is
   deployed and capability-validated on staging only. Its first authorized
   create attempt exposed an audit-vocabulary defect and rolled back without an
-  artifact; this release corrects the audit vocabulary, and one explicit staging
-  retry remains pending. Add controlled `VACUUM ANALYZE`, catalog integration,
-  restore preflight, restore execution, and broader backup-verification jobs in
-  later increments.
+  artifact. After that defect was corrected, one separately authorized August 1
+  staging request completed once and verified a 59.2 MB custom-format backup
+  with no reported error. Phase 3 staging acceptance is complete. Keep catalog
+  integration, in-app restore, automatic scheduling, and broader
+  backup-verification jobs deferred unless this single-owner deployment develops
+  a concrete need. Consider controlled `VACUUM ANALYZE` only as a separately
+  reviewed future increment.
   Do not expose an arbitrary SQL or shell console.
 - Delivered foundation: display the current version, build- or
   deployment-provided Git SHA, release channel, and local release notes without
@@ -435,6 +441,13 @@ notes. Updates remain externally orchestrated.
   Recognition Feed shows assignment, direction, and color evidence in its image
   dialog. Confirmed associations are a baseline only; mismatch labels and alerts
   remain disabled.
+The owner's new cameras are not installed yet. Defer camera-dependent work,
+including live best-frame validation, direction or multiframe motion work,
+camera-pair ReID calibration, and make/model/year validation that depends on
+the new views, until those cameras are installed and a representative local
+sample exists. This is an intentional sequencing decision, not a staging
+failure.
+
 - Expand the implemented asynchronous color, coarse-type, and direction
   observations to make/model/year with per-field confidence,
   provider/model/version provenance, raw result, status, and error.

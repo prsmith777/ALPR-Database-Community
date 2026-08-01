@@ -20,12 +20,14 @@
   installed worker advertises `database-backup-create-v1`, exposes no path,
   command, schedule, or restore input, and reports only sanitized verified
   status. The reviewed fixed adapter is deployed and capability-validated on
-  staging only; preview acceptance did not create a real backup, and production
-  remains unchanged.
+  staging only. One separately authorized August 1 staging request completed
+  once and verified `alpr-postgres-20260801T120648Z-5.dump` at 59.2 MB with no
+  reported error; production remains unchanged and separately approval-gated.
 - Fixed manual database-backup request and worker audit writes to use the
   existing `audit_events` source/outcome vocabulary. The first authorized
   staging request rolled back atomically on the prior constraint mismatch and
-  created no backup artifact.
+  created no backup artifact; the later authorized staging acceptance above
+  confirms the repaired request and worker path.
 
 - Strengthen Blue Iris best-vehicle-frame selection so edge-adjacent detections no longer stop the search early, and add a bounded sparse fallback through 16 seconds when the initial timeline still lacks a clearly framed vehicle.
 

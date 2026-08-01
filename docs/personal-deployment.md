@@ -122,6 +122,27 @@ errors and recent application/database logs. Record any known issues.
 
 Do not proceed until the owner explicitly accepts staging for production.
 
+#### Recorded Phase 3 staging acceptance — August 1, 2026
+
+The Phase 3 manual-backup repair was accepted on staging with application
+repository commit `aeeee932dd8b922b533e4ec17aa88d614ebdbd20`. The fixed host
+worker was installed separately by staging plugin
+`0.1.0+codex.20260801054957` as worker image
+`sha256:b7cee3421981c37a1b30269d6580fb95286de2fa55959fbc96c02ead6f21ec2d`;
+it is not part of the application repository commit.
+
+The first authorized create attempt exposed an audit-vocabulary defect and
+rolled back before enqueue without an artifact. After that defect was
+corrected, one separately authorized August 1 staging request completed once.
+The worker verified `alpr-postgres-20260801T120648Z-5.dump` at 59.2 MB; the UI
+reported `Error: None`, the worker cycle succeeded with exit status 0, the timer
+remained active, and the application and PostgreSQL remained healthy. No retry,
+cleanup, deletion, or production access was performed.
+
+This historical staging result closes the former retry-pending item. It is not
+authorization to deploy or install the host adapter on production. Production
+still requires the separate explicit approval and safeguards below.
+
 ### 4. Deploy production
 
 Use production-specific credentials and a production-specific deployment
