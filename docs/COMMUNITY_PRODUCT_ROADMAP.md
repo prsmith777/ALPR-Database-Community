@@ -18,7 +18,7 @@ reliable background processing.
 6. Audit sensitive searches, exports, corrections, rule changes, and
    destructive maintenance.
 
-## Release baseline — July 30, 2026
+## Release baseline — July 31, 2026
 
 - Application `0.1.13` includes named users and roles, evidence-preserving plate
   review, filter-respecting exports, the searchable help center, local privacy
@@ -141,12 +141,18 @@ reliable background processing.
   backup in a worker-owned approved root and reports only sanitized status,
   time, basename, verified size, and error state. It exposes no path, command,
   arguments, schedule, or restore operation. The button fails closed unless a
-  fresh worker explicitly advertises `database-backup-create-v1`; the current
-  separately installed worker still requires a reviewed fixed adapter and
-  runtime tooling update before this control can become operational. Its role
-  needs only narrow SELECT/UPDATE access to the dedicated request queue and no
-  application-table read or dump privileges; the adapter must use fixed Docker
-  execution against the exact database container.
+  fresh worker explicitly advertises `database-backup-create-v1`. The reviewed
+  fixed adapter and runtime tooling are installed on staging and passed the
+  capability-present and capability-absent PostgreSQL 17 heartbeat gates. Its
+  role has only narrow SELECT/UPDATE access to the dedicated request queue and
+  no application-table read or dump privileges; the adapter uses fixed Docker
+  execution against the exact database container. Preview-only staging
+  acceptance did not create a real backup. A later explicitly authorized create
+  attempt rolled back before enqueue because the request audit row used obsolete
+  source/outcome labels; no backup artifact was created. This release corrects
+  request and worker audit writes to the schema's accepted vocabulary. One
+  explicit staging retry remains pending. The adapter is not deployed to
+  production.
 - Recurring plate-correction aliases now default to All cameras while retaining
   an explicit current-camera-only scope for camera-specific OCR errors. An
   alias-only save repairs mappings without changing historical reads, conflicts
@@ -297,7 +303,8 @@ short-lived, single-use, exact-set and environment/policy/generation bound.
 Cache and backup schedules remain separately approved and default off, while
 unused-image automation remains unsupported. The shipped application has no
 privileged worker, so these controls remain unavailable until the documented
-fixed host service is independently installed. See
+fixed host service is independently installed. That service is installed and
+active on staging; it has not been installed on production. See
 `docs/host-maintenance-worker-contract.md`.
 
 The repo-side manual database-backup increment uses its own one-active-request
@@ -306,13 +313,17 @@ PostgreSQL custom-format dump in the approved backup root, then return only a
 bound basename, size, checksum, verification marker, and timing receipt. The
 operation has a fixed 50 GiB output ceiling. The UI stays disabled until the
 worker heartbeat advertises the exact versioned
-  capability. The installed worker plugin's fixed adapter and runtime image
-  still need a separate reviewed update using fixed Docker execution against
-  the exact database container. The installer must extend its restricted ACL
-  only with SELECT/UPDATE access to the dedicated request queue, without any
-  application-table read or dump privilege. This roadmap does
-not claim that adapter is currently deployed. Backup catalog integration,
-restore preflight, restore execution, and automatic scheduling remain pending.
+capability. Staging now has the separately reviewed fixed adapter and runtime
+image using fixed Docker execution against the exact database container. Its
+installer extends the restricted ACL only with SELECT/UPDATE access to the
+dedicated request queue, without application-table read or dump privilege.
+Capability gating, identity binding, one locked worker cycle, timer activation,
+and preview-only maintenance validation passed on staging. One later authorized
+backup request rolled back atomically on an audit-vocabulary constraint before
+enqueue and created no artifact. This release corrects both the browser request
+and subsequent worker audit events; one explicit staging retry remains pending.
+Production does not have this adapter. Backup catalog integration, restore
+preflight, restore execution, and automatic scheduling remain pending.
 
 Settings also includes a read-only Release view for the application version,
 build- or deployment-provided Git SHA, release channel, and local release
@@ -335,9 +346,13 @@ notes. Updates remain externally orchestrated.
   breaker.
 - Delivered increment: read-only PostgreSQL table maintenance and transaction
   ID age observability, plus the fail-closed application control plane for one
-  manual custom-format database backup. Add the reviewed fixed worker adapter,
-  controlled `VACUUM ANALYZE`, catalog integration, restore preflight, restore
-  execution, and broader backup-verification jobs in later increments.
+  manual custom-format database backup. The reviewed fixed worker adapter is
+  deployed and capability-validated on staging only. Its first authorized
+  create attempt exposed an audit-vocabulary defect and rolled back without an
+  artifact; this release corrects the audit vocabulary, and one explicit staging
+  retry remains pending. Add controlled `VACUUM ANALYZE`, catalog integration,
+  restore preflight, restore execution, and broader backup-verification jobs in
+  later increments.
   Do not expose an arbitrary SQL or shell console.
 - Delivered foundation: display the current version, build- or
   deployment-provided Git SHA, release channel, and local release notes without

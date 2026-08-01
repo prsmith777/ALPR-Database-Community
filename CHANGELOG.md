@@ -14,7 +14,18 @@
   referenced files, and suspend after failure until a fresh reconciliation and
   typed acknowledgement. Added read-only PostgreSQL dead/live tuple,
   autovacuum/autoanalyze, and transaction-ID-age observability; no VACUUM,
-  backup, restore, shell, Docker, or release controls were added.
+  restore, shell, unrestricted Docker, or release controls were added.
+- Added a fail-closed, no-input manual PostgreSQL custom-format backup
+  request/status control. It is available only when a fresh, separately
+  installed worker advertises `database-backup-create-v1`, exposes no path,
+  command, schedule, or restore input, and reports only sanitized verified
+  status. The reviewed fixed adapter is deployed and capability-validated on
+  staging only; preview acceptance did not create a real backup, and production
+  remains unchanged.
+- Fixed manual database-backup request and worker audit writes to use the
+  existing `audit_events` source/outcome vocabulary. The first authorized
+  staging request rolled back atomically on the prior constraint mismatch and
+  created no backup artifact.
 
 - Strengthen Blue Iris best-vehicle-frame selection so edge-adjacent detections no longer stop the search early, and add a bounded sparse fallback through 16 seconds when the initial timeline still lacks a clearly framed vehicle.
 

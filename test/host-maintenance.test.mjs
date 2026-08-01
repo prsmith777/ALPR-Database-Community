@@ -10,7 +10,7 @@ import { inspectAndHeartbeatHostMaintenanceWorker, recoverStaleHostMaintenanceLe
 import { DisabledHostMaintenanceAdapter, InMemoryHostMaintenanceAdapter } from "../lib/host-maintenance-adapter.mjs";
 import {
   getDatabaseBackupRequestStatus, getHostMaintenanceRequestStatus, hostMaintenanceControlInternals,
-  requestHostMaintenanceExecution, setScheduledHostMaintenance,
+  requestDatabaseBackup, requestHostMaintenanceExecution, setScheduledHostMaintenance,
 } from "../lib/host-maintenance-control.mjs";
 
 const GiB = 1024 ** 3;
@@ -190,10 +190,11 @@ test("database backup uses an explicit versioned capability and a bound verified
 });
 
 test("manual database backup is a distinct no-input fail-closed control plane",async()=>{
-  const [schema,migrations,control,worker,actions,panel]=await Promise.all([
+  const [schema,migrations,control,worker,actions,panel,contract]=await Promise.all([
     readFile(new URL("../schema.sql",import.meta.url),"utf8"),readFile(new URL("../migrations.sql",import.meta.url),"utf8"),
     readFile(new URL("../lib/host-maintenance-control.mjs",import.meta.url),"utf8"),readFile(new URL("../lib/host-maintenance.mjs",import.meta.url),"utf8"),
     readFile(new URL("../app/actions.js",import.meta.url),"utf8"),readFile(new URL("../app/settings/HostMaintenancePanel.jsx",import.meta.url),"utf8"),
+    readFile(new URL("../docs/host-maintenance-worker-contract.md",import.meta.url),"utf8"),
   ]);
   for(const source of[schema,migrations]){
     assert.match(source,/host_database_backup_requests/);
@@ -222,6 +223,47 @@ test("manual database backup is a distinct no-input fail-closed control plane",a
   assert.match(panel,/database-backup-create-v1 capability/);
   assert.match(panel,/accepts no command, path, filename, schedule, or restore input/);
   assert.doesNotMatch(panel,/checksumSha256|backupPath|commandArgs/);
+  assert.match(contract,/`backup\(request\)`/);
+  assert.match(contract,/`cleanupDatabaseBackupRequest\(request\)`/);
+});
+
+test("database-backup audit writes use the schema vocabulary and commit atomically",async(t)=>{
+  const previousEnvironment=process.env.HOST_MAINTENANCE_ENVIRONMENT_ID;
+  const previousIdentity=process.env.HOST_MAINTENANCE_DATABASE_IDENTITY;
+  process.env.HOST_MAINTENANCE_ENVIRONMENT_ID="staging";
+  process.env.HOST_MAINTENANCE_DATABASE_IDENTITY="db-staging";
+  t.after(()=>{
+    if(previousEnvironment===undefined)delete process.env.HOST_MAINTENANCE_ENVIRONMENT_ID;
+    else process.env.HOST_MAINTENANCE_ENVIRONMENT_ID=previousEnvironment;
+    if(previousIdentity===undefined)delete process.env.HOST_MAINTENANCE_DATABASE_IDENTITY;
+    else process.env.HOST_MAINTENANCE_DATABASE_IDENTITY=previousIdentity;
+  });
+  const now=new Date("2026-07-31T18:00:00Z");const queries=[];
+  const client={query:async(sql,params)=>{queries.push({sql,params});
+    if(sql.includes("host_maintenance_environment_identity"))return{rowCount:1,rows:[{}]};
+    if(sql.includes("host_maintenance_worker_state"))return{rowCount:1,rows:[{heartbeat_at:now,database_backup_capability:"database-backup-create-v1",database_backup_capability_at:now}]};
+    if(sql.includes("SELECT id FROM public.host_database_backup_requests"))return{rowCount:0,rows:[]};
+    if(sql.includes("INSERT INTO public.host_database_backup_requests"))return{rowCount:1,rows:[{id:42,status:"pending",requested_at:now}]};
+    return{rowCount:1,rows:[]};},release(){}};
+  const result=await requestDatabaseBackup({executor:{connect:async()=>client},actor:{id:9},now});
+  assert.equal(result.requestId,42);assert.equal(result.status,"pending");
+  const audit=queries.find(({sql})=>sql.includes("maintenance.database_backup_requested"));
+  assert.ok(audit);assert.match(audit.sql,/'browser'/);assert.match(audit.sql,/'succeeded'/);
+  assert.doesNotMatch(audit.sql,/'web'|'success'/);
+  assert.ok(queries.findIndex(({sql})=>sql==="BEGIN")<queries.indexOf(audit));
+  assert.ok(queries.indexOf(audit)<queries.findIndex(({sql})=>sql==="COMMIT"));
+});
+
+test("worker audit writes stay inside the append-only audit schema vocabulary",async()=>{
+  const [schema,worker]=await Promise.all([
+    readFile(new URL("../migrations.sql",import.meta.url),"utf8"),
+    readFile(new URL("../lib/host-maintenance.mjs",import.meta.url),"utf8"),
+  ]);
+  assert.match(schema,/CHECK \(source IN \('browser', 'api', 'system'\)\)/);
+  assert.match(schema,/CHECK \(outcome IN \('succeeded', 'denied', 'failed'\)\)/);
+  assert.doesNotMatch(worker,/'host-worker'|'success'/);
+  assert.match(worker,/maintenance[.]database_backup_completed[\s\S]*?'succeeded'/);
+  assert.match(worker,/maintenance[.]database_backup_failed[\s\S]*?'failed'/);
 });
 
 test("database-backup capability expires immediately when an old worker refreshes only the general heartbeat",async()=>{
