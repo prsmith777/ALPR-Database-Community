@@ -2985,7 +2985,7 @@ CREATE TABLE IF NOT EXISTS public.host_database_backup_requests (
  environment_id VARCHAR(200) NOT NULL,
  database_identity VARCHAR(200) NOT NULL,
  status VARCHAR(20) NOT NULL DEFAULT 'pending' CHECK(status IN ('pending','processing','completed','failed')),
- actor_user_id BIGINT REFERENCES public.users(id) ON DELETE SET NULL,
+ actor_user_id BIGINT,
  requested_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
  started_at TIMESTAMPTZ,
  completed_at TIMESTAMPTZ,
@@ -3000,6 +3000,19 @@ CREATE TABLE IF NOT EXISTS public.host_database_backup_requests (
  last_error TEXT,
  updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
+DO $$
+BEGIN
+ IF NOT EXISTS (
+  SELECT 1
+  FROM pg_constraint
+  WHERE conname = 'host_database_backup_requests_actor_user_id_fkey'
+    AND conrelid = 'public.host_database_backup_requests'::regclass
+ ) THEN
+  ALTER TABLE public.host_database_backup_requests
+   ADD CONSTRAINT host_database_backup_requests_actor_user_id_fkey
+   FOREIGN KEY (actor_user_id) REFERENCES public.users(id) ON DELETE SET NULL;
+ END IF;
+END $$;
 ALTER TABLE public.host_database_backup_requests
  ADD COLUMN IF NOT EXISTS replay_count INTEGER NOT NULL DEFAULT 0 CHECK(replay_count BETWEEN 0 AND 2);
 CREATE INDEX IF NOT EXISTS idx_host_database_backup_requests_due

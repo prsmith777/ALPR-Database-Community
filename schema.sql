@@ -830,7 +830,7 @@ CREATE TABLE IF NOT EXISTS public.host_database_backup_requests (
     environment_id VARCHAR(200) NOT NULL,
     database_identity VARCHAR(200) NOT NULL,
     status VARCHAR(20) NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'processing', 'completed', 'failed')),
-    actor_user_id BIGINT REFERENCES public.users(id) ON DELETE SET NULL,
+    actor_user_id BIGINT,
     requested_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     started_at TIMESTAMPTZ,
     completed_at TIMESTAMPTZ,

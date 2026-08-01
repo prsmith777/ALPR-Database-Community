@@ -227,6 +227,28 @@ test("manual database backup is a distinct no-input fail-closed control plane",a
   assert.match(contract,/`cleanupDatabaseBackupRequest\(request\)`/);
 });
 
+test("fresh schema defers the database-backup actor foreign key until users exist",async()=>{
+  const [schema,migrations]=await Promise.all([
+    readFile(new URL("../schema.sql",import.meta.url),"utf8"),readFile(new URL("../migrations.sql",import.meta.url),"utf8"),
+  ]);
+  const schemaTable=schema.slice(
+    schema.indexOf("CREATE TABLE IF NOT EXISTS public.host_database_backup_requests"),
+    schema.indexOf("CREATE INDEX IF NOT EXISTS idx_host_database_backup_requests_due"),
+  );
+  assert.match(schemaTable,/actor_user_id BIGINT,/);
+  assert.doesNotMatch(schemaTable,/REFERENCES public\.users/);
+
+  const migration=migrations.slice(
+    migrations.indexOf("-- Manual database backup is deliberately separate"),
+    migrations.indexOf("'2026073001_manual_database_backup'"),
+  );
+  assert.match(migration,/actor_user_id BIGINT,/);
+  assert.doesNotMatch(migration,/actor_user_id BIGINT REFERENCES public\.users/);
+  assert.match(migration,/conname = 'host_database_backup_requests_actor_user_id_fkey'/);
+  assert.match(migration,/conrelid = 'public\.host_database_backup_requests'::regclass/);
+  assert.match(migration,/ADD CONSTRAINT host_database_backup_requests_actor_user_id_fkey[\s\S]*FOREIGN KEY \(actor_user_id\) REFERENCES public\.users\(id\) ON DELETE SET NULL/);
+});
+
 test("database-backup audit writes use the schema vocabulary and commit atomically",async(t)=>{
   const previousEnvironment=process.env.HOST_MAINTENANCE_ENVIRONMENT_ID;
   const previousIdentity=process.env.HOST_MAINTENANCE_DATABASE_IDENTITY;
