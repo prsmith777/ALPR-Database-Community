@@ -361,6 +361,52 @@ test("database identity mismatch prevents token delivery, mutations, and worker-
   }
 });
 
+test("worker heartbeat explicitly binds reused timestamp parameters as timestamptz",async()=>{
+  const priorEnvironment=process.env.HOST_MAINTENANCE_ENVIRONMENT_ID;
+  const priorDatabase=process.env.HOST_MAINTENANCE_DATABASE_IDENTITY;
+  process.env.HOST_MAINTENANCE_ENVIRONMENT_ID="staging";
+  process.env.HOST_MAINTENANCE_DATABASE_IDENTITY="db-staging";
+  try{
+    const queries=[];
+    const executor={query:async(sql,values)=>{
+      queries.push({sql,values});
+      if(/host_maintenance_environment_identity/.test(sql))return{rowCount:1,rows:[{ok:1}]};
+      if(/INSERT INTO public\.host_maintenance_worker_state/.test(sql))return{rowCount:1,rows:[]};
+      throw new Error(`Unexpected query: ${sql}`);
+    }};
+    const now=new Date("2026-07-31T23:59:00.000Z");
+    const adapter={
+      capabilities:["database-backup-create-v1"],
+      backup:async()=>{throw new Error("not called");},
+      inspect:async()=>inventory({measuredAt:now.toISOString()}),
+    };
+    const result=await inspectAndHeartbeatHostMaintenanceWorker({executor,adapter,workerId:"worker-test",now});
+    assert.equal(result.databaseBackupSupported,true);
+    const heartbeatQuery=queries.find(({sql})=>/INSERT INTO public\.host_maintenance_worker_state/.test(sql));
+    assert.ok(heartbeatQuery);
+    assert.equal(heartbeatQuery.sql.match(/\$5::timestamptz/g)?.length,3);
+    assert.doesNotMatch(heartbeatQuery.sql,/ELSE \$5 END|,\$5,\$6/);
+    assert.equal(heartbeatQuery.values[4],now);
+    assert.equal(heartbeatQuery.values[7],"database-backup-create-v1");
+
+    const unsupportedResult=await inspectAndHeartbeatHostMaintenanceWorker({
+      executor,
+      adapter:{inspect:async()=>inventory({measuredAt:now.toISOString()})},
+      workerId:"worker-without-backup",
+      now,
+    });
+    assert.equal(unsupportedResult.databaseBackupSupported,false);
+    const unsupportedHeartbeat=queries.filter(({sql})=>/INSERT INTO public\.host_maintenance_worker_state/.test(sql))[1];
+    assert.ok(unsupportedHeartbeat);
+    assert.equal(unsupportedHeartbeat.sql.match(/\$5::timestamptz/g)?.length,3);
+    assert.equal(unsupportedHeartbeat.values[4],now);
+    assert.equal(unsupportedHeartbeat.values[7],null);
+  }finally{
+    if(priorEnvironment===undefined)delete process.env.HOST_MAINTENANCE_ENVIRONMENT_ID;else process.env.HOST_MAINTENANCE_ENVIRONMENT_ID=priorEnvironment;
+    if(priorDatabase===undefined)delete process.env.HOST_MAINTENANCE_DATABASE_IDENTITY;else process.env.HOST_MAINTENANCE_DATABASE_IDENTITY=priorDatabase;
+  }
+});
+
 test("worker-only entry exports idle heartbeat and worker operations only",async()=>{
   const entry=await readFile(new URL("../lib/host-maintenance-worker.mjs",import.meta.url),"utf8");
   assert.match(entry,/inspectAndHeartbeatHostMaintenanceWorker/);
