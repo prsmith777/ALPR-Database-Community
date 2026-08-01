@@ -38,6 +38,15 @@ The adapter surface is exactly:
 - `prune(request)`: accept a category, environment, worker generation,
   inventory revision, candidate-set hash, and exact opaque items. It must hold
   the shared lock and revalidate again before each bounded operation.
+- `backup(request)`: accept only the fixed PostgreSQL custom-format operation,
+  environment/database/worker bindings, numeric request ID, immutable 50 GiB
+  ceiling, and deadline. It must hold the shared lock and return the bound,
+  verified receipt described below.
+- `cleanupDatabaseBackupRequest(request)`: run only during bounded stale-lease
+  replay exhaustion. It accepts the numeric request ID, environment/database
+  bindings, and deadline, then either attests and reuses the already cataloged
+  result or removes only the exact worker-owned partial/published artifact after
+  terminating the request's fixed database backend. It never accepts a path.
 
 No request field is a path, Docker command, shell fragment, image selector, or
 user-supplied identifier. Opaque IDs resolve only inside worker-owned catalogs.
@@ -89,11 +98,43 @@ quarantine followed by a later bounded purge; only empty directories created
 by the worker may be removed. Current releases, prepared releases, database
 records/volumes, captures, and protected rollback backups are never candidates.
 
+## Manual database-backup creation
+
+Manual database-backup creation is a separate fixed operation, not a cleanup
+category or retention schedule. The application may enqueue only one active
+request, and the control remains unavailable unless a fresh worker heartbeat
+advertises `database-backup-create-v1`. The browser cannot provide a path,
+filename, database name, command, argument, schedule, or restore input.
+
+The fixed adapter acquires the shared host lock, binds the request to the exact
+environment and PostgreSQL system identity, runs a PostgreSQL custom-format
+dump through fixed Docker execution against the exact database container, and
+verifies the result within the worker-owned approved backup root. The operation
+has a 50 GiB output ceiling. Its receipt exposes only a bound basename, verified
+size, checksum and verification marker, timing, and sanitized failure state.
+The worker database role has only narrow SELECT/UPDATE access to the dedicated
+request queue; it has no application-table read or dump privilege.
+
+As of August 1, 2026, the reviewed adapter and runtime are installed on staging.
+The installer passed PostgreSQL 17 readiness checks with the capability both
+absent and present, and the activated worker completed a locked cycle before
+publishing the capability. Initial staging validation was preview-only and did
+not create a real backup. A subsequent authorized create attempt rolled back
+before enqueue because its audit insert used labels outside the `audit_events`
+source and outcome vocabulary. No backup artifact was created. This release
+uses `browser`/`succeeded` for the request and `system` with `succeeded` or
+`failed` for worker events. After that correction, one separately authorized
+August 1 staging request completed once and verified
+`alpr-postgres-20260801T120648Z-5.dump` at 59.2 MB with `Error: None`.
+Phase 3 staging acceptance is complete. Production has no deployed adapter or
+advertised capability and remains separately approval-gated.
+
 ## Installation and recovery
 
 This repository deliberately ships the disabled adapter and an in-memory test
-adapter, not a production privileged implementation. An operator must install
-and configure a reviewed worker implementation for the target environment.
+adapter, not a privileged host implementation. An operator must separately
+install and configure a reviewed worker implementation for each target
+environment. Staging has that separate installation; production does not.
 The service process imports only `lib/host-maintenance-worker.mjs`; application
 routes, actions, and monitors must import `lib/host-maintenance-control.mjs`.
 After any breaker event, investigate the immutable intent/run/receipt/audit

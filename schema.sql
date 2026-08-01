@@ -816,9 +816,40 @@ CREATE TABLE IF NOT EXISTS public.host_maintenance_worker_state (
     heartbeat_at TIMESTAMPTZ NOT NULL,
     inventory_revision VARCHAR(200) NOT NULL,
     inventory_measured_at TIMESTAMPTZ NOT NULL,
+    database_backup_capability VARCHAR(80) CHECK (database_backup_capability IS NULL OR database_backup_capability = 'database-backup-create-v1'),
+    database_backup_capability_at TIMESTAMPTZ,
     last_error TEXT,
     updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
+
+-- Manual database backups are a fixed, no-input host-worker operation. The
+-- worker chooses the approved backup root and basename; the web application
+-- can only queue a request and read its bounded result metadata.
+CREATE TABLE IF NOT EXISTS public.host_database_backup_requests (
+    id BIGSERIAL PRIMARY KEY,
+    environment_id VARCHAR(200) NOT NULL,
+    database_identity VARCHAR(200) NOT NULL,
+    status VARCHAR(20) NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'processing', 'completed', 'failed')),
+    actor_user_id BIGINT,
+    requested_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    started_at TIMESTAMPTZ,
+    completed_at TIMESTAMPTZ,
+    locked_at TIMESTAMPTZ,
+    locked_by VARCHAR(255),
+    worker_generation VARCHAR(200),
+    replay_count INTEGER NOT NULL DEFAULT 0 CHECK (replay_count BETWEEN 0 AND 2),
+    filename VARCHAR(255) CHECK (filename IS NULL OR filename ~ '^alpr-postgres-[0-9]{8}T[0-9]{6}Z-[0-9]+[.]dump$'),
+    size_bytes BIGINT CHECK (size_bytes IS NULL OR size_bytes > 0),
+    checksum_sha256 CHAR(64) CHECK (checksum_sha256 IS NULL OR checksum_sha256 ~ '^[0-9a-f]{64}$'),
+    verified BOOLEAN NOT NULL DEFAULT FALSE,
+    last_error TEXT,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_host_database_backup_requests_due
+    ON public.host_database_backup_requests (status, requested_at, id);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_host_database_backup_requests_one_active
+    ON public.host_database_backup_requests (environment_id, database_identity)
+    WHERE status IN ('pending', 'processing');
 
 CREATE OR REPLACE FUNCTION public.reject_host_maintenance_evidence_mutation()
 RETURNS TRIGGER LANGUAGE plpgsql AS $$

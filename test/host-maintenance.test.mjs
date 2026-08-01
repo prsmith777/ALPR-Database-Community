@@ -6,9 +6,11 @@ import {
   assertFreshHostMaintenanceInventory, buildHostMaintenancePlan, candidateSetHash, canonicalHostInventoryRevision, HOST_MAINTENANCE_ACTIVATIONS,
   HOST_MAINTENANCE_CAPS, HOST_MAINTENANCE_CONFIRMATIONS, planForCategory,
 } from "../lib/host-maintenance-policy.mjs";
-import { inspectAndHeartbeatHostMaintenanceWorker, validateHostMaintenanceReceipt } from "../lib/host-maintenance.mjs";
+import { inspectAndHeartbeatHostMaintenanceWorker, recoverStaleHostMaintenanceLeases, validateDatabaseBackupReceipt, validateHostMaintenanceReceipt } from "../lib/host-maintenance.mjs";
+import { DisabledHostMaintenanceAdapter, InMemoryHostMaintenanceAdapter } from "../lib/host-maintenance-adapter.mjs";
 import {
-  getHostMaintenanceRequestStatus, requestHostMaintenanceExecution, setScheduledHostMaintenance,
+  getDatabaseBackupRequestStatus, getHostMaintenanceRequestStatus, hostMaintenanceControlInternals,
+  requestDatabaseBackup, requestHostMaintenanceExecution, setScheduledHostMaintenance,
 } from "../lib/host-maintenance-control.mjs";
 
 const GiB = 1024 ** 3;
@@ -171,6 +173,150 @@ test("receipt validation enforces exact bindings, set equality, totals, and caps
   assert.throws(()=>validateHostMaintenanceReceipt({...valid,results:[{...valid.results[0],reclaimedBytes:-1},valid.results[1]]},request),/bytes/);
 });
 
+test("database backup uses an explicit versioned capability and a bound verified receipt",async()=>{
+  assert.deepEqual(new DisabledHostMaintenanceAdapter().capabilities,[]);
+  const adapter=new InMemoryHostMaintenanceAdapter(inventory());
+  assert.deepEqual(adapter.capabilities,["database-backup-create-v1"]);
+  const request={operation:"postgres-database-backup",format:"custom",environmentId:"staging",databaseIdentity:"db-staging",workerGeneration:"worker-1",requestId:42,
+    maxBytes:50*1024**3,deadline:new Date(Date.now()+60_000).toISOString()};
+  const receipt=await adapter.backup(request);
+  const validated=validateDatabaseBackupReceipt(receipt,request);
+  assert.match(validated.filename,/^alpr-postgres-[0-9]{8}T[0-9]{6}Z-42[.]dump$/);
+  assert.equal(validated.sizeBytes,1024);
+  for(const invalid of[
+    {...receipt,filename:"../escape.dump"},{...receipt,format:"plain"},{...receipt,verified:false},
+    {...receipt,checksumSha256:"bad"},{...receipt,requestId:43},{...receipt,sizeBytes:0},{...receipt,sizeBytes:request.maxBytes+1},
+  ])assert.throws(()=>validateDatabaseBackupReceipt(invalid,request),/Database-backup receipt/);
+});
+
+test("manual database backup is a distinct no-input fail-closed control plane",async()=>{
+  const [schema,migrations,control,worker,actions,panel,contract]=await Promise.all([
+    readFile(new URL("../schema.sql",import.meta.url),"utf8"),readFile(new URL("../migrations.sql",import.meta.url),"utf8"),
+    readFile(new URL("../lib/host-maintenance-control.mjs",import.meta.url),"utf8"),readFile(new URL("../lib/host-maintenance.mjs",import.meta.url),"utf8"),
+    readFile(new URL("../app/actions.js",import.meta.url),"utf8"),readFile(new URL("../app/settings/HostMaintenancePanel.jsx",import.meta.url),"utf8"),
+    readFile(new URL("../docs/host-maintenance-worker-contract.md",import.meta.url),"utf8"),
+  ]);
+  for(const source of[schema,migrations]){
+    assert.match(source,/host_database_backup_requests/);
+    assert.match(source,/idx_host_database_backup_requests_one_active/);
+    assert.match(source,/WHERE status IN \('pending', 'processing'\)|WHERE status IN \('pending','processing'\)/);
+    assert.match(source,/database-backup-create-v1/);
+    assert.match(source,/database_backup_capability_at/);
+    assert.match(source,/replay_count INTEGER NOT NULL DEFAULT 0 CHECK\s*\(replay_count BETWEEN 0 AND 2\)/);
+    assert.match(source,/checksum_sha256/);
+    assert.match(source,/verified BOOLEAN NOT NULL DEFAULT FALSE/);
+  }
+  assert.match(control,/databaseBackupRequired:true/);
+  assert.match(control,/database_backup_capability!=="database-backup-create-v1"/);
+  assert.match(control,/database_backup_capability_at/);
+  assert.match(control,/actor_user_id=\$4/);
+  assert.match(control,/scheduled:false,restoreSupported:false/);
+  assert.match(worker,/operation:"postgres-database-backup",format:"custom"/);
+  const backupBranch=worker.slice(worker.indexOf("const backup=databaseBackupSupported"),worker.indexOf("const intent=await claimIntent"));
+  assert.doesNotMatch(backupBranch,/recordWorkerError/);
+  assert.match(worker,/maxBytes:DATABASE_BACKUP_MAX_BYTES/);
+  assert.match(worker,/switch\(intent\.intent_type\)/);
+  assert.match(worker,/default:throw new Error\("Unknown host-maintenance intent type"\)/);
+  assert.doesNotMatch(control,/child_process|exec\(|spawn\(|pg_dump|backupRoot|backupPath/);
+  assert.match(actions,/createDatabaseBackup[\s\S]*requirePermission\("maintenance\.manage"\)/);
+  assert.match(panel,/Create database backup/);
+  assert.match(panel,/database-backup-create-v1 capability/);
+  assert.match(panel,/accepts no command, path, filename, schedule, or restore input/);
+  assert.doesNotMatch(panel,/checksumSha256|backupPath|commandArgs/);
+  assert.match(contract,/`backup\(request\)`/);
+  assert.match(contract,/`cleanupDatabaseBackupRequest\(request\)`/);
+});
+
+test("fresh schema defers the database-backup actor foreign key until users exist",async()=>{
+  const [schema,migrations]=await Promise.all([
+    readFile(new URL("../schema.sql",import.meta.url),"utf8"),readFile(new URL("../migrations.sql",import.meta.url),"utf8"),
+  ]);
+  const schemaTable=schema.slice(
+    schema.indexOf("CREATE TABLE IF NOT EXISTS public.host_database_backup_requests"),
+    schema.indexOf("CREATE INDEX IF NOT EXISTS idx_host_database_backup_requests_due"),
+  );
+  assert.match(schemaTable,/actor_user_id BIGINT,/);
+  assert.doesNotMatch(schemaTable,/REFERENCES public\.users/);
+
+  const migration=migrations.slice(
+    migrations.indexOf("-- Manual database backup is deliberately separate"),
+    migrations.indexOf("'2026073001_manual_database_backup'"),
+  );
+  assert.match(migration,/actor_user_id BIGINT,/);
+  assert.doesNotMatch(migration,/actor_user_id BIGINT REFERENCES public\.users/);
+  assert.match(migration,/conname = 'host_database_backup_requests_actor_user_id_fkey'/);
+  assert.match(migration,/conrelid = 'public\.host_database_backup_requests'::regclass/);
+  assert.match(migration,/ADD CONSTRAINT host_database_backup_requests_actor_user_id_fkey[\s\S]*FOREIGN KEY \(actor_user_id\) REFERENCES public\.users\(id\) ON DELETE SET NULL/);
+});
+
+test("database-backup audit writes use the schema vocabulary and commit atomically",async(t)=>{
+  const previousEnvironment=process.env.HOST_MAINTENANCE_ENVIRONMENT_ID;
+  const previousIdentity=process.env.HOST_MAINTENANCE_DATABASE_IDENTITY;
+  process.env.HOST_MAINTENANCE_ENVIRONMENT_ID="staging";
+  process.env.HOST_MAINTENANCE_DATABASE_IDENTITY="db-staging";
+  t.after(()=>{
+    if(previousEnvironment===undefined)delete process.env.HOST_MAINTENANCE_ENVIRONMENT_ID;
+    else process.env.HOST_MAINTENANCE_ENVIRONMENT_ID=previousEnvironment;
+    if(previousIdentity===undefined)delete process.env.HOST_MAINTENANCE_DATABASE_IDENTITY;
+    else process.env.HOST_MAINTENANCE_DATABASE_IDENTITY=previousIdentity;
+  });
+  const now=new Date("2026-07-31T18:00:00Z");const queries=[];
+  const client={query:async(sql,params)=>{queries.push({sql,params});
+    if(sql.includes("host_maintenance_environment_identity"))return{rowCount:1,rows:[{}]};
+    if(sql.includes("host_maintenance_worker_state"))return{rowCount:1,rows:[{heartbeat_at:now,database_backup_capability:"database-backup-create-v1",database_backup_capability_at:now}]};
+    if(sql.includes("SELECT id FROM public.host_database_backup_requests"))return{rowCount:0,rows:[]};
+    if(sql.includes("INSERT INTO public.host_database_backup_requests"))return{rowCount:1,rows:[{id:42,status:"pending",requested_at:now}]};
+    return{rowCount:1,rows:[]};},release(){}};
+  const result=await requestDatabaseBackup({executor:{connect:async()=>client},actor:{id:9},now});
+  assert.equal(result.requestId,42);assert.equal(result.status,"pending");
+  const audit=queries.find(({sql})=>sql.includes("maintenance.database_backup_requested"));
+  assert.ok(audit);assert.match(audit.sql,/'browser'/);assert.match(audit.sql,/'succeeded'/);
+  assert.doesNotMatch(audit.sql,/'web'|'success'/);
+  assert.ok(queries.findIndex(({sql})=>sql==="BEGIN")<queries.indexOf(audit));
+  assert.ok(queries.indexOf(audit)<queries.findIndex(({sql})=>sql==="COMMIT"));
+});
+
+test("worker audit writes stay inside the append-only audit schema vocabulary",async()=>{
+  const [schema,worker]=await Promise.all([
+    readFile(new URL("../migrations.sql",import.meta.url),"utf8"),
+    readFile(new URL("../lib/host-maintenance.mjs",import.meta.url),"utf8"),
+  ]);
+  assert.match(schema,/CHECK \(source IN \('browser', 'api', 'system'\)\)/);
+  assert.match(schema,/CHECK \(outcome IN \('succeeded', 'denied', 'failed'\)\)/);
+  assert.doesNotMatch(worker,/'host-worker'|'success'/);
+  assert.match(worker,/maintenance[.]database_backup_completed[\s\S]*?'succeeded'/);
+  assert.match(worker,/maintenance[.]database_backup_failed[\s\S]*?'failed'/);
+});
+
+test("database-backup capability expires immediately when an old worker refreshes only the general heartbeat",async()=>{
+  const now=new Date("2026-07-30T18:00:00Z");
+  const bindings={environmentId:"staging",databaseIdentity:"db-staging"};
+  const database={query:async(sql)=>{
+    if(sql.includes("host_maintenance_environment_identity"))return{rowCount:1,rows:[{}]};
+    return{rowCount:1,rows:[{database_identity:"db-staging",heartbeat_at:now,inventory_measured_at:now,
+      worker_generation:"worker-old",inventory_revision:"revision-old",database_backup_capability:"database-backup-create-v1",
+      database_backup_capability_at:new Date(now.getTime()-60_000)}]};
+  }};
+  await assert.rejects(()=>hostMaintenanceControlInternals.assertHealthyWorker(database,now,bindings,{databaseBackupRequired:true}),/adapter is not installed/);
+});
+
+test("database-backup status polling is actor and environment bound",async()=>{
+  const queries=[];const executor={query:async(sql,params)=>{queries.push({sql,params});
+    if(sql.includes("host_maintenance_environment_identity"))return{rowCount:1,rows:[{}]};
+    return{rowCount:0,rows:[]};
+  }};
+  const previousEnvironment=process.env.HOST_MAINTENANCE_ENVIRONMENT_ID;
+  const previousIdentity=process.env.HOST_MAINTENANCE_DATABASE_IDENTITY;
+  process.env.HOST_MAINTENANCE_ENVIRONMENT_ID="staging";process.env.HOST_MAINTENANCE_DATABASE_IDENTITY="db-staging";
+  try{await assert.rejects(()=>getDatabaseBackupRequestStatus({executor,requestId:9,actor:{id:22}}),/request is invalid/);}
+  finally{
+    if(previousEnvironment===undefined)delete process.env.HOST_MAINTENANCE_ENVIRONMENT_ID;else process.env.HOST_MAINTENANCE_ENVIRONMENT_ID=previousEnvironment;
+    if(previousIdentity===undefined)delete process.env.HOST_MAINTENANCE_DATABASE_IDENTITY;else process.env.HOST_MAINTENANCE_DATABASE_IDENTITY=previousIdentity;
+  }
+  const statusQuery=queries.find(({sql})=>sql.includes("host_database_backup_requests"));
+  assert.match(statusQuery.sql,/actor_user_id=\$4/);assert.deepEqual(statusQuery.params,[9,"staging","db-staging",22]);
+});
+
 test("worker failure, recovery, and completion SQL preserve atomic lease ownership",async()=>{
   const worker=await readFile(new URL("../lib/host-maintenance.mjs",import.meta.url),"utf8");
   assert.match(worker,/async function failIntentAtomic[\s\S]*BEGIN[\s\S]*writeFailure[\s\S]*COMMIT/);
@@ -181,6 +327,43 @@ test("worker failure, recovery, and completion SQL preserve atomic lease ownersh
   assert.match(worker,/circuit_breaker_generation=circuit_breaker_generation\+1/);
   assert.match(worker,/host_maintenance_receipts/);
   assert.match(worker,/audit_events/);
+  assert.match(worker,/maintenance[.]database_backup_replayed/);
+  assert.match(worker,/status='pending',started_at=NULL,completed_at=NULL,worker_generation=NULL/);
+  assert.match(worker,/if\(attempts>=2\)/);
+  assert.doesNotMatch(worker,/SELECT count\(\*\)::int AS count FROM public[.]audit_events/);
+  assert.match(worker,/cleanupDatabaseBackupRequest/);
+  assert.match(worker,/databaseBackupReplayRequired/);
+});
+
+test("stale manual database backup replays the same bounded request row",async()=>{
+  const queries=[];
+  const client={query:async(sql,params)=>{queries.push({sql,params});
+    if(sql.includes("host_maintenance_environment_identity"))return{rowCount:1,rows:[{}]};
+    if(sql.includes("FROM public.host_maintenance_intents"))return{rowCount:0,rows:[]};
+    if(sql.includes("FROM public.host_database_backup_requests"))return{rowCount:1,rows:[{id:42,actor_user_id:9,replay_count:0}]};
+    return{rowCount:1,rows:[{}]};},release(){}};
+  const executor={connect:async()=>client};
+  const result=await recoverStaleHostMaintenanceLeases({executor,now:new Date("2026-07-30T20:00:00Z"),leaseSeconds:600,
+    databaseBackupSupported:true,expectedEnvironmentId:"staging",expectedDatabaseIdentity:"db-staging"});
+  assert.deepEqual(result,{recovered:1});
+  const replay=queries.find(({sql})=>sql.includes("SET status='pending'"));
+  assert.ok(replay);assert.equal(replay.params[0],42);
+  assert.ok(queries.some(({sql})=>sql.includes("maintenance.database_backup_replayed")));
+  assert.ok(!queries.some(({sql})=>/SELECT[\s\S]*FROM public[.]audit_events/.test(sql)));
+});
+
+test("exhausted stale database backup cleans its exact artifact before failure",async()=>{
+  const queries=[];let cleaned=false;
+  const client={query:async(sql,params)=>{queries.push({sql,params});
+    if(sql.includes("host_maintenance_environment_identity"))return{rowCount:1,rows:[{}]};
+    if(sql.includes("FROM public.host_maintenance_intents"))return{rowCount:0,rows:[]};
+    if(sql.includes("FROM public.host_database_backup_requests"))return{rowCount:1,rows:[{id:43,actor_user_id:9,replay_count:2}]};
+    return{rowCount:1,rows:[{}]};},release(){}};
+  const adapter={cleanupDatabaseBackupRequest:async(request)=>{cleaned=request.requestId===43;return{status:"cleaned"};}};
+  const result=await recoverStaleHostMaintenanceLeases({executor:{connect:async()=>client},adapter,now:new Date("2026-07-30T20:00:00Z"),
+    databaseBackupSupported:true,expectedEnvironmentId:"staging",expectedDatabaseIdentity:"db-staging"});
+  assert.deepEqual(result,{recovered:1});assert.equal(cleaned,true);
+  assert.ok(queries.some(({sql})=>sql.includes("SET status='failed'")));
 });
 
 test("schema evidence tables are append-only and environment bindings are durable",async()=>{
@@ -236,6 +419,56 @@ test("database identity mismatch prevents token delivery, mutations, and worker-
     await assert.rejects(()=>inspectAndHeartbeatHostMaintenanceWorker({executor:workerExecutor,adapter:{inspect:async()=>{inspected=true;}},now:new Date()}),/identity/);
     assert.equal(inspected,false);
     assert.doesNotMatch(workerQueries.join("\n"),/UPDATE public\.host_maintenance_worker_state/);
+  }finally{
+    if(priorEnvironment===undefined)delete process.env.HOST_MAINTENANCE_ENVIRONMENT_ID;else process.env.HOST_MAINTENANCE_ENVIRONMENT_ID=priorEnvironment;
+    if(priorDatabase===undefined)delete process.env.HOST_MAINTENANCE_DATABASE_IDENTITY;else process.env.HOST_MAINTENANCE_DATABASE_IDENTITY=priorDatabase;
+  }
+});
+
+test("worker heartbeat explicitly binds reused timestamp parameters as timestamptz",async()=>{
+  const priorEnvironment=process.env.HOST_MAINTENANCE_ENVIRONMENT_ID;
+  const priorDatabase=process.env.HOST_MAINTENANCE_DATABASE_IDENTITY;
+  process.env.HOST_MAINTENANCE_ENVIRONMENT_ID="staging";
+  process.env.HOST_MAINTENANCE_DATABASE_IDENTITY="db-staging";
+  try{
+    const queries=[];
+    const executor={query:async(sql,values)=>{
+      queries.push({sql,values});
+      if(/host_maintenance_environment_identity/.test(sql))return{rowCount:1,rows:[{ok:1}]};
+      if(/INSERT INTO public\.host_maintenance_worker_state/.test(sql))return{rowCount:1,rows:[]};
+      throw new Error(`Unexpected query: ${sql}`);
+    }};
+    const now=new Date("2026-07-31T23:59:00.000Z");
+    const adapter={
+      capabilities:["database-backup-create-v1"],
+      backup:async()=>{throw new Error("not called");},
+      inspect:async()=>inventory({measuredAt:now.toISOString()}),
+    };
+    const result=await inspectAndHeartbeatHostMaintenanceWorker({executor,adapter,workerId:"worker-test",now});
+    assert.equal(result.databaseBackupSupported,true);
+    const heartbeatQuery=queries.find(({sql})=>/INSERT INTO public\.host_maintenance_worker_state/.test(sql));
+    assert.ok(heartbeatQuery);
+    assert.equal(heartbeatQuery.sql.match(/\$5::timestamptz/g)?.length,3);
+    assert.equal(heartbeatQuery.sql.match(/\$8::varchar\(80\)/g)?.length,2);
+    assert.doesNotMatch(heartbeatQuery.sql,/ELSE \$5 END|,\$5,\$6/);
+    assert.doesNotMatch(heartbeatQuery.sql,/,\$8,|WHEN \$8 IS NULL/);
+    assert.equal(heartbeatQuery.values[4],now);
+    assert.equal(heartbeatQuery.values[7],"database-backup-create-v1");
+
+    const unsupportedResult=await inspectAndHeartbeatHostMaintenanceWorker({
+      executor,
+      adapter:{inspect:async()=>inventory({measuredAt:now.toISOString()})},
+      workerId:"worker-without-backup",
+      now,
+    });
+    assert.equal(unsupportedResult.databaseBackupSupported,false);
+    const unsupportedHeartbeat=queries.filter(({sql})=>/INSERT INTO public\.host_maintenance_worker_state/.test(sql))[1];
+    assert.ok(unsupportedHeartbeat);
+    assert.equal(unsupportedHeartbeat.sql.match(/\$5::timestamptz/g)?.length,3);
+    assert.equal(unsupportedHeartbeat.sql.match(/\$8::varchar\(80\)/g)?.length,2);
+    assert.doesNotMatch(unsupportedHeartbeat.sql,/,\$8,|WHEN \$8 IS NULL/);
+    assert.equal(unsupportedHeartbeat.values[4],now);
+    assert.equal(unsupportedHeartbeat.values[7],null);
   }finally{
     if(priorEnvironment===undefined)delete process.env.HOST_MAINTENANCE_ENVIRONMENT_ID;else process.env.HOST_MAINTENANCE_ENVIRONMENT_ID=priorEnvironment;
     if(priorDatabase===undefined)delete process.env.HOST_MAINTENANCE_DATABASE_IDENTITY;else process.env.HOST_MAINTENANCE_DATABASE_IDENTITY=priorDatabase;

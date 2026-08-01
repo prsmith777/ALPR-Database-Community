@@ -75,7 +75,7 @@ function Projection({ projection }) {
   );
 }
 
-export default function StorageHealthCard({ snapshot }) {
+export default function StorageHealthCard({ snapshot, view = "all" }) {
   const router = useRouter();
   const [isRefreshing, startRefresh] = useTransition();
   const filesystem = snapshot?.filesystem;
@@ -87,6 +87,8 @@ export default function StorageHealthCard({ snapshot }) {
   const preview = maintenance?.lastResult;
   const reconciliation = snapshot?.reconciliation;
   const reconciliationRun = reconciliation?.run;
+  const showStorage = view === "all" || view === "storage";
+  const showMonitoring = view === "all" || view === "monitoring";
   const indexedTotal = assets
     ? assets.readyCount + assets.failedCount + assets.pendingCount
     : 0;
@@ -101,7 +103,7 @@ export default function StorageHealthCard({ snapshot }) {
           <div className="flex flex-wrap items-center gap-2">
             <CardTitle className="flex items-center gap-2">
               <HardDrive className="h-5 w-5 text-primary" aria-hidden="true" />
-              Storage health
+              {view === "monitoring" ? "Maintenance previews" : "Storage health"}
             </CardTitle>
             <Badge variant="secondary" className="gap-1">
               <ShieldCheck className="h-3 w-3" aria-hidden="true" />
@@ -109,7 +111,9 @@ export default function StorageHealthCard({ snapshot }) {
             </Badge>
           </div>
           <CardDescription className="mt-2">
-            Capacity, database, capture, and visual-index measurements. This view cannot delete or modify data.
+            {view === "monitoring"
+              ? "Scheduled dry-run evidence and bounded storage reconciliation. This view cannot delete or modify data."
+              : "Capacity, database, capture, and visual-index measurements. This view cannot delete or modify data."}
           </CardDescription>
         </div>
         <Button
@@ -124,6 +128,7 @@ export default function StorageHealthCard({ snapshot }) {
         </Button>
       </CardHeader>
       <CardContent className="space-y-6">
+        {showStorage && <>
         {snapshot?.errors?.length > 0 && (
           <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-4 text-sm">
             <div className="flex items-center gap-2 font-medium text-amber-700 dark:text-amber-300">
@@ -282,7 +287,9 @@ export default function StorageHealthCard({ snapshot }) {
             </div>
           </section>
         </div>
+        </>}
 
+        {showMonitoring && <>
         <section aria-labelledby="maintenance-preview-title" className="rounded-lg border p-4">
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div>
@@ -400,6 +407,7 @@ export default function StorageHealthCard({ snapshot }) {
             The complete finding inventory is stored durably for review. Files created after a scan starts are deferred to the next run to avoid false orphan classifications.
           </p>
         </section>
+        </>}
 
         <div className="rounded-lg border border-blue-500/30 bg-blue-500/10 p-4 text-sm">
           <p className="font-medium text-blue-700 dark:text-blue-300">Measurement never performs cleanup</p>

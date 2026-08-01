@@ -2,10 +2,12 @@
 
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { ArchiveRestore, Box, HardDrive, RefreshCw, ShieldCheck } from "lucide-react";
+import { ArchiveRestore, Box, Database, HardDrive, RefreshCw, ShieldCheck } from "lucide-react";
 
 import {
+  createDatabaseBackup,
   previewHostMaintenance,
+  refreshDatabaseBackup,
   refreshHostMaintenancePreview,
   runConfirmedHostMaintenance,
   setScheduledHostMaintenancePolicy,
@@ -123,6 +125,7 @@ function initialDrafts(configs) {
 export default function HostMaintenancePanel({ overview = {}, canManage, canApproveAutomaticCleanup }) {
   const router = useRouter();
   const [requests, setRequests] = useState({});
+  const [databaseBackup, setDatabaseBackup] = useState(() => overview.databaseBackup || { status: "never" });
   const [manualConfirmations, setManualConfirmations] = useState({});
   const [activationConfirmations, setActivationConfirmations] = useState({});
   const [drafts, setDrafts] = useState(() => initialDrafts(overview.configs));
@@ -131,6 +134,8 @@ export default function HostMaintenancePanel({ overview = {}, canManage, canAppr
   const [isPending, startTransition] = useTransition();
   const worker = overview.worker || {};
   const workerHealthy = worker.status === "healthy";
+  const databaseBackupAvailable = workerHealthy && overview.databaseBackup?.supported === true;
+  const databaseBackupActive = ["pending", "processing"].includes(databaseBackup.status);
   const workerLabel = worker.status === "stale"
     ? "Host worker stale"
     : workerHealthy
@@ -159,6 +164,24 @@ export default function HostMaintenancePanel({ overview = {}, canManage, canAppr
       setRequests((current) => ({ ...current, [category]: { ...result.data, operation: "preview" } }));
       setManualConfirmations((current) => ({ ...current, [category]: "" }));
       setNotice({ kind: "success", text: "Preview queued. Use Check status until the host worker finishes." });
+    });
+  }
+
+  function handleDatabaseBackup() {
+    runAction("database-backup", async () => {
+      const result = databaseBackupActive
+        ? await refreshDatabaseBackup({ requestId: databaseBackup.requestId })
+        : await createDatabaseBackup();
+      if (!result.success) {
+        setNotice({ kind: "error", text: result.error });
+        return;
+      }
+      setDatabaseBackup((current) => ({ ...current, ...result.data }));
+      if (databaseBackupActive) {
+        if (["completed", "failed"].includes(result.data.status)) router.refresh();
+      } else {
+        setNotice({ kind: "success", text: "Database backup queued. Use the same button to check status." });
+      }
     });
   }
 
@@ -269,6 +292,42 @@ export default function HostMaintenancePanel({ overview = {}, canManage, canAppr
         <p className="rounded-md border border-blue-500/30 bg-blue-500/10 p-3">
           These controls never prune Docker volumes, containers, or networks and never alter database records, captures, source images, or thumbnails.
         </p>
+
+        <section className="space-y-3 rounded-lg border p-4" aria-labelledby="database-backup-title">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <h3 id="database-backup-title" className="flex items-center gap-2 font-semibold">
+                <Database className="h-4 w-4 text-primary" aria-hidden="true" />Database backup
+              </h3>
+              <p className="mt-1 text-xs text-muted-foreground">
+                Create one verified PostgreSQL custom-format backup in the fixed approved backup root.
+              </p>
+            </div>
+            <Badge variant={databaseBackup.status === "failed" ? "destructive" : "outline"}>
+              {String(databaseBackup.status || "never").replaceAll("_", " ")}
+            </Badge>
+          </div>
+          <p className="text-xs text-muted-foreground">
+            This fixed operation accepts no command, path, filename, schedule, or restore input from the browser.
+          </p>
+          <dl className="grid gap-x-4 gap-y-2 text-xs sm:grid-cols-2 lg:grid-cols-5">
+            <div><dt className="text-muted-foreground">Last status</dt><dd className="font-medium">{databaseBackup.status || "Never"}</dd></div>
+            <div><dt className="text-muted-foreground">Last run time</dt><dd className="font-medium">{formatDate(databaseBackup.completedAt || databaseBackup.startedAt || databaseBackup.requestedAt)}</dd></div>
+            <div><dt className="text-muted-foreground">Filename</dt><dd className="break-all font-medium">{databaseBackup.filename || "Not available"}</dd></div>
+            <div><dt className="text-muted-foreground">Size</dt><dd className="font-medium">{databaseBackup.sizeBytes == null ? "Not available" : formatBytes(databaseBackup.sizeBytes)}</dd></div>
+            <div><dt className="text-muted-foreground">Error</dt><dd className={databaseBackup.error ? "font-medium text-destructive" : "font-medium"}>{databaseBackup.error || "None"}</dd></div>
+          </dl>
+          {!databaseBackupAvailable && (
+            <p className="rounded-md border border-amber-500/40 p-2 text-xs text-amber-700 dark:text-amber-300">
+              Backup creation is locked until the worker advertises the reviewed database-backup-create-v1 capability.
+            </p>
+          )}
+          <Button type="button" size="sm" onClick={handleDatabaseBackup}
+            disabled={!canManage || !databaseBackupAvailable || isPending || (databaseBackupActive && !databaseBackup.requestId)}>
+            {isPending && pendingCategory === "database-backup" && <RefreshCw className="mr-2 h-3.5 w-3.5 animate-spin" aria-hidden="true" />}
+            {databaseBackupActive ? "Check backup status" : "Create database backup"}
+          </Button>
+        </section>
 
         <div className="grid gap-4 xl:grid-cols-3">
           {CATEGORIES.map((definition) => {
