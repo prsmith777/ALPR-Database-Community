@@ -22,13 +22,15 @@ test("release information resolves a commit-pinned deployment image", () => {
     ALPR_RELEASE_CHANNEL: "staging",
   });
 
-  assert.equal(release.version, "0.1.13");
+  assert.equal(release.version, "0.1.14");
   assert.equal(release.manualVersion, "1.45");
   assert.equal(release.manualUpdatedAt, "August 2, 2026");
   assert.equal(release.gitSha, "8cd2fa8");
   assert.equal(release.channel, "staging");
   assert.equal(release.source, "commit-pinned image");
   assert.equal(release.readOnly, true);
+  assert.equal(release.notes.title, "August 2, 2026 release line");
+  assert.equal(release.notes.publishedAt, "2026-08-02");
   assert.ok(release.notes.items.length >= 4);
 });
 
