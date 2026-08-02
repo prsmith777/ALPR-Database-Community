@@ -134,7 +134,9 @@ reliable background processing.
   Read and Next read actions that continue across paginated results without
   wrapping. Confirm and Next advances only after a successful confirmation,
   skips already confirmed reads across result pages, and stops when no later
-  unconfirmed read remains. The last Plate capture or Vehicle view choice is
+  unconfirmed read remains. Both popup action rows use aligned fixed-width
+  columns, so conditional review and optional actions never shift neighboring
+  controls. The last Plate capture or Vehicle view choice is
   retained in the browser across sign-out and sign-in, with a temporary plate
   fallback when no vehicle image exists. Plate corrections preserve the cursor
   position while typing. Known Plate values link directly to exact individual

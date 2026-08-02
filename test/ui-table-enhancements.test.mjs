@@ -67,8 +67,8 @@ test("live feed image review advances visibly and starts focused on the plate", 
   assert.match(plateTable, /pendingUnconfirmedNavigation === null &&\s*confirmNextOperation === null/);
   assert.match(plateTable, /useEffect\(\(\) => \(\) => \{[\s\S]*?activeConfirmNextOperationRef\.current = null;[\s\S]*?selectedImageIdRef\.current = null;[\s\S]*?\}, \[\]\)/);
   assert.match(plateTable, /disabled=\{pendingViewerNavigation !== null \|\| confirmNextBusy\}/);
-  assert.match(plateTable, /<span className="whitespace-nowrap">Confirm and Next<\/span>/);
-  assert.match(plateTable, /<span className="whitespace-nowrap">Delete<\/span>[\s\S]*?<span className="whitespace-nowrap">Previous Read<\/span>/);
+  assert.match(plateTable, /<span className=\{POPUP_ACTION_LABEL_CLASS\}>Confirm and Next<\/span>/);
+  assert.match(plateTable, /<span className=\{POPUP_ACTION_LABEL_CLASS\}>Delete<\/span>[\s\S]*?<span className=\{POPUP_ACTION_LABEL_CLASS\}>Previous Read<\/span>/);
   assert.match(plateTable, /Retry vehicle view/);
   assert.match(plateTable, /retryBlueIrisVehicleFrameForRead/);
   assert.match(plateTable, /Failed after \$\{selectedImage\.vehicleImageAttemptCount \|\| 3\} attempts/);
@@ -76,16 +76,75 @@ test("live feed image review advances visibly and starts focused on the plate", 
   assert.match(plateTable, /setIsDeleteConfirmOpen\(true\)/);
   assert.match(plateTable, /<DialogTitle>Confirm Deletion<\/DialogTitle>/);
   assert.match(plateTable, /selectedImage\?\.id === activePlate\.id/);
-  assert.match(plateTable, /className="grid w-full gap-3"/);
-  assert.match(plateTable, /className="flex flex-wrap items-center gap-2"/);
-  assert.match(plateTable, /className="flex flex-wrap items-center justify-between gap-2"/);
-  assert.match(plateTable, /className="ml-auto flex flex-wrap items-center gap-2"/);
+  assert.match(plateTable, /className="w-full overflow-x-auto pb-1"[\s\S]*className="grid min-w-\[64rem\] gap-3"/);
+  assert.equal([...plateTable.matchAll(/<div className=\{POPUP_ACTION_GRID_CLASS\}>/g)].length, 2);
+  assert.equal([...plateTable.matchAll(/<PopupActionSlot>/g)].length, 14);
   assert.match(plateTable, /Show next read \(Right Arrow\)/);
   assert.match(plateTable, /\[role="slider"\]/);
   assert.match(plateTable, /lg:grid-cols-\[minmax\(0,1fr\)_11rem\].*lg:grid-rows-\[minmax\(0,1fr\)_auto\].*lg:overflow-hidden/);
   assert.match(plateTable, /<DialogTitle className="sr-only">[\s\S]*?License Plate Image/);
-  assert.match(plateTable, /const POPUP_ACTION_BUTTON_CLASS = "h-8 shrink-0 px-2 text-xs"/);
+  assert.match(plateTable, /const POPUP_ACTION_BUTTON_CLASS = "h-8 w-full min-w-0 justify-center overflow-hidden px-2 text-xs"/);
   assert.match(plateTable, /const POPUP_ACTION_ICON_CLASS = "mr-1 h-3\.5 w-3\.5 shrink-0"/);
+  assert.match(plateTable, /const POPUP_ACTION_LABEL_CLASS = "min-w-0 truncate whitespace-nowrap"/);
+  assert.match(plateTable, /const POPUP_ACTION_GRID_CLASS = "grid grid-cols-7 gap-2"/);
+  assert.match(plateTable, /const POPUP_ACTION_SLOT_CLASS = "min-h-8 min-w-0"/);
+  const footerStart = plateTable.indexOf('<DialogFooter className="self-end lg:col-start-1 lg:row-start-2">');
+  const footer = plateTable.slice(footerStart, plateTable.indexOf("</DialogFooter>", footerStart));
+  const footerRows = [...footer.matchAll(/<div className=\{POPUP_ACTION_GRID_CLASS\}>/g)];
+  assert.equal(footerRows.length, 2);
+  const firstActionRow = footer.slice(footerRows[0].index, footerRows[1].index);
+  const secondActionRow = footer.slice(footerRows[1].index);
+  const assertOrdered = (source, labels) => {
+    let previousIndex = -1;
+    for (const label of labels) {
+      const nextIndex = source.indexOf(label);
+      assert.ok(nextIndex > previousIndex, `${label} should preserve its popup action order`);
+      previousIndex = nextIndex;
+    }
+  };
+  assertOrdered(firstActionRow, [
+    "Find similar vehicle",
+    "Confirm vehicle",
+    "Different vehicle",
+    "Correct Plate",
+    "Review History",
+    "Add to Known",
+    "Add Tag",
+  ]);
+  assertOrdered(secondActionRow, [
+    "Confirm and Next",
+    "Reopen review",
+    "Next read",
+    "Delete",
+    "Previous Read",
+    "Blue Iris",
+    "Download",
+  ]);
+  const firstRowSlots = firstActionRow.split("<PopupActionSlot>").slice(1);
+  const secondRowSlots = secondActionRow.split("<PopupActionSlot>").slice(1);
+  assert.equal(firstRowSlots.length, 7);
+  assert.equal(secondRowSlots.length, 7);
+  const firstRowSlotLabels = [
+    /Find similar vehicle/,
+    /Confirm vehicle/,
+    /Different vehicle/,
+    /Correct Plate/,
+    /Review History/,
+    /Add to Known/,
+    /Add Tag/,
+  ];
+  const secondRowSlotLabels = [
+    /Confirm and Next/,
+    /Reopen review/,
+    />Next read</,
+    />Delete</,
+    /Previous Read/,
+    /Blue Iris/,
+    />Download</,
+  ];
+  firstRowSlotLabels.forEach((label, index) => assert.match(firstRowSlots[index], label));
+  secondRowSlotLabels.forEach((label, index) => assert.match(secondRowSlots[index], label));
+  assert.match(secondRowSlots[1], /Confirm detected plate/);
   assert.match(plateTable, /aria-label="Find similar vehicle"[\s\S]*?>Find similar vehicle</);
   assert.match(plateTable, /aria-label="Correct detected plate"[\s\S]*?>Correct Plate</);
   assert.match(plateTable, /aria-label="Open review history"[\s\S]*?>Review History</);
