@@ -76,20 +76,22 @@ test("live feed image review advances visibly and starts focused on the plate", 
   assert.match(plateTable, /setIsDeleteConfirmOpen\(true\)/);
   assert.match(plateTable, /<DialogTitle>Confirm Deletion<\/DialogTitle>/);
   assert.match(plateTable, /selectedImage\?\.id === activePlate\.id/);
-  assert.match(plateTable, /className="w-full overflow-x-auto pb-1"[\s\S]*className="grid min-w-\[64rem\] gap-3"/);
+  assert.match(plateTable, /<DialogFooter className="self-end lg:col-start-1 lg:row-start-2">[\s\S]*?className="grid w-full gap-3"/);
   assert.equal([...plateTable.matchAll(/<div className=\{POPUP_ACTION_GRID_CLASS\}>/g)].length, 2);
-  assert.equal([...plateTable.matchAll(/<PopupActionSlot>/g)].length, 14);
+  assert.equal([...plateTable.matchAll(/<PopupActionSlot(?:\s[^>]*)?>/g)].length, 14);
   assert.match(plateTable, /Show next read \(Right Arrow\)/);
   assert.match(plateTable, /\[role="slider"\]/);
   assert.match(plateTable, /lg:grid-cols-\[minmax\(0,1fr\)_11rem\].*lg:grid-rows-\[minmax\(0,1fr\)_auto\].*lg:overflow-hidden/);
   assert.match(plateTable, /<DialogTitle className="sr-only">[\s\S]*?License Plate Image/);
-  assert.match(plateTable, /const POPUP_ACTION_BUTTON_CLASS = "h-8 w-full min-w-0 justify-center overflow-hidden px-2 text-xs"/);
+  assert.match(plateTable, /const POPUP_ACTION_BUTTON_CLASS = "h-8 w-full min-w-0 justify-center overflow-hidden px-1 text-\[11px\]"/);
   assert.match(plateTable, /const POPUP_ACTION_ICON_CLASS = "mr-1 h-3\.5 w-3\.5 shrink-0"/);
   assert.match(plateTable, /const POPUP_ACTION_LABEL_CLASS = "min-w-0 truncate whitespace-nowrap"/);
-  assert.match(plateTable, /const POPUP_ACTION_GRID_CLASS = "grid grid-cols-7 gap-2"/);
+  assert.match(plateTable, /const POPUP_ACTION_GRID_CLASS = "grid w-full grid-cols-7 gap-2"/);
   assert.match(plateTable, /const POPUP_ACTION_SLOT_CLASS = "min-h-8 min-w-0"/);
+  assert.match(plateTable, /function PopupActionSlot\(\{ children, className = "", reserve = false \}\)[\s\S]*?if \(!reserve && !children\) return null/);
   const footerStart = plateTable.indexOf('<DialogFooter className="self-end lg:col-start-1 lg:row-start-2">');
   const footer = plateTable.slice(footerStart, plateTable.indexOf("</DialogFooter>", footerStart));
+  assert.doesNotMatch(footer, /overflow-x-auto|min-w-\[64rem\]/);
   const footerRows = [...footer.matchAll(/<div className=\{POPUP_ACTION_GRID_CLASS\}>/g)];
   assert.equal(footerRows.length, 2);
   const firstActionRow = footer.slice(footerRows[0].index, footerRows[1].index);
@@ -121,9 +123,11 @@ test("live feed image review advances visibly and starts focused on the plate", 
     "Download",
   ]);
   const firstRowSlots = firstActionRow.split("<PopupActionSlot>").slice(1);
-  const secondRowSlots = secondActionRow.split("<PopupActionSlot>").slice(1);
+  const secondRowSlots = secondActionRow.split(/<PopupActionSlot(?:\s[^>]*)?>/).slice(1);
   assert.equal(firstRowSlots.length, 7);
   assert.equal(secondRowSlots.length, 7);
+  assert.doesNotMatch(firstActionRow, /<PopupActionSlot reserve/);
+  assert.equal([...secondActionRow.matchAll(/<PopupActionSlot reserve/g)].length, 2);
   const firstRowSlotLabels = [
     /Find similar vehicle/,
     /Confirm vehicle/,
@@ -145,6 +149,8 @@ test("live feed image review advances visibly and starts focused on the plate", 
   firstRowSlotLabels.forEach((label, index) => assert.match(firstRowSlots[index], label));
   secondRowSlotLabels.forEach((label, index) => assert.match(secondRowSlots[index], label));
   assert.match(secondRowSlots[1], /Confirm detected plate/);
+  assert.match(secondActionRow, /<PopupActionSlot reserve className="col-start-6">[\s\S]*?Blue Iris/);
+  assert.match(secondActionRow, /<PopupActionSlot reserve>[\s\S]*?Download/);
   assert.match(plateTable, /aria-label="Find similar vehicle"[\s\S]*?>Find similar vehicle</);
   assert.match(plateTable, /aria-label="Correct detected plate"[\s\S]*?>Correct Plate</);
   assert.match(plateTable, /aria-label="Open review history"[\s\S]*?>Review History</);

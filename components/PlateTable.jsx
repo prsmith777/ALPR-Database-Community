@@ -164,16 +164,17 @@ const REVIEW_STATUS_CLASSES = {
   alias_resolved: "border-violet-500/40 text-violet-400",
 };
 
-const POPUP_ACTION_BUTTON_CLASS = "h-8 w-full min-w-0 justify-center overflow-hidden px-2 text-xs";
+const POPUP_ACTION_BUTTON_CLASS = "h-8 w-full min-w-0 justify-center overflow-hidden px-1 text-[11px]";
 const POPUP_ACTION_ICON_CLASS = "mr-1 h-3.5 w-3.5 shrink-0";
 const POPUP_ACTION_LABEL_CLASS = "min-w-0 truncate whitespace-nowrap";
-const POPUP_ACTION_GRID_CLASS = "grid grid-cols-7 gap-2";
+const POPUP_ACTION_GRID_CLASS = "grid w-full grid-cols-7 gap-2";
 const POPUP_ACTION_SLOT_CLASS = "min-h-8 min-w-0";
 const TABLE_ACTION_BUTTON_CLASS = "h-8 w-8 p-0";
 const CONFIRM_NEXT_SCAN_TIMEOUT_MS = 15000;
 
-function PopupActionSlot({ children }) {
-  return <div className={POPUP_ACTION_SLOT_CLASS}>{children}</div>;
+function PopupActionSlot({ children, className = "", reserve = false }) {
+  if (!reserve && !children) return null;
+  return <div className={`${POPUP_ACTION_SLOT_CLASS} ${className}`.trim()}>{children}</div>;
 }
 
 function correctionImageFromRead(plate) {
@@ -3021,8 +3022,7 @@ export default function PlateTable({
               </div>
             )}
             <DialogFooter className="self-end lg:col-start-1 lg:row-start-2">
-              <div className="w-full overflow-x-auto pb-1">
-                <div className="grid min-w-[64rem] gap-3">
+              <div className="grid w-full gap-3">
                   <div className={POPUP_ACTION_GRID_CLASS}>
                     <PopupActionSlot>
                       {canRead && selectedImage && <Button
@@ -3258,7 +3258,7 @@ export default function PlateTable({
                         <span className={POPUP_ACTION_LABEL_CLASS}>Previous Read</span>
                       </Button>
                     </PopupActionSlot>
-                    <PopupActionSlot>
+                    <PopupActionSlot reserve className="col-start-6">
                       {biHost && selectedImage?.bi_path && <Button
                         variant="outline"
                         size="sm"
@@ -3276,7 +3276,7 @@ export default function PlateTable({
                         <span className={POPUP_ACTION_LABEL_CLASS}>Blue Iris</span>
                       </Button>}
                     </PopupActionSlot>
-                    <PopupActionSlot>
+                    <PopupActionSlot reserve>
                       {canExport && <Button
                         variant="outline"
                         size="sm"
@@ -3291,7 +3291,6 @@ export default function PlateTable({
                     </PopupActionSlot>
                   </div>
                 </div>
-              </div>
             </DialogFooter>
           </DialogContent>
         </Dialog>
