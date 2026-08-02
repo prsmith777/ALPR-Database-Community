@@ -52,9 +52,21 @@ test("live feed image review advances visibly and starts focused on the plate", 
     /setSelectedImageView\("plate"\)/
   );
   assert.match(plateTable, /const handleConfirmAndNext = async \(\) =>/);
-  assert.match(plateTable, /const confirmed = await handleSelectedImageValidation\(\);\s*if \(!confirmed\) return/);
-  assert.match(plateTable, /const confirmed = await handleSelectedImageValidation\(\);\s*if \(!confirmed\) return;\s*handleNextImage\(\)/);
-  assert.doesNotMatch(plateTable, /setPendingConfirmAdvanceReadId/);
+  const operationStart = plateTable.indexOf("activeConfirmNextOperationRef.current = operation");
+  const confirmationAwait = plateTable.indexOf("await handleSelectedImageValidation()", operationStart);
+  const operationCheck = plateTable.indexOf("isConfirmNextOperationCurrent", confirmationAwait);
+  assert.ok(operationStart >= 0 && operationStart < confirmationAwait && confirmationAwait < operationCheck);
+  assert.match(plateTable, /selectedReadId: selectedImageIdRef\.current/);
+  assert.match(plateTable, /cancelConfirmNextFlow\(\);\s*selectedImageIdRef\.current = null;\s*setIsImageFullscreen/);
+  assert.match(plateTable, /findNextUnconfirmedReadIndex/);
+  assert.match(plateTable, /const nextRead = nextUnconfirmedIndex >= 0 \? data\[nextUnconfirmedIndex\] : null/);
+  assert.match(plateTable, /phase: "scan"[\s\S]*?onViewerPageChange\("next"\)/);
+  assert.match(plateTable, /resolveUnconfirmedPageTransition/);
+  assert.match(plateTable, /selectedImage\.validated !== true/);
+  assert.match(plateTable, /CONFIRM_NEXT_SCAN_TIMEOUT_MS = 15000/);
+  assert.match(plateTable, /pendingUnconfirmedNavigation === null &&\s*confirmNextOperation === null/);
+  assert.match(plateTable, /useEffect\(\(\) => \(\) => \{[\s\S]*?activeConfirmNextOperationRef\.current = null;[\s\S]*?selectedImageIdRef\.current = null;[\s\S]*?\}, \[\]\)/);
+  assert.match(plateTable, /disabled=\{pendingViewerNavigation !== null \|\| confirmNextBusy\}/);
   assert.match(plateTable, /<span className="whitespace-nowrap">Confirm and Next<\/span>/);
   assert.match(plateTable, /<span className="whitespace-nowrap">Delete<\/span>[\s\S]*?<span className="whitespace-nowrap">Previous Read<\/span>/);
   assert.match(plateTable, /Retry vehicle view/);
@@ -283,7 +295,7 @@ test("the closed image viewer does not dereference a missing selected read", asy
 
   assert.match(
     plateTableSource,
-    /disabled=\{pendingReviewReadId === selectedImage\?\.id \|\| pendingViewerNavigation !== null\}/
+    /disabled=\{pendingReviewReadId === selectedImage\?\.id \|\| pendingViewerNavigation !== null \|\| confirmNextBusy\}/
   );
   assert.match(
     plateTableSource,

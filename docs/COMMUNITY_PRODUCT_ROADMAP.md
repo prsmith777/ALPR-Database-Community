@@ -131,8 +131,10 @@ reliable background processing.
   and local release notes. The view is read-only and does not fetch source, run
   Git or Docker, apply migrations, restart services, or install updates.
 - Read review now keeps operators in the Live Feed image dialog with Previous
-  Read, Next read, and Confirm and Next actions that continue across paginated
-  results without wrapping. The last Plate capture or Vehicle view choice is
+  Read and Next read actions that continue across paginated results without
+  wrapping. Confirm and Next advances only after a successful confirmation,
+  skips already confirmed reads across result pages, and stops when no later
+  unconfirmed read remains. The last Plate capture or Vehicle view choice is
   retained in the browser across sign-out and sign-in, with a temporary plate
   fallback when no vehicle image exists. Plate corrections preserve the cursor
   position while typing. Known Plate values link directly to exact individual
