@@ -29,6 +29,7 @@ import {
   History,
   RotateCcw,
   ScanSearch,
+  ChevronLeft,
   ChevronRight,
   Split,
 } from "lucide-react";
@@ -106,6 +107,10 @@ import {
 import ImageViewer from "./ImageViewer";
 import { useAccess } from "@/components/auth/AccessProvider";
 import { resolveReadViewerNavigation } from "@/lib/read-viewer-navigation.mjs";
+import {
+  loadLiveFeedPopupView,
+  saveLiveFeedPopupView,
+} from "@/lib/live-feed-popup-preference.mjs";
 import { buildBlueIrisUiUrl } from "@/lib/blue-iris-ui-url.mjs";
 import {
   Sheet,
@@ -380,6 +385,33 @@ export default function PlateTable({
 
   const router = useRouter();
 
+  useEffect(() => {
+    setSelectedImageView(loadLiveFeedPopupView());
+  }, []);
+
+  const handleSelectedImageViewChange = useCallback((view) => {
+    setSelectedImageView(saveLiveFeedPopupView(view));
+  }, []);
+
+  const handleCorrectionPlateChange = useCallback((event) => {
+    const input = event.currentTarget;
+    const value = input.value;
+    const selectionStart = input.selectionStart ?? value.length;
+    const selectionEnd = input.selectionEnd ?? selectionStart;
+    const nextValue = value.toUpperCase();
+    const nextSelectionStart = value.slice(0, selectionStart).toUpperCase().length;
+    const nextSelectionEnd = value.slice(0, selectionEnd).toUpperCase().length;
+
+    setCorrection((current) => ({
+      ...current,
+      newPlateNumber: nextValue,
+    }));
+    requestAnimationFrame(() => {
+      if (correctionInputRef.current !== input || document.activeElement !== input) return;
+      input.setSelectionRange(nextSelectionStart, nextSelectionEnd);
+    });
+  }, []);
+
   const handleVehicleReview = async (decision) => {
     if (!selectedImage?.id || pendingVehicleReview) return;
     setPendingVehicleReview(decision);
@@ -560,7 +592,6 @@ export default function PlateTable({
       crop_coordinates: plate.crop_coordinates,
     });
 
-    setSelectedImageView("plate");
   }, [data]);
 
   const getViewerNavigation = useCallback(
@@ -673,6 +704,12 @@ export default function PlateTable({
 
   const hasNextImage =
     selectedImage !== null && getViewerNavigation("next").kind !== "none";
+  const hasPreviousImage =
+    selectedImage !== null && getViewerNavigation("previous").kind !== "none";
+  const displayedImageView =
+    selectedImageView === "vehicle" && selectedImage?.vehicleImageUrl
+      ? "vehicle"
+      : "plate";
 
   useEffect(() => {
     if (selectedImage && data && data.length > 0) {
@@ -808,7 +845,7 @@ export default function PlateTable({
   }, [data, pendingReviewReadId, selectedImage]);
 
   const handleSelectedImageValidation = async () => {
-    if (!selectedImage || pendingReviewReadId === selectedImage.id) return;
+    if (!selectedImage || pendingReviewReadId === selectedImage.id) return false;
 
     const readId = selectedImage.id;
     const nextValidated = !selectedImage.validated;
@@ -841,7 +878,7 @@ export default function PlateTable({
       const result = await onValidate(readId, nextValidated);
       if (!result?.success) {
         rollbackReviewState();
-        return;
+        return false;
       }
 
       setSelectedImage((previous) => {
@@ -857,13 +894,22 @@ export default function PlateTable({
             result.data?.reviewRevision ?? previous.reviewRevision,
         };
       });
+      return true;
     } catch (error) {
       rollbackReviewState();
       console.error("Failed to update plate review:", error);
+      return false;
     } finally {
       setPendingReviewReadId((current) => (current === readId ? null : current));
       setPendingReviewTargetValidated(null);
     }
+  };
+
+  const handleConfirmAndNext = async () => {
+    if (!selectedImage || selectedImage.validated || !hasNextImage) return;
+    const confirmed = await handleSelectedImageValidation();
+    if (!confirmed) return;
+    handleNextImage();
   };
 
   const handleDownloadImage = async () => {
@@ -2616,8 +2662,8 @@ export default function PlateTable({
                   <div className="relative h-[40vh] w-full overflow-hidden rounded-md border bg-black sm:h-auto sm:min-h-0">
                     {selectedImage.vehicleImageUrl && (
                       <div className="absolute left-2 top-2 z-20 flex flex-col rounded-md border bg-background/90 p-1 shadow-sm backdrop-blur">
-                        <Button type="button" size="sm" variant={selectedImageView === "plate" ? "default" : "ghost"} className="h-7 justify-start px-2 text-xs" onClick={() => setSelectedImageView("plate")}>Plate capture</Button>
-                        <Button type="button" size="sm" variant={selectedImageView === "vehicle" ? "default" : "ghost"} className="h-7 justify-start px-2 text-xs" onClick={() => setSelectedImageView("vehicle")}>Vehicle view</Button>
+                        <Button type="button" size="sm" variant={displayedImageView === "plate" ? "default" : "ghost"} className="h-7 justify-start px-2 text-xs" onClick={() => handleSelectedImageViewChange("plate")}>Plate capture</Button>
+                        <Button type="button" size="sm" variant={displayedImageView === "vehicle" ? "default" : "ghost"} className="h-7 justify-start px-2 text-xs" onClick={() => handleSelectedImageViewChange("vehicle")}>Vehicle view</Button>
                       </div>
                     )}
                     {!selectedImage.vehicleImageUrl && selectedImage.vehicleImageStatus && (
@@ -2657,17 +2703,17 @@ export default function PlateTable({
                     <ImageViewer
                       image={{
                         ...selectedImage,
-                        url: selectedImageView === "vehicle" && selectedImage.vehicleImageUrl
+                        url: displayedImageView === "vehicle"
                           ? selectedImage.vehicleImageUrl
                           : selectedImage.plateCaptureUrl,
-                        crop_coordinates: selectedImageView === "vehicle" ? null : selectedImage.crop_coordinates,
-                        focus_coordinates: selectedImageView === "vehicle"
+                        crop_coordinates: displayedImageView === "vehicle" ? null : selectedImage.crop_coordinates,
+                        focus_coordinates: displayedImageView === "vehicle"
                           ? selectedImage.vehicleImageDetectionBox
                           : null,
                       }}
-                      zoomEnabled={selectedImageView === "vehicle"}
+                      zoomEnabled={displayedImageView === "vehicle"}
                       defaultZoom={null}
-                      zoomLabel={selectedImageView === "vehicle" ? "Zoom to Vehicle" : "Zoom to Plate"}
+                      zoomLabel={displayedImageView === "vehicle" ? "Zoom to Vehicle" : "Zoom to Plate"}
                       onFullscreenChange={setIsImageFullscreen}
                     />
                   </div>
@@ -2911,13 +2957,25 @@ export default function PlateTable({
                     {canReview && <Button
                       variant="outline"
                       size="sm"
+                      className={POPUP_ACTION_BUTTON_CLASS}
+                      onClick={handleConfirmAndNext}
+                      disabled={selectedImage?.validated || !hasNextImage || pendingReviewReadId === selectedImage?.id || pendingViewerNavigation !== null}
+                      aria-label="Confirm detected plate and show the next read"
+                      title="Confirm and show next read"
+                    >
+                      <Check className={POPUP_ACTION_ICON_CLASS} />
+                      <span className="whitespace-nowrap">Confirm and Next</span>
+                    </Button>}
+                    {canReview && <Button
+                      variant="outline"
+                      size="sm"
                       className={
                         selectedImage?.validated
                           ? `${POPUP_ACTION_BUTTON_CLASS} border-green-500/60 bg-green-500/10 text-green-500 hover:bg-green-500/20 hover:text-green-400`
                           : POPUP_ACTION_BUTTON_CLASS
                       }
                       onClick={handleSelectedImageValidation}
-                      disabled={pendingReviewReadId === selectedImage?.id}
+                      disabled={pendingReviewReadId === selectedImage?.id || pendingViewerNavigation !== null}
                       aria-label={selectedImage?.validated ? "Reopen plate review" : "Confirm detected plate"}
                       title={selectedImage?.validated ? "Reopen plate review" : "Confirm detected plate"}
                     >
@@ -2965,6 +3023,18 @@ export default function PlateTable({
                       <Trash2 className={POPUP_ACTION_ICON_CLASS} />
                       <span className="whitespace-nowrap">Delete</span>
                     </Button>}
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className={POPUP_ACTION_BUTTON_CLASS}
+                      onClick={handlePreviousImage}
+                      disabled={!hasPreviousImage || pendingViewerNavigation !== null}
+                      aria-label="Show previous read in the filtered Live Feed results"
+                      title="Show previous read (Left Arrow)"
+                    >
+                      <ChevronLeft className={POPUP_ACTION_ICON_CLASS} />
+                      <span className="whitespace-nowrap">Previous Read</span>
+                    </Button>
                   </div>
                   <div className="ml-auto flex flex-wrap items-center gap-2">
                   {biHost && selectedImage?.bi_path && (
@@ -3161,12 +3231,7 @@ export default function PlateTable({
                       ref={correctionInputRef}
                       id="new-plate"
                       value={correction?.newPlateNumber || ""}
-                      onChange={(event) =>
-                        setCorrection((current) => ({
-                          ...current,
-                          newPlateNumber: event.target.value.toUpperCase(),
-                        }))
-                      }
+                      onChange={handleCorrectionPlateChange}
                       className="h-10 font-mono text-base uppercase"
                       placeholder="ENTER CORRECT PLATE"
                     />

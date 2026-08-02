@@ -36,10 +36,27 @@ test("live feed image review advances visibly and starts focused on the plate", 
   ]);
 
   assert.match(plateTable, /const handleNextImage = useCallback\(\(\) =>/);
+  assert.match(plateTable, /const handlePreviousImage = useCallback\(\(\) =>/);
   assert.match(plateTable, /onClick=\{handleNextImage\}/);
+  assert.match(plateTable, /onClick=\{handlePreviousImage\}/);
   assert.match(plateTable, /onViewerPageChange/);
   assert.doesNotMatch(plateTable, /\(selectedIndex \+ 1\) % data\.length/);
   assert.match(plateTable, />Next read</);
+  assert.match(plateTable, />Previous Read</);
+  assert.match(plateTable, /loadLiveFeedPopupView\(\)/);
+  assert.match(plateTable, /saveLiveFeedPopupView\(view\)/);
+  assert.match(plateTable, /selectedImageView === "vehicle" && selectedImage\?\.vehicleImageUrl/);
+  assert.match(plateTable, /url: displayedImageView === "vehicle"/);
+  assert.doesNotMatch(
+    plateTable.slice(plateTable.indexOf("const handleImageClick"), plateTable.indexOf("const getViewerNavigation")),
+    /setSelectedImageView\("plate"\)/
+  );
+  assert.match(plateTable, /const handleConfirmAndNext = async \(\) =>/);
+  assert.match(plateTable, /const confirmed = await handleSelectedImageValidation\(\);\s*if \(!confirmed\) return/);
+  assert.match(plateTable, /const confirmed = await handleSelectedImageValidation\(\);\s*if \(!confirmed\) return;\s*handleNextImage\(\)/);
+  assert.doesNotMatch(plateTable, /setPendingConfirmAdvanceReadId/);
+  assert.match(plateTable, /<span className="whitespace-nowrap">Confirm and Next<\/span>/);
+  assert.match(plateTable, /<span className="whitespace-nowrap">Delete<\/span>[\s\S]*?<span className="whitespace-nowrap">Previous Read<\/span>/);
   assert.match(plateTable, /Retry vehicle view/);
   assert.match(plateTable, /retryBlueIrisVehicleFrameForRead/);
   assert.match(plateTable, /Failed after \$\{selectedImage\.vehicleImageAttemptCount \|\| 3\} attempts/);
@@ -112,6 +129,9 @@ test("plate correction opens with an editable caret instead of selected text", a
   assert.match(plateTable, /onOpenAutoFocus=\{\(event\) => \{/);
   assert.match(plateTable, /input\.setSelectionRange\(cursorPosition, cursorPosition\)/);
   assert.match(plateTable, /ref=\{correctionInputRef\}/);
+  assert.match(plateTable, /onChange=\{handleCorrectionPlateChange\}/);
+  assert.match(plateTable, /value\.slice\(0, selectionStart\)\.toUpperCase\(\)\.length/);
+  assert.match(plateTable, /input\.setSelectionRange\(nextSelectionStart, nextSelectionEnd\)/);
   assert.match(plateTable, /Plate image/);
   assert.match(plateTable, /image=\{correction\.image\}\s+zoomEnabled\s+compactControls\s+fitPlateOnOpen/);
   assert.match(plateTable, /function correctionImageFromRead\(plate\)/);
@@ -263,7 +283,7 @@ test("the closed image viewer does not dereference a missing selected read", asy
 
   assert.match(
     plateTableSource,
-    /disabled=\{pendingReviewReadId === selectedImage\?\.id\}/
+    /disabled=\{pendingReviewReadId === selectedImage\?\.id \|\| pendingViewerNavigation !== null\}/
   );
   assert.match(
     plateTableSource,

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useEffect, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { ArchiveRestore, Box, Database, HardDrive, RefreshCw, ShieldCheck } from "lucide-react";
 
@@ -154,6 +154,50 @@ export default function HostMaintenancePanel({ overview = {}, canManage, canAppr
     });
   }
 
+  useEffect(() => {
+    if (overview.databaseBackup) setDatabaseBackup(overview.databaseBackup);
+  }, [overview.databaseBackup]);
+
+  useEffect(() => {
+    if (!databaseBackupActive || !databaseBackup.requestId) return undefined;
+    let cancelled = false;
+    let timer = null;
+    let consecutiveFailures = 0;
+    const schedulePoll = () => {
+      timer = window.setTimeout(poll, 2500);
+    };
+    const poll = async () => {
+      let result;
+      try {
+        result = await refreshDatabaseBackup({ requestId: databaseBackup.requestId });
+      } catch {
+        result = { success: false, error: "The automatic backup status check was interrupted." };
+      }
+      if (cancelled) return;
+      if (!result.success) {
+        consecutiveFailures += 1;
+        if (consecutiveFailures >= 3) {
+          setNotice({ kind: "error", text: `${result.error} Automatic updates paused; use Check backup status to retry.` });
+          return;
+        }
+        schedulePoll();
+        return;
+      }
+      consecutiveFailures = 0;
+      setDatabaseBackup((current) => ({ ...current, ...result.data }));
+      if (["completed", "failed"].includes(result.data.status)) {
+        router.refresh();
+        return;
+      }
+      schedulePoll();
+    };
+    schedulePoll();
+    return () => {
+      cancelled = true;
+      if (timer !== null) window.clearTimeout(timer);
+    };
+  }, [databaseBackup.requestId, databaseBackupActive, router]);
+
   function queuePreview(category) {
     runAction(category, async () => {
       const result = await previewHostMaintenance({ category });
@@ -180,7 +224,7 @@ export default function HostMaintenancePanel({ overview = {}, canManage, canAppr
       if (databaseBackupActive) {
         if (["completed", "failed"].includes(result.data.status)) router.refresh();
       } else {
-        setNotice({ kind: "success", text: "Database backup queued. Use the same button to check status." });
+        setNotice({ kind: "success", text: "Database backup queued. Status will update automatically." });
       }
     });
   }

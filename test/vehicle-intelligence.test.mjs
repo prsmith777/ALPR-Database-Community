@@ -92,8 +92,8 @@ test("live-feed vehicle descriptors use a side rail without reducing image heigh
   assert.match(table, /<aside[\s\S]*?<div className="text-xs uppercase text-muted-foreground">Type<\/div>[\s\S]*?<div className="text-xs uppercase text-muted-foreground">Color<\/div>/);
   assert.match(table, /<aside[\s\S]*?<span>Direction<\/span>/);
   assert.match(table, /text-lg font-semibold leading-tight/);
-  assert.match(table, /focus_coordinates: selectedImageView === "vehicle"/);
-  assert.match(table, /zoomLabel=\{selectedImageView === "vehicle" \? "Zoom to Vehicle" : "Zoom to Plate"\}/);
+  assert.match(table, /focus_coordinates: displayedImageView === "vehicle"/);
+  assert.match(table, /zoomLabel=\{displayedImageView === "vehicle" \? "Zoom to Vehicle" : "Zoom to Plate"\}/);
   assert.match(table, /<DialogFooter className="self-end lg:col-start-1 lg:row-start-2">[\s\S]*?className="grid w-full gap-3"/);
   assert.match(table, /className="flex flex-wrap items-center gap-2"/);
   assert.match(table, /className="flex flex-wrap items-center justify-between gap-2"/);

@@ -44,6 +44,20 @@ test("previous read crosses to the final read of the previous result page", () =
   );
 });
 
+test("previous read moves exactly one item backward within the current page", () => {
+  assert.deepEqual(
+    resolve({ direction: "previous", selectedIndex: 10 }),
+    { kind: "item", index: 9 }
+  );
+});
+
+test("previous read stops at the first result instead of wrapping", () => {
+  assert.deepEqual(
+    resolve({ direction: "previous", selectedIndex: 0, page: 1 }),
+    { kind: "none" }
+  );
+});
+
 test("next read does not skip an item after the selected read leaves a filtered page", () => {
   assert.deepEqual(
     resolve({ selectedIndex: 10, itemCount: 24, selectedPresent: false }),

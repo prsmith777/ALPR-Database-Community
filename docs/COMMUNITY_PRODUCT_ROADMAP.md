@@ -18,7 +18,7 @@ reliable background processing.
 6. Audit sensitive searches, exports, corrections, rule changes, and
    destructive maintenance.
 
-## Release baseline — August 1, 2026
+## Release baseline — August 2, 2026
 
 - Application `0.1.13` includes named users and roles, evidence-preserving plate
   review, filter-respecting exports, the searchable help center, local privacy
@@ -130,29 +130,35 @@ reliable background processing.
   application version, build- or deployment-provided Git SHA, release channel,
   and local release notes. The view is read-only and does not fetch source, run
   Git or Docker, apply migrations, restart services, or install updates.
-- Read review now keeps operators in the Live Feed image dialog with a visible
-  next-read action, continues across paginated results without wrapping to the
-  first visible read, and opens image-backed reads focused on the detected
-  plate. Known Plate values link directly to exact individual reads, and
-  plate-oriented typography requests a slashed-zero glyph to distinguish `0`
-  from `O`.
+- Read review now keeps operators in the Live Feed image dialog with Previous
+  Read, Next read, and Confirm and Next actions that continue across paginated
+  results without wrapping. The last Plate capture or Vehicle view choice is
+  retained in the browser across sign-out and sign-in, with a temporary plate
+  fallback when no vehicle image exists. Plate corrections preserve the cursor
+  position while typing. Known Plate values link directly to exact individual
+  reads, and plate-oriented typography requests a slashed-zero glyph to
+  distinguish `0` from `O`.
 - The application now contains a distinct, no-input manual database-backup
   request/status control plane. It can request only a PostgreSQL custom-format
   backup in a worker-owned approved root and reports only sanitized status,
   time, basename, verified size, and error state. It exposes no path, command,
   arguments, schedule, or restore operation. The button fails closed unless a
   fresh worker explicitly advertises `database-backup-create-v1`. The reviewed
-  fixed adapter and runtime tooling are installed on staging and passed the
-  capability-present and capability-absent PostgreSQL 17 heartbeat gates. Its
+  fixed adapter and runtime tooling are installed on staging and production and
+  passed the capability-present and capability-absent PostgreSQL 17 heartbeat
+  gates. Its
   role has only narrow SELECT/UPDATE access to the dedicated request queue and
   no application-table read or dump privileges; the adapter uses fixed Docker
   execution against the exact database container. The first authorized request
   exposed an audit-vocabulary defect and rolled back before enqueue without an
   artifact. After that defect was corrected, one separately authorized August 1
   staging request completed once and verified a 59.2 MB custom-format backup
-  with no reported error. Phase 3 staging acceptance is complete. The adapter
-  is not deployed to production; any production work remains separately
-  approval-gated.
+  with no reported error. Phase 3 staging acceptance is complete. After the
+  separately approved production installation and activation, an August 2
+  production request completed and verified the 64,806,352-byte custom-format
+  backup `alpr-postgres-20260802T164636Z-1.dump`. Pending and processing backup
+  status now refresh automatically in the page, with a manual status-check
+  fallback after repeated transport failures.
 - Recurring plate-correction aliases now default to All cameras while retaining
   an explicit current-camera-only scope for camera-specific OCR errors. An
   alias-only save repairs mappings without changing historical reads, conflicts
@@ -301,10 +307,9 @@ worker-ledger-confirmed retired ALPR images, and verified rollout backups.
 Candidate discovery and opaque preview tokens are worker-owned; previews are
 short-lived, single-use, exact-set and environment/policy/generation bound.
 Cache and backup schedules remain separately approved and default off, while
-unused-image automation remains unsupported. The shipped application has no
-privileged worker, so these controls remain unavailable until the documented
-fixed host service is independently installed. That service is installed and
-active on staging; it has not been installed on production. See
+unused-image automation remains unsupported. These controls remain unavailable
+until the documented fixed host service is independently installed. That
+service is installed and active on staging and production. See
 `docs/host-maintenance-worker-contract.md`.
 
 The repo-side manual database-backup increment uses its own one-active-request
@@ -323,10 +328,12 @@ backup request rolled back atomically on an audit-vocabulary constraint before
 enqueue and created no artifact. After the browser and worker audit events were
 corrected, one separately authorized August 1 staging request completed once
 and verified a 59.2 MB custom-format backup with `Error: None`. Phase 3 staging
-acceptance is complete. Production does not have this adapter and remains
-separately approval-gated. Backup catalog integration, in-app restore, and
-automatic scheduling are intentionally deferred for this single-owner
-deployment; restore remains an external recovery procedure.
+acceptance is complete. The separately approved production worker installation,
+activation, and application recreate then completed successfully. One August 2
+production request verified the 64,806,352-byte custom-format backup
+`alpr-postgres-20260802T164636Z-1.dump`. Backup catalog integration, in-app
+restore, and automatic scheduling are intentionally deferred for this
+single-owner deployment; restore remains an external recovery procedure.
 
 Settings also includes a read-only Release view for the application version,
 build- or deployment-provided Git SHA, release channel, and local release
@@ -350,12 +357,14 @@ notes. Updates remain externally orchestrated.
 - Delivered increment: read-only PostgreSQL table maintenance and transaction
   ID age observability, plus the fail-closed application control plane for one
   manual custom-format database backup. The reviewed fixed worker adapter is
-  deployed and capability-validated on staging only. Its first authorized
+  deployed and capability-validated on staging and production. Its first authorized
   create attempt exposed an audit-vocabulary defect and rolled back without an
   artifact. After that defect was corrected, one separately authorized August 1
   staging request completed once and verified a 59.2 MB custom-format backup
-  with no reported error. Phase 3 staging acceptance is complete. Keep catalog
-  integration, in-app restore, automatic scheduling, and broader
+  with no reported error. Phase 3 staging acceptance is complete. After a
+  separately approved production installation and activation, one August 2
+  production request completed and verified a 64,806,352-byte custom-format
+  backup. Keep catalog integration, in-app restore, automatic scheduling, and broader
   backup-verification jobs deferred unless this single-owner deployment develops
   a concrete need. Consider controlled `VACUUM ANALYZE` only as a separately
   reviewed future increment.
