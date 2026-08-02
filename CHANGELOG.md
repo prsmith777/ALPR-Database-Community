@@ -19,10 +19,14 @@
   request/status control. It is available only when a fresh, separately
   installed worker advertises `database-backup-create-v1`, exposes no path,
   command, schedule, or restore input, and reports only sanitized verified
-  status. The reviewed fixed adapter is deployed and capability-validated on
-  staging only. One separately authorized August 1 staging request completed
-  once and verified `alpr-postgres-20260801T120648Z-5.dump` at 59.2 MB with no
-  reported error; production remains unchanged and separately approval-gated.
+  status. The reviewed fixed adapter is installed, active, and
+  capability-validated on staging and production. One separately authorized
+  August 1 staging request completed once and verified
+  `alpr-postgres-20260801T120648Z-5.dump` at 59.2 MB with no reported error.
+  After the separately approved August 2 production installation and
+  activation, one production request completed and verified the 64,806,352-byte
+  (61.8 MB) `alpr-postgres-20260802T164636Z-1.dump`. Future production
+  deployments and worker changes remain separately approval-gated.
 - Fixed manual database-backup request and worker audit writes to use the
   existing `audit_events` source/outcome vocabulary. The first authorized
   staging request rolled back atomically on the prior constraint mismatch and

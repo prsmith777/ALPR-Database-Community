@@ -230,6 +230,9 @@ test("manual database backup is a distinct no-input fail-closed control plane",a
   assert.doesNotMatch(panel,/checksumSha256|backupPath|commandArgs/);
   assert.match(contract,/`backup\(request\)`/);
   assert.match(contract,/`cleanupDatabaseBackupRequest\(request\)`/);
+  assert.match(contract,/production worker is active and\s+advertises `database-backup-create-v1`/);
+  assert.match(contract,/64,806,352-byte \(61\.8 MB\)\s+`alpr-postgres-20260802T164636Z-1\.dump`/);
+  assert.doesNotMatch(contract,/Production has no deployed adapter|production does not/);
 });
 
 test("fresh schema defers the database-backup actor foreign key until users exist",async()=>{
