@@ -126,15 +126,20 @@ uses `browser`/`succeeded` for the request and `system` with `succeeded` or
 `failed` for worker events. After that correction, one separately authorized
 August 1 staging request completed once and verified
 `alpr-postgres-20260801T120648Z-5.dump` at 59.2 MB with `Error: None`.
-Phase 3 staging acceptance is complete. Production has no deployed adapter or
-advertised capability and remains separately approval-gated.
+Phase 3 staging acceptance is complete. After the separately approved August 2
+production installation and activation, the production worker is active and
+advertises `database-backup-create-v1`. One authorized production request
+completed and verified the 64,806,352-byte (61.8 MB)
+`alpr-postgres-20260802T164636Z-1.dump`. Future production deployments and
+worker changes remain separately approval-gated.
 
 ## Installation and recovery
 
 This repository deliberately ships the disabled adapter and an in-memory test
 adapter, not a privileged host implementation. An operator must separately
 install and configure a reviewed worker implementation for each target
-environment. Staging has that separate installation; production does not.
+environment. Staging and production have separate reviewed installations; the
+production installation and activation were separately approved on August 2.
 The service process imports only `lib/host-maintenance-worker.mjs`; application
 routes, actions, and monitors must import `lib/host-maintenance-control.mjs`.
 After any breaker event, investigate the immutable intent/run/receipt/audit
