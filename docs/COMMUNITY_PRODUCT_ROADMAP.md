@@ -20,7 +20,7 @@ reliable background processing.
 
 ## Release baseline — August 2, 2026
 
-- Application `0.1.13` includes named users and roles, evidence-preserving plate
+- Application `0.1.14` includes named users and roles, evidence-preserving plate
   review, filter-respecting exports, the searchable help center, local privacy
   controls, and viewport-safe date/help navigation. Monitored Plates now lives
   inside Known Plates with reason, priority, monitoring-since, and read-history
