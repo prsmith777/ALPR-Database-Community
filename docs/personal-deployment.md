@@ -103,7 +103,11 @@ The snapshot contract is:
 ```
 
 Write snapshots atomically with restrictive ownership and permissions. Mount
-only the resulting file read-only. Do not give the application the Docker
+the collector-owned directory, rather than a single file, read-only at
+`/run/alpr-host-storage`; atomic rename can otherwise leave a single-file bind
+mount attached to the prior inode. Set `STORAGE_HOST_SNAPSHOT_PATH` to
+`/run/alpr-host-storage/storage-snapshot-v1.json`. Snapshot files larger than
+64 KiB are rejected. Do not give the application the Docker
 socket, a privileged container, or writable access to backup/release trees.
 Docker volumes are excluded from `totalBytes` to avoid double-counting the
 application storage and PostgreSQL categories.

@@ -17,6 +17,10 @@ import {
   normalizeHostStorageSnapshot,
   readHostStorageSnapshot,
 } from "../lib/storage-breakdown.mjs";
+import {
+  buildHostStorageSnapshot,
+  writeHostStorageSnapshot,
+} from "../lib/host-storage-snapshot-writer.mjs";
 import { decideMaintenanceAlert } from "../lib/maintenance-alerts.mjs";
 import { MaintenanceAlertRepository } from "../lib/maintenance-alert-repository.mjs";
 import { MaintenanceAlertWorker } from "../lib/maintenance-alert-worker.mjs";
@@ -303,6 +307,83 @@ test("host storage snapshots are exact, exclude Docker volumes, and reject stale
     read: async () => "{}",
   });
   assert.match(linked.error, /regular file/);
+  const oversized = await readHostStorageSnapshot({
+    snapshotPath: "/metrics.json",
+    fileStat: async () => ({ isFile: () => true, isSymbolicLink: () => false, size: 65 * 1024 }),
+    read: async () => assert.fail("oversized snapshots must not be read"),
+  });
+  assert.match(oversized.error, /fixed size limit/);
+});
+
+test("host snapshot writer uses non-overlapping Docker facts and unique verified backup files", async () => {
+  const snapshot = buildHostStorageSnapshot({
+    measuredAt: "2026-08-02T20:00:00.000Z",
+    systemDf: {
+      LayersSize: 100,
+      Containers: [{ SizeRw: 10 }, { SizeRw: 20 }],
+      Volumes: [{ Name: "buildx_state", UsageData: { Size: 40 } }],
+    },
+    builderContainer: {
+      Mounts: [{ Type: "volume", Name: "buildx_state", Destination: "/var/lib/buildkit" }],
+    },
+    backupArtifacts: [
+      { verified: true, device: 1, inode: 2, linkCount: 1, bytes: 50, verifiedAt: "2026-08-01T00:00:00Z" },
+      { verified: true, device: 1, inode: 3, linkCount: 1, bytes: 60, verifiedAt: "2026-08-02T00:00:00Z" },
+    ],
+  });
+  assert.deepEqual(snapshot.docker, {
+    imagesBytes: 100, containersBytes: 30, buildCacheBytes: 40, totalBytes: 170,
+  });
+  assert.deepEqual(snapshot.backups, {
+    bytes: 110, count: 2, latestVerifiedAt: "2026-08-02T00:00:00.000Z",
+  });
+  assert.throws(() => buildHostStorageSnapshot({
+    systemDf: { LayersSize: 0, Containers: [], Volumes: [{ Name: "buildx_state", UsageData: { Size: 0 } }] },
+    builderContainer: { Mounts: [{ Type: "volume", Name: "buildx_state", Destination: "/var/lib/buildkit" }] },
+    backupArtifacts: [
+      { verified: true, device: 1, inode: 2, linkCount: 1, bytes: 1, verifiedAt: "2026-08-01T00:00:00Z" },
+      { verified: true, device: 1, inode: 2, linkCount: 1, bytes: 1, verifiedAt: "2026-08-01T00:00:00Z" },
+    ],
+  }), /share a physical file/);
+});
+
+test("host snapshot publication replaces one fixed file and fsyncs file and directory", async () => {
+  const calls = [];
+  const directoryStat = { isDirectory: () => true, isSymbolicLink: () => false, uid: 1000, gid: 1000, mode: 0o40755 };
+  const fileStat = { isFile: () => true, isSymbolicLink: () => false, uid: 1000, gid: 1000, mode: 0o100644, nlink: 1, size: 12 };
+  let published = false;
+  const missing = () => Object.assign(new Error("missing"), { code: "ENOENT" });
+  const temporaryHandle = {
+    async writeFile(value) { calls.push(["write", value]); },
+    async sync() { calls.push(["file-sync"]); },
+    async chmod(mode) { calls.push(["chmod", mode]); },
+    async close() { calls.push(["file-close"]); },
+  };
+  const directoryHandle = {
+    async sync() { calls.push(["directory-sync"]); },
+    async close() { calls.push(["directory-close"]); },
+  };
+  const result = await writeHostStorageSnapshot({ schemaVersion: 1 }, {
+    directory: "/snapshot",
+    expectedUid: 1000,
+    expectedGid: 1000,
+    fileStat: async (path) => {
+      if (path === "/snapshot") return directoryStat;
+      if (path.endsWith(".tmp")) throw missing();
+      if (published) return fileStat;
+      throw missing();
+    },
+    openFile: async (path, flags, mode) => {
+      calls.push(["open", path, flags, mode]);
+      return path === "/snapshot" ? directoryHandle : temporaryHandle;
+    },
+    renameFile: async (from, to) => { calls.push(["rename", from, to]); published = true; },
+    unlinkFile: async () => assert.fail("no temporary residue should exist"),
+  });
+  assert.equal(result.path, "/snapshot/storage-snapshot-v1.json");
+  assert.deepEqual(calls.map((entry) => entry[0]), [
+    "open", "write", "file-sync", "chmod", "file-close", "rename", "open", "directory-sync", "directory-close",
+  ]);
 });
 
 test("storage tree traversal stops at hard bounds and labels partial measurements", async () => {
