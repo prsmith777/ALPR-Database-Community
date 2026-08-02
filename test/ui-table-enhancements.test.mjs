@@ -36,10 +36,39 @@ test("live feed image review advances visibly and starts focused on the plate", 
   ]);
 
   assert.match(plateTable, /const handleNextImage = useCallback\(\(\) =>/);
+  assert.match(plateTable, /const handlePreviousImage = useCallback\(\(\) =>/);
   assert.match(plateTable, /onClick=\{handleNextImage\}/);
+  assert.match(plateTable, /onClick=\{handlePreviousImage\}/);
   assert.match(plateTable, /onViewerPageChange/);
   assert.doesNotMatch(plateTable, /\(selectedIndex \+ 1\) % data\.length/);
   assert.match(plateTable, />Next read</);
+  assert.match(plateTable, />Previous Read</);
+  assert.match(plateTable, /loadLiveFeedPopupView\(\)/);
+  assert.match(plateTable, /saveLiveFeedPopupView\(view\)/);
+  assert.match(plateTable, /selectedImageView === "vehicle" && selectedImage\?\.vehicleImageUrl/);
+  assert.match(plateTable, /url: displayedImageView === "vehicle"/);
+  assert.doesNotMatch(
+    plateTable.slice(plateTable.indexOf("const handleImageClick"), plateTable.indexOf("const getViewerNavigation")),
+    /setSelectedImageView\("plate"\)/
+  );
+  assert.match(plateTable, /const handleConfirmAndNext = async \(\) =>/);
+  const operationStart = plateTable.indexOf("activeConfirmNextOperationRef.current = operation");
+  const confirmationAwait = plateTable.indexOf("await handleSelectedImageValidation()", operationStart);
+  const operationCheck = plateTable.indexOf("isConfirmNextOperationCurrent", confirmationAwait);
+  assert.ok(operationStart >= 0 && operationStart < confirmationAwait && confirmationAwait < operationCheck);
+  assert.match(plateTable, /selectedReadId: selectedImageIdRef\.current/);
+  assert.match(plateTable, /cancelConfirmNextFlow\(\);\s*selectedImageIdRef\.current = null;\s*setIsImageFullscreen/);
+  assert.match(plateTable, /findNextUnconfirmedReadIndex/);
+  assert.match(plateTable, /const nextRead = nextUnconfirmedIndex >= 0 \? data\[nextUnconfirmedIndex\] : null/);
+  assert.match(plateTable, /phase: "scan"[\s\S]*?onViewerPageChange\("next"\)/);
+  assert.match(plateTable, /resolveUnconfirmedPageTransition/);
+  assert.match(plateTable, /selectedImage\.validated !== true/);
+  assert.match(plateTable, /CONFIRM_NEXT_SCAN_TIMEOUT_MS = 15000/);
+  assert.match(plateTable, /pendingUnconfirmedNavigation === null &&\s*confirmNextOperation === null/);
+  assert.match(plateTable, /useEffect\(\(\) => \(\) => \{[\s\S]*?activeConfirmNextOperationRef\.current = null;[\s\S]*?selectedImageIdRef\.current = null;[\s\S]*?\}, \[\]\)/);
+  assert.match(plateTable, /disabled=\{pendingViewerNavigation !== null \|\| confirmNextBusy\}/);
+  assert.match(plateTable, /<span className=\{POPUP_ACTION_LABEL_CLASS\}>Confirm and Next<\/span>/);
+  assert.match(plateTable, /<span className=\{POPUP_ACTION_LABEL_CLASS\}>Delete<\/span>[\s\S]*?<span className=\{POPUP_ACTION_LABEL_CLASS\}>Previous Read<\/span>/);
   assert.match(plateTable, /Retry vehicle view/);
   assert.match(plateTable, /retryBlueIrisVehicleFrameForRead/);
   assert.match(plateTable, /Failed after \$\{selectedImage\.vehicleImageAttemptCount \|\| 3\} attempts/);
@@ -47,16 +76,81 @@ test("live feed image review advances visibly and starts focused on the plate", 
   assert.match(plateTable, /setIsDeleteConfirmOpen\(true\)/);
   assert.match(plateTable, /<DialogTitle>Confirm Deletion<\/DialogTitle>/);
   assert.match(plateTable, /selectedImage\?\.id === activePlate\.id/);
-  assert.match(plateTable, /className="grid w-full gap-3"/);
-  assert.match(plateTable, /className="flex flex-wrap items-center gap-2"/);
-  assert.match(plateTable, /className="flex flex-wrap items-center justify-between gap-2"/);
-  assert.match(plateTable, /className="ml-auto flex flex-wrap items-center gap-2"/);
+  assert.match(plateTable, /<DialogFooter className="self-end lg:col-start-1 lg:row-start-2">[\s\S]*?className="grid w-full gap-3"/);
+  assert.equal([...plateTable.matchAll(/<div className=\{POPUP_ACTION_GRID_CLASS\}>/g)].length, 2);
+  assert.equal([...plateTable.matchAll(/<PopupActionSlot(?:\s[^>]*)?>/g)].length, 14);
   assert.match(plateTable, /Show next read \(Right Arrow\)/);
   assert.match(plateTable, /\[role="slider"\]/);
   assert.match(plateTable, /lg:grid-cols-\[minmax\(0,1fr\)_11rem\].*lg:grid-rows-\[minmax\(0,1fr\)_auto\].*lg:overflow-hidden/);
   assert.match(plateTable, /<DialogTitle className="sr-only">[\s\S]*?License Plate Image/);
-  assert.match(plateTable, /const POPUP_ACTION_BUTTON_CLASS = "h-8 shrink-0 px-2 text-xs"/);
+  assert.match(plateTable, /const POPUP_ACTION_BUTTON_CLASS = "h-8 w-full min-w-0 justify-center overflow-hidden px-1 text-\[11px\]"/);
   assert.match(plateTable, /const POPUP_ACTION_ICON_CLASS = "mr-1 h-3\.5 w-3\.5 shrink-0"/);
+  assert.match(plateTable, /const POPUP_ACTION_LABEL_CLASS = "min-w-0 truncate whitespace-nowrap"/);
+  assert.match(plateTable, /const POPUP_ACTION_GRID_CLASS = "grid w-full grid-cols-7 gap-2"/);
+  assert.match(plateTable, /const POPUP_ACTION_SLOT_CLASS = "min-h-8 min-w-0"/);
+  assert.match(plateTable, /function PopupActionSlot\(\{ children, className = "", reserve = false \}\)[\s\S]*?if \(!reserve && !children\) return null/);
+  const footerStart = plateTable.indexOf('<DialogFooter className="self-end lg:col-start-1 lg:row-start-2">');
+  const footer = plateTable.slice(footerStart, plateTable.indexOf("</DialogFooter>", footerStart));
+  assert.doesNotMatch(footer, /overflow-x-auto|min-w-\[64rem\]/);
+  const footerRows = [...footer.matchAll(/<div className=\{POPUP_ACTION_GRID_CLASS\}>/g)];
+  assert.equal(footerRows.length, 2);
+  const firstActionRow = footer.slice(footerRows[0].index, footerRows[1].index);
+  const secondActionRow = footer.slice(footerRows[1].index);
+  const assertOrdered = (source, labels) => {
+    let previousIndex = -1;
+    for (const label of labels) {
+      const nextIndex = source.indexOf(label);
+      assert.ok(nextIndex > previousIndex, `${label} should preserve its popup action order`);
+      previousIndex = nextIndex;
+    }
+  };
+  assertOrdered(firstActionRow, [
+    "Find similar vehicle",
+    "Confirm vehicle",
+    "Different vehicle",
+    "Correct Plate",
+    "Review History",
+    "Add to Known",
+    "Add Tag",
+  ]);
+  assertOrdered(secondActionRow, [
+    "Confirm and Next",
+    "Reopen review",
+    "Next read",
+    "Delete",
+    "Previous Read",
+    "Blue Iris",
+    "Download",
+  ]);
+  const firstRowSlots = firstActionRow.split("<PopupActionSlot>").slice(1);
+  const secondRowSlots = secondActionRow.split(/<PopupActionSlot(?:\s[^>]*)?>/).slice(1);
+  assert.equal(firstRowSlots.length, 7);
+  assert.equal(secondRowSlots.length, 7);
+  assert.doesNotMatch(firstActionRow, /<PopupActionSlot reserve/);
+  assert.equal([...secondActionRow.matchAll(/<PopupActionSlot reserve/g)].length, 2);
+  const firstRowSlotLabels = [
+    /Find similar vehicle/,
+    /Confirm vehicle/,
+    /Different vehicle/,
+    /Correct Plate/,
+    /Review History/,
+    /Add to Known/,
+    /Add Tag/,
+  ];
+  const secondRowSlotLabels = [
+    /Confirm and Next/,
+    /Reopen review/,
+    />Next read</,
+    />Delete</,
+    /Previous Read/,
+    /Blue Iris/,
+    />Download</,
+  ];
+  firstRowSlotLabels.forEach((label, index) => assert.match(firstRowSlots[index], label));
+  secondRowSlotLabels.forEach((label, index) => assert.match(secondRowSlots[index], label));
+  assert.match(secondRowSlots[1], /Confirm detected plate/);
+  assert.match(secondActionRow, /<PopupActionSlot reserve className="col-start-6">[\s\S]*?Blue Iris/);
+  assert.match(secondActionRow, /<PopupActionSlot reserve>[\s\S]*?Download/);
   assert.match(plateTable, /aria-label="Find similar vehicle"[\s\S]*?>Find similar vehicle</);
   assert.match(plateTable, /aria-label="Correct detected plate"[\s\S]*?>Correct Plate</);
   assert.match(plateTable, /aria-label="Open review history"[\s\S]*?>Review History</);
@@ -112,6 +206,9 @@ test("plate correction opens with an editable caret instead of selected text", a
   assert.match(plateTable, /onOpenAutoFocus=\{\(event\) => \{/);
   assert.match(plateTable, /input\.setSelectionRange\(cursorPosition, cursorPosition\)/);
   assert.match(plateTable, /ref=\{correctionInputRef\}/);
+  assert.match(plateTable, /onChange=\{handleCorrectionPlateChange\}/);
+  assert.match(plateTable, /value\.slice\(0, selectionStart\)\.toUpperCase\(\)\.length/);
+  assert.match(plateTable, /input\.setSelectionRange\(nextSelectionStart, nextSelectionEnd\)/);
   assert.match(plateTable, /Plate image/);
   assert.match(plateTable, /image=\{correction\.image\}\s+zoomEnabled\s+compactControls\s+fitPlateOnOpen/);
   assert.match(plateTable, /function correctionImageFromRead\(plate\)/);
@@ -263,7 +360,7 @@ test("the closed image viewer does not dereference a missing selected read", asy
 
   assert.match(
     plateTableSource,
-    /disabled=\{pendingReviewReadId === selectedImage\?\.id\}/
+    /disabled=\{pendingReviewReadId === selectedImage\?\.id \|\| pendingViewerNavigation !== null \|\| confirmNextBusy\}/
   );
   assert.match(
     plateTableSource,

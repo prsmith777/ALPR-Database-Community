@@ -1653,7 +1653,7 @@ export async function createDatabaseBackup() {
   const principal = await requirePermission("maintenance.manage");
   try {
     const data = await createDatabaseBackupService({ actor: principal });
-    revalidatePath("/settings/data-privacy");
+    revalidatePath("/settings/data-privacy/cleanup");
     return { success: true, data };
   } catch (error) { return storageMaintenanceFailure(error, "Unable to queue database backup."); }
 }

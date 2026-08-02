@@ -220,6 +220,11 @@ test("manual database backup is a distinct no-input fail-closed control plane",a
   assert.doesNotMatch(control,/child_process|exec\(|spawn\(|pg_dump|backupRoot|backupPath/);
   assert.match(actions,/createDatabaseBackup[\s\S]*requirePermission\("maintenance\.manage"\)/);
   assert.match(panel,/Create database backup/);
+  assert.match(panel,/useEffect\(\(\) => \{[\s\S]*window\.setTimeout\(poll, 2500\)[\s\S]*refreshDatabaseBackup\(\{ requestId: databaseBackup\.requestId \}\)/);
+  assert.match(panel,/catch \{[\s\S]*consecutiveFailures >= 3[\s\S]*Automatic updates paused/);
+  assert.match(panel,/\["completed", "failed"\]\.includes\(result\.data\.status\)[\s\S]*router\.refresh\(\)/);
+  assert.match(panel,/if \(overview\.databaseBackup\) setDatabaseBackup\(overview\.databaseBackup\)/);
+  assert.match(actions,/createDatabaseBackup[\s\S]*revalidatePath\("\/settings\/data-privacy\/cleanup"\)/);
   assert.match(panel,/database-backup-create-v1 capability/);
   assert.match(panel,/accepts no command, path, filename, schedule, or restore input/);
   assert.doesNotMatch(panel,/checksumSha256|backupPath|commandArgs/);

@@ -29,6 +29,7 @@ import {
   History,
   RotateCcw,
   ScanSearch,
+  ChevronLeft,
   ChevronRight,
   Split,
 } from "lucide-react";
@@ -105,7 +106,16 @@ import {
 } from "@/app/actions";
 import ImageViewer from "./ImageViewer";
 import { useAccess } from "@/components/auth/AccessProvider";
-import { resolveReadViewerNavigation } from "@/lib/read-viewer-navigation.mjs";
+import {
+  findNextUnconfirmedReadIndex,
+  isConfirmNextOperationCurrent,
+  resolveReadViewerNavigation,
+  resolveUnconfirmedPageTransition,
+} from "@/lib/read-viewer-navigation.mjs";
+import {
+  loadLiveFeedPopupView,
+  saveLiveFeedPopupView,
+} from "@/lib/live-feed-popup-preference.mjs";
 import { buildBlueIrisUiUrl } from "@/lib/blue-iris-ui-url.mjs";
 import {
   Sheet,
@@ -154,9 +164,18 @@ const REVIEW_STATUS_CLASSES = {
   alias_resolved: "border-violet-500/40 text-violet-400",
 };
 
-const POPUP_ACTION_BUTTON_CLASS = "h-8 shrink-0 px-2 text-xs";
+const POPUP_ACTION_BUTTON_CLASS = "h-8 w-full min-w-0 justify-center overflow-hidden px-1 text-[11px]";
 const POPUP_ACTION_ICON_CLASS = "mr-1 h-3.5 w-3.5 shrink-0";
+const POPUP_ACTION_LABEL_CLASS = "min-w-0 truncate whitespace-nowrap";
+const POPUP_ACTION_GRID_CLASS = "grid w-full grid-cols-7 gap-2";
+const POPUP_ACTION_SLOT_CLASS = "min-h-8 min-w-0";
 const TABLE_ACTION_BUTTON_CLASS = "h-8 w-8 p-0";
+const CONFIRM_NEXT_SCAN_TIMEOUT_MS = 15000;
+
+function PopupActionSlot({ children, className = "", reserve = false }) {
+  if (!reserve && !children) return null;
+  return <div className={`${POPUP_ACTION_SLOT_CLASS} ${className}`.trim()}>{children}</div>;
+}
 
 function correctionImageFromRead(plate) {
   let url = null;
@@ -363,6 +382,9 @@ export default function PlateTable({
   const [pendingReviewReadId, setPendingReviewReadId] = useState(null);
   const [pendingReviewTargetValidated, setPendingReviewTargetValidated] = useState(null);
   const [pendingViewerNavigation, setPendingViewerNavigation] = useState(null);
+  const [pendingUnconfirmedNavigation, setPendingUnconfirmedNavigation] = useState(null);
+  const [confirmNextOperation, setConfirmNextOperation] = useState(null);
+  const [navigationWatchdogTick, setNavigationWatchdogTick] = useState(0);
   const [pendingVehicleReview, setPendingVehicleReview] = useState("");
   const [pendingDirectionReview, setPendingDirectionReview] = useState("");
   const [pendingVehicleImageRetry, setPendingVehicleImageRetry] = useState(false);
@@ -377,11 +399,66 @@ export default function PlateTable({
   const [isSearchOptionsOpen, setIsSearchOptionsOpen] = useState(false);
 
   const correctionInputRef = useRef(null);
+  const confirmNextTokenSequenceRef = useRef(0);
+  const activeConfirmNextOperationRef = useRef(null);
+  const selectedImageIdRef = useRef(null);
 
   const router = useRouter();
 
+  useEffect(() => {
+    selectedImageIdRef.current = selectedImage?.id ?? null;
+  }, [selectedImage?.id]);
+
+  const cancelConfirmNextOperation = useCallback(() => {
+    activeConfirmNextOperationRef.current = null;
+    setConfirmNextOperation(null);
+  }, []);
+
+  const cancelConfirmNextFlow = useCallback(() => {
+    activeConfirmNextOperationRef.current = null;
+    setConfirmNextOperation(null);
+    setPendingUnconfirmedNavigation(null);
+  }, []);
+
+  useEffect(() => () => {
+    activeConfirmNextOperationRef.current = null;
+    selectedImageIdRef.current = null;
+  }, []);
+
+  useEffect(() => {
+    setSelectedImageView(loadLiveFeedPopupView());
+  }, []);
+
+  const handleSelectedImageViewChange = useCallback((view) => {
+    setSelectedImageView(saveLiveFeedPopupView(view));
+  }, []);
+
+  const handleCorrectionPlateChange = useCallback((event) => {
+    const input = event.currentTarget;
+    const value = input.value;
+    const selectionStart = input.selectionStart ?? value.length;
+    const selectionEnd = input.selectionEnd ?? selectionStart;
+    const nextValue = value.toUpperCase();
+    const nextSelectionStart = value.slice(0, selectionStart).toUpperCase().length;
+    const nextSelectionEnd = value.slice(0, selectionEnd).toUpperCase().length;
+
+    setCorrection((current) => ({
+      ...current,
+      newPlateNumber: nextValue,
+    }));
+    requestAnimationFrame(() => {
+      if (correctionInputRef.current !== input || document.activeElement !== input) return;
+      input.setSelectionRange(nextSelectionStart, nextSelectionEnd);
+    });
+  }, []);
+
   const handleVehicleReview = async (decision) => {
-    if (!selectedImage?.id || pendingVehicleReview) return;
+    if (
+      !selectedImage?.id ||
+      pendingVehicleReview ||
+      activeConfirmNextOperationRef.current ||
+      pendingUnconfirmedNavigation
+    ) return;
     setPendingVehicleReview(decision);
     try {
       const result = await reviewVehicleClusterSuggestion({ readId: selectedImage.id, decision });
@@ -399,7 +476,13 @@ export default function PlateTable({
   };
 
   const handleDirectionReview = async (orientation) => {
-    if (!selectedImage?.id || pendingDirectionReview || typeof onReviewDirection !== "function") return;
+    if (
+      !selectedImage?.id ||
+      pendingDirectionReview ||
+      typeof onReviewDirection !== "function" ||
+      activeConfirmNextOperationRef.current ||
+      pendingUnconfirmedNavigation
+    ) return;
     setPendingDirectionReview(orientation);
     setDirectionReviewError("");
     try {
@@ -425,7 +508,12 @@ export default function PlateTable({
   };
 
   const handleVehicleImageRetry = async () => {
-    if (!selectedImage?.id || pendingVehicleImageRetry) return;
+    if (
+      !selectedImage?.id ||
+      pendingVehicleImageRetry ||
+      activeConfirmNextOperationRef.current ||
+      pendingUnconfirmedNavigation
+    ) return;
     setPendingVehicleImageRetry(true);
     setVehicleImageRetryError("");
     try {
@@ -466,13 +554,17 @@ export default function PlateTable({
 
   useEffect(() => {
     let interval;
-    if (isLive) {
+    if (
+      isLive &&
+      pendingUnconfirmedNavigation === null &&
+      confirmNextOperation === null
+    ) {
       interval = setInterval(() => {
         router.refresh();
       }, 4500);
     }
     return () => clearInterval(interval);
-  }, [isLive, router]);
+  }, [confirmNextOperation, isLive, pendingUnconfirmedNavigation, router]);
 
   // Helper functions
   const getImageUrl = (base64Data) => {
@@ -483,6 +575,8 @@ export default function PlateTable({
 
   const handleImageClick = useCallback((e, plate) => {
     e.preventDefault();
+    cancelConfirmNextFlow();
+    selectedImageIdRef.current = plate.id;
     const plateIndex = data.findIndex((p) => p.id === plate.id);
     let imageUrl;
     let thumbnailUrl;
@@ -560,8 +654,7 @@ export default function PlateTable({
       crop_coordinates: plate.crop_coordinates,
     });
 
-    setSelectedImageView("plate");
-  }, [data]);
+  }, [cancelConfirmNextFlow, data]);
 
   const getViewerNavigation = useCallback(
     (direction) => {
@@ -590,7 +683,12 @@ export default function PlateTable({
   const onViewerPageChange = pagination.onViewerPageChange;
 
   const handleViewerNavigation = useCallback((direction) => {
-    if (!selectedImage || pendingViewerNavigation) return;
+    if (
+      !selectedImage ||
+      pendingViewerNavigation ||
+      pendingUnconfirmedNavigation ||
+      activeConfirmNextOperationRef.current
+    ) return;
 
     const destination = getViewerNavigation(direction);
     if (destination.kind === "item") {
@@ -613,6 +711,7 @@ export default function PlateTable({
     getViewerNavigation,
     handleImageClick,
     onViewerPageChange,
+    pendingUnconfirmedNavigation,
     pendingViewerNavigation,
     selectedImage,
   ]);
@@ -654,7 +753,11 @@ export default function PlateTable({
         return;
       }
 
-      if (selectedImage === null) return;
+      if (
+        selectedImage === null ||
+        pendingUnconfirmedNavigation !== null ||
+        activeConfirmNextOperationRef.current
+      ) return;
 
       if (event.key === "ArrowRight") {
         event.preventDefault();
@@ -669,10 +772,34 @@ export default function PlateTable({
       window.addEventListener("keydown", handleKeyPress);
       return () => window.removeEventListener("keydown", handleKeyPress);
     }
-  }, [handleNextImage, handlePreviousImage, selectedImage]);
+  }, [handleNextImage, handlePreviousImage, pendingUnconfirmedNavigation, selectedImage]);
 
   const hasNextImage =
     selectedImage !== null && getViewerNavigation("next").kind !== "none";
+  const hasPreviousImage =
+    selectedImage !== null && getViewerNavigation("previous").kind !== "none";
+  const selectedDataIndex = selectedImage
+    ? data.findIndex((plate) => plate.id === selectedImage.id)
+    : selectedIndex;
+  const nextUnconfirmedIndex = selectedImage
+    ? findNextUnconfirmedReadIndex({
+        reads: data,
+        selectedIndex: selectedDataIndex >= 0 ? selectedDataIndex : selectedIndex,
+        selectedPresent: selectedDataIndex >= 0,
+      })
+    : -1;
+  const hasLaterResultPage = pagination.page * pagination.pageSize < pagination.total;
+  const hasNextUnconfirmedRead =
+    selectedImage !== null &&
+    selectedImage.validated !== true &&
+    (nextUnconfirmedIndex >= 0 ||
+      (hasLaterResultPage && typeof onViewerPageChange === "function"));
+  const confirmNextBusy =
+    confirmNextOperation !== null || pendingUnconfirmedNavigation !== null;
+  const displayedImageView =
+    selectedImageView === "vehicle" && selectedImage?.vehicleImageUrl
+      ? "vehicle"
+      : "plate";
 
   useEffect(() => {
     if (selectedImage && data && data.length > 0) {
@@ -808,7 +935,7 @@ export default function PlateTable({
   }, [data, pendingReviewReadId, selectedImage]);
 
   const handleSelectedImageValidation = async () => {
-    if (!selectedImage || pendingReviewReadId === selectedImage.id) return;
+    if (!selectedImage || pendingReviewReadId === selectedImage.id) return false;
 
     const readId = selectedImage.id;
     const nextValidated = !selectedImage.validated;
@@ -841,7 +968,7 @@ export default function PlateTable({
       const result = await onValidate(readId, nextValidated);
       if (!result?.success) {
         rollbackReviewState();
-        return;
+        return false;
       }
 
       setSelectedImage((previous) => {
@@ -857,14 +984,120 @@ export default function PlateTable({
             result.data?.reviewRevision ?? previous.reviewRevision,
         };
       });
+      return true;
     } catch (error) {
       rollbackReviewState();
       console.error("Failed to update plate review:", error);
+      return false;
     } finally {
       setPendingReviewReadId((current) => (current === readId ? null : current));
       setPendingReviewTargetValidated(null);
     }
   };
+
+  const handleConfirmAndNext = async () => {
+    if (
+      !selectedImage ||
+      !hasNextUnconfirmedRead ||
+      activeConfirmNextOperationRef.current ||
+      pendingUnconfirmedNavigation
+    ) return;
+    const token = confirmNextTokenSequenceRef.current + 1;
+    confirmNextTokenSequenceRef.current = token;
+    const origin = {
+      originPage: pagination.page,
+      originReadId: selectedImage.id,
+      originIndex: selectedDataIndex >= 0 ? selectedDataIndex : selectedIndex,
+    };
+    const operation = { token, ...origin };
+    activeConfirmNextOperationRef.current = operation;
+    setConfirmNextOperation(operation);
+    const nextRead = nextUnconfirmedIndex >= 0 ? data[nextUnconfirmedIndex] : null;
+    const waitsForFilteredRemoval =
+      selectedReviewStatuses.length > 0 &&
+      !selectedReviewStatuses.includes("confirmed");
+    const confirmed = await handleSelectedImageValidation();
+    if (!isConfirmNextOperationCurrent({
+      activeToken: activeConfirmNextOperationRef.current?.token ?? null,
+      operationToken: token,
+      selectedReadId: selectedImageIdRef.current,
+      originReadId: origin.originReadId,
+    })) return;
+    if (!confirmed) {
+      cancelConfirmNextOperation();
+      return;
+    }
+    cancelConfirmNextOperation();
+    if (nextRead) {
+      handleImageClick({ preventDefault: () => {} }, nextRead);
+      return;
+    }
+    const pending = {
+      ...origin,
+      deadlineAt: Date.now() + CONFIRM_NEXT_SCAN_TIMEOUT_MS,
+    };
+    if (waitsForFilteredRemoval) {
+      setPendingUnconfirmedNavigation({
+        ...pending,
+        phase: "await-filtered-removal",
+        targetPage: origin.originPage,
+      });
+      return;
+    }
+    if (hasLaterResultPage && typeof onViewerPageChange === "function") {
+      setPendingUnconfirmedNavigation({
+        ...pending,
+        phase: "scan",
+        targetPage: origin.originPage + 1,
+      });
+      onViewerPageChange("next");
+    }
+  };
+
+  useEffect(() => {
+    const pending = pendingUnconfirmedNavigation;
+    if (!pending) return;
+    const transition = resolveUnconfirmedPageTransition({
+      pending,
+      reads: data,
+      page: pagination.page,
+      pageSize: pagination.pageSize,
+      total: pagination.total,
+      now: Date.now(),
+      restoreTimeoutMs: CONFIRM_NEXT_SCAN_TIMEOUT_MS,
+    });
+    if (transition.kind === "wait") return;
+    if (transition.kind === "open") {
+      handleImageClick({ preventDefault: () => {} }, data[transition.index]);
+      return;
+    }
+    if (transition.kind === "navigate") {
+      setPendingUnconfirmedNavigation(transition.pending);
+      onViewerPageChange?.(transition.direction);
+      return;
+    }
+    setPendingUnconfirmedNavigation(null);
+  }, [
+    data,
+    handleImageClick,
+    navigationWatchdogTick,
+    onViewerPageChange,
+    pagination.page,
+    pagination.pageSize,
+    pagination.total,
+    pendingUnconfirmedNavigation,
+  ]);
+
+  useEffect(() => {
+    const pending = pendingUnconfirmedNavigation;
+    if (!pending) return undefined;
+    const remaining = Math.max(0, pending.deadlineAt - Date.now());
+    const timeout = window.setTimeout(
+      () => setNavigationWatchdogTick((current) => current + 1),
+      remaining
+    );
+    return () => window.clearTimeout(timeout);
+  }, [pendingUnconfirmedNavigation]);
 
   const handleDownloadImage = async () => {
     if (!selectedImage) return;
@@ -1017,7 +1250,11 @@ export default function PlateTable({
   };
 
   const handleSelectedImageAddTag = async (tag) => {
-    if (!selectedImage) return;
+    if (
+      !selectedImage ||
+      activeConfirmNextOperationRef.current ||
+      pendingUnconfirmedNavigation
+    ) return;
     const plateNumber = selectedImage.plateNumber;
     const result = await onAddTag(plateNumber, tag.name);
     if (!result?.success) return;
@@ -1033,16 +1270,19 @@ export default function PlateTable({
   };
 
   const handleDeleteSubmit = async () => {
-    if (!activePlate) return;
+    if (!activePlate || confirmNextBusy) return;
     const deletingSelectedRead = selectedImage?.id === activePlate.id;
     const result = await onDeleteRecord(activePlate.id);
     if (result?.success === false) return;
     setIsDeleteConfirmOpen(false);
     setActivePlate(null);
     if (deletingSelectedRead) {
+      cancelConfirmNextFlow();
+      selectedImageIdRef.current = null;
       setSelectedImage(null);
       setSelectedIndex(-1);
       setPendingViewerNavigation(null);
+      setPendingUnconfirmedNavigation(null);
     }
   };
 
@@ -2539,10 +2779,13 @@ export default function PlateTable({
           open={selectedImage !== null}
           onOpenChange={(open) => {
             if (!open) {
+              cancelConfirmNextFlow();
+              selectedImageIdRef.current = null;
               setIsImageFullscreen(false);
               setSelectedImage(null);
               setSelectedIndex(-1);
               setPendingViewerNavigation(null);
+              setPendingUnconfirmedNavigation(null);
             }
           }}
         >
@@ -2616,8 +2859,8 @@ export default function PlateTable({
                   <div className="relative h-[40vh] w-full overflow-hidden rounded-md border bg-black sm:h-auto sm:min-h-0">
                     {selectedImage.vehicleImageUrl && (
                       <div className="absolute left-2 top-2 z-20 flex flex-col rounded-md border bg-background/90 p-1 shadow-sm backdrop-blur">
-                        <Button type="button" size="sm" variant={selectedImageView === "plate" ? "default" : "ghost"} className="h-7 justify-start px-2 text-xs" onClick={() => setSelectedImageView("plate")}>Plate capture</Button>
-                        <Button type="button" size="sm" variant={selectedImageView === "vehicle" ? "default" : "ghost"} className="h-7 justify-start px-2 text-xs" onClick={() => setSelectedImageView("vehicle")}>Vehicle view</Button>
+                        <Button type="button" size="sm" variant={displayedImageView === "plate" ? "default" : "ghost"} className="h-7 justify-start px-2 text-xs" onClick={() => handleSelectedImageViewChange("plate")}>Plate capture</Button>
+                        <Button type="button" size="sm" variant={displayedImageView === "vehicle" ? "default" : "ghost"} className="h-7 justify-start px-2 text-xs" onClick={() => handleSelectedImageViewChange("vehicle")}>Vehicle view</Button>
                       </div>
                     )}
                     {!selectedImage.vehicleImageUrl && selectedImage.vehicleImageStatus && (
@@ -2642,7 +2885,7 @@ export default function PlateTable({
                             size="sm"
                             variant="outline"
                             className="h-7 px-2 text-xs"
-                            disabled={pendingVehicleImageRetry}
+                            disabled={pendingVehicleImageRetry || confirmNextBusy}
                             onClick={handleVehicleImageRetry}
                           >
                             <RotateCcw className="mr-1.5 h-3.5 w-3.5" />
@@ -2657,17 +2900,17 @@ export default function PlateTable({
                     <ImageViewer
                       image={{
                         ...selectedImage,
-                        url: selectedImageView === "vehicle" && selectedImage.vehicleImageUrl
+                        url: displayedImageView === "vehicle"
                           ? selectedImage.vehicleImageUrl
                           : selectedImage.plateCaptureUrl,
-                        crop_coordinates: selectedImageView === "vehicle" ? null : selectedImage.crop_coordinates,
-                        focus_coordinates: selectedImageView === "vehicle"
+                        crop_coordinates: displayedImageView === "vehicle" ? null : selectedImage.crop_coordinates,
+                        focus_coordinates: displayedImageView === "vehicle"
                           ? selectedImage.vehicleImageDetectionBox
                           : null,
                       }}
-                      zoomEnabled={selectedImageView === "vehicle"}
+                      zoomEnabled={displayedImageView === "vehicle"}
                       defaultZoom={null}
-                      zoomLabel={selectedImageView === "vehicle" ? "Zoom to Vehicle" : "Zoom to Plate"}
+                      zoomLabel={displayedImageView === "vehicle" ? "Zoom to Vehicle" : "Zoom to Plate"}
                       onFullscreenChange={setIsImageFullscreen}
                     />
                   </div>
@@ -2683,6 +2926,7 @@ export default function PlateTable({
                             variant="ghost"
                             size="icon"
                             className="h-4 w-4 shrink-0 p-0 text-muted-foreground hover:text-foreground"
+                            disabled={confirmNextBusy}
                             aria-label="Review vehicle direction"
                           >
                             <Pencil className="h-2.5 w-2.5" />
@@ -2701,7 +2945,7 @@ export default function PlateTable({
                                 type="button"
                                 variant={selectedImage.vehicleOrientation === "front" ? "default" : "outline"}
                                 size="sm"
-                                disabled={Boolean(pendingDirectionReview)}
+                                disabled={Boolean(pendingDirectionReview) || confirmNextBusy}
                                 onClick={() => handleDirectionReview("front")}
                               >
                                 {pendingDirectionReview === "front" ? "Saving..." : "Front view"}
@@ -2710,7 +2954,7 @@ export default function PlateTable({
                                 type="button"
                                 variant={selectedImage.vehicleOrientation === "rear" ? "default" : "outline"}
                                 size="sm"
-                                disabled={Boolean(pendingDirectionReview)}
+                                disabled={Boolean(pendingDirectionReview) || confirmNextBusy}
                                 onClick={() => handleDirectionReview("rear")}
                               >
                                 {pendingDirectionReview === "rear" ? "Saving..." : "Rear view"}
@@ -2779,226 +3023,274 @@ export default function PlateTable({
             )}
             <DialogFooter className="self-end lg:col-start-1 lg:row-start-2">
               <div className="grid w-full gap-3">
-                <div className="flex flex-wrap items-center gap-2">
-                  {canRead && selectedImage && <Button
-                    asChild
-                    variant="outline"
-                    size="sm"
-                    className={POPUP_ACTION_BUTTON_CLASS}
-                    aria-label="Find similar vehicle"
-                    title="Find similar vehicle"
-                  >
-                    <Link href={`/visual_search?readId=${selectedImage.id}`}>
-                      <ScanSearch className={POPUP_ACTION_ICON_CLASS} />
-                      <span className="whitespace-nowrap">Find similar vehicle</span>
-                    </Link>
-                  </Button>}
-                  {canReview && selectedImage?.vehicleClusterStatus === "suggested" && (
-                    <>
-                      <Button
+                  <div className={POPUP_ACTION_GRID_CLASS}>
+                    <PopupActionSlot>
+                      {canRead && selectedImage && <Button
+                        asChild
                         variant="outline"
                         size="sm"
                         className={POPUP_ACTION_BUTTON_CLASS}
-                        disabled={Boolean(pendingVehicleReview)}
+                        aria-label="Find similar vehicle"
+                        title="Find similar vehicle"
+                      >
+                        <Link href={`/visual_search?readId=${selectedImage.id}`}>
+                          <ScanSearch className={POPUP_ACTION_ICON_CLASS} />
+                          <span className={POPUP_ACTION_LABEL_CLASS}>Find similar vehicle</span>
+                        </Link>
+                      </Button>}
+                    </PopupActionSlot>
+                    <PopupActionSlot>
+                      {canReview && selectedImage?.vehicleClusterStatus === "suggested" && <Button
+                        variant="outline"
+                        size="sm"
+                        className={POPUP_ACTION_BUTTON_CLASS}
+                        disabled={Boolean(pendingVehicleReview) || confirmNextBusy}
                         onClick={() => handleVehicleReview("confirm")}
                         aria-label="Confirm suggested vehicle match"
                         title="Confirm suggested vehicle match"
                       >
-                        <CircleCheck className={POPUP_ACTION_ICON_CLASS} /> Confirm vehicle
-                      </Button>
-                      <Button
+                        <CircleCheck className={POPUP_ACTION_ICON_CLASS} />
+                        <span className={POPUP_ACTION_LABEL_CLASS}>Confirm vehicle</span>
+                      </Button>}
+                    </PopupActionSlot>
+                    <PopupActionSlot>
+                      {canReview && selectedImage?.vehicleClusterStatus === "suggested" && <Button
                         variant="outline"
                         size="sm"
                         className={POPUP_ACTION_BUTTON_CLASS}
-                        disabled={Boolean(pendingVehicleReview)}
+                        disabled={Boolean(pendingVehicleReview) || confirmNextBusy}
                         onClick={() => handleVehicleReview("separate")}
                         aria-label="Mark as a different vehicle"
                         title="Mark as a different vehicle"
                       >
-                        <Split className={POPUP_ACTION_ICON_CLASS} /> Different vehicle
-                      </Button>
-                    </>
-                  )}
-                  {canReview && <Button
-                    variant="outline"
-                    size="sm"
-                    className={POPUP_ACTION_BUTTON_CLASS}
-                    aria-label="Correct detected plate"
-                    title="Correct detected plate"
-                    onClick={() => {
-                      setCorrection(correctionDraft({
-                        id: selectedImage.id,
-                        plateNumber: selectedImage.plateNumber,
-                        observedPlate: selectedImage.observedPlate || selectedImage.plateNumber,
-                        cameraName: selectedImage.cameraName || "",
-                        image: {
-                          ...selectedImage,
-                          url: selectedImage.plateCaptureUrl || selectedImage.url,
-                          crop_coordinates: selectedImage.crop_coordinates || null,
-                        },
-                      }));
-                      setIsCorrectPlateOpen(true);
-                    }}
-                  >
-                    <Edit className={POPUP_ACTION_ICON_CLASS} />
-                    <span className="whitespace-nowrap">Correct Plate</span>
-                  </Button>}
-                  {canRead && <Button
-                    variant="outline"
-                    size="sm"
-                    className={POPUP_ACTION_BUTTON_CLASS}
-                    aria-label="Open review history"
-                    title="Open review history"
-                    onClick={() => openReviewHistory({
-                      id: selectedImage.id,
-                      plate_number: selectedImage.plateNumber,
-                      observed_plate: selectedImage.observedPlate,
-                    })}
-                  >
-                    <History className={POPUP_ACTION_ICON_CLASS} />
-                    <span className="whitespace-nowrap">Review History</span>
-                  </Button>}
-                  {canManageKnownPlates && <Button
-                    variant="outline"
-                    size="sm"
-                    className={POPUP_ACTION_BUTTON_CLASS}
-                    aria-label="Add plate to Known Plates"
-                    title="Add plate to Known Plates"
-                    onClick={() => {
-                      setActivePlate({
-                        ...selectedImage,
-                        plate_number: selectedImage.plateNumber,
-                      });
-                      setIsAddKnownPlateOpen(true);
-                    }}
-                  >
-                    <Plus className={POPUP_ACTION_ICON_CLASS} />
-                    <span className="whitespace-nowrap">Add to Known</span>
-                  </Button>}
-                  {canManageTags && <DropdownMenu>
-                    <DropdownMenuTrigger asChild>
+                        <Split className={POPUP_ACTION_ICON_CLASS} />
+                        <span className={POPUP_ACTION_LABEL_CLASS}>Different vehicle</span>
+                      </Button>}
+                    </PopupActionSlot>
+                    <PopupActionSlot>
+                      {canReview && <Button
+                        variant="outline"
+                        size="sm"
+                        className={POPUP_ACTION_BUTTON_CLASS}
+                        disabled={confirmNextBusy}
+                        aria-label="Correct detected plate"
+                        title="Correct detected plate"
+                        onClick={() => {
+                          setCorrection(correctionDraft({
+                            id: selectedImage.id,
+                            plateNumber: selectedImage.plateNumber,
+                            observedPlate: selectedImage.observedPlate || selectedImage.plateNumber,
+                            cameraName: selectedImage.cameraName || "",
+                            image: {
+                              ...selectedImage,
+                              url: selectedImage.plateCaptureUrl || selectedImage.url,
+                              crop_coordinates: selectedImage.crop_coordinates || null,
+                            },
+                          }));
+                          setIsCorrectPlateOpen(true);
+                        }}
+                      >
+                        <Edit className={POPUP_ACTION_ICON_CLASS} />
+                        <span className={POPUP_ACTION_LABEL_CLASS}>Correct Plate</span>
+                      </Button>}
+                    </PopupActionSlot>
+                    <PopupActionSlot>
+                      {canRead && <Button
+                        variant="outline"
+                        size="sm"
+                        className={POPUP_ACTION_BUTTON_CLASS}
+                        aria-label="Open review history"
+                        title="Open review history"
+                        onClick={() => openReviewHistory({
+                          id: selectedImage.id,
+                          plate_number: selectedImage.plateNumber,
+                          observed_plate: selectedImage.observedPlate,
+                        })}
+                      >
+                        <History className={POPUP_ACTION_ICON_CLASS} />
+                        <span className={POPUP_ACTION_LABEL_CLASS}>Review History</span>
+                      </Button>}
+                    </PopupActionSlot>
+                    <PopupActionSlot>
+                      {canManageKnownPlates && <Button
+                        variant="outline"
+                        size="sm"
+                        className={POPUP_ACTION_BUTTON_CLASS}
+                        disabled={confirmNextBusy}
+                        aria-label="Add plate to Known Plates"
+                        title="Add plate to Known Plates"
+                        onClick={() => {
+                          setActivePlate({
+                            ...selectedImage,
+                            plate_number: selectedImage.plateNumber,
+                          });
+                          setIsAddKnownPlateOpen(true);
+                        }}
+                      >
+                        <Plus className={POPUP_ACTION_ICON_CLASS} />
+                        <span className={POPUP_ACTION_LABEL_CLASS}>Add to Known</span>
+                      </Button>}
+                    </PopupActionSlot>
+                    <PopupActionSlot>
+                      {canManageTags && <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className={POPUP_ACTION_BUTTON_CLASS}
+                            disabled={confirmNextBusy}
+                            aria-label="Add a tag"
+                            title="Add a tag"
+                          >
+                            <Tag className={POPUP_ACTION_ICON_CLASS} />
+                            <span className={POPUP_ACTION_LABEL_CLASS}>Add Tag</span>
+                          </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent>
+                          {availableTags.map((tag) => (
+                            <DropdownMenuItem
+                              key={tag.name}
+                              onClick={() => handleSelectedImageAddTag(tag)}
+                            >
+                              <div className="flex items-center">
+                                <div
+                                  className="w-3 h-3 rounded-full mr-2"
+                                  style={{ backgroundColor: tag.color }}
+                                />
+                                {tag.name}
+                              </div>
+                            </DropdownMenuItem>
+                          ))}
+                        </DropdownMenuContent>
+                      </DropdownMenu>}
+                    </PopupActionSlot>
+                  </div>
+                  <div className={POPUP_ACTION_GRID_CLASS}>
+                    <PopupActionSlot>
+                      {canReview && <Button
+                        variant="outline"
+                        size="sm"
+                        className={POPUP_ACTION_BUTTON_CLASS}
+                        onClick={handleConfirmAndNext}
+                        disabled={!hasNextUnconfirmedRead || pendingReviewReadId === selectedImage?.id || pendingViewerNavigation !== null || confirmNextBusy}
+                        aria-label="Confirm detected plate and show the next unconfirmed read"
+                        title="Confirm and show next unconfirmed read"
+                      >
+                        <Check className={POPUP_ACTION_ICON_CLASS} />
+                        <span className={POPUP_ACTION_LABEL_CLASS}>Confirm and Next</span>
+                      </Button>}
+                    </PopupActionSlot>
+                    <PopupActionSlot>
+                      {canReview && <Button
+                        variant="outline"
+                        size="sm"
+                        className={
+                          selectedImage?.validated
+                            ? `${POPUP_ACTION_BUTTON_CLASS} border-green-500/60 bg-green-500/10 text-green-500 hover:bg-green-500/20 hover:text-green-400`
+                            : POPUP_ACTION_BUTTON_CLASS
+                        }
+                        onClick={handleSelectedImageValidation}
+                        disabled={pendingReviewReadId === selectedImage?.id || pendingViewerNavigation !== null || confirmNextBusy}
+                        aria-label={selectedImage?.validated ? "Reopen plate review" : "Confirm detected plate"}
+                        title={selectedImage?.validated ? "Reopen plate review" : "Confirm detected plate"}
+                      >
+                        {selectedImage?.validated ? (
+                          <CircleCheck className={POPUP_ACTION_ICON_CLASS} />
+                        ) : (
+                          <Check className={POPUP_ACTION_ICON_CLASS} />
+                        )}
+                        <span className={POPUP_ACTION_LABEL_CLASS}>
+                          {pendingReviewReadId === selectedImage?.id
+                            ? pendingReviewTargetValidated
+                              ? "Confirming..."
+                              : "Reopening..."
+                            : selectedImage?.validated
+                              ? "Reopen review"
+                              : "Confirm detected plate"}
+                        </span>
+                      </Button>}
+                    </PopupActionSlot>
+                    <PopupActionSlot>
                       <Button
                         variant="outline"
                         size="sm"
                         className={POPUP_ACTION_BUTTON_CLASS}
-                        aria-label="Add a tag"
-                        title="Add a tag"
+                        onClick={handleNextImage}
+                        disabled={!hasNextImage || pendingViewerNavigation !== null || confirmNextBusy}
+                        aria-label="Show next read in the filtered Live Feed results"
+                        title="Show next read (Right Arrow)"
                       >
-                        <Tag className={POPUP_ACTION_ICON_CLASS} />
-                        Add Tag
+                        <span className={POPUP_ACTION_LABEL_CLASS}>Next read</span>
+                        <ChevronRight className="ml-1 h-3.5 w-3.5" />
                       </Button>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent>
-                      {availableTags.map((tag) => (
-                        <DropdownMenuItem
-                          key={tag.name}
-                          onClick={() => handleSelectedImageAddTag(tag)}
-                        >
-                          <div className="flex items-center">
-                            <div
-                              className="w-3 h-3 rounded-full mr-2"
-                              style={{ backgroundColor: tag.color }}
-                            />
-                            {tag.name}
-                          </div>
-                        </DropdownMenuItem>
-                      ))}
-                    </DropdownMenuContent>
-                  </DropdownMenu>}
-                </div>
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <div className="flex flex-wrap items-center gap-2">
-                    {canReview && <Button
-                      variant="outline"
-                      size="sm"
-                      className={
-                        selectedImage?.validated
-                          ? `${POPUP_ACTION_BUTTON_CLASS} border-green-500/60 bg-green-500/10 text-green-500 hover:bg-green-500/20 hover:text-green-400`
-                          : POPUP_ACTION_BUTTON_CLASS
-                      }
-                      onClick={handleSelectedImageValidation}
-                      disabled={pendingReviewReadId === selectedImage?.id}
-                      aria-label={selectedImage?.validated ? "Reopen plate review" : "Confirm detected plate"}
-                      title={selectedImage?.validated ? "Reopen plate review" : "Confirm detected plate"}
-                    >
-                      {selectedImage?.validated ? (
-                        <CircleCheck className={POPUP_ACTION_ICON_CLASS} />
-                      ) : (
-                        <Check className={POPUP_ACTION_ICON_CLASS} />
-                      )}
-                      <span className="whitespace-nowrap">
-                        {pendingReviewReadId === selectedImage?.id
-                          ? pendingReviewTargetValidated
-                            ? "Confirming..."
-                            : "Reopening..."
-                          : selectedImage?.validated
-                            ? "Reopen review"
-                            : "Confirm detected plate"}
-                      </span>
-                    </Button>}
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className={POPUP_ACTION_BUTTON_CLASS}
-                      onClick={handleNextImage}
-                      disabled={!hasNextImage || pendingViewerNavigation !== null}
-                      aria-label="Show next read in the filtered Live Feed results"
-                      title="Show next read (Right Arrow)"
-                    >
-                      <span className="whitespace-nowrap">Next read</span>
-                      <ChevronRight className="ml-1 h-3.5 w-3.5" />
-                    </Button>
-                    {canDelete && <Button
-                      variant="outline"
-                      size="sm"
-                      className={`${POPUP_ACTION_BUTTON_CLASS} text-red-500 hover:text-red-700`}
-                      onClick={() => {
-                        setActivePlate({
-                          ...selectedImage,
-                          plate_number: selectedImage.plateNumber,
-                        });
-                        setIsDeleteConfirmOpen(true);
-                      }}
-                      aria-label={`Delete read for ${selectedImage?.plateNumber}`}
-                      title="Delete this read"
-                    >
-                      <Trash2 className={POPUP_ACTION_ICON_CLASS} />
-                      <span className="whitespace-nowrap">Delete</span>
-                    </Button>}
-                  </div>
-                  <div className="ml-auto flex flex-wrap items-center gap-2">
-                  {biHost && selectedImage?.bi_path && (
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className={POPUP_ACTION_BUTTON_CLASS}
-                      aria-label="Open recording in Blue Iris"
-                      title="Open recording in Blue Iris"
-                      onClick={() =>
-                        window.open(
-                          buildBlueIrisUiUrl(biHost, selectedImage.bi_path),
-                          "_blank"
-                        )
-                      }
-                    >
-                      <ExternalLink className={POPUP_ACTION_ICON_CLASS} />
-                      <span className="whitespace-nowrap">Blue Iris</span>
-                    </Button>
-                  )}
-                  {canExport && <Button
-                    variant="outline"
-                    size="sm"
-                    className={POPUP_ACTION_BUTTON_CLASS}
-                    onClick={handleDownloadImage}
-                    aria-label="Download image"
-                    title="Download image"
-                  >
-                    <Download className={POPUP_ACTION_ICON_CLASS} />
-                    <span className="whitespace-nowrap">Download</span>
-                  </Button>}
+                    </PopupActionSlot>
+                    <PopupActionSlot>
+                      {canDelete && <Button
+                        variant="outline"
+                        size="sm"
+                        className={`${POPUP_ACTION_BUTTON_CLASS} text-red-500 hover:text-red-700`}
+                        disabled={pendingViewerNavigation !== null || confirmNextBusy}
+                        onClick={() => {
+                          setActivePlate({
+                            ...selectedImage,
+                            plate_number: selectedImage.plateNumber,
+                          });
+                          setIsDeleteConfirmOpen(true);
+                        }}
+                        aria-label={`Delete read for ${selectedImage?.plateNumber}`}
+                        title="Delete this read"
+                      >
+                        <Trash2 className={POPUP_ACTION_ICON_CLASS} />
+                        <span className={POPUP_ACTION_LABEL_CLASS}>Delete</span>
+                      </Button>}
+                    </PopupActionSlot>
+                    <PopupActionSlot>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className={POPUP_ACTION_BUTTON_CLASS}
+                        onClick={handlePreviousImage}
+                        disabled={!hasPreviousImage || pendingViewerNavigation !== null || confirmNextBusy}
+                        aria-label="Show previous read in the filtered Live Feed results"
+                        title="Show previous read (Left Arrow)"
+                      >
+                        <ChevronLeft className={POPUP_ACTION_ICON_CLASS} />
+                        <span className={POPUP_ACTION_LABEL_CLASS}>Previous Read</span>
+                      </Button>
+                    </PopupActionSlot>
+                    <PopupActionSlot reserve className="col-start-6">
+                      {biHost && selectedImage?.bi_path && <Button
+                        variant="outline"
+                        size="sm"
+                        className={POPUP_ACTION_BUTTON_CLASS}
+                        aria-label="Open recording in Blue Iris"
+                        title="Open recording in Blue Iris"
+                        onClick={() =>
+                          window.open(
+                            buildBlueIrisUiUrl(biHost, selectedImage.bi_path),
+                            "_blank"
+                          )
+                        }
+                      >
+                        <ExternalLink className={POPUP_ACTION_ICON_CLASS} />
+                        <span className={POPUP_ACTION_LABEL_CLASS}>Blue Iris</span>
+                      </Button>}
+                    </PopupActionSlot>
+                    <PopupActionSlot reserve>
+                      {canExport && <Button
+                        variant="outline"
+                        size="sm"
+                        className={POPUP_ACTION_BUTTON_CLASS}
+                        onClick={handleDownloadImage}
+                        aria-label="Download image"
+                        title="Download image"
+                      >
+                        <Download className={POPUP_ACTION_ICON_CLASS} />
+                        <span className={POPUP_ACTION_LABEL_CLASS}>Download</span>
+                      </Button>}
+                    </PopupActionSlot>
                   </div>
                 </div>
-              </div>
             </DialogFooter>
           </DialogContent>
         </Dialog>
@@ -3161,12 +3453,7 @@ export default function PlateTable({
                       ref={correctionInputRef}
                       id="new-plate"
                       value={correction?.newPlateNumber || ""}
-                      onChange={(event) =>
-                        setCorrection((current) => ({
-                          ...current,
-                          newPlateNumber: event.target.value.toUpperCase(),
-                        }))
-                      }
+                      onChange={handleCorrectionPlateChange}
                       className="h-10 font-mono text-base uppercase"
                       placeholder="ENTER CORRECT PLATE"
                     />
