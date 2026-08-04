@@ -571,7 +571,9 @@ test("host maintenance UI keeps categories separate and fails controls closed",a
   assert.match(panel,/window\.setTimeout\(poll, 2500\)/);
   assert.match(panel,/refreshHostMaintenancePreview\(\{ requestId: request\.requestId \}\)/);
   assert.match(panel,/Status will update automatically/);
-  assert.match(panel,/Automatic updates paused; use Check status to retry/);
+  assert.match(panel,/Automatic updates paused; use Retry status update to resume/);
+  assert.match(panel,/hostPollingPaused && requestIsActive\(request\)/);
+  assert.match(panel,/Retry status update/);
   assert.match(panel,/Logical preview footprint/);
   assert.match(panel,/Docker-accounted reclaimed/);
   assert.match(panel,/Docker's shared layer store and may be smaller, including zero/);

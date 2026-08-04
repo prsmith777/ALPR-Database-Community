@@ -124,7 +124,7 @@ function requestSummary(request) {
   if (request.operation === "execute") {
     if (status === "completed") return `Cleanup completed; ${formatBytes(request.reclaimedBytes)} reclaimed.`;
     if (status === "failed") return "Cleanup failed. Protected details are available in the host-worker logs.";
-    return `Cleanup ${status}. Status updates automatically; Check status remains available as a manual fallback.`;
+    return `Cleanup ${status}. Status updates automatically.`;
   }
   if (status === "completed") {
     const count = Number(request.candidateCount || 0);
@@ -133,7 +133,7 @@ function requestSummary(request) {
       : `Preview complete: ${count.toLocaleString()} candidates, ${formatBytes(request.candidateBytes)}.`;
   }
   if (status === "failed") return "Preview failed. Protected details are available in the host-worker logs.";
-  return `Preview ${status}. Status updates automatically; Check status remains available as a manual fallback.`;
+  return `Preview ${status}. Status updates automatically.`;
 }
 
 function initialDrafts(configs) {
@@ -156,6 +156,7 @@ export default function HostMaintenancePanel({ overview = {}, canManage, canAppr
   const [drafts, setDrafts] = useState(() => initialDrafts(overview.configs));
   const [notice, setNotice] = useState(null);
   const hostPollFailuresRef = useRef(0);
+  const [hostPollingPaused, setHostPollingPaused] = useState(false);
   const [pendingCategory, setPendingCategory] = useState(null);
   const [isPending, startTransition] = useTransition();
   const worker = overview.worker || {};
@@ -236,7 +237,7 @@ export default function HostMaintenancePanel({ overview = {}, canManage, canAppr
   );
 
   useEffect(() => {
-    if (activeHostRequestEntries.length === 0) return undefined;
+    if (activeHostRequestEntries.length === 0 || hostPollingPaused) return undefined;
     const active = activeHostRequestEntries;
     let cancelled = false;
     let timer = null;
@@ -256,7 +257,8 @@ export default function HostMaintenancePanel({ overview = {}, canManage, canAppr
       if (failures.length > 0) {
         hostPollFailuresRef.current += 1;
         if (hostPollFailuresRef.current >= 3) {
-          setNotice({ kind: "error", text: `${failures[0][2].error} Automatic updates paused; use Check status to retry.` });
+          setHostPollingPaused(true);
+          setNotice({ kind: "error", text: `${failures[0][2].error} Automatic updates paused; use Retry status update to resume.` });
           return;
         }
       } else {
@@ -284,7 +286,7 @@ export default function HostMaintenancePanel({ overview = {}, canManage, canAppr
       cancelled = true;
       if (timer !== null) window.clearTimeout(timer);
     };
-  }, [activeHostRequestEntries, router]);
+  }, [activeHostRequestEntries, hostPollingPaused, router]);
 
   function queuePreview(category) {
     runAction(category, async () => {
@@ -294,6 +296,7 @@ export default function HostMaintenancePanel({ overview = {}, canManage, canAppr
         return;
       }
       hostPollFailuresRef.current = 0;
+      setHostPollingPaused(false);
       setRequests((current) => ({ ...current, [category]: { ...result.data, operation: "preview" } }));
       setManualConfirmations((current) => ({ ...current, [category]: "" }));
       setNotice({ kind: "success", text: "Preview queued. Status will update automatically." });
@@ -328,6 +331,7 @@ export default function HostMaintenancePanel({ overview = {}, canManage, canAppr
         return;
       }
       hostPollFailuresRef.current = 0;
+      setHostPollingPaused(false);
       setRequests((current) => ({
         ...current,
         [category]: {
@@ -354,6 +358,7 @@ export default function HostMaintenancePanel({ overview = {}, canManage, canAppr
         return;
       }
       hostPollFailuresRef.current = 0;
+      setHostPollingPaused(false);
       setRequests((current) => ({ ...current, [category]: { ...result.data, operation: "execute" } }));
       setManualConfirmations((current) => ({ ...current, [category]: "" }));
       setNotice({ kind: "success", text: "Cleanup queued. Status will update automatically while the worker revalidates the exact preview set." });
@@ -553,10 +558,10 @@ export default function HostMaintenancePanel({ overview = {}, canManage, canAppr
                   <Button type="button" variant="outline" size="sm" onClick={() => queuePreview(definition.key)} disabled={!canManage || blocked}>
                     Queue safe preview
                   </Button>
-                  {request?.requestId && (
+                  {hostPollingPaused && requestIsActive(request) && (
                     <Button type="button" variant="outline" size="sm" onClick={() => pollRequest(definition.key)} disabled={!canManage || blocked}>
                       <RefreshCw className={`mr-2 h-3.5 w-3.5 ${categoryPending ? "animate-spin" : ""}`} aria-hidden="true" />
-                      Check status
+                      Retry status update
                     </Button>
                   )}
                 </div>

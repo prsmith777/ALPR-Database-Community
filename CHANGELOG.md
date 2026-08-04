@@ -10,7 +10,8 @@
   grace is now an audited Administrator setting from one to 365 days, with a
   seven-day default; scheduled image deletion remains unsupported. Pending and
   processing host requests now update automatically without a page reload, and
-  survive server refreshes. Image-cleanup receipts now report a conservative
+  survive server refreshes; the manual retry control appears only if automatic
+  updates pause. Image-cleanup receipts now report a conservative
   locked Docker layer-store decrease instead of always reporting zero, while
   keeping logical preview size separate because shared layers may reclaim less.
 - Added configurable storage warning/critical thresholds, exact source,
