@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useTransition } from "react";
+import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { ArchiveRestore, Box, Database, HardDrive, RefreshCw, ShieldCheck } from "lucide-react";
 
@@ -86,6 +86,30 @@ function lastRunFor(runs, category) {
   ) || null;
 }
 
+const ACTIVE_REQUEST_STATUSES = new Set(["pending", "processing"]);
+
+function requestIsActive(request) {
+  return ACTIVE_REQUEST_STATUSES.has(String(request?.status || ""));
+}
+
+function activeHostRequests(intents) {
+  return Object.fromEntries(CATEGORIES.flatMap(({ key }) => {
+    const intent = lastFor(intents, key, (item) => ACTIVE_REQUEST_STATUSES.has(String(item?.status || "")));
+    if (!intent) return [];
+    const requestId = Number(field(intent, "requestId", "id"));
+    if (!Number.isSafeInteger(requestId) || requestId <= 0) return [];
+    return [[key, {
+      requestId,
+      category: key,
+      status: String(intent.status),
+      operation: intentTypeOf(intent) === "preview" ? "preview" : "execute",
+      candidateCount: Number(field(intent, "candidateCount", "candidate_count") || 0),
+      candidateBytes: Number(field(intent, "candidateBytes", "candidate_bytes") || 0),
+      reclaimedBytes: Number(field(intent, "reclaimedBytes", "reclaimed_bytes") || 0),
+    }]];
+  }));
+}
+
 function statusBadge(config, configured) {
   if (!configured) return { label: "Configuration unavailable", variant: "destructive" };
   if (config.circuitBreakerOpen) return { label: "Suspended", variant: "destructive" };
@@ -100,7 +124,7 @@ function requestSummary(request) {
   if (request.operation === "execute") {
     if (status === "completed") return `Cleanup completed; ${formatBytes(request.reclaimedBytes)} reclaimed.`;
     if (status === "failed") return "Cleanup failed. Protected details are available in the host-worker logs.";
-    return `Cleanup ${status}. Use Check status to poll the host worker.`;
+    return `Cleanup ${status}. Status updates automatically; Check status remains available as a manual fallback.`;
   }
   if (status === "completed") {
     const count = Number(request.candidateCount || 0);
@@ -109,7 +133,7 @@ function requestSummary(request) {
       : `Preview complete: ${count.toLocaleString()} candidates, ${formatBytes(request.candidateBytes)}.`;
   }
   if (status === "failed") return "Preview failed. Protected details are available in the host-worker logs.";
-  return `Preview ${status}. Use Check status to poll the host worker.`;
+  return `Preview ${status}. Status updates automatically; Check status remains available as a manual fallback.`;
 }
 
 function initialDrafts(configs) {
@@ -125,12 +149,13 @@ function initialDrafts(configs) {
 
 export default function HostMaintenancePanel({ overview = {}, canManage, canApproveAutomaticCleanup }) {
   const router = useRouter();
-  const [requests, setRequests] = useState({});
+  const [requests, setRequests] = useState(() => activeHostRequests(overview.intents));
   const [databaseBackup, setDatabaseBackup] = useState(() => overview.databaseBackup || { status: "never" });
   const [manualConfirmations, setManualConfirmations] = useState({});
   const [activationConfirmations, setActivationConfirmations] = useState({});
   const [drafts, setDrafts] = useState(() => initialDrafts(overview.configs));
   const [notice, setNotice] = useState(null);
+  const hostPollFailuresRef = useRef(0);
   const [pendingCategory, setPendingCategory] = useState(null);
   const [isPending, startTransition] = useTransition();
   const worker = overview.worker || {};
@@ -158,6 +183,12 @@ export default function HostMaintenancePanel({ overview = {}, canManage, canAppr
   useEffect(() => {
     if (overview.databaseBackup) setDatabaseBackup(overview.databaseBackup);
   }, [overview.databaseBackup]);
+
+  useEffect(() => {
+    const active = activeHostRequests(overview.intents);
+    if (Object.keys(active).length === 0) return;
+    setRequests((current) => ({ ...current, ...active }));
+  }, [overview.intents]);
 
   useEffect(() => {
     if (!databaseBackupActive || !databaseBackup.requestId) return undefined;
@@ -199,6 +230,62 @@ export default function HostMaintenancePanel({ overview = {}, canManage, canAppr
     };
   }, [databaseBackup.requestId, databaseBackupActive, router]);
 
+  const activeHostRequestEntries = useMemo(
+    () => CATEGORIES.flatMap(({ key }) => requestIsActive(requests[key]) ? [[key, requests[key]]] : []),
+    [requests],
+  );
+
+  useEffect(() => {
+    if (activeHostRequestEntries.length === 0) return undefined;
+    const active = activeHostRequestEntries;
+    let cancelled = false;
+    let timer = null;
+    const schedulePoll = () => {
+      timer = window.setTimeout(poll, 2500);
+    };
+    const poll = async () => {
+      const results = await Promise.all(active.map(async ([category, request]) => {
+        try {
+          return [category, request, await refreshHostMaintenancePreview({ requestId: request.requestId })];
+        } catch {
+          return [category, request, { success: false, error: "The automatic host-maintenance status check was interrupted." }];
+        }
+      }));
+      if (cancelled) return;
+      const failures = results.filter(([, , result]) => !result.success);
+      if (failures.length > 0) {
+        hostPollFailuresRef.current += 1;
+        if (hostPollFailuresRef.current >= 3) {
+          setNotice({ kind: "error", text: `${failures[0][2].error} Automatic updates paused; use Check status to retry.` });
+          return;
+        }
+      } else {
+        hostPollFailuresRef.current = 0;
+      }
+      setRequests((current) => {
+        const next = { ...current };
+        for (const [category, request, result] of results) {
+          if (!result.success) continue;
+          next[category] = {
+            ...result.data,
+            operation: request.operation,
+            previewToken: result.data.previewToken || current[category]?.previewToken || null,
+          };
+        }
+        return next;
+      });
+      const completedExecution = results.some(([, request, result]) => result.success &&
+        ["completed", "failed"].includes(result.data.status) && (request.operation === "execute" || result.data.status === "failed"));
+      if (completedExecution) router.refresh();
+      if (results.some(([, , result]) => !result.success || requestIsActive(result.data))) schedulePoll();
+    };
+    schedulePoll();
+    return () => {
+      cancelled = true;
+      if (timer !== null) window.clearTimeout(timer);
+    };
+  }, [activeHostRequestEntries, router]);
+
   function queuePreview(category) {
     runAction(category, async () => {
       const result = await previewHostMaintenance({ category });
@@ -206,9 +293,10 @@ export default function HostMaintenancePanel({ overview = {}, canManage, canAppr
         setNotice({ kind: "error", text: result.error });
         return;
       }
+      hostPollFailuresRef.current = 0;
       setRequests((current) => ({ ...current, [category]: { ...result.data, operation: "preview" } }));
       setManualConfirmations((current) => ({ ...current, [category]: "" }));
-      setNotice({ kind: "success", text: "Preview queued. Use Check status until the host worker finishes." });
+      setNotice({ kind: "success", text: "Preview queued. Status will update automatically." });
     });
   }
 
@@ -239,6 +327,7 @@ export default function HostMaintenancePanel({ overview = {}, canManage, canAppr
         setNotice({ kind: "error", text: result.error });
         return;
       }
+      hostPollFailuresRef.current = 0;
       setRequests((current) => ({
         ...current,
         [category]: {
@@ -247,7 +336,8 @@ export default function HostMaintenancePanel({ overview = {}, canManage, canAppr
           previewToken: result.data.previewToken || current[category]?.previewToken || null,
         },
       }));
-      if (["completed", "failed"].includes(result.data.status)) router.refresh();
+      const operation = request.operation || "preview";
+      if (["completed", "failed"].includes(result.data.status) && (operation === "execute" || result.data.status === "failed")) router.refresh();
     });
   }
 
@@ -263,10 +353,10 @@ export default function HostMaintenancePanel({ overview = {}, canManage, canAppr
         setNotice({ kind: "error", text: result.error });
         return;
       }
+      hostPollFailuresRef.current = 0;
       setRequests((current) => ({ ...current, [category]: { ...result.data, operation: "execute" } }));
       setManualConfirmations((current) => ({ ...current, [category]: "" }));
-      setNotice({ kind: "success", text: "Cleanup queued. The worker will revalidate the exact preview set before acting." });
-      router.refresh();
+      setNotice({ kind: "success", text: "Cleanup queued. Status will update automatically while the worker revalidates the exact preview set." });
     });
   }
 
@@ -437,15 +527,21 @@ export default function HostMaintenancePanel({ overview = {}, canManage, canAppr
 
                 <dl className="grid grid-cols-2 gap-x-3 gap-y-2 text-xs">
                   <div><dt className="text-muted-foreground">Last preview</dt><dd className="font-medium">{preview ? `${preview.status} - ${formatDate(field(preview, "completedAt", "completed_at") || field(preview, "requestedAt", "requested_at"))}` : "Never"}</dd></div>
-                  <div><dt className="text-muted-foreground">Preview size</dt><dd className="font-medium">{preview ? `${Number(field(preview, "candidateCount", "candidate_count") || 0).toLocaleString()} / ${formatBytes(field(preview, "candidateBytes", "candidate_bytes"))}` : "Not available"}</dd></div>
+                  <div><dt className="text-muted-foreground">{definition.key === "unused-alpr-images" ? "Logical preview footprint" : "Preview size"}</dt><dd className="font-medium">{preview ? `${Number(field(preview, "candidateCount", "candidate_count") || 0).toLocaleString()} / ${formatBytes(field(preview, "candidateBytes", "candidate_bytes"))}` : "Not available"}</dd></div>
                   <div><dt className="text-muted-foreground">Last cleanup</dt><dd className="font-medium">{execution ? `${execution.status} - ${formatDate(field(execution, "completedAt", "completed_at") || field(execution, "requestedAt", "requested_at"))}` : "Never"}</dd></div>
-                  <div><dt className="text-muted-foreground">Reclaimed</dt><dd className="font-medium">{run ? formatBytes(field(run, "reclaimedBytes", "reclaimed_bytes")) : "Not available"}</dd></div>
+                  <div><dt className="text-muted-foreground">{definition.key === "unused-alpr-images" ? "Docker-accounted reclaimed" : "Reclaimed"}</dt><dd className="font-medium">{run ? formatBytes(field(run, "reclaimedBytes", "reclaimed_bytes")) : "Not available"}</dd></div>
                   <div><dt className="text-muted-foreground">Last failure</dt><dd className="font-medium">{lastFailure ? formatDate(field(lastFailure, "completedAt", "completed_at") || field(lastFailure, "requestedAt", "requested_at")) : "None reported"}</dd></div>
                   <div><dt className="text-muted-foreground">Next run</dt><dd className="font-medium">{effectiveConfig.scheduledEnabled ? formatDate(effectiveConfig.nextRunAt) : "Not scheduled"}</dd></div>
                   <div><dt className="text-muted-foreground">Safety breaker</dt><dd className="font-medium">{effectiveConfig.circuitBreakerOpen ? "Open - controls locked" : "Closed"}</dd></div>
                   <div><dt className="text-muted-foreground">Approval revision</dt><dd className="font-medium">{effectiveConfig.activationRevision || "None"}</dd></div>
                   {definition.key === "docker-build-cache" && <div><dt className="text-muted-foreground">Minimum unused age</dt><dd className="font-medium">{Math.max(7, Number(effectiveConfig.minimumAgeDays || 7))} days</dd></div>}
                 </dl>
+
+                {definition.key === "unused-alpr-images" && (
+                  <p className="text-xs text-muted-foreground">
+                    The logical preview footprint enforces the safety cap. Reclaimed space is measured only after deletion from Docker's shared layer store and may be smaller, including zero.
+                  </p>
+                )}
 
                 {effectiveConfig.circuitBreakerOpen && (
                   <p className="rounded-md border border-destructive/40 p-2 text-xs text-destructive">

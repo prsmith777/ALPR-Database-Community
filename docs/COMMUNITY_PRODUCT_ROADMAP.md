@@ -137,7 +137,11 @@ reliable background processing.
   retirement grace remains seven days by default but is now an audited,
   typed-confirmation Administrator setting from one to 365 days. Image cleanup
   stays manual-only, exact-preview bound, and capped at 10 images or 10 GiB per
-  run.
+  run. Pending and processing host requests now update automatically in the
+  Cleanup page and survive server refreshes, with Check status retained as a
+  fallback. Image receipts distinguish logical preview size from conservative
+  Docker-accounted reclamation measured from the locked layer store; shared
+  layers can make the reclaimed result smaller, including zero.
 - Administrators can now open Settings > Release to identify the installed
   application version, build- or deployment-provided Git SHA, release channel,
   and local release notes. The view is read-only and does not fetch source, run

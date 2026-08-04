@@ -8,7 +8,11 @@
   tracks worker images in a separate append-only ledger, and protects the
   currently attested worker between timer runs. The manual image-retirement
   grace is now an audited Administrator setting from one to 365 days, with a
-  seven-day default; scheduled image deletion remains unsupported.
+  seven-day default; scheduled image deletion remains unsupported. Pending and
+  processing host requests now update automatically without a page reload, and
+  survive server refreshes. Image-cleanup receipts now report a conservative
+  locked Docker layer-store decrease instead of always reporting zero, while
+  keeping logical preview size separate because shared layers may reclaim less.
 - Added configurable storage warning/critical thresholds, exact source,
   thumbnail, derived-image, database, Docker, and backup breakdowns, durable
   maintenance run/heartbeat/failure reporting, rate-limited SMTP and signed

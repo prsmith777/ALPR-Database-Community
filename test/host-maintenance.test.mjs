@@ -566,6 +566,17 @@ test("host maintenance UI keeps categories separate and fails controls closed",a
   assert.match(panel,/candidateCount > 0/);
   assert.match(panel,/!previewExpired/);
   assert.match(panel,/never prune Docker volumes, containers, or networks/);
+  assert.match(panel,/useState\(\(\) => activeHostRequests\(overview\.intents\)\)/);
+  assert.match(panel,/field\(intent, "requestId", "id"\)/);
+  assert.match(panel,/window\.setTimeout\(poll, 2500\)/);
+  assert.match(panel,/refreshHostMaintenancePreview\(\{ requestId: request\.requestId \}\)/);
+  assert.match(panel,/Status will update automatically/);
+  assert.match(panel,/Automatic updates paused; use Check status to retry/);
+  assert.match(panel,/Logical preview footprint/);
+  assert.match(panel,/Docker-accounted reclaimed/);
+  assert.match(panel,/Docker's shared layer store and may be smaller, including zero/);
+  const queueExecution = panel.slice(panel.indexOf("function queueExecution"), panel.indexOf("function changeSchedule"));
+  assert.doesNotMatch(queueExecution,/router\.refresh\(\)/);
   assert.doesNotMatch(panel,/Request \{request\.requestId\}/);
   assert.doesNotMatch(panel,/circuitBreakerReason/);
   assert.doesNotMatch(panel,/lastError\}/);
