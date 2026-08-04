@@ -2827,7 +2827,7 @@ CREATE TABLE IF NOT EXISTS public.host_maintenance_config (
     scheduled_enabled BOOLEAN NOT NULL DEFAULT FALSE,
     interval_seconds INTEGER NOT NULL DEFAULT 604800 CHECK (interval_seconds BETWEEN 86400 AND 2592000),
     retained_verified_count INTEGER NOT NULL DEFAULT 5 CHECK (retained_verified_count BETWEEN 5 AND 50),
-    minimum_age_days INTEGER NOT NULL DEFAULT 30 CHECK (minimum_age_days BETWEEN 7 AND 365),
+    minimum_age_days INTEGER NOT NULL DEFAULT 30 CHECK (minimum_age_days BETWEEN 1 AND 365),
     next_run_at TIMESTAMPTZ,
     activation_revision BIGINT NOT NULL DEFAULT 0 CHECK (activation_revision >= 0),
     activated_at TIMESTAMPTZ, activated_by_user_id BIGINT,
@@ -3023,4 +3023,17 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_host_database_backup_requests_one_active
 
 INSERT INTO public.schema_migrations(version,description) VALUES
  ('2026073001_manual_database_backup','Add a fixed no-input manual database-backup request and status control plane.')
+ON CONFLICT(version) DO NOTHING;
+
+-- Image retirement remains manual-only, but its post-retirement recovery
+-- window is administrator-configurable from one to 365 days. Seven days stays
+-- the default. The fixed worker revalidates the same persisted value.
+ALTER TABLE public.host_maintenance_config
+ DROP CONSTRAINT IF EXISTS host_maintenance_config_minimum_age_days_check;
+ALTER TABLE public.host_maintenance_config
+ ADD CONSTRAINT host_maintenance_config_minimum_age_days_check
+ CHECK (minimum_age_days BETWEEN 1 AND 365);
+
+INSERT INTO public.schema_migrations(version,description) VALUES
+ ('2026080301_configurable_image_retirement_grace','Allow an audited 1-365 day manual image-retirement grace while retaining a seven-day default.')
 ON CONFLICT(version) DO NOTHING;

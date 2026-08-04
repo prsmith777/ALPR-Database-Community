@@ -4,13 +4,13 @@ import test from "node:test";
 
 import {
   assertFreshHostMaintenanceInventory, buildHostMaintenancePlan, candidateSetHash, canonicalHostInventoryRevision, HOST_MAINTENANCE_ACTIVATIONS,
-  HOST_MAINTENANCE_CAPS, HOST_MAINTENANCE_CONFIRMATIONS, planForCategory,
+  HOST_MAINTENANCE_CAPS, HOST_MAINTENANCE_CONFIRMATIONS, HOST_MAINTENANCE_IMAGE_POLICY_CONFIRMATION, planForCategory,
 } from "../lib/host-maintenance-policy.mjs";
 import { inspectAndHeartbeatHostMaintenanceWorker, recoverStaleHostMaintenanceLeases, validateDatabaseBackupReceipt, validateHostMaintenanceReceipt } from "../lib/host-maintenance.mjs";
 import { DisabledHostMaintenanceAdapter, InMemoryHostMaintenanceAdapter } from "../lib/host-maintenance-adapter.mjs";
 import {
   getDatabaseBackupRequestStatus, getHostMaintenanceRequestStatus, hostMaintenanceControlInternals,
-  requestDatabaseBackup, requestHostMaintenanceExecution, setScheduledHostMaintenance,
+  requestDatabaseBackup, requestHostMaintenanceExecution, setManualImageRetentionPolicy, setScheduledHostMaintenance,
 } from "../lib/host-maintenance-control.mjs";
 
 const GiB = 1024 ** 3;
@@ -21,7 +21,7 @@ function inventory(overrides={}) {
     device:"dev-1",inode:`inode-${id}`,modifiedAt:new Date(Date.UTC(2026,6,29)-days*86400000).toISOString(),partial:false,symlink:false,hardlinkCount:1,...extra});
   const result={healthy:true,revision:"temporary",environmentId:"staging",databaseIdentity:"db-staging",workerGeneration:"worker-1",
     measuredAt:"2026-07-29T00:00:00.000Z",hostLockAvailable:true,
-    catalogComplete:true,releaseLedgerComplete:true,authoritativeCurrentReleaseCount:1,
+    catalogComplete:true,releaseLedgerComplete:true,workerImageLedgerComplete:true,authoritativeCurrentReleaseCount:1,authoritativeCurrentWorkerCount:1,
     leases:{backupRestore:false,build:false,deploy:false,rollback:false},
     docker:{dedicatedNamespace:true,dedicatedHost:false,unknownImageCount:0,
       buildCache:[{id:"cache-1",identity:"cache-identity-1",bytes:100,unused:true,alprManaged:true,lastUsedAt:"2026-06-01T00:00:00Z",mutable:false,shared:false}],
@@ -29,7 +29,9 @@ function inventory(overrides={}) {
         alprManaged:true,knownInReleaseLedger:true,explicitlyRetired:true,retiredAt:"2026-07-01T00:00:00.000Z",buildLease:false,deployLease:false,
         stoppedContainerReference:false,rollbackReference:false},
         {id:"image-current",identity:"image-current-identity",bytes:200,usedByContainer:true,currentRelease:true,preparedRelease:false,backupIds:[],
-        alprManaged:true,knownInReleaseLedger:true,explicitlyRetired:false,buildLease:false,deployLease:false,stoppedContainerReference:false,rollbackReference:false}]},
+        alprManaged:true,knownInReleaseLedger:true,explicitlyRetired:false,buildLease:false,deployLease:false,stoppedContainerReference:false,rollbackReference:false},
+        {id:"worker-current",identity:"worker-current-identity",bytes:250,usedByContainer:false,currentRelease:false,currentWorker:true,preparedRelease:false,backupIds:[],
+        alprManaged:true,knownInReleaseLedger:true,explicitlyRetired:false,buildLease:false,deployLease:false,stoppedContainerReference:false,rollbackReference:false,imageClass:"host-worker"}]},
     backups:[backup("backup-1",60),backup("backup-2",55),backup("backup-3",50),backup("backup-4",45),backup("backup-5",40),backup("backup-6",35),
       backup("backup-current",90,{currentRelease:true})],...overrides};
   result.revision=canonicalHostInventoryRevision(result);return result;
@@ -68,6 +70,50 @@ test("cache eligibility requires age, immutability, exclusivity, and ALPR owners
     const value=inventory();Object.assign(value.docker.buildCache[0],change);value.revision=canonicalHostInventoryRevision(value);
     assert.equal(planForCategory(buildHostMaintenancePlan(value,{minimumAgeDays:7,now:new Date("2026-07-29T00:00:00Z")}),"docker-build-cache").candidateCount,0);
   }
+});
+
+test("image retirement grace is configurable but never below one day",()=>{
+  const value=inventory();value.docker.images[0].retiredAt="2026-07-27T00:00:00.000Z";value.revision=canonicalHostInventoryRevision(value);
+  assert.equal(planForCategory(buildHostMaintenancePlan(value,{minimumAgeDays:3,now:new Date("2026-07-29T00:00:00Z")}),"unused-alpr-images").candidateCount,0);
+  assert.equal(planForCategory(buildHostMaintenancePlan(value,{minimumAgeDays:1,now:new Date("2026-07-29T00:00:00Z")}),"unused-alpr-images").candidateCount,1);
+  assert.equal(planForCategory(buildHostMaintenancePlan(value,{minimumAgeDays:0,now:new Date("2026-07-29T00:00:00Z")}),"unused-alpr-images").candidateCount,1);
+});
+
+test("the exactly attested current host-worker image is always protected",()=>{
+  const value=inventory();const worker=value.docker.images.find((image)=>image.currentWorker);worker.explicitlyRetired=true;worker.retiredAt="2026-07-01T00:00:00.000Z";value.revision=canonicalHostInventoryRevision(value);
+  const plan=planForCategory(buildHostMaintenancePlan(value,{minimumAgeDays:1,now:new Date("2026-07-29T00:00:00Z")}),"unused-alpr-images");
+  assert.equal(plan.items.some((item)=>item.id==="worker-current"),false);
+});
+
+test("manual image grace changes are typed, audited, bounded, and keep scheduling disabled",async(t)=>{
+  const previousEnvironment=process.env.HOST_MAINTENANCE_ENVIRONMENT_ID;
+  const previousIdentity=process.env.HOST_MAINTENANCE_DATABASE_IDENTITY;
+  process.env.HOST_MAINTENANCE_ENVIRONMENT_ID="staging";
+  process.env.HOST_MAINTENANCE_DATABASE_IDENTITY="db-staging";
+  t.after(()=>{
+    if(previousEnvironment===undefined)delete process.env.HOST_MAINTENANCE_ENVIRONMENT_ID;
+    else process.env.HOST_MAINTENANCE_ENVIRONMENT_ID=previousEnvironment;
+    if(previousIdentity===undefined)delete process.env.HOST_MAINTENANCE_DATABASE_IDENTITY;
+    else process.env.HOST_MAINTENANCE_DATABASE_IDENTITY=previousIdentity;
+  });
+  await assert.rejects(()=>setManualImageRetentionPolicy({confirmation:"wrong"}),/SET IMAGE RETIREMENT GRACE/);
+  const queries=[];
+  const client={query:async(sql,params=[])=>{queries.push({sql,params});
+    if(sql.includes("host_maintenance_environment_identity"))return{rowCount:1,rows:[{}]};
+    if(sql.includes("SELECT * FROM public.host_maintenance_config"))return{rowCount:1,rows:[{category:"unused-alpr-images",automation_supported:false,
+      scheduled_enabled:false,interval_seconds:604800,retained_verified_count:5,minimum_age_days:7,activation_revision:4,circuit_breaker_open:false,circuit_breaker_generation:0}]};
+    if(sql.includes("UPDATE public.host_maintenance_config"))return{rowCount:1,rows:[{category:"unused-alpr-images",automation_supported:false,
+      scheduled_enabled:false,interval_seconds:604800,retained_verified_count:5,minimum_age_days:params[0],activation_revision:params[1],
+      circuit_breaker_open:false,circuit_breaker_generation:0}]};
+    return{rowCount:1,rows:[]};},release(){}};
+  const result=await setManualImageRetentionPolicy({executor:{connect:async()=>client},actor:{id:9},minimumAgeDays:0,
+    confirmation:HOST_MAINTENANCE_IMAGE_POLICY_CONFIRMATION,now:new Date("2026-08-03T18:00:00Z")});
+  assert.equal(result.minimumAgeDays,1);assert.equal(result.scheduledEnabled,false);assert.equal(result.activationRevision,5);
+  const approval=queries.find(({sql})=>sql.includes("INSERT INTO public.host_maintenance_approvals"));
+  assert.deepEqual(approval.params.slice(0,5),[5,604800,5,1,9]);
+  assert.ok(queries.findIndex(({sql})=>sql==="BEGIN")<queries.indexOf(approval));
+  assert.ok(queries.indexOf(approval)<queries.findIndex(({sql})=>sql.includes("UPDATE public.host_maintenance_config")));
+  assert.match(queries.find(({sql})=>sql.includes("UPDATE public.host_maintenance_config")).sql,/scheduled_enabled=FALSE,next_run_at=NULL/);
 });
 
 test("canonical inventory revision is stable across measurement time but changes with protection state",()=>{
@@ -146,8 +192,8 @@ test("backup retention requires complete catalogs, one current release, and no a
   ]){const value=inventory();mutate(value);const plan=planForCategory(buildHostMaintenancePlan(value,{now:new Date("2026-07-29T00:00:00Z")}),"rollout-backups");assert.equal(plan.candidateCount,0);}
 });
 
-test("image eligibility requires both authoritative catalogs and worker hard-disables its schedule",async()=>{
-  for(const key of["catalogComplete","releaseLedgerComplete"]){const value=inventory();value[key]=false;value.revision=canonicalHostInventoryRevision(value);
+test("image eligibility requires authoritative application and worker ledgers and worker hard-disables its schedule",async()=>{
+  for(const key of["catalogComplete","releaseLedgerComplete","workerImageLedgerComplete"]){const value=inventory();value[key]=false;value.revision=canonicalHostInventoryRevision(value);
     assert.equal(planForCategory(buildHostMaintenancePlan(value,{now:new Date("2026-07-29T00:00:00Z")}),"unused-alpr-images").candidateCount,0);}
   const worker=await readFile(new URL("../lib/host-maintenance.mjs",import.meta.url),"utf8");
   assert.match(worker,/intent_type==="scheduled"&&intent\.category==="unused-alpr-images"/);
@@ -156,6 +202,8 @@ test("image eligibility requires both authoritative catalogs and worker hard-dis
   assert.equal(planForCategory(buildHostMaintenancePlan(none,{now:new Date("2026-07-29T00:00:00Z")}),"unused-alpr-images").candidateCount,0);
   const two=inventory();two.docker.images[0].currentRelease=true;two.revision=canonicalHostInventoryRevision(two);
   assert.equal(planForCategory(buildHostMaintenancePlan(two,{now:new Date("2026-07-29T00:00:00Z")}),"unused-alpr-images").candidateCount,0);
+  const noWorker=inventory();noWorker.docker.images.find((image)=>image.currentWorker).currentWorker=false;noWorker.authoritativeCurrentWorkerCount=0;noWorker.revision=canonicalHostInventoryRevision(noWorker);
+  assert.equal(planForCategory(buildHostMaintenancePlan(noWorker,{now:new Date("2026-07-29T00:00:00Z")}),"unused-alpr-images").candidateCount,0);
 });
 
 test("receipt validation enforces exact bindings, set equality, totals, and caps",()=>{
@@ -501,16 +549,18 @@ test("host maintenance UI keeps categories separate and fails controls closed",a
     readFile(new URL("../app/settings/HostMaintenancePanel.jsx",import.meta.url),"utf8"),
     readFile(new URL("../app/settings/StorageMaintenancePanel.jsx",import.meta.url),"utf8"),
   ]);
-  for(const label of ["Docker build cache","Unused ALPR release images","Verified rollout backups"])assert.match(panel,new RegExp(label));
+  for(const label of ["Docker build cache","Unused ALPR and maintenance images","Verified rollout backups"])assert.match(panel,new RegExp(label));
   assert.match(panel,/Candidate counts are unavailable, not zero/);
   assert.match(panel,/Preview complete: 0 candidates \(0 B\)/);
   assert.match(panel,/confirmationPhrases\?\.\[definition\.key\]/);
   assert.match(panel,/activationPhrases\?\.\[definition\.key\]/);
   assert.match(panel,/retainedVerifiedCount: String\(config\.retainedVerifiedCount \?\? 5\)/);
-  assert.match(panel,/minimumAgeDays: String\(config\.minimumAgeDays \?\? \(key === "docker-build-cache" \? 7 : 30\)\)/);
-  assert.match(panel,/Automation unsupported: retired release images remain preview-and-confirm manual only/);
+  assert.match(panel,/minimumAgeDays: String\(config\.minimumAgeDays \?\? \(key === "rollout-backups" \? 30 : 7\)\)/);
+  assert.match(panel,/Automation unsupported: retired application and host-worker images remain preview-and-confirm manual only/);
   assert.match(panel,/non-mutable, non-shared cache unused for at least seven days/);
-  assert.match(panel,/fixed seven-day worker grace/);
+  assert.match(panel,/Retirement grace \(days\)/);
+  assert.match(panel,/SET IMAGE RETIREMENT GRACE/);
+  assert.match(panel,/id="host-image-age" type="number" min="1" max="365"/);
   assert.match(panel,/id="host-backup-age" type="number" min="30"/);
   assert.match(panel,/!workerHealthy \|\| !configured \|\| effectiveConfig\.circuitBreakerOpen \|\| isPending/);
   assert.match(panel,/candidateCount > 0/);

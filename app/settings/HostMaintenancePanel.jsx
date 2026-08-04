@@ -10,6 +10,7 @@ import {
   refreshDatabaseBackup,
   refreshHostMaintenancePreview,
   runConfirmedHostMaintenance,
+  setManualImageRetentionPolicy,
   setScheduledHostMaintenancePolicy,
 } from "@/app/actions";
 import { Badge } from "@/components/ui/badge";
@@ -28,9 +29,9 @@ const CATEGORIES = Object.freeze([
   },
   {
     key: "unused-alpr-images",
-    title: "Unused ALPR release images",
+    title: "Unused ALPR and maintenance images",
     Icon: Box,
-    description: "Explicitly retired ALPR images older than the fixed seven-day worker grace with no protected reference.",
+    description: "Ledger-known application and host-worker images older than the configured retirement grace with no protected reference.",
     boundary: "Manual preview and confirmation only. Scheduled image pruning is not supported.",
   },
   {
@@ -117,7 +118,7 @@ function initialDrafts(configs) {
     return [key, {
       intervalDays: String(Math.max(1, Math.round(Number(config.intervalSeconds || 604800) / 86400))),
       retainedVerifiedCount: String(config.retainedVerifiedCount ?? 5),
-      minimumAgeDays: String(config.minimumAgeDays ?? (key === "docker-build-cache" ? 7 : 30)),
+      minimumAgeDays: String(config.minimumAgeDays ?? (key === "rollout-backups" ? 30 : 7)),
     }];
   }));
 }
@@ -290,6 +291,24 @@ export default function HostMaintenancePanel({ overview = {}, canManage, canAppr
         kind: "success",
         text: enabled ? "This category's schedule is now active." : "This category's schedule is disabled.",
       });
+      router.refresh();
+    });
+  }
+
+  function saveImagePolicy(config) {
+    const category = config.category;
+    const draft = drafts[category];
+    runAction(category, async () => {
+      const result = await setManualImageRetentionPolicy({
+        minimumAgeDays: Number(draft.minimumAgeDays),
+        confirmation: activationConfirmations[category] || "",
+      });
+      if (!result.success) {
+        setNotice({ kind: "error", text: result.error });
+        return;
+      }
+      setActivationConfirmations((current) => ({ ...current, [category]: "" }));
+      setNotice({ kind: "success", text: "Image retirement grace updated. Image cleanup remains manual only." });
       router.refresh();
     });
   }
@@ -473,7 +492,20 @@ export default function HostMaintenancePanel({ overview = {}, canManage, canAppr
                 )}
 
                 {definition.key === "unused-alpr-images" ? (
-                  <p className="rounded-md border p-3 text-xs">Automation unsupported: retired release images remain preview-and-confirm manual only.</p>
+                  <div className="space-y-3 rounded-md border p-3">
+                    <p className="text-xs">Automation unsupported: retired application and host-worker images remain preview-and-confirm manual only.</p>
+                    <div className="space-y-2">
+                      <Label htmlFor="host-image-age">Retirement grace (days)</Label>
+                      <Input id="host-image-age" type="number" min="1" max="365" value={draft.minimumAgeDays} onChange={(event) => updateDraft(definition.key, "minimumAgeDays", event.target.value)} disabled={!canApproveAutomaticCleanup || blocked} />
+                      <p className="text-xs text-muted-foreground">Default 7 days; minimum 1 day. The grace begins when a legacy or superseded image is explicitly recorded as retired.</p>
+                    </div>
+                    <Label htmlFor="host-image-policy-confirm">To update this manual policy, type SET IMAGE RETIREMENT GRACE</Label>
+                    <Input id="host-image-policy-confirm" value={activationConfirmations[definition.key] || ""} onChange={(event) => setActivationConfirmations((current) => ({ ...current, [definition.key]: event.target.value }))} autoComplete="off" disabled={!canApproveAutomaticCleanup || blocked} />
+                    <Button type="button" variant="outline" size="sm" onClick={() => saveImagePolicy(effectiveConfig)} disabled={!canApproveAutomaticCleanup || blocked || activationConfirmations[definition.key] !== "SET IMAGE RETIREMENT GRACE"}>
+                      Save manual image policy
+                    </Button>
+                    {!canApproveAutomaticCleanup && <p className="text-xs text-muted-foreground">Administrator automatic-cleanup approval permission is required.</p>}
+                  </div>
                 ) : (
                   <div className="space-y-3 rounded-md border p-3">
                     <p className="font-medium">Scheduled cleanup</p>

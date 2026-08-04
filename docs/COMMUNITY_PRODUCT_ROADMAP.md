@@ -18,7 +18,7 @@ reliable background processing.
 6. Audit sensitive searches, exports, corrections, rule changes, and
    destructive maintenance.
 
-## Release baseline — August 2, 2026
+## Release baseline — August 3, 2026
 
 - Application `0.1.14` includes named users and roles, evidence-preserving plate
   review, filter-respecting exports, the searchable help center, local privacy
@@ -126,6 +126,18 @@ reliable background processing.
   Data & Privacy now separates Storage Health, Monitoring, Cleanup, and Privacy
   into route-backed top tabs so operational controls, read-only measurements,
   and policy explanations no longer form one continuous page.
+- The staging candidate following `0.1.14` closes the legacy Docker-image
+  retention gap without weakening fail-closed inventory checks. An explicit
+  fixed-worker installation adopts only exact pre-control-plane application
+  and maintenance-worker images with the expected immutable source/revision
+  labels as retired metadata; it deletes nothing and starts their grace at the
+  adoption time. Application and worker images have separate append-only
+  ledgers, the currently attested worker remains protected between one-shot
+  timer runs, and unknown images still block the entire manual preview. The
+  retirement grace remains seven days by default but is now an audited,
+  typed-confirmation Administrator setting from one to 365 days. Image cleanup
+  stays manual-only, exact-preview bound, and capped at 10 images or 10 GiB per
+  run.
 - Administrators can now open Settings > Release to identify the installed
   application version, build- or deployment-provided Git SHA, release channel,
   and local release notes. The view is read-only and does not fetch source, run

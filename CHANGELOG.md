@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- Fixed legacy Docker-image cleanup previews that permanently returned zero.
+  The fixed-worker installer now adopts exact pre-control-plane application and
+  maintenance-worker identities as retired metadata without deleting them,
+  tracks worker images in a separate append-only ledger, and protects the
+  currently attested worker between timer runs. The manual image-retirement
+  grace is now an audited Administrator setting from one to 365 days, with a
+  seven-day default; scheduled image deletion remains unsupported.
 - Added configurable storage warning/critical thresholds, exact source,
   thumbnail, derived-image, database, Docker, and backup breakdowns, durable
   maintenance run/heartbeat/failure reporting, rate-limited SMTP and signed
