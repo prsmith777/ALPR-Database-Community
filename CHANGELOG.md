@@ -11,7 +11,10 @@
   seven-day default; scheduled image deletion remains unsupported. Pending and
   processing host requests now update automatically without a page reload, and
   survive server refreshes; the manual retry control appears only if automatic
-  updates pause. Image-cleanup receipts now report a conservative
+  updates pause. Pending previews now display as calculating instead of a
+  misleading zero, and duplicate category requests are blocked in both the UI
+  and serialized control plane. The request card and preview summary now update
+  from the same live request. Image-cleanup receipts now report a conservative
   locked Docker layer-store decrease instead of always reporting zero, while
   keeping logical preview size separate because shared layers may reclaim less.
 - Added configurable storage warning/critical thresholds, exact source,

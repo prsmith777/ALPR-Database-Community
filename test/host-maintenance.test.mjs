@@ -545,9 +545,11 @@ test("monitor trusts sanitized worker health status for stale and recovery alert
 });
 
 test("host maintenance UI keeps categories separate and fails controls closed",async()=>{
-  const [panel,container]=await Promise.all([
+  const [panel,container,control,actions]=await Promise.all([
     readFile(new URL("../app/settings/HostMaintenancePanel.jsx",import.meta.url),"utf8"),
     readFile(new URL("../app/settings/StorageMaintenancePanel.jsx",import.meta.url),"utf8"),
+    readFile(new URL("../lib/host-maintenance-control.mjs",import.meta.url),"utf8"),
+    readFile(new URL("../app/actions.js",import.meta.url),"utf8"),
   ]);
   for(const label of ["Docker build cache","Unused ALPR and maintenance images","Verified rollout backups"])assert.match(panel,new RegExp(label));
   assert.match(panel,/Candidate counts are unavailable, not zero/);
@@ -577,6 +579,14 @@ test("host maintenance UI keeps categories separate and fails controls closed",a
   assert.match(panel,/Logical preview footprint/);
   assert.match(panel,/Docker-accounted reclaimed/);
   assert.match(panel,/Docker's shared layer store and may be smaller, including zero/);
+  assert.match(panel,/preview && requestIsActive\(preview\) \? "Calculating…"/);
+  assert.match(panel,/disabled=\{!canManage \|\| blocked \|\| requestIsActive\(request\)\}/);
+  assert.match(panel,/categoryPending \? "Queuing preview…" : requestIsActive\(request\) \? "Preview in progress"/);
+  assert.match(control,/SELECT category FROM public\.host_maintenance_config WHERE category=\$1 FOR UPDATE/);
+  assert.match(control,/A host maintenance request is already pending or running for this category/);
+  assert.match(control,/requestedAt:row\.requested_at\|\|null,startedAt:row\.started_at\|\|null,completedAt:row\.completed_at\|\|null/);
+  assert.match(actions,/A host maintenance request is already pending or running for this category/);
+  assert.match(panel,/request\?\.operation === "preview" \? \{ \.\.\.overviewPreview, \.\.\.request, intentType: "preview" \}/);
   const queueExecution = panel.slice(panel.indexOf("function queueExecution"), panel.indexOf("function changeSchedule"));
   assert.doesNotMatch(queueExecution,/router\.refresh\(\)/);
   assert.doesNotMatch(panel,/Request \{request\.requestId\}/);

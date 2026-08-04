@@ -103,6 +103,9 @@ function activeHostRequests(intents) {
       category: key,
       status: String(intent.status),
       operation: intentTypeOf(intent) === "preview" ? "preview" : "execute",
+      requestedAt: field(intent, "requestedAt", "requested_at") || null,
+      startedAt: field(intent, "startedAt", "started_at") || null,
+      completedAt: field(intent, "completedAt", "completed_at") || null,
       candidateCount: Number(field(intent, "candidateCount", "candidate_count") || 0),
       candidateBytes: Number(field(intent, "candidateBytes", "candidate_bytes") || 0),
       reclaimedBytes: Number(field(intent, "reclaimedBytes", "reclaimed_bytes") || 0),
@@ -500,7 +503,9 @@ export default function HostMaintenancePanel({ overview = {}, canManage, canAppr
             };
             const badge = statusBadge(effectiveConfig, configured);
             const request = requests[definition.key];
-            const preview = lastFor(overview.intents, definition.key, (item) => intentTypeOf(item) === "preview");
+            const overviewPreview = lastFor(overview.intents, definition.key, (item) => intentTypeOf(item) === "preview");
+            const preview = request?.operation === "preview" ? { ...overviewPreview, ...request, intentType: "preview" } : overviewPreview;
+            const previewCompleted = preview?.status === "completed";
             const execution = lastFor(overview.intents, definition.key, (item) => ["execute", "scheduled"].includes(intentTypeOf(item)));
             const run = lastRunFor(overview.runs, definition.key);
             const lastFailure = lastFor(overview.intents, definition.key, (item) => item.status === "failed");
@@ -532,7 +537,7 @@ export default function HostMaintenancePanel({ overview = {}, canManage, canAppr
 
                 <dl className="grid grid-cols-2 gap-x-3 gap-y-2 text-xs">
                   <div><dt className="text-muted-foreground">Last preview</dt><dd className="font-medium">{preview ? `${preview.status} - ${formatDate(field(preview, "completedAt", "completed_at") || field(preview, "requestedAt", "requested_at"))}` : "Never"}</dd></div>
-                  <div><dt className="text-muted-foreground">{definition.key === "unused-alpr-images" ? "Logical preview footprint" : "Preview size"}</dt><dd className="font-medium">{preview ? `${Number(field(preview, "candidateCount", "candidate_count") || 0).toLocaleString()} / ${formatBytes(field(preview, "candidateBytes", "candidate_bytes"))}` : "Not available"}</dd></div>
+                  <div><dt className="text-muted-foreground">{definition.key === "unused-alpr-images" ? "Logical preview footprint" : "Preview size"}</dt><dd className="font-medium">{previewCompleted ? `${Number(field(preview, "candidateCount", "candidate_count") || 0).toLocaleString()} / ${formatBytes(field(preview, "candidateBytes", "candidate_bytes"))}` : preview && requestIsActive(preview) ? "Calculating…" : "Not available"}</dd></div>
                   <div><dt className="text-muted-foreground">Last cleanup</dt><dd className="font-medium">{execution ? `${execution.status} - ${formatDate(field(execution, "completedAt", "completed_at") || field(execution, "requestedAt", "requested_at"))}` : "Never"}</dd></div>
                   <div><dt className="text-muted-foreground">{definition.key === "unused-alpr-images" ? "Docker-accounted reclaimed" : "Reclaimed"}</dt><dd className="font-medium">{run ? formatBytes(field(run, "reclaimedBytes", "reclaimed_bytes")) : "Not available"}</dd></div>
                   <div><dt className="text-muted-foreground">Last failure</dt><dd className="font-medium">{lastFailure ? formatDate(field(lastFailure, "completedAt", "completed_at") || field(lastFailure, "requestedAt", "requested_at")) : "None reported"}</dd></div>
@@ -555,8 +560,8 @@ export default function HostMaintenancePanel({ overview = {}, canManage, canAppr
                 )}
 
                 <div className="flex flex-wrap gap-2">
-                  <Button type="button" variant="outline" size="sm" onClick={() => queuePreview(definition.key)} disabled={!canManage || blocked}>
-                    Queue safe preview
+                  <Button type="button" variant="outline" size="sm" onClick={() => queuePreview(definition.key)} disabled={!canManage || blocked || requestIsActive(request)}>
+                    {categoryPending ? "Queuing preview…" : requestIsActive(request) ? "Preview in progress" : "Queue safe preview"}
                   </Button>
                   {hostPollingPaused && requestIsActive(request) && (
                     <Button type="button" variant="outline" size="sm" onClick={() => pollRequest(definition.key)} disabled={!canManage || blocked}>

@@ -139,7 +139,9 @@ reliable background processing.
   stays manual-only, exact-preview bound, and capped at 10 images or 10 GiB per
   run. Pending and processing host requests now update automatically in the
   Cleanup page and survive server refreshes; a retry control appears only if
-  automatic updates pause. Image receipts distinguish logical preview size from conservative
+  automatic updates pause. Pending previews display as calculating, and both
+  the browser and serialized control plane prevent duplicate category requests.
+  Image receipts distinguish logical preview size from conservative
   Docker-accounted reclamation measured from the locked layer store; shared
   layers can make the reclaimed result smaller, including zero.
 - Administrators can now open Settings > Release to identify the installed

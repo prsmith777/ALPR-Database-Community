@@ -1487,6 +1487,7 @@ function storageMaintenanceFailure(error, fallback) {
     /^Unsupported host maintenance category$/,
     /^Host maintenance requires an authenticated actor$/,
     /^Host maintenance request is invalid$/,
+    /^A host maintenance request is already pending or running for this category$/,
     /^Host maintenance preview is incomplete, expired, or invalid$/,
     /^The fixed host maintenance worker is unavailable or stale$/,
     /^Scheduled unused-image pruning is unsupported until independently approved$/,
