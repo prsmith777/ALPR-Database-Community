@@ -6,7 +6,7 @@ import {
   assertFreshHostMaintenanceInventory, buildHostMaintenancePlan, candidateSetHash, canonicalHostInventoryRevision, HOST_MAINTENANCE_ACTIVATIONS,
   HOST_MAINTENANCE_CAPS, HOST_MAINTENANCE_CONFIRMATIONS, HOST_MAINTENANCE_IMAGE_POLICY_CONFIRMATION, planForCategory,
 } from "../lib/host-maintenance-policy.mjs";
-import { inspectAndHeartbeatHostMaintenanceWorker, recoverStaleHostMaintenanceLeases, validateDatabaseBackupReceipt, validateHostMaintenanceReceipt } from "../lib/host-maintenance.mjs";
+import { hostMaintenanceWorkerInternals, inspectAndHeartbeatHostMaintenanceWorker, recoverStaleHostMaintenanceLeases, validateDatabaseBackupReceipt, validateHostMaintenanceReceipt } from "../lib/host-maintenance.mjs";
 import { DisabledHostMaintenanceAdapter, InMemoryHostMaintenanceAdapter } from "../lib/host-maintenance-adapter.mjs";
 import {
   getDatabaseBackupRequestStatus, getHostMaintenanceRequestStatus, hostMaintenanceControlInternals,
@@ -190,6 +190,36 @@ test("backup retention requires complete catalogs, one current release, and no a
     (value)=>{value.leases.backupRestore=true;},(value)=>{value.leases.build=true;},
     (value)=>{value.leases.deploy=true;},(value)=>{value.leases.rollback=true;},
   ]){const value=inventory();mutate(value);const plan=planForCategory(buildHostMaintenancePlan(value,{now:new Date("2026-07-29T00:00:00Z")}),"rollout-backups");assert.equal(plan.candidateCount,0);}
+});
+
+test("rollback-backup deletion and scheduling are hard-disabled across control, worker, schema, and UI",async(t)=>{
+  const previousEnvironment=process.env.HOST_MAINTENANCE_ENVIRONMENT_ID;
+  const previousIdentity=process.env.HOST_MAINTENANCE_DATABASE_IDENTITY;
+  process.env.HOST_MAINTENANCE_ENVIRONMENT_ID="staging";
+  process.env.HOST_MAINTENANCE_DATABASE_IDENTITY="db-staging";
+  t.after(()=>{
+    if(previousEnvironment===undefined)delete process.env.HOST_MAINTENANCE_ENVIRONMENT_ID;else process.env.HOST_MAINTENANCE_ENVIRONMENT_ID=previousEnvironment;
+    if(previousIdentity===undefined)delete process.env.HOST_MAINTENANCE_DATABASE_IDENTITY;else process.env.HOST_MAINTENANCE_DATABASE_IDENTITY=previousIdentity;
+  });
+  await assert.rejects(()=>setScheduledHostMaintenance({actor:{id:1},category:"rollout-backups",enabled:true}),/catalog-bound approval/);
+  const queries=[];const client={query:async(sql)=>{queries.push(sql);
+    if(sql==="BEGIN"||sql==="ROLLBACK")return{rowCount:0,rows:[]};
+    if(sql.includes("host_maintenance_environment_identity"))return{rowCount:1,rows:[{}]};
+    if(sql.includes("FROM public.host_maintenance_previews"))return{rowCount:1,rows:[{category:"rollout-backups"}]};
+    throw new Error(`Unexpected query: ${sql}`);},release(){}};
+  await assert.rejects(()=>requestHostMaintenanceExecution({executor:{connect:async()=>client},actor:{id:1},previewToken:"token",confirmation:"irrelevant"}),/catalog-bound approval/);
+  assert.doesNotMatch(queries.join("\n"),/INSERT INTO public\.host_maintenance_intents/);
+  await assert.rejects(()=>hostMaintenanceWorkerInternals.processPrune({}, {prune:async()=>{throw new Error("must not run");}}, {category:"rollout-backups"}, new Date(), "worker", {}),/catalog-bound approval/);
+
+  const [schema,migrations,panel]=await Promise.all([
+    readFile(new URL("../schema.sql",import.meta.url),"utf8"),readFile(new URL("../migrations.sql",import.meta.url),"utf8"),
+    readFile(new URL("../app/settings/HostMaintenancePanel.jsx",import.meta.url),"utf8"),
+  ]);
+  assert.match(schema,/\('rollout-backups', FALSE, 30\)/);
+  assert.match(migrations,/WHERE category='rollout-backups'/);
+  assert.match(panel,/Rollback-backup deletion and scheduling remain hard-disabled/);
+  assert.match(panel,/destructiveAvailable: false/);
+  for(const source of[schema,migrations])assert.match(source,/host_backup_catalog_no_truncate/);
 });
 
 test("image eligibility requires authoritative application and worker ledgers and worker hard-disables its schedule",async()=>{
@@ -491,6 +521,7 @@ test("worker heartbeat explicitly binds reused timestamp parameters as timestamp
     const executor={query:async(sql,values)=>{
       queries.push({sql,values});
       if(/host_maintenance_environment_identity/.test(sql))return{rowCount:1,rows:[{ok:1}]};
+      if(/INSERT INTO public\.host_backup_catalog_snapshots/.test(sql))return{rowCount:1,rows:[{id:1,entry_count:7}]};
       if(/INSERT INTO public\.host_maintenance_worker_state/.test(sql))return{rowCount:1,rows:[]};
       throw new Error(`Unexpected query: ${sql}`);
     }};
@@ -502,6 +533,12 @@ test("worker heartbeat explicitly binds reused timestamp parameters as timestamp
     };
     const result=await inspectAndHeartbeatHostMaintenanceWorker({executor,adapter,workerId:"worker-test",now});
     assert.equal(result.databaseBackupSupported,true);
+    assert.match(result.backupCatalogRevision,/^[0-9a-f]{64}$/);
+    const catalogQuery=queries.find(({sql})=>/INSERT INTO public\.host_backup_catalog_snapshots/.test(sql));
+    assert.ok(catalogQuery);
+    assert.match(catalogQuery.sql,/jsonb_to_recordset/);
+    assert.match(catalogQuery.sql,/SELECT COUNT\(\*\)::bigint FROM inserted_entries/);
+    assert.doesNotMatch(catalogQuery.sql,/DELETE|UPDATE public\.host_backup_catalog/i);
     const heartbeatQuery=queries.find(({sql})=>/INSERT INTO public\.host_maintenance_worker_state/.test(sql));
     assert.ok(heartbeatQuery);
     assert.equal(heartbeatQuery.sql.match(/\$5::timestamptz/g)?.length,3);
@@ -510,6 +547,7 @@ test("worker heartbeat explicitly binds reused timestamp parameters as timestamp
     assert.doesNotMatch(heartbeatQuery.sql,/,\$8,|WHEN \$8 IS NULL/);
     assert.equal(heartbeatQuery.values[4],now);
     assert.equal(heartbeatQuery.values[7],"database-backup-create-v1");
+    assert.ok(queries.indexOf(catalogQuery)<queries.indexOf(heartbeatQuery));
 
     const unsupportedResult=await inspectAndHeartbeatHostMaintenanceWorker({
       executor,
@@ -563,7 +601,7 @@ test("host maintenance UI keeps categories separate and fails controls closed",a
   assert.match(panel,/Retirement grace \(days\)/);
   assert.match(panel,/SET IMAGE RETIREMENT GRACE/);
   assert.match(panel,/id="host-image-age" type="number" min="1" max="365"/);
-  assert.match(panel,/id="host-backup-age" type="number" min="30"/);
+  assert.doesNotMatch(panel,/id="host-backup-age"/);
   assert.match(panel,/!workerHealthy \|\| !configured \|\| effectiveConfig\.circuitBreakerOpen \|\| isPending/);
   assert.match(panel,/candidateCount > 0/);
   assert.match(panel,/!previewExpired/);

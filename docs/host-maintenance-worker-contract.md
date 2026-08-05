@@ -107,6 +107,31 @@ quarantine followed by a later bounded purge; only empty directories created
 by the worker may be removed. Current releases, prepared releases, database
 records/volumes, captures, and protected rollback backups are never candidates.
 
+The local application now defines `host-backup-catalog-v1` as a separate,
+read-only integration boundary. Before publishing a healthy heartbeat, the
+worker must persist the normalized backup inventory into immutable
+`host_backup_catalog_snapshots` and `host_backup_catalog_entries` rows. The
+catalog contains opaque identities and verification metadata but no host path,
+command, deletion token, quarantine location, or purge state. Repeated
+unchanged inventories reuse the same snapshot; changes to checksum, size,
+device, inode, mtime, protection state, leases, environment, database identity,
+or worker generation produce a different catalog revision.
+
+The application may recompute a redacted retention preview from the current
+heartbeat-bound snapshot. The preview protects all state references, current
+and rollback chains, the newest five verified backups, and every verified
+backup strictly newer than 30 days. Invalid or foreign entries are reported as
+rejected and remain non-candidates. Missing catalog rows, entry-count mismatch,
+incomplete ledgers, ambiguous current release, or active build/deploy/backup/
+rollback leases fail the preview closed.
+
+This increment deliberately has no destructive backup operation. Manual
+execution is rejected in the browser control plane and worker, rollout-backup
+scheduling is disabled in configuration, and the UI exposes catalog status and
+preview counts only. A future change must introduce a separately reviewed,
+immutable, expiring approval bound to the exact catalog revision and candidate
+set before any rollback-backup deletion can be considered.
+
 ## Manual database-backup creation
 
 Manual database-backup creation is a separate fixed operation, not a cleanup

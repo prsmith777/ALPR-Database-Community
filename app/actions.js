@@ -1491,6 +1491,7 @@ function storageMaintenanceFailure(error, fallback) {
     /^Host maintenance preview is incomplete, expired, or invalid$/,
     /^The fixed host maintenance worker is unavailable or stale$/,
     /^Scheduled unused-image pruning is unsupported until independently approved$/,
+    /^Rollback-backup deletion is disabled until catalog-bound approval is implemented$/,
     /^Type SET IMAGE RETIREMENT GRACE to update image retention$/,
     /^Type (?:PRUNE UNUSED ALPR BUILD CACHE|PRUNE RETIRED ALPR IMAGES|PRUNE EXPIRED VERIFIED ROLLOUT BACKUPS) to request this category$/,
     /^Type ENABLE SCHEDULED (?:DOCKER CACHE PRUNING|UNUSED ALPR IMAGE PRUNING|ROLLOUT BACKUP RETENTION) to activate scheduled/,

@@ -40,6 +40,7 @@ const CATEGORIES = Object.freeze([
     Icon: ArchiveRestore,
     description: "Verified, expired rollout backups beyond the configured minimum retention.",
     boundary: "Protected, current-release, rollback-chain, unverified, partial, linked, or foreign backups are never included.",
+    destructiveAvailable: false,
   },
 ]);
 
@@ -163,6 +164,7 @@ export default function HostMaintenancePanel({ overview = {}, canManage, canAppr
   const [pendingCategory, setPendingCategory] = useState(null);
   const [isPending, startTransition] = useTransition();
   const worker = overview.worker || {};
+  const backupCatalog = overview.backupCatalog || { status: "unavailable", entries: [], destructiveExecutionAvailable: false };
   const workerHealthy = worker.status === "healthy";
   const databaseBackupAvailable = workerHealthy && overview.databaseBackup?.supported === true;
   const databaseBackupActive = ["pending", "processing"].includes(databaseBackup.status);
@@ -490,6 +492,29 @@ export default function HostMaintenancePanel({ overview = {}, canManage, canAppr
           </Button>
         </section>
 
+        <section className="space-y-3 rounded-lg border p-4" aria-labelledby="backup-catalog-title">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <h3 id="backup-catalog-title" className="flex items-center gap-2 font-semibold">
+                <ArchiveRestore className="h-4 w-4 text-primary" aria-hidden="true" />Rollback-backup catalog
+              </h3>
+              <p className="mt-1 text-xs text-muted-foreground">Immutable, path-free evidence published by the fixed worker for read-only retention review.</p>
+            </div>
+            <Badge variant={backupCatalog.status === "ready" ? "secondary" : "outline"}>{backupCatalog.status || "unavailable"}</Badge>
+          </div>
+          <dl className="grid gap-x-4 gap-y-2 text-xs sm:grid-cols-3 lg:grid-cols-6">
+            <div><dt className="text-muted-foreground">Cataloged</dt><dd className="font-medium">{backupCatalog.backupCount == null ? "Unavailable" : Number(backupCatalog.backupCount).toLocaleString()}</dd></div>
+            <div><dt className="text-muted-foreground">Verified</dt><dd className="font-medium">{backupCatalog.verifiedCount == null ? "Unavailable" : Number(backupCatalog.verifiedCount).toLocaleString()}</dd></div>
+            <div><dt className="text-muted-foreground">Protected</dt><dd className="font-medium">{backupCatalog.protectedCount == null ? "Unavailable" : Number(backupCatalog.protectedCount).toLocaleString()}</dd></div>
+            <div><dt className="text-muted-foreground">Rejected</dt><dd className="font-medium">{backupCatalog.rejectedCount == null ? "Unavailable" : Number(backupCatalog.rejectedCount).toLocaleString()}</dd></div>
+            <div><dt className="text-muted-foreground">Preview candidates</dt><dd className="font-medium">{backupCatalog.candidateCount == null ? "Unavailable" : Number(backupCatalog.candidateCount).toLocaleString()}</dd></div>
+            <div><dt className="text-muted-foreground">Measured</dt><dd className="font-medium">{formatDate(backupCatalog.measuredAt)}</dd></div>
+          </dl>
+          <p className="rounded-md border border-blue-500/30 bg-blue-500/10 p-3 text-xs">
+            Rollback-backup deletion and scheduling remain hard-disabled. The catalog protects at least the newest five verified backups and every verified backup strictly newer than 30 days; candidates are informational only.
+          </p>
+        </section>
+
         <div className="grid gap-4 xl:grid-cols-3">
           {CATEGORIES.map((definition) => {
             const config = (overview.configs || []).find((item) => item.category === definition.key);
@@ -516,7 +541,7 @@ export default function HostMaintenancePanel({ overview = {}, canManage, canAppr
             const categoryPending = isPending && pendingCategory === definition.key;
             const blocked = !workerHealthy || !configured || effectiveConfig.circuitBreakerOpen || isPending;
             const candidateCount = Number(request?.candidateCount || 0);
-            const canExecute = canManage && !blocked && request?.operation === "preview" && request?.status === "completed" &&
+            const canExecute = definition.destructiveAvailable !== false && canManage && !blocked && request?.operation === "preview" && request?.status === "completed" &&
               Boolean(request.previewToken) && !previewExpired && candidateCount > 0 &&
               manualConfirmations[definition.key] === confirmationPhrase;
             const draft = drafts[definition.key];
@@ -580,7 +605,7 @@ export default function HostMaintenancePanel({ overview = {}, canManage, canAppr
                   </div>
                 )}
 
-                {request?.operation === "preview" && request.status === "completed" && candidateCount > 0 && (
+                {definition.destructiveAvailable !== false && request?.operation === "preview" && request.status === "completed" && candidateCount > 0 && (
                   <div className="space-y-2 rounded-md border border-destructive/30 p-3">
                     <Label htmlFor={`host-confirm-${definition.key}`}>Type {confirmationPhrase}</Label>
                     <Input
@@ -612,6 +637,12 @@ export default function HostMaintenancePanel({ overview = {}, canManage, canAppr
                     </Button>
                     {!canApproveAutomaticCleanup && <p className="text-xs text-muted-foreground">Administrator automatic-cleanup approval permission is required.</p>}
                   </div>
+                ) : definition.key === "rollout-backups" ? (
+                  <div className="space-y-2 rounded-md border p-3 text-xs">
+                    <p className="font-medium">Read-only catalog policy</p>
+                    <p>Minimum safeguards are fixed at five newest verified backups and a strict 30-day age floor.</p>
+                    <p className="text-muted-foreground">Execution controls will remain unavailable until a separately reviewed immutable, expiring approval is bound to an exact catalog revision and candidate set.</p>
+                  </div>
                 ) : (
                   <div className="space-y-3 rounded-md border p-3">
                     <p className="font-medium">Scheduled cleanup</p>
@@ -619,18 +650,6 @@ export default function HostMaintenancePanel({ overview = {}, canManage, canAppr
                       <Label htmlFor={`host-interval-${definition.key}`}>Run every (days)</Label>
                       <Input id={`host-interval-${definition.key}`} type="number" min="1" max="30" value={draft.intervalDays} onChange={(event) => updateDraft(definition.key, "intervalDays", event.target.value)} disabled={!canApproveAutomaticCleanup || blocked || effectiveConfig.scheduledEnabled} />
                     </div>
-                    {definition.key === "rollout-backups" && (
-                      <div className="grid grid-cols-2 gap-2">
-                        <div className="space-y-2">
-                          <Label htmlFor="host-backup-retain">Keep newest verified</Label>
-                          <Input id="host-backup-retain" type="number" min="5" max="50" value={draft.retainedVerifiedCount} onChange={(event) => updateDraft(definition.key, "retainedVerifiedCount", event.target.value)} disabled={!canApproveAutomaticCleanup || blocked || effectiveConfig.scheduledEnabled} />
-                        </div>
-                        <div className="space-y-2">
-                          <Label htmlFor="host-backup-age">Minimum age (days)</Label>
-                          <Input id="host-backup-age" type="number" min="30" max="365" value={draft.minimumAgeDays} onChange={(event) => updateDraft(definition.key, "minimumAgeDays", event.target.value)} disabled={!canApproveAutomaticCleanup || blocked || effectiveConfig.scheduledEnabled} />
-                        </div>
-                      </div>
-                    )}
                     {definition.key === "docker-build-cache" && (
                       <div className="space-y-2">
                         <Label htmlFor="host-cache-age">Minimum unused age (days)</Label>
