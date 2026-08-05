@@ -142,6 +142,15 @@ completed and verified the 64,806,352-byte (61.8 MB)
 `alpr-postgres-20260802T164636Z-1.dump`. Future production deployments and
 worker changes remain separately approval-gated.
 
+For the snapshot-capable production worker, preserve this order: deploy the
+accepted application commit, create and verify a fresh post-deployment rollback
+backup, install the checksummed worker with its service and timer still disabled,
+inspect fixed status, and only then explicitly activate it. Activation must prove
+a fresh snapshot and exact read-only app binding before enabling the timer. Do
+not submit cleanup requests during this rollout. Unknown production application
+images are not adopted as retired metadata; they remain protected and make image
+preview fail closed unless their rollback references are fully modeled.
+
 ## Installation and recovery
 
 This repository deliberately ships the disabled adapter and an in-memory test
