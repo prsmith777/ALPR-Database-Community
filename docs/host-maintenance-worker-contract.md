@@ -80,11 +80,20 @@ prune, image prune `-a`, container prune, network prune, or volume prune.
 
 ## Image ledger policy
 
-The worker owns an exact-image-ID release ledger. Unknown images fail closed.
+The worker owns exact-image-ID ledgers for application releases and fixed
+maintenance-worker builds. Unknown images fail closed. During an explicit
+worker installation, pre-control-plane images are adopted only when their
+immutable source and revision labels match the reviewed application or worker
+identity and they have no container reference. Adoption appends retired
+metadata and deletes nothing. Its retirement grace starts at adoption.
+
 Running and stopped container references, current/prepared/deployed/rollback
-releases, backup references, and active build/deploy leases are protected.
-Only an explicitly retired ALPR image older than the worker grace period can
-appear in a manual preview. This category has no automated schedule.
+releases, backup references, the exactly attested current maintenance worker,
+and active build/deploy leases are protected. Only an explicitly retired,
+ledger-known image older than the configured grace can appear in a manual
+preview. The grace is Administrator-configurable from one to 365 days, defaults
+to seven days, and is revalidated by the fixed worker immediately before
+deletion. This category has no automated schedule.
 
 ## Backup catalog policy
 
@@ -132,6 +141,15 @@ advertises `database-backup-create-v1`. One authorized production request
 completed and verified the 64,806,352-byte (61.8 MB)
 `alpr-postgres-20260802T164636Z-1.dump`. Future production deployments and
 worker changes remain separately approval-gated.
+
+For the snapshot-capable production worker, preserve this order: deploy the
+accepted application commit, create and verify a fresh post-deployment rollback
+backup, install the checksummed worker with its service and timer still disabled,
+inspect fixed status, and only then explicitly activate it. Activation must prove
+a fresh snapshot and exact read-only app binding before enabling the timer. Do
+not submit cleanup requests during this rollout. Unknown production application
+images are not adopted as retired metadata; they remain protected and make image
+preview fail closed unless their rollback references are fully modeled.
 
 ## Installation and recovery
 

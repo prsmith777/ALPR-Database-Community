@@ -145,6 +145,7 @@ import {
   createHostMaintenancePreview,
   readDatabaseBackupRequest,
   readHostMaintenanceRequest,
+  updateManualImageRetention,
   updateScheduledHostMaintenance,
 } from "@/lib/storage-maintenance-service.mjs";
 
@@ -1486,9 +1487,11 @@ function storageMaintenanceFailure(error, fallback) {
     /^Unsupported host maintenance category$/,
     /^Host maintenance requires an authenticated actor$/,
     /^Host maintenance request is invalid$/,
+    /^A host maintenance request is already pending or running for this category$/,
     /^Host maintenance preview is incomplete, expired, or invalid$/,
     /^The fixed host maintenance worker is unavailable or stale$/,
     /^Scheduled unused-image pruning is unsupported until independently approved$/,
+    /^Type SET IMAGE RETIREMENT GRACE to update image retention$/,
     /^Type (?:PRUNE UNUSED ALPR BUILD CACHE|PRUNE RETIRED ALPR IMAGES|PRUNE EXPIRED VERIFIED ROLLOUT BACKUPS) to request this category$/,
     /^Type ENABLE SCHEDULED (?:DOCKER CACHE PRUNING|UNUSED ALPR IMAGE PRUNING|ROLLOUT BACKUP RETENTION) to activate scheduled/,
     /^Type ACKNOWLEDGE (?:DOCKER CACHE|UNUSED IMAGE|ROLLOUT BACKUP) FAILURE to acknowledge this failure$/,
@@ -1688,6 +1691,15 @@ export async function setScheduledHostMaintenancePolicy(input = {}) {
     revalidatePath("/settings/data-privacy");
     return { success: true, data };
   } catch (error) { return storageMaintenanceFailure(error, "Unable to update scheduled host maintenance."); }
+}
+
+export async function setManualImageRetentionPolicy(input = {}) {
+  const principal = await requirePermission("maintenance.automatic_cleanup.approve");
+  try {
+    const data = await updateManualImageRetention({ actor: principal, input });
+    revalidatePath("/settings/data-privacy");
+    return { success: true, data };
+  } catch (error) { return storageMaintenanceFailure(error, "Unable to update image retention policy."); }
 }
 
 export async function acknowledgeHostMaintenanceFailureAction(input = {}) {

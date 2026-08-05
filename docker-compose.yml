@@ -37,6 +37,10 @@ services:
       - app-auth:/app/auth
       - app-config:/app/config
       - app-plate_images:/app/storage
+      - type: bind
+        source: "${STORAGE_HOST_SNAPSHOT_DIR:-./storage/host-storage-snapshot}"
+        target: /run/alpr-host-storage
+        read_only: true
     logging:
       driver: "json-file"
       options:

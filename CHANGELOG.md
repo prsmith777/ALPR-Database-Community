@@ -88,6 +88,30 @@
   are prioritized, display Pending until analyzed, refresh in Live Feed without
   manual intervention, and historical work sends no notifications.
 
+## [0.1.15] - 08-04-2026
+
+- Updated the resolved `brace-expansion`, `ip-address`, and `postcss`
+  dependencies to their fixed releases so the required OSV security gate no
+  longer reports the five known vulnerabilities present in the prior lockfile.
+- Fixed legacy Docker-image cleanup previews that permanently returned zero.
+  Reviewed fixed workers can adopt only exact legacy identities whose rollback
+  references are fully accounted for; unknown production application images
+  remain protected and block preview. Application and maintenance-worker images
+  use separate append-only ledgers, and the current attested worker remains
+  protected between timer runs. The manual image-retirement grace is now an
+  audited Administrator setting from one to 365 days, with a seven-day default;
+  scheduled image deletion remains unsupported. Pending and processing host
+  requests update automatically without a page reload and survive server
+  refreshes; the manual retry control appears only if automatic updates pause.
+  Pending previews display as calculating instead of a misleading zero, and
+  duplicate category requests are blocked in both the UI and serialized control
+  plane. The request card and preview summary update from the same live request.
+  Image-cleanup receipts report a conservative locked Docker layer-store
+  decrease while keeping logical preview size separate because shared layers
+  may reclaim less, including zero. A bounded read-only host snapshot supplies
+  Docker and verified backup totals without exposing the Docker socket or backup
+  trees to the application.
+
 ## [0.1.10] - 07-26-2026
 
 - Added configurable per-camera vehicle direction with audited front/rear
