@@ -90,6 +90,9 @@
 
 ## [0.1.15] - 08-04-2026
 
+- Updated the resolved `brace-expansion`, `ip-address`, and `postcss`
+  dependencies to their fixed releases so the required OSV security gate no
+  longer reports the five known vulnerabilities present in the prior lockfile.
 - Fixed legacy Docker-image cleanup previews that permanently returned zero.
   Reviewed fixed workers can adopt only exact legacy identities whose rollback
   references are fully accounted for; unknown production application images
