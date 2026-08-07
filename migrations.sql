@@ -3086,3 +3086,44 @@ END $$;
 INSERT INTO public.schema_migrations(version,description) VALUES
  ('2026080501_read_only_backup_catalog','Persist immutable worker-validated rollback-backup catalog snapshots while keeping destructive retention disabled.')
 ON CONFLICT(version) DO NOTHING;
+
+-- Phase 2A records plate-anchored camera-plane motion independently from the
+-- displayed ReID direction. It is shadow evidence only: reads, notifications,
+-- confirmation navigation, and vehicle-view selection do not join this table.
+-- Monochrome night captures are retained as explicit Unknown observations so
+-- they cannot be mistaken for a successful clip-direction classification.
+CREATE TABLE IF NOT EXISTS public.vehicle_motion_direction_observations (
+ read_id INTEGER PRIMARY KEY REFERENCES public.plate_reads(id) ON DELETE CASCADE,
+ camera_key VARCHAR(100) NOT NULL,
+ algorithm_version VARCHAR(80) NOT NULL,
+ capture_mode VARCHAR(30) NOT NULL
+  CHECK(capture_mode IN ('day_color','night_monochrome','unknown')),
+ status VARCHAR(20) NOT NULL CHECK(status IN ('ready','unknown','failed')),
+ image_direction VARCHAR(20) NOT NULL
+  CHECK(image_direction IN ('left','right','up','down','unknown')),
+ confidence REAL CHECK(confidence BETWEEN 0 AND 1),
+ tracker VARCHAR(80) NOT NULL,
+ sampled_count INTEGER NOT NULL CHECK(sampled_count>=0),
+ tracked_count INTEGER NOT NULL CHECK(tracked_count>=0 AND tracked_count<=sampled_count),
+ motion_vector JSONB NOT NULL DEFAULT '{}'::jsonb CHECK(jsonb_typeof(motion_vector)='object'),
+ diagnostics JSONB NOT NULL DEFAULT '{}'::jsonb CHECK(jsonb_typeof(diagnostics)='object'),
+ error_code VARCHAR(80),
+ fallback_direction_label VARCHAR(80),
+ fallback_direction_confidence REAL CHECK(fallback_direction_confidence BETWEEN 0 AND 1),
+ evaluated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+ CONSTRAINT vehicle_motion_direction_observation_state CHECK(
+  (status='ready' AND capture_mode='day_color' AND image_direction<>'unknown'
+   AND confidence IS NOT NULL AND error_code IS NULL)
+  OR
+  (status<>'ready' AND image_direction='unknown' AND error_code IS NOT NULL)
+ )
+);
+
+CREATE INDEX IF NOT EXISTS idx_vehicle_motion_direction_shadow_review
+ ON public.vehicle_motion_direction_observations(camera_key,capture_mode,status,evaluated_at DESC);
+CREATE INDEX IF NOT EXISTS idx_vehicle_motion_direction_shadow_recent
+ ON public.vehicle_motion_direction_observations(evaluated_at DESC,read_id DESC);
+
+INSERT INTO public.schema_migrations(version,description) VALUES
+ ('2026080701_vehicle_motion_direction_shadow','Add fail-closed daytime plate-anchored clip-motion direction shadow observations; night remains explicitly disabled.')
+ON CONFLICT(version) DO NOTHING;
