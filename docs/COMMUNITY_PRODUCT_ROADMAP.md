@@ -354,9 +354,12 @@ and verified a 59.2 MB custom-format backup with `Error: None`. Phase 3 staging
 acceptance is complete. The separately approved production worker installation,
 activation, and application recreate then completed successfully. One August 2
 production request verified the 64,806,352-byte custom-format backup
-`alpr-postgres-20260802T164636Z-1.dump`. Backup catalog integration, in-app
-restore, and automatic scheduling are intentionally deferred for this
-single-owner deployment; restore remains an external recovery procedure.
+`alpr-postgres-20260802T164636Z-1.dump`. Read-only backup catalog integration is
+now under local development: the application models immutable, path-free worker
+snapshots and redacted retention previews while hard-disabling rollback-backup
+execution and scheduling. Catalog-bound expiring approval, destructive
+retention, in-app restore, and automatic backup scheduling remain deferred;
+restore remains an external recovery procedure.
 
 Settings also includes a read-only Release view for the application version,
 build- or deployment-provided Git SHA, release channel, and local release
