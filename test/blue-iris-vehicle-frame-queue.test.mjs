@@ -264,7 +264,7 @@ test("motion direction shadow evidence is stored separately from displayed direc
     },
   });
   await repository.saveMotionDirectionObservation(92, {
-    algorithmVersion: "plate-anchored-motion-v1-shadow",
+    algorithmVersion: "plate-anchored-motion-v2-shadow",
     captureMode: "day_color",
     status: "ready",
     imageDirection: "left",
@@ -280,7 +280,7 @@ test("motion direction shadow evidence is stored separately from displayed direc
   assert.match(statement, /LEFT JOIN public\.vehicle_direction_observations fallback/);
   assert.doesNotMatch(statement, /UPDATE public\.vehicle_direction_observations/);
   assert.equal(parameters[0], 92);
-  assert.equal(parameters[1], "plate-anchored-motion-v1-shadow");
+  assert.equal(parameters[1], "plate-anchored-motion-v2-shadow");
   assert.deepEqual(JSON.parse(parameters[9]), { deltaX: -0.2, deltaY: 0.01 });
 });
 

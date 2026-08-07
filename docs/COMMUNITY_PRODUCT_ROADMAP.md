@@ -20,17 +20,11 @@ reliable background processing.
 
 ## Release baseline — August 7, 2026
 
-- Application `0.1.16` includes named users and roles, evidence-preserving plate
+- Application `0.1.17` includes named users and roles, evidence-preserving plate
   review, filter-respecting exports, the searchable help center, local privacy
   controls, and viewport-safe date/help navigation. Monitored Plates now lives
   inside Known Plates with reason, priority, monitoring-since, and read-history
   context; the former `/flagged` route redirects to that view.
-- Recognition Feed navigation performance is now a delivered baseline. Live
-  updates have one controller, polling pauses while the image popup is open,
-  review state is applied locally until close, adjacent pages are prefetched,
-  image dimensions reuse the displayed request, and a bounded browser buffer
-  measures feed refresh, review action, same-page or cross-page navigation,
-  camera, image view, and final image-load timing without server telemetry.
 - Unified notifications now include migration preview, idempotent disabled
   copies, restricted disabled-rule editing, no-delivery simulation, shadow
   comparison, administrator approval evidence, atomic per-rule cutover, and
@@ -102,7 +96,11 @@ reliable background processing.
   direction only as comparison evidence when available. Processing shows
   aggregate outcomes plus the 20 newest observations for bounded production
   review. Monochrome night reads explicitly remain Unknown with night direction
-  disabled.
+  disabled. Phase 2A.1 corrects the LPR anchor handoff by scaling stored plate
+  coordinates from the original capture into the Blue Iris timeline resolution.
+  If the exact-time frame is unavailable, one unambiguous Street LPR sample
+  within 750 milliseconds may anchor the track; competing plausible vehicles
+  remain Unknown. Street Overview is never used as a plate anchor.
   Settings > Vehicle Setup now separates Cameras, Vehicle Views, Processing,
   and Calibration into clean route-backed pages. Camera-specific vehicle-view
   and re-evaluation controls include their own selectors and name the selected
@@ -478,9 +476,12 @@ notes. Updates remain externally orchestrated.
   lets authorized reviewers explicitly retry an individual failed or
   unavailable vehicle view.
 - Phase 2A daytime clip-motion shadow implemented: the existing bounded sample
-  pass reuses the plate-time detection as the target anchor and measures its
-  detector/ReID-assisted track centers over time. Direction comes from the
-  observed trajectory rather than from single-frame front/rear orientation.
+  pass scales the stored Street LPR plate geometry into the Blue Iris timeline
+  resolution, reuses the plate-time detection as the target anchor, and measures
+  its detector/ReID-assisted track centers over time. When the exact-time frame
+  is unavailable, one unambiguous LPR sample within 750 milliseconds can supply
+  the anchor; competing plausible vehicles remain Unknown. Direction comes from
+  the observed trajectory rather than from single-frame front/rear orientation.
   Inconsistent, stationary, unanchored, or low-confidence tracks remain
   Unknown. Results persist in a dedicated table with versioned diagnostics and
   are summarized read-only under Vehicle Setup > Processing; nothing joins
@@ -505,7 +506,8 @@ notes. Updates remain externally orchestrated.
   remain disabled.
 Street LPR 1 and Street Overview are now installed. Street Overview supplies
 strong daytime vehicle images, but is monochrome at night and must not provide
-vehicle color at night. Before promoting Phase 2A, collect a representative
+vehicle color at night. It is not expected to read a plate and must never be
+used as the LPR plate anchor. Before promoting Phase 2A, collect a representative
 daytime Street LPR 1/2 shadow sample, review multi-vehicle cases, and calibrate
 each camera's image-plane motion to its configured semantic direction labels.
 Keep the existing ReID direction as the live result and fallback until that
