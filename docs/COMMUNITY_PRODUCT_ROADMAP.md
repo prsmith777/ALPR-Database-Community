@@ -18,13 +18,19 @@ reliable background processing.
 6. Audit sensitive searches, exports, corrections, rule changes, and
    destructive maintenance.
 
-## Release baseline — August 4, 2026
+## Release baseline — August 7, 2026
 
 - Application `0.1.15` includes named users and roles, evidence-preserving plate
   review, filter-respecting exports, the searchable help center, local privacy
   controls, and viewport-safe date/help navigation. Monitored Plates now lives
   inside Known Plates with reason, priority, monitoring-since, and read-history
   context; the former `/flagged` route redirects to that view.
+- Recognition Feed navigation performance is now a delivered baseline. Live
+  updates have one controller, polling pauses while the image popup is open,
+  review state is applied locally until close, adjacent pages are prefetched,
+  image dimensions reuse the displayed request, and a bounded browser buffer
+  measures feed refresh, review action, same-page or cross-page navigation,
+  camera, image view, and final image-load timing without server telemetry.
 - Unified notifications now include migration preview, idempotent disabled
   copies, restricted disabled-rule editing, no-delivery simulation, shadow
   comparison, administrator approval evidence, atomic per-rule cutover, and

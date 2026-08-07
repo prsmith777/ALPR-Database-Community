@@ -30,8 +30,9 @@ test("live feed plate identities open exact matching read history", async () => 
 });
 
 test("live feed image review advances visibly and starts focused on the plate", async () => {
-  const [plateTable, imageViewer] = await Promise.all([
+  const [plateTable, plateTableWrapper, imageViewer] = await Promise.all([
     source("components/PlateTable.jsx"),
+    source("components/PlateTableWrapper.jsx"),
     source("components/ImageViewer.jsx"),
   ]);
 
@@ -57,14 +58,31 @@ test("live feed image review advances visibly and starts focused on the plate", 
   const operationCheck = plateTable.indexOf("isConfirmNextOperationCurrent", confirmationAwait);
   assert.ok(operationStart >= 0 && operationStart < confirmationAwait && confirmationAwait < operationCheck);
   assert.match(plateTable, /selectedReadId: selectedImageIdRef\.current/);
-  assert.match(plateTable, /cancelConfirmNextFlow\(\);\s*selectedImageIdRef\.current = null;\s*setIsImageFullscreen/);
+  assert.match(plateTable, /cancelConfirmNextFlow\(\);\s*selectedImageIdRef\.current = null;[\s\S]*?setIsImageFullscreen/);
   assert.match(plateTable, /findNextUnconfirmedReadIndex/);
   assert.match(plateTable, /const nextRead = nextUnconfirmedIndex >= 0 \? data\[nextUnconfirmedIndex\] : null/);
   assert.match(plateTable, /phase: "scan"[\s\S]*?onViewerPageChange\("next"\)/);
   assert.match(plateTable, /resolveUnconfirmedPageTransition/);
   assert.match(plateTable, /selectedImage\.validated !== true/);
   assert.match(plateTable, /CONFIRM_NEXT_SCAN_TIMEOUT_MS = 15000/);
-  assert.match(plateTable, /pendingUnconfirmedNavigation === null &&\s*confirmNextOperation === null/);
+  assert.doesNotMatch(plateTable, /setInterval\(\(\) => \{\s*router\.refresh\(\)/);
+  assert.match(plateTable, /checked=\{isLive\}[\s\S]*?onCheckedChange=\{onLiveChange\}/);
+  assert.match(plateTableWrapper, /LIVE_REFRESH_INTERVAL_MS = 5_000/);
+  assert.match(plateTableWrapper, /if \(!isLiveModeActive \|\| isViewerOpen\) return undefined/);
+  assert.match(plateTableWrapper, /requestLiveRefresh\("live_poll"\)/);
+  assert.match(plateTableWrapper, /refreshAfterViewerCloseRef\.current = true/);
+  assert.match(plateTableWrapper, /setReviewOverrides/);
+  assert.match(plateTableWrapper, /reviewStatusFilters\.includes/);
+  assert.match(plateTableWrapper, /dataRevision: serverDataRevision/);
+  assert.match(plateTable, /originDataRevision: pagination\.dataRevision/);
+  assert.match(plateTable, /onViewerDataRefresh\(\)/);
+  assert.doesNotMatch(
+    plateTableWrapper.slice(
+      plateTableWrapper.indexOf("const handleValidatePlate"),
+      plateTableWrapper.indexOf("const handlePreviewCorrection")
+    ),
+    /router\.refresh\(\)/
+  );
   assert.match(plateTable, /useEffect\(\(\) => \(\) => \{[\s\S]*?activeConfirmNextOperationRef\.current = null;[\s\S]*?selectedImageIdRef\.current = null;[\s\S]*?\}, \[\]\)/);
   assert.match(plateTable, /disabled=\{pendingViewerNavigation !== null \|\| confirmNextBusy\}/);
   assert.match(plateTable, /<span className=\{POPUP_ACTION_LABEL_CLASS\}>Confirm and Next<\/span>/);
@@ -160,6 +178,11 @@ test("live feed image review advances visibly and starts focused on the plate", 
   assert.match(imageViewer, /const midpoint = \(1 \+ getSliderMax\(\)\) \/ 2/);
   assert.match(imageViewer, /Math\.round\(midpoint \* 10\) \/ 10/);
   assert.match(imageViewer, /new ResizeObserver\(updateContainerSize\)/);
+  assert.doesNotMatch(imageViewer, /const img = new Image\(\)/);
+  assert.match(imageViewer, /onLoad=\{handleImageLoad\}/);
+  assert.match(plateTable, /onImageLoad=\{handleViewerImageLoad\}/);
+  assert.match(plateTable, /metric: "viewer_navigation"/);
+  assert.match(plateTable, /metric: "review_action"/);
   assert.match(imageViewer, /const fitScale = Math\.min\(/);
   assert.match(imageViewer, /const focusX = offsetX \+/);
   assert.match(imageViewer, /containerSize\.width \/ 2 - focusX \* zoom \+ pan\.x/);
@@ -321,7 +344,8 @@ test("live feed direction is visible, correctable, and filterable by semantic ca
   assert.match(table, /ariaLabel="Filter by direction"/);
   assert.match(table, /<DirectionBadge plate=\{plate\}/);
   assert.match(table, /direction_profile_configured[\s\S]*?"Pending"/);
-  assert.match(wrapper, /setInterval\(\(\) => router\.refresh\(\), 10_000\)/);
+  assert.match(wrapper, /requestLiveRefresh\("live_poll"\)/);
+  assert.match(wrapper, /if \(!isLiveModeActive \|\| isViewerOpen\) return undefined/);
   assert.match(table, /label="Direction"[\s\S]*?field="direction"/);
   assert.match(table, /aria-label="Review vehicle direction"/);
   assert.match(table, /className="h-4 w-4 shrink-0 p-0 text-muted-foreground hover:text-foreground"/);
