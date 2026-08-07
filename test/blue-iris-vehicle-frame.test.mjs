@@ -4,6 +4,7 @@ import sharp from "sharp";
 
 import {
   analyzeVehicleFrameQuality,
+  attachStoredPlateAnchor,
   BlueIrisVehicleFrameService,
   VEHICLE_FRAME_DEEP_EXTENSION_OFFSETS_MS,
   VEHICLE_FRAME_EXTENSION_OFFSETS_MS,
@@ -13,6 +14,7 @@ import {
   scoreVehicleFrame,
   selectGuardedVehicleFrame,
   selectBestTrackedVehicleFrame,
+  VEHICLE_MOTION_ANCHOR_MAX_OFFSET_MS,
 } from "../lib/blue-iris-vehicle-frame.mjs";
 import { BlueIrisError } from "../lib/blue-iris.mjs";
 
@@ -135,6 +137,153 @@ test("plate anchoring and ReID tracking reject a larger unrelated vehicle", () =
   assert.equal(result.best.offsetMs, tracked.offsetMs);
   assert.equal(result.best.score, tracked.score);
   assert.equal(result.trackedCount, 2);
+});
+
+test("stored plate geometry is scaled before anchoring a Blue Iris timeline frame", () => {
+  const [anchored] = attachStoredPlateAnchor([{
+    offsetMs: 0,
+    width: 1280,
+    height: 720,
+    detection: {
+      left: 0.43,
+      top: 0.4,
+      right: 0.75,
+      bottom: 0.8,
+      containsPlate: false,
+      selectionScore: 0.9,
+    },
+  }], {
+    plateBox: [1_000, 800, 1_100, 900],
+    plateImageWidth: 2_560,
+    plateImageHeight: 1_440,
+  });
+  assert.equal(VEHICLE_MOTION_ANCHOR_MAX_OFFSET_MS, 750);
+  assert.equal(anchored.motionAnchor, true);
+  assert.equal(anchored.motionAnchorSource, "scaled_stored_plate_proximity");
+  assert.ok(anchored.motionAnchorDistance < 0.03);
+});
+
+test("stored plate proximity remains unanchored when two vehicles are similarly plausible", () => {
+  const candidates = [
+    { left: 0.37, right: 0.57 },
+    { left: 0.39, right: 0.59 },
+  ].map((horizontal, frameRank) => ({
+    offsetMs: 0,
+    frameRank,
+    width: 1_280,
+    height: 720,
+    detection: {
+      ...horizontal,
+      top: 0.4,
+      bottom: 0.8,
+      containsPlate: false,
+      selectionScore: 0.9 - frameRank * 0.01,
+    },
+  }));
+  const result = attachStoredPlateAnchor(candidates, {
+    plateBox: [1_000, 800, 1_100, 900],
+    plateImageWidth: 2_560,
+    plateImageHeight: 1_440,
+  });
+  assert.equal(result.some((candidate) => candidate.motionAnchor === true), false);
+});
+
+test("a nearby motion anchor does not change the existing vehicle-view selection track", () => {
+  const scoreBreakdown = { score: 0.8, completenessTier: 2 };
+  const exactFrame = {
+    offsetMs: 0,
+    frameRank: 0,
+    primarySample: true,
+    detection: {
+      confidence: 0.85,
+      area: 0.2,
+      left: 0.4,
+      top: 0.3,
+      right: 0.7,
+      bottom: 0.8,
+      containsPlate: false,
+      selectionScore: 0.8,
+    },
+    quality: { sharpnessScore: 0.8, exposureScore: 0.8, contrastScore: 0.8 },
+    baselineScore: 0.8,
+    score: 0.8,
+    scoreBreakdown,
+  };
+  const nearbyMotionAnchor = {
+    ...exactFrame,
+    offsetMs: -500,
+    primarySample: false,
+    motionAnchor: true,
+    motionAnchorSource: "scaled_stored_plate_proximity",
+  };
+  const result = selectBestTrackedVehicleFrame([exactFrame, nearbyMotionAnchor]);
+  assert.equal(result.anchor.offsetMs, 0);
+  assert.equal(result.motionAnchor.offsetMs, -500);
+  assert.equal(result.track[0].offsetMs, 0);
+  assert.equal(result.motionTrack[0].offsetMs, -500);
+});
+
+test("nearby LPR sampling supplies a conservative anchor when the exact frame is unavailable", async () => {
+  const base = Date.parse("2026-08-07T23:20:10Z");
+  let motionRequest = null;
+  const service = new BlueIrisVehicleFrameService({
+    client: {
+      async fetchTimelineJpeg({ timestamp }) {
+        const offset = new Date(timestamp).getTime() - base;
+        if (offset === 0) throw new BlueIrisError("RECORDING_UNAVAILABLE", "Exact frame unavailable.");
+        return { buffer: Buffer.from(String(offset)), timestamp: new Date(timestamp).toISOString() };
+      },
+    },
+    repository: {},
+    fileStorage: {},
+    detector: {
+      async detect(buffer) {
+        const offset = Number(buffer.toString());
+        const left = offset === -500 ? 0.38 : 0.52 + offset / 20_000;
+        return {
+          confidence: 0.86,
+          area: 0.16,
+          left,
+          top: 0.35,
+          right: left + 0.32,
+          bottom: 0.78,
+          containsPlate: false,
+          selectionScore: 0.9,
+        };
+      },
+    },
+    imageProcessor: (buffer) => ({
+      buffer,
+      rotate() { return this; },
+      jpeg() { return this; },
+      async toBuffer() { return this.buffer; },
+      async metadata() { return { width: 1_280, height: 720 }; },
+      async stats() { return { entropy: 3, channels: [{ stdev: 20 }, { stdev: 20 }, { stdev: 20 }] }; },
+    }),
+    qualityAnalyzer: async () => ({ sharpnessScore: 0.8, exposureScore: 0.8, contrastScore: 0.8 }),
+    motionAnalyzer: async (request) => {
+      motionRequest = request;
+      return { status: "unknown", errorCode: "TEST_OBSERVATION" };
+    },
+    sampleOffsetsMs: [-500, 0, 500, 1_000, 1_500],
+    extensionOffsetsMs: [],
+    deepExtensionOffsetsMs: [],
+  });
+
+  const result = await service.selectBestFrame({
+    camera: "Cam146",
+    timestamp: new Date(base),
+    plateBox: [1_000, 800, 1_100, 900],
+    plateImageWidth: 2_560,
+    plateImageHeight: 1_440,
+  });
+  assert.equal(result.anchorOffsetMs, -500);
+  assert.equal(motionRequest.anchorOffsetMs, -500);
+  assert.equal(motionRequest.anchorSource, "scaled_stored_plate_proximity");
+  assert.ok(motionRequest.track.some((candidate) => (
+    candidate.offsetMs === -500 && candidate.motionAnchor === true
+  )));
+  assert.equal(motionRequest.frames.some((frame) => frame.offsetMs === 0), false);
 });
 
 test("a weak primary selection expands the timeline and selects a complete later view", async () => {
@@ -283,6 +432,9 @@ test("bounded selection retains only the highest-scoring vehicle frame", async (
 test("successful processing saves one frame before replacing the prior derived image", async () => {
   const operations = [];
   let selectionRequest = null;
+  const sourceImage = await sharp({
+    create: { width: 2_560, height: 1_440, channels: 3, background: { r: 20, g: 20, b: 20 } },
+  }).jpeg().toBuffer();
   const service = new BlueIrisVehicleFrameService({
     client: {},
     repository: {
@@ -292,6 +444,7 @@ test("successful processing saves one frame before replacing the prior derived i
           plate_number: "ERGW43",
           camera_name: "Street LPR 2",
           timestamp: "2026-07-22T17:46:50.000Z",
+          image_path: "images/source.jpg",
           crop_coordinates: [700, 360, 780, 410],
           vehicle_image_path: "derived/old.jpg",
         };
@@ -302,6 +455,10 @@ test("successful processing saves one frame before replacing the prior derived i
       async markFailed() { assert.fail("successful processing must not mark the read failed"); },
     },
     fileStorage: {
+      async getImage(imagePath) {
+        assert.equal(imagePath, "images/source.jpg");
+        return sourceImage;
+      },
       async saveDerivedImage(framePath) { operations.push(["save", framePath]); },
       async deleteImage(framePath) { operations.push(["delete", framePath]); },
     },
@@ -349,9 +506,11 @@ test("successful processing saves one frame before replacing the prior derived i
   assert.equal(result.status, "ready");
   assert.equal(result.sampledCount, 8);
   assert.deepEqual(selectionRequest.plateBox, [700, 360, 780, 410]);
+  assert.equal(selectionRequest.plateImageWidth, 2_560);
+  assert.equal(selectionRequest.plateImageHeight, 1_440);
   assert.deepEqual(operations.map((operation) => operation[0]), ["pending", "save", "ready", "delete", "motion"]);
   assert.equal(operations.find((operation) => operation[0] === "delete")[1], "derived/old.jpg");
-  assert.equal(operations.at(-1)[2].algorithmVersion, "plate-anchored-motion-v1-shadow");
+  assert.equal(operations.at(-1)[2].algorithmVersion, "plate-anchored-motion-v2-shadow");
   assert.equal(result.motionShadow.status, "ready");
 });
 
