@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- Added Phase 2A plate-anchored daytime clip-motion direction as an isolated
+  shadow observation. It reuses the existing bounded Blue Iris timeline pass,
+  records versioned trajectory/confidence/failure diagnostics and current ReID
+  output only for comparison, and exposes aggregate status under Vehicle Setup
+  > Processing. Monochrome night reads explicitly remain Unknown. No shadow
+  result changes displayed direction, notifications, vehicle-view selection,
+  or read-review navigation.
 - Added configurable storage warning/critical thresholds, exact source,
   thumbnail, derived-image, database, Docker, and backup breakdowns, durable
   maintenance run/heartbeat/failure reporting, rate-limited SMTP and signed
