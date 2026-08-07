@@ -38,6 +38,7 @@ const ImageViewer = ({
   defaultZoom = null,
   zoomLabel = "Zoom to Plate",
   onFullscreenChange = null,
+  onImageLoad = null,
 }) => {
   const [zoom, setZoom] = useState(1);
   const [pan, setPan] = useState({ x: 0, y: 0 });
@@ -170,16 +171,21 @@ const ImageViewer = ({
 
   useEffect(() => {
     setImageSize(null);
-    let active = true;
-    const img = new Image();
-    img.onload = () => {
-      if (active) setImageSize({ url: image.url, width: img.width, height: img.height });
-    };
-    img.src = image.url;
-    return () => {
-      active = false;
-    };
   }, [image.url]);
+
+  const handleImageLoad = useCallback((event) => {
+    const element = event.currentTarget;
+    const width = Number(element.naturalWidth || element.width);
+    const height = Number(element.naturalHeight || element.height);
+    if (width > 0 && height > 0) {
+      setImageSize({ url: image.url, width, height });
+    }
+    onImageLoad?.({
+      url: image.url,
+      width: width > 0 ? width : null,
+      height: height > 0 ? height : null,
+    });
+  }, [image.url, onImageLoad]);
 
   useEffect(() => {
     const needsFocusMeasurements = defaultZoom === null && Boolean(
@@ -423,6 +429,7 @@ const ImageViewer = ({
             className="object-contain"
             draggable={false}
             unoptimized
+            onLoad={handleImageLoad}
           />
         </div>
       </div>

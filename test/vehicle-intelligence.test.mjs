@@ -142,7 +142,9 @@ test("live-feed refreshes do not reset a user's vehicle zoom", async () => {
   assert.match(viewer, /const initializedViewRef = useRef\(null\)/);
   assert.match(viewer, /initializedViewRef\.current === viewResetKey/);
   assert.match(viewer, /initializedViewRef\.current = viewResetKey;[\s\S]*?setZoom\(clampZoom\(initialZoom\)\)/);
-  assert.match(viewer, /setImageSize\(\{ url: image\.url, width: img\.width, height: img\.height \}\)/);
+  assert.match(viewer, /const width = Number\(element\.naturalWidth \|\| element\.width\)/);
+  assert.match(viewer, /setImageSize\(\{ url: image\.url, width, height \}\)/);
+  assert.doesNotMatch(viewer, /const img = new Image\(\)/);
 });
 
 test("local vehicle type inference preserves confidence and model provenance", async () => {

@@ -13,6 +13,10 @@ import {
 } from "@/lib/table-page-size-preference.mjs";
 import { scrollMainToTop } from "@/lib/page-scroll.mjs";
 import {
+  elapsedMilliseconds,
+  recordLiveFeedPerformance,
+} from "@/lib/live-feed-performance.mjs";
+import {
   addKnownPlate,
   correctPlateRead,
   deletePlateRead,
@@ -24,6 +28,9 @@ import {
   untagPlate,
   validatePlateRecord,
 } from "@/app/actions";
+
+const LIVE_REFRESH_INTERVAL_MS = 5_000;
+const LIVE_REFRESH_TIMEOUT_MS = 15_000;
 
 export default function PlateTableWrapper({
   data, // Initial data from server component (props from page.jsx)
@@ -49,10 +56,38 @@ export default function PlateTableWrapper({
   const [liveData, setLiveData] = useState(data);
   const [liveTotal, setLiveTotal] = useState(total);
   const [directionOverrides, setDirectionOverrides] = useState({});
+  const [reviewOverrides, setReviewOverrides] = useState({});
+  const [isViewerOpen, setIsViewerOpen] = useState(false);
+  const [serverDataRevision, setServerDataRevision] = useState(0);
 
   // State to control if live updates are active (toggled by user)
   const [isLiveModeActive, setIsLiveModeActive] = useState(true);
   const eventSourceRef = useRef(null); // Ref to hold the EventSource instance
+  const refreshTimingRef = useRef(null);
+  const refreshAfterViewerCloseRef = useRef(false);
+  const viewerWasOpenRef = useRef(false);
+
+  const requestLiveRefresh = useCallback((reason) => {
+    const startedAt = performance.now();
+    const active = refreshTimingRef.current;
+    if (active && startedAt - active.startedAt < LIVE_REFRESH_TIMEOUT_MS) {
+      return false;
+    }
+    if (active) {
+      recordLiveFeedPerformance({
+        metric: "feed_refresh",
+        operation: active.reason,
+        durationMs: elapsedMilliseconds(active.startedAt, startedAt),
+        outcome: "timed_out",
+      });
+    }
+    refreshTimingRef.current = {
+      reason,
+      startedAt,
+    };
+    router.refresh();
+    return true;
+  }, [router]);
 
   // Derived state to check if any filters are active
   const hasActiveFilters = useCallback(() => {
@@ -75,16 +110,31 @@ export default function PlateTableWrapper({
   useEffect(() => {
     setLiveData(data);
     setLiveTotal(total);
+    setServerDataRevision((current) => current + 1);
+    const timing = refreshTimingRef.current;
+    if (timing) {
+      recordLiveFeedPerformance({
+        metric: "feed_refresh",
+        operation: timing.reason,
+        durationMs: elapsedMilliseconds(timing.startedAt, performance.now()),
+        rowCount: data.length,
+        total,
+      });
+      refreshTimingRef.current = null;
+    }
   }, [data, total]);
 
   // The background visual-intelligence worker can update direction after the
   // plate row first appears. Refresh while live updates are enabled so Pending
   // becomes an assigned direction (or a genuine Unknown) without user action.
   useEffect(() => {
-    if (!isLiveModeActive) return undefined;
-    const timer = window.setInterval(() => router.refresh(), 10_000);
+    if (!isLiveModeActive || isViewerOpen) return undefined;
+    const timer = window.setInterval(
+      () => requestLiveRefresh("live_poll"),
+      LIVE_REFRESH_INTERVAL_MS
+    );
     return () => window.clearInterval(timer);
-  }, [isLiveModeActive, router]);
+  }, [isLiveModeActive, isViewerOpen, requestLiveRefresh]);
 
   useEffect(() => {
     setDirectionOverrides((current) => {
@@ -98,6 +148,27 @@ export default function PlateTableWrapper({
           plate.vehicle_orientation === override.vehicle_orientation &&
           plate.orientation_confidence === override.orientation_confidence &&
           plate.direction_label === override.direction_label
+        ) {
+          delete next[plate.id];
+          changed = true;
+        }
+      });
+      return changed ? next : current;
+    });
+  }, [data]);
+
+  useEffect(() => {
+    setReviewOverrides((current) => {
+      let changed = false;
+      const next = { ...current };
+      data.forEach((plate) => {
+        const override = current[plate.id];
+        if (!override) return;
+        if (
+          plate.validated === override.validated &&
+          plate.review_status === override.review_status &&
+          Number(plate.review_revision || 0) >= Number(override.review_revision || 0) &&
+          plate.plate_number === override.plate_number
         ) {
           delete next[plate.id];
           changed = true;
@@ -223,6 +294,19 @@ export default function PlateTableWrapper({
   );
 
   useEffect(() => {
+    const currentPage = parseInt(params.get("page") || "1");
+    const pageSize = parseInt(params.get("pageSize") || "25");
+    const adjacentPages = [];
+    if (currentPage > 1) adjacentPages.push(currentPage - 1);
+    if (currentPage * pageSize < total) adjacentPages.push(currentPage + 1);
+    adjacentPages.forEach((page) => {
+      router.prefetch(
+        `${pathname}?${createQueryString({ page: page.toString() })}`
+      );
+    });
+  }, [createQueryString, params, pathname, router, total]);
+
+  useEffect(() => {
     const updates = {};
     if (!params.get("matchMode")) {
       updates.matchMode = preferredMatchMode;
@@ -284,10 +368,9 @@ export default function PlateTableWrapper({
     [createQueryString, params, pathname, router, total]
   );
 
-  // Action handlers that trigger server-side changes and should revalidate data.
-  // These *must* call `router.refresh()` to ensure the server's cache is invalidated
-  // and the page.jsx re-fetches its data, which then updates the `data` prop
-  // in PlateTableWrapper.
+  // Most mutations refresh immediately. Plate confirmation is the exception:
+  // it applies a local review override and defers the server refresh until the
+  // viewer closes so Confirm and Next never races a full feed request.
   const handleAddTag = async (plateNumber, tagName) => {
     const formData = new FormData();
     formData.append("plateNumber", plateNumber);
@@ -343,10 +426,44 @@ export default function PlateTableWrapper({
   const handleValidatePlate = async (id, value) => {
     const result = await validatePlateRecord(id, value);
     if (result.success) {
-      router.refresh();
+      setReviewOverrides((current) => ({
+        ...current,
+        [id]: {
+          validated: value,
+          review_status:
+            result.data?.reviewStatus || (value ? "confirmed" : "unreviewed"),
+          review_revision: Number(result.data?.reviewRevision || 0),
+          plate_number: result.data?.effectivePlate,
+        },
+      }));
+      if (isViewerOpen) {
+        refreshAfterViewerCloseRef.current = true;
+      } else {
+        requestLiveRefresh("review_action");
+      }
     }
     return result;
   };
+
+  const handleViewerOpenChange = useCallback((open) => {
+    const nextOpen = open === true;
+    const wasOpen = viewerWasOpenRef.current;
+    viewerWasOpenRef.current = nextOpen;
+    setIsViewerOpen(nextOpen);
+    if (
+      wasOpen &&
+      !nextOpen &&
+      (refreshAfterViewerCloseRef.current || isLiveModeActive)
+    ) {
+      refreshAfterViewerCloseRef.current = false;
+      requestLiveRefresh("viewer_close");
+    }
+  }, [isLiveModeActive, requestLiveRefresh]);
+
+  const handleViewerDataRefresh = useCallback(() => {
+    refreshAfterViewerCloseRef.current = false;
+    requestLiveRefresh("confirm_next_filtered_boundary");
+  }, [requestLiveRefresh]);
 
   const handlePreviewCorrection = async (formData) => {
     return await previewPlateCorrection(formData);
@@ -407,13 +524,23 @@ export default function PlateTableWrapper({
   // Determine which data to pass to PlateTable
   const baseDataToDisplay =
     hasActiveFilters() || !isLiveModeActive ? data : liveData;
-  const dataToDisplay = baseDataToDisplay.map((plate) =>
-    directionOverrides[plate.id]
-      ? { ...plate, ...directionOverrides[plate.id] }
-      : plate
-  );
-  const totalToDisplay =
+  const dataWithOverrides = baseDataToDisplay.map((plate) => ({
+    ...plate,
+    ...(directionOverrides[plate.id] || {}),
+    ...(reviewOverrides[plate.id] || {}),
+  }));
+  const reviewStatusFilters = params.getAll("reviewStatus").filter(Boolean);
+  const dataToDisplay = reviewStatusFilters.length > 0
+    ? dataWithOverrides.filter((plate) => reviewStatusFilters.includes(
+        plate.review_status || (plate.validated ? "confirmed" : "unreviewed")
+      ))
+    : dataWithOverrides;
+  const baseTotalToDisplay =
     hasActiveFilters() || !isLiveModeActive ? total : liveTotal;
+  const totalToDisplay = Math.max(
+    0,
+    baseTotalToDisplay - (dataWithOverrides.length - dataToDisplay.length)
+  );
 
   return (
     <PlateTable
@@ -428,10 +555,12 @@ export default function PlateTableWrapper({
         page: parseInt(params.get("page") || "1"),
         pageSize: parseInt(params.get("pageSize") || "25"),
         total: totalToDisplay,
+        dataRevision: serverDataRevision,
         onNextPage: () => handlePageChange("next"),
         onPreviousPage: () => handlePageChange("prev"),
         onViewerPageChange: (direction) =>
           handlePageChange(direction, { scrollToTop: false }),
+        onViewerDataRefresh: handleViewerDataRefresh,
       }}
       filters={{
         search: params.get("search") || "",
@@ -471,6 +600,7 @@ export default function PlateTableWrapper({
       onReverseReview={handleReverseReview}
       onReviewDirection={handleReviewDirection}
       onValidate={handleValidatePlate}
+      onViewerOpenChange={handleViewerOpenChange}
       isLive={isLiveModeActive} // Pass the live mode state
       onLiveChange={setIsLiveModeActive} // Pass the setter for live mode
       loading={false} // Loading state is now more complex. For simplicity, we'll keep it false here.
