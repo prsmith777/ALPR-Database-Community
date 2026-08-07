@@ -298,6 +298,7 @@ test("successful processing saves one frame before replacing the prior derived i
       },
       async markPending(id) { operations.push(["pending", id]); },
       async markReady(id, frame) { operations.push(["ready", id, frame.framePath]); },
+      async saveMotionDirectionObservation(id, observation) { operations.push(["motion", id, observation]); },
       async markFailed() { assert.fail("successful processing must not mark the read failed"); },
     },
     fileStorage: {
@@ -324,6 +325,18 @@ test("successful processing saves one frame before replacing the prior derived i
       trackedCount: 5,
       anchorOffsetMs: 0,
       expandedSampling: false,
+      motionObservation: {
+        status: "ready",
+        captureMode: "day_color",
+        imageDirection: "right",
+        confidence: 0.86,
+        tracker: "plate_anchored_vehicle_detection",
+        sampleCount: 8,
+        trackedCount: 5,
+        vector: { deltaX: 0.2, deltaY: 0.01 },
+        diagnostics: {},
+        errorCode: null,
+      },
     };
   };
 
@@ -336,8 +349,10 @@ test("successful processing saves one frame before replacing the prior derived i
   assert.equal(result.status, "ready");
   assert.equal(result.sampledCount, 8);
   assert.deepEqual(selectionRequest.plateBox, [700, 360, 780, 410]);
-  assert.deepEqual(operations.map((operation) => operation[0]), ["pending", "save", "ready", "delete"]);
-  assert.equal(operations.at(-1)[1], "derived/old.jpg");
+  assert.deepEqual(operations.map((operation) => operation[0]), ["pending", "save", "ready", "delete", "motion"]);
+  assert.equal(operations.find((operation) => operation[0] === "delete")[1], "derived/old.jpg");
+  assert.equal(operations.at(-1)[2].algorithmVersion, "plate-anchored-motion-v1-shadow");
+  assert.equal(result.motionShadow.status, "ready");
 });
 
 test("expired recording becomes terminal without writing or deleting an image", async () => {

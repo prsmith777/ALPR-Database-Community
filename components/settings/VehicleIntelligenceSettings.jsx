@@ -448,6 +448,66 @@ export default function VehicleIntelligenceSettings({ initialData, initialFrameQ
         </TabsContent>
 
         <TabsContent value="processing" className="mt-0">
+          <div className="space-y-6">
+          <Card>
+          <CardHeader>
+            <CardTitle>Clip motion direction shadow</CardTitle>
+            <CardDescription>
+              Daytime color reads are measured from plate-anchored movement across bounded Blue Iris samples. These results are diagnostic only and do not change displayed direction, notifications, vehicle views, or Confirm and Next.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="grid grid-cols-2 gap-3 text-center sm:grid-cols-5">
+              <div className="rounded-md border p-3"><div className="text-xl font-semibold">{Number(frameQueue?.motionShadow?.observed || 0).toLocaleString()}</div><div className="text-xs text-muted-foreground">reads observed</div></div>
+              <div className="rounded-md border p-3"><div className="text-xl font-semibold">{Number(frameQueue?.motionShadow?.ready || 0).toLocaleString()}</div><div className="text-xs text-muted-foreground">day tracks ready</div></div>
+              <div className="rounded-md border p-3"><div className="text-xl font-semibold">{Number(frameQueue?.motionShadow?.unknown || 0).toLocaleString()}</div><div className="text-xs text-muted-foreground">unknown</div></div>
+              <div className="rounded-md border p-3"><div className="text-xl font-semibold">{Number(frameQueue?.motionShadow?.nightDisabled || 0).toLocaleString()}</div><div className="text-xs text-muted-foreground">night disabled</div></div>
+              <div className="rounded-md border p-3"><div className="text-xl font-semibold">{Number(frameQueue?.motionShadow?.failed || 0).toLocaleString()}</div><div className="text-xs text-muted-foreground">analysis failures</div></div>
+            </div>
+            <p className="text-xs text-muted-foreground">
+              Nighttime monochrome reads deliberately remain Unknown. Day reads also fail closed when the plate anchor is missing, motion is too small, or the trajectory is inconsistent. The current displayed ReID direction remains unchanged while this shadow evidence is evaluated.
+            </p>
+            {frameQueue?.motionShadow?.recent?.length ? (
+              <div className="overflow-x-auto rounded-md border">
+                <table className="w-full min-w-[760px] text-left text-sm">
+                  <thead className="border-b bg-muted/40 text-xs text-muted-foreground">
+                    <tr>
+                      <th className="px-3 py-2 font-medium">Read</th>
+                      <th className="px-3 py-2 font-medium">Camera / UTC time</th>
+                      <th className="px-3 py-2 font-medium">Motion shadow</th>
+                      <th className="px-3 py-2 font-medium">Current ReID comparison</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {frameQueue.motionShadow.recent.map((observation) => (
+                      <tr key={observation.readId} className="border-b last:border-0">
+                        <td className="px-3 py-2 font-mono font-semibold">{observation.plateNumber}</td>
+                        <td className="px-3 py-2">
+                          <div>{observation.cameraName}</div>
+                          <div className="text-xs text-muted-foreground">{new Date(observation.readTimestamp).toISOString().replace("T", " ").slice(0, 19)} UTC</div>
+                        </td>
+                        <td className="px-3 py-2">
+                          {observation.status === "ready"
+                            ? `${observation.imageDirection} (${Math.round(Number(observation.confidence || 0) * 100)}%)`
+                            : observation.captureMode === "night_monochrome"
+                              ? "Unknown — night disabled"
+                              : `Unknown — ${String(observation.errorCode || "low confidence").toLowerCase().replaceAll("_", " ")}`}
+                        </td>
+                        <td className="px-3 py-2">
+                          {observation.comparisonDirectionLabel
+                            ? `${observation.comparisonDirectionLabel}${observation.comparisonDirectionConfidence === null ? "" : ` (${Math.round(observation.comparisonDirectionConfidence * 100)}%)`}`
+                            : "Not available"}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ) : (
+              <p className="rounded-md border p-3 text-sm text-muted-foreground">No motion shadow observations have been collected yet.</p>
+            )}
+          </CardContent>
+          </Card>
           <Card>
           <CardHeader>
             <CardTitle>Historical direction backfill</CardTitle>
@@ -537,6 +597,7 @@ export default function VehicleIntelligenceSettings({ initialData, initialFrameQ
             </details>
           </CardContent>
           </Card>
+          </div>
         </TabsContent>
 
         <TabsContent value="calibration" className="mt-0">
