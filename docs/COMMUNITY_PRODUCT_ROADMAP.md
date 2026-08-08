@@ -18,9 +18,9 @@ reliable background processing.
 6. Audit sensitive searches, exports, corrections, rule changes, and
    destructive maintenance.
 
-## Release baseline — August 7, 2026
+## Release candidate baseline — August 7, 2026
 
-- Application `0.1.17` includes named users and roles, evidence-preserving plate
+- Application `0.1.18` candidate includes named users and roles, evidence-preserving plate
   review, filter-respecting exports, the searchable help center, local privacy
   controls, and viewport-safe date/help navigation. Monitored Plates now lives
   inside Known Plates with reason, priority, monitoring-since, and read-history
@@ -88,26 +88,6 @@ reliable background processing.
   for newly ingested reads. New live work is prioritized and appears as Pending
   rather than Unknown until analysis finishes.
   Historical evaluation does not emit notifications.
-  Phase 2A now reuses the bounded Blue Iris timeline samples to calculate
-  separate plate-anchored camera-plane motion for color daytime reads. The
-  observation is shadow-only and has no read, notification, vehicle-view, or
-  review-navigation consumer. It records capture mode, trajectory, confidence,
-  sample counts, failure reason, algorithm provenance, and the current ReID
-  direction only as comparison evidence when available. Processing shows
-  aggregate outcomes plus the 20 newest observations for bounded production
-  review. Monochrome night reads explicitly remain Unknown with night direction
-  disabled. Phase 2A.1 corrects the LPR anchor handoff by scaling stored plate
-  coordinates from the original capture into the Blue Iris timeline resolution.
-  If the exact-time frame is unavailable, one unambiguous Street LPR sample
-  within 750 milliseconds may anchor the track; competing plausible vehicles
-  remain Unknown. Phase 2A.2 replaces that sparse motion input with a separate
-  dense pass matched by stored Blue Iris clip and recording offset. It samples
-  the real alert duration every 100 milliseconds with 500 milliseconds of
-  safety padding per side and a six-second cap/fallback, removes exact duplicate
-  frames, permits four unique frames over 300 milliseconds, and keeps
-  edge-clipped close vehicles eligible for motion while the saved Vehicle view
-  still prefers complete framing. ReID is soft supporting evidence rather than
-  a hard track filter. Street Overview is never used as a plate anchor.
   Settings > Vehicle Setup now separates Cameras, Vehicle Views, Processing,
   and Calibration into clean route-backed pages. Camera-specific vehicle-view
   and re-evaluation controls include their own selectors and name the selected
@@ -482,27 +462,17 @@ notes. Updates remain externally orchestrated.
   error, while Recognition Feed shows attempt-aware processing failures and
   lets authorized reviewers explicitly retry an individual failed or
   unavailable vehicle view.
-- Phase 2A daytime clip-motion shadow implemented: a direction-only dense pass
-  matches the stored Blue Iris clip and recording offset to alert metadata,
-  samples the actual alert duration every 100 milliseconds with 500 milliseconds
-  of safety padding per side, and caps both alert-driven and fallback windows at
-  six seconds. It scales the stored Street LPR plate geometry into every sampled
-  timeline frame, removes exact duplicate frames, anchors one unambiguous
-  detected vehicle anywhere in the bounded alert, and measures its track centers
-  over time. Four unique frames spanning at least 300 milliseconds can resolve a
-  sub-second passage. Edge-clipped close vehicles remain valid motion evidence;
-  complete framing is still preferred independently for the saved Vehicle view.
-  ReID contributes soft identity evidence but is not a hard direction filter.
-  Competing plausible vehicles remain Unknown. Direction comes from the observed
-  trajectory rather than from single-frame front/rear orientation.
-  Inconsistent, stationary, unanchored, or low-confidence tracks remain
-  Unknown. Results persist in a dedicated table with versioned diagnostics and
-  are summarized read-only under Vehicle Setup > Processing; nothing joins
-  them into displayed direction, notification evaluation, vehicle-view choice,
-  or read-review navigation. Color daytime and monochrome night are detected
-  separately. Night direction is deliberately disabled after representative
-  clips showed too little dependable vehicle detail; headlights, plate glare,
-  and silhouettes are not used to guess.
+- Blue Iris ordered zone-crossing shadow implemented as the replacement for the
+  unsuccessful dense clip vehicle-direction experiment. The existing plate web
+  action may include `"trigger_type":"&TYPE"`; ALPR normalizes an exact value
+  such as `MOTION_A>B`, maps it through the selected camera's two semantic
+  direction labels, and stores the raw trigger plus versioned mapping result on
+  the same read. Camera setup requires two exact reverse crossings and exposes
+  received, mapped, unknown, and unmapped totals. This remains isolated shadow
+  evidence: it does not replace displayed ReID direction, send direction
+  notifications, choose a vehicle view, or delay ingestion. The former dense
+  100-millisecond clip sampling and vehicle-detection direction worker have
+  been removed; an already-created production shadow table may remain unused.
 - Per-read vehicle color observations and reviewable vehicle profiles are
   implemented as an evidence-gathering phase. Color is stored with confidence
   and local algorithm provenance against the individual read, never copied onto
@@ -517,14 +487,15 @@ notes. Updates remain externally orchestrated.
   Recognition Feed shows assignment, direction, and color evidence in its image
   dialog. Confirmed associations are a baseline only; mismatch labels and alerts
   remain disabled.
-Street LPR 1 and Street Overview are now installed. Street Overview supplies
-strong daytime vehicle images, but is monochrome at night and must not provide
-vehicle color at night. It is not expected to read a plate and must never be
-used as the LPR plate anchor. Before promoting Phase 2A, collect a representative
-daytime Street LPR 1/2 shadow sample, review multi-vehicle cases, and calibrate
-each camera's image-plane motion to its configured semantic direction labels.
-Keep the existing ReID direction as the live result and fallback until that
-review passes.
+Street LPR 1 and Street Overview are installed. Street Overview supplies strong
+daytime vehicle images but is monochrome at night and is not expected to read a
+plate. Street LPR 1/2 direction will use Blue Iris's existing motion tracker and
+ordered `&TYPE` crossing rather than ALPR vehicle detection. Before promotion,
+draw and validate each Street LPR zone map in daylight, preserve the working
+plate alert, and collect representative traffic in both directions. If Blue
+Iris does not emit the ordered crossing reliably on these cameras, keep live
+direction on the current ReID result and reassess local block motion without
+restoring the failed vehicle-detection clip pass.
 
 - Expand the implemented asynchronous color, coarse-type, and direction
   observations to make/model/year with per-field confidence,
@@ -532,28 +503,21 @@ review passes.
 - Store make, model, year range, alternate OCR candidates, and bounding boxes;
   expand current orientation observations with optional multiframe motion
   validation before speed claims.
-- Validate the new daytime motion shadow against Street LPR 1/2 production
-  clips, including opposing vehicles within the same bounded window, before
-  promoting it or considering speed estimation. Keep night direction Unknown.
-- Phase 2B: ingest motion-triggered Street Overview candidate frames and Entry
-  LPR 1/2 fallback candidates without assigning them to a plate yet. Screen
-  non-vehicle motion locally, record day/night mode, and never claim vehicle
-  color from monochrome night imagery.
-- Phase 2C: associate overview candidates to Street LPR 1/2 plate tracks using
-  time, measured motion direction, spatial continuity, and conservative
-  ambiguity gates. A vehicle seen by Street LPR 2 that turns into the driveway
-  may instead use Entry LPR 1/2 evidence when Street Overview misses it.
-  Camera-pair timing must be profiled rather than globally nearest-matched:
-  the current Street LPR 1 and Street Overview views point in approximately the
-  same direction and normally differ by no more than about one second, while
-  Street LPR 2 is spatially separated from Street Overview by roughly four to
-  five seconds. The expected lead/lag sign depends on measured vehicle
-  direction. Store these as configurable or learned camera-pair profiles rather
-  than hard-coding camera names, and reject windows containing multiple
-  plausible tracks instead of selecting the nearest image.
-- Phase 2D: after association review, make Vehicle view prefer Street Overview,
-  then Entry LPR 1/2, otherwise unavailable. Do not use Street LPR 1/2 plate
-  captures as the final Vehicle view.
+- Validate `MOTION_A>B` and `MOTION_B>A` payloads against known-direction Street
+  LPR 1/2 traffic, including close vehicles and nearby opposing traffic, before
+  promoting Blue Iris shadow evidence to displayed direction or using it for
+  overview-camera association. Keep missing, shorthand, and unmapped trigger
+  values Unknown. Mapping revisions remain independent from ReID calibration,
+  and validation totals and recent observations are scoped to one camera.
+- Ingest motion-triggered Street Overview candidate frames and Entry LPR 1/2
+  fallback candidates without assigning them to a plate yet. Screen non-vehicle
+  motion locally and never claim vehicle color from monochrome night imagery.
+- Associate overview candidates to Street LPR plate reads using timestamp,
+  validated direction, and conservative ambiguity gates. Profile camera-pair
+  timing rather than using one nearest-time rule: Street LPR 1 and Street
+  Overview are normally within about one second, while Street LPR 2 is roughly
+  four to five seconds away. Prefer Street Overview as the eventual Vehicle
+  view, with Entry LPR 1/2 fallback for vehicles turning into the driveway.
 - Expand Vehicle ReID calibration with larger labeled local samples and
   camera-pair reporting before making stronger labels or applying thresholds.
 - Consider pgvector only when the bounded in-process cosine scan no longer

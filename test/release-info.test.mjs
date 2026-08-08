@@ -22,14 +22,14 @@ test("release information resolves a commit-pinned deployment image", () => {
     ALPR_RELEASE_CHANNEL: "staging",
   });
 
-  assert.equal(release.version, "0.1.17");
-  assert.equal(release.manualVersion, "1.53");
+  assert.equal(release.version, "0.1.18");
+  assert.equal(release.manualVersion, "1.54");
   assert.equal(release.manualUpdatedAt, "August 7, 2026");
   assert.equal(release.gitSha, "8cd2fa8");
   assert.equal(release.channel, "staging");
   assert.equal(release.source, "commit-pinned image");
   assert.equal(release.readOnly, true);
-  assert.equal(release.notes.title, "August 7, 2026 resilient LPR motion-anchor candidate");
+  assert.equal(release.notes.title, "August 7, 2026 Blue Iris zone-crossing direction candidate");
   assert.equal(release.notes.publishedAt, "2026-08-07");
   assert.ok(release.notes.items.length >= 4);
 });

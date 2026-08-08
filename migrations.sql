@@ -3087,43 +3087,73 @@ INSERT INTO public.schema_migrations(version,description) VALUES
  ('2026080501_read_only_backup_catalog','Persist immutable worker-validated rollback-backup catalog snapshots while keeping destructive retention disabled.')
 ON CONFLICT(version) DO NOTHING;
 
--- Phase 2A records plate-anchored camera-plane motion independently from the
--- displayed ReID direction. It is shadow evidence only: reads, notifications,
--- confirmation navigation, and vehicle-view selection do not join this table.
--- Monochrome night captures are retained as explicit Unknown observations so
--- they cannot be mistaken for a successful clip-direction classification.
-CREATE TABLE IF NOT EXISTS public.vehicle_motion_direction_observations (
- read_id INTEGER PRIMARY KEY REFERENCES public.plate_reads(id) ON DELETE CASCADE,
- camera_key VARCHAR(100) NOT NULL,
- algorithm_version VARCHAR(80) NOT NULL,
- capture_mode VARCHAR(30) NOT NULL
-  CHECK(capture_mode IN ('day_color','night_monochrome','unknown')),
- status VARCHAR(20) NOT NULL CHECK(status IN ('ready','unknown','failed')),
- image_direction VARCHAR(20) NOT NULL
-  CHECK(image_direction IN ('left','right','up','down','unknown')),
- confidence REAL CHECK(confidence BETWEEN 0 AND 1),
- tracker VARCHAR(80) NOT NULL,
- sampled_count INTEGER NOT NULL CHECK(sampled_count>=0),
- tracked_count INTEGER NOT NULL CHECK(tracked_count>=0 AND tracked_count<=sampled_count),
- motion_vector JSONB NOT NULL DEFAULT '{}'::jsonb CHECK(jsonb_typeof(motion_vector)='object'),
- diagnostics JSONB NOT NULL DEFAULT '{}'::jsonb CHECK(jsonb_typeof(diagnostics)='object'),
- error_code VARCHAR(80),
- fallback_direction_label VARCHAR(80),
- fallback_direction_confidence REAL CHECK(fallback_direction_confidence BETWEEN 0 AND 1),
- evaluated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
- CONSTRAINT vehicle_motion_direction_observation_state CHECK(
-  (status='ready' AND capture_mode='day_color' AND image_direction<>'unknown'
-   AND confidence IS NOT NULL AND error_code IS NULL)
-  OR
-  (status<>'ready' AND image_direction='unknown' AND error_code IS NOT NULL)
- )
-);
+-- Blue Iris can include the ordered zone crossing which caused an alert in
+-- its &TYPE macro. Keep this as independent shadow evidence until daylight
+-- validation proves the camera-specific mapping in both directions.
+ALTER TABLE public.camera_direction_profiles
+  ADD COLUMN IF NOT EXISTS blue_iris_motion_enabled BOOLEAN NOT NULL DEFAULT FALSE,
+  ADD COLUMN IF NOT EXISTS blue_iris_front_trigger_type VARCHAR(80),
+  ADD COLUMN IF NOT EXISTS blue_iris_rear_trigger_type VARCHAR(80),
+  ADD COLUMN IF NOT EXISTS blue_iris_motion_profile_version INTEGER NOT NULL DEFAULT 1
+    CHECK (blue_iris_motion_profile_version > 0);
 
-CREATE INDEX IF NOT EXISTS idx_vehicle_motion_direction_shadow_review
- ON public.vehicle_motion_direction_observations(camera_key,capture_mode,status,evaluated_at DESC);
-CREATE INDEX IF NOT EXISTS idx_vehicle_motion_direction_shadow_recent
- ON public.vehicle_motion_direction_observations(evaluated_at DESC,read_id DESC);
+ALTER TABLE public.camera_direction_profiles
+  DROP CONSTRAINT IF EXISTS camera_direction_blue_iris_trigger_shape;
+ALTER TABLE public.camera_direction_profiles
+  ADD CONSTRAINT camera_direction_blue_iris_trigger_shape CHECK (
+    blue_iris_motion_enabled = FALSE OR (
+      blue_iris_front_trigger_type ~ '^MOTION_[A-H]>[A-H]$' AND
+      blue_iris_rear_trigger_type ~ '^MOTION_[A-H]>[A-H]$' AND
+      SUBSTRING(blue_iris_front_trigger_type FROM 8 FOR 1) <>
+        SUBSTRING(blue_iris_front_trigger_type FROM 10 FOR 1) AND
+      blue_iris_rear_trigger_type =
+        'MOTION_' || SUBSTRING(blue_iris_front_trigger_type FROM 10 FOR 1) ||
+        '>' || SUBSTRING(blue_iris_front_trigger_type FROM 8 FOR 1)
+    )
+  );
+
+ALTER TABLE public.plate_reads
+  ADD COLUMN IF NOT EXISTS bi_trigger_type VARCHAR(80),
+  ADD COLUMN IF NOT EXISTS bi_trigger_direction_status VARCHAR(20),
+  ADD COLUMN IF NOT EXISTS bi_trigger_direction_label VARCHAR(80),
+  ADD COLUMN IF NOT EXISTS bi_trigger_direction_profile_version INTEGER,
+  ADD COLUMN IF NOT EXISTS bi_trigger_direction_algorithm VARCHAR(80),
+  ADD COLUMN IF NOT EXISTS bi_trigger_direction_error_code VARCHAR(80);
+
+ALTER TABLE public.plate_reads
+  DROP CONSTRAINT IF EXISTS plate_reads_bi_trigger_type_shape;
+ALTER TABLE public.plate_reads
+  ADD CONSTRAINT plate_reads_bi_trigger_type_shape CHECK (
+    bi_trigger_type IS NULL OR bi_trigger_type ~ '^[A-Z0-9_!>,+\-]{1,80}$'
+  );
+ALTER TABLE public.plate_reads
+  DROP CONSTRAINT IF EXISTS plate_reads_bi_trigger_direction_state;
+ALTER TABLE public.plate_reads
+  ADD CONSTRAINT plate_reads_bi_trigger_direction_state CHECK (
+    (bi_trigger_direction_status IS NULL AND
+      bi_trigger_direction_label IS NULL AND
+      bi_trigger_direction_profile_version IS NULL AND
+      bi_trigger_direction_algorithm IS NULL AND
+      bi_trigger_direction_error_code IS NULL) OR
+    (bi_trigger_direction_status = 'ready' AND
+      bi_trigger_direction_label IS NOT NULL AND
+      bi_trigger_direction_profile_version IS NOT NULL AND
+      bi_trigger_direction_algorithm IS NOT NULL AND
+      bi_trigger_direction_error_code IS NULL) OR
+    (bi_trigger_direction_status = 'unknown' AND
+      bi_trigger_direction_label IS NULL AND
+      bi_trigger_direction_algorithm IS NOT NULL AND
+      bi_trigger_direction_error_code IS NOT NULL)
+  );
+
+CREATE INDEX IF NOT EXISTS idx_plate_reads_bi_trigger_direction
+  ON public.plate_reads (camera_name, bi_trigger_direction_status, timestamp DESC)
+  WHERE bi_trigger_direction_status IS NOT NULL;
 
 INSERT INTO public.schema_migrations(version,description) VALUES
- ('2026080701_vehicle_motion_direction_shadow','Add fail-closed daytime plate-anchored clip-motion direction shadow observations; night remains explicitly disabled.')
+ ('2026080702_blue_iris_trigger_direction_shadow','Store and map ordered Blue Iris &TYPE zone crossings as camera-specific shadow direction evidence.')
+ON CONFLICT(version) DO NOTHING;
+
+INSERT INTO public.schema_migrations(version,description) VALUES
+ ('2026080703_blue_iris_trigger_direction_hardening','Separate Blue Iris mapping revisions from ReID, enforce exact reverse crossings, and scope diagnostics by camera.')
 ON CONFLICT(version) DO NOTHING;

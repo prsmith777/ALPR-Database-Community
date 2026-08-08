@@ -11,6 +11,10 @@ import { NotificationAcceptedReadService } from "@/lib/notification-accepted-rea
 import { NotificationRuntimeRepository } from "@/lib/notification-runtime-repository.mjs";
 import { createPlateReadEventIdentity } from "@/lib/plate-read-event-identity.mjs";
 import { parseBlueIrisAlertPointer } from "@/lib/blue-iris-alert-pointer.mjs";
+import {
+  blueIrisTriggerDirectionColumns,
+  resolveBlueIrisTriggerDirectionForRead,
+} from "@/lib/blue-iris-trigger-direction.mjs";
 import { wakeBlueIrisVehicleFrameWorker } from "@/lib/blue-iris-vehicle-frame-runtime.mjs";
 import {
   recordAliasApplicationWithClient,
@@ -262,6 +266,12 @@ async function processPlateRead(data) {
       logger: console,
       matchingSettings: config.plateMatching,
     });
+    const blueIrisTriggerDirection = await resolveBlueIrisTriggerDirectionForRead({
+      query: (text, values) => dbClient.query(text, values),
+      camera,
+      value: data.trigger_type ?? data.triggerType ?? data.TYPE,
+    });
+    const blueIrisTriggerColumns = blueIrisTriggerDirectionColumns(blueIrisTriggerDirection);
 
     const processedPlates = [];
     const duplicatePlates = [];
@@ -343,6 +353,12 @@ async function processPlateRead(data) {
             bi_alert_clip,
             bi_alert_path,
             bi_alert_offset_ms,
+            bi_trigger_type,
+            bi_trigger_direction_status,
+            bi_trigger_direction_label,
+            bi_trigger_direction_profile_version,
+            bi_trigger_direction_algorithm,
+            bi_trigger_direction_error_code,
             confidence,
             crop_coordinates,
             ocr_annotation,
@@ -358,7 +374,9 @@ async function processPlateRead(data) {
                  CASE WHEN $3::bigint IS NULL THEN 'unreviewed' ELSE 'alias_resolved' END,
                  CASE WHEN $3::bigint IS NULL THEN 0 ELSE 1 END,
                  ($3::bigint IS NOT NULL),
-                 $4, $5, $6, $7, $8::varchar, $9, $10, $11, $12, $13, $14, $15, $16, $17,
+                 $4, $5, $6, $7, $8::varchar, $9, $10, $11, $12,
+                 $18, $19, $20, $21, $22, $23,
+                 $13, $14, $15, $16, $17,
                  'pending', 'live', 0, TRUE, CURRENT_TIMESTAMP
           WHERE NOT EXISTS (
             SELECT 1 FROM plate_reads
@@ -387,6 +405,12 @@ async function processPlateRead(data) {
           effectivePlateData.ocr_annotation || null,
           effectivePlateData.plate_annotation || null,
           eventIdentity,
+          blueIrisTriggerColumns.bi_trigger_type,
+          blueIrisTriggerColumns.bi_trigger_direction_status,
+          blueIrisTriggerColumns.bi_trigger_direction_label,
+          blueIrisTriggerColumns.bi_trigger_direction_profile_version,
+          blueIrisTriggerColumns.bi_trigger_direction_algorithm,
+          blueIrisTriggerColumns.bi_trigger_direction_error_code,
         ]
       );
 
@@ -427,6 +451,7 @@ async function processPlateRead(data) {
           bi_alert_clip: blueIrisAlert.alertClip,
           bi_alert_path: blueIrisAlert.alertPath,
           bi_alert_offset_ms: blueIrisAlert.offsetMs,
+          ...blueIrisTriggerColumns,
         };
 
         const mqttResult = await mqttService.processAcceptedRead(acceptedRead);
