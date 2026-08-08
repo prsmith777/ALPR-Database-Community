@@ -83,13 +83,40 @@ test("daytime motion fails closed without a plate-anchored vehicle", () => {
 test("stationary daytime tracks remain unknown", () => {
   const result = analyzeDayDetectionMotion({
     track: [
-      trackCandidate(-1_000, 0.4),
-      trackCandidate(0, 0.405, { containsPlate: true }),
-      trackCandidate(1_000, 0.41),
+      trackCandidate(-300, 0.4),
+      trackCandidate(-100, 0.403),
+      trackCandidate(100, 0.407, { containsPlate: true }),
+      trackCandidate(300, 0.41),
     ],
   });
   assert.equal(result.status, "unknown");
   assert.equal(result.errorCode, "INSUFFICIENT_MOTION");
+});
+
+test("a sub-second edge-clipped vehicle track can resolve direction", () => {
+  const clippedAnchor = trackCandidate(0, 0.1, { motionAnchor: true });
+  clippedAnchor.detection.left = 0;
+  const result = analyzeDayDetectionMotion({
+    sampleCount: 4,
+    track: [
+      clippedAnchor,
+      trackCandidate(100, 0.25),
+      trackCandidate(200, 0.4),
+      trackCandidate(300, 0.55),
+    ],
+    samplingDiagnostics: {
+      source: "blue_iris_alert",
+      intervalMs: 100,
+      requestedCount: 31,
+      uniqueFrameCount: 28,
+      duplicateCount: 3,
+    },
+  });
+  assert.equal(result.status, "ready");
+  assert.equal(result.imageDirection, "right");
+  assert.equal(result.vector.spanMs, 300);
+  assert.equal(result.diagnostics.edgeClippedCount, 1);
+  assert.equal(result.diagnostics.sampling.intervalMs, 100);
 });
 
 test("monochrome night reads are recorded as disabled rather than guessed", async () => {
@@ -134,20 +161,19 @@ test("daytime motion uses a bounded nearby LPR anchor when the exact frame is un
   assert.equal(result.diagnostics.anchorDistance, 0.02);
 });
 
-test("motion refuses an unbounded substitute for a missing anchor frame", async () => {
-  const buffer = await solidFrame({ red: 220, green: 80, blue: 30 });
+test("motion reports an unavailable anchor only when the bounded dense window has no frames", async () => {
   const result = await analyzeVehicleMotionDirection({
-    frames: [{ buffer, offsetMs: 1_000, width: 320, height: 180 }],
+    frames: [],
     track: [trackCandidate(1_000, 0.4, { motionAnchor: true })],
     anchorOffsetMs: 0,
   });
   assert.equal(result.status, "unknown");
   assert.equal(result.errorCode, "ANCHOR_FRAME_UNAVAILABLE");
-  assert.equal(result.diagnostics.nearestFrameOffsetMs, 1_000);
+  assert.equal(result.diagnostics.nearestFrameOffsetMs, null);
 });
 
 test("the shadow algorithm remains explicitly versioned", () => {
-  assert.equal(VEHICLE_MOTION_DIRECTION_ALGORITHM, "plate-anchored-motion-v2-shadow");
+  assert.equal(VEHICLE_MOTION_DIRECTION_ALGORITHM, "plate-anchored-motion-v3-dense-shadow");
 });
 
 test("motion shadow schema cannot overwrite the displayed ReID direction", async () => {
