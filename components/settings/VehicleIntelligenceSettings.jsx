@@ -313,7 +313,7 @@ export default function VehicleIntelligenceSettings({ initialData, initialFrameQ
           <CardHeader>
             <CardTitle className="flex items-center gap-2"><BrainCircuit className="h-5 w-5" /> Camera direction setup</CardTitle>
             <CardDescription>
-              This first phase uses existing single-frame Vehicle ReID descriptors. It stores labels and results only—no video clips.
+              Daytime Blue Iris ordered zone crossings are the primary direction source for new reads. Single-frame Vehicle ReID is used only when a mapped crossing is unavailable. Monochrome nighttime captures show Unavailable nighttime, and no video clips are stored.
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-5">
@@ -356,15 +356,15 @@ export default function VehicleIntelligenceSettings({ initialData, initialFrameQ
                     <div className="space-y-4 rounded-md border p-4 md:col-span-2">
                       <div className="flex items-center justify-between gap-4">
                         <div>
-                          <div className="text-sm font-medium">Blue Iris zone-crossing shadow</div>
+                          <div className="text-sm font-medium">Blue Iris zone-crossing direction</div>
                           <div className="text-xs text-muted-foreground">
-                            Map the ordered &amp;TYPE value from the existing plate alert. Shadow evidence does not replace the displayed direction or send direction notifications.
+                            Map the ordered &amp;TYPE value from the existing plate alert. New daytime mapped reads use this direction first; Vehicle ReID remains the fallback. Monochrome nighttime captures are not classified.
                           </div>
                         </div>
                         <Switch
                           checked={draft.blueIrisMotionEnabled === true}
                           onCheckedChange={(blueIrisMotionEnabled) => setDraft({ ...draft, blueIrisMotionEnabled })}
-                          aria-label="Enable Blue Iris zone-crossing shadow"
+                          aria-label="Enable Blue Iris zone-crossing direction"
                         />
                       </div>
                       <div className="grid gap-4 md:grid-cols-2">
@@ -397,13 +397,13 @@ export default function VehicleIntelligenceSettings({ initialData, initialFrameQ
                       <div className="grid grid-cols-2 gap-3 text-center sm:grid-cols-4">
                         <div className="rounded-md border p-2"><div className="font-semibold">{Number(data.blueIrisTriggerDirection?.received || 0).toLocaleString()}</div><div className="text-xs text-muted-foreground">received</div></div>
                         <div className="rounded-md border p-2"><div className="font-semibold">{Number(data.blueIrisTriggerDirection?.ready || 0).toLocaleString()}</div><div className="text-xs text-muted-foreground">mapped</div></div>
-                        <div className="rounded-md border p-2"><div className="font-semibold">{Number(data.blueIrisTriggerDirection?.unknown || 0).toLocaleString()}</div><div className="text-xs text-muted-foreground">unknown</div></div>
+                        <div className="rounded-md border p-2"><div className="font-semibold">{Number(data.blueIrisTriggerDirection?.unknown || 0).toLocaleString()}</div><div className="text-xs text-muted-foreground">unknown / unavailable</div></div>
                         <div className="rounded-md border p-2"><div className="font-semibold">{Number(data.blueIrisTriggerDirection?.unmapped || 0).toLocaleString()}</div><div className="text-xs text-muted-foreground">unmapped</div></div>
                       </div>
                       <p className="text-xs text-muted-foreground">Counts and observations are limited to {cameraName || "the selected camera"}.</p>
                       {data.blueIrisTriggerDirection?.recent?.length ? (
                         <details className="rounded-md border">
-                          <summary className="cursor-pointer px-3 py-2 text-sm font-medium">Newest shadow observations</summary>
+                          <summary className="cursor-pointer px-3 py-2 text-sm font-medium">Newest Blue Iris observations</summary>
                           <div className="overflow-x-auto border-t">
                             <table className="w-full min-w-[760px] text-left text-sm">
                               <thead className="border-b bg-muted/40 text-xs text-muted-foreground">
@@ -411,7 +411,7 @@ export default function VehicleIntelligenceSettings({ initialData, initialFrameQ
                                   <th className="px-3 py-2 font-medium">Plate</th>
                                   <th className="px-3 py-2 font-medium">Camera / time</th>
                                   <th className="px-3 py-2 font-medium">Blue Iris &amp;TYPE</th>
-                                  <th className="px-3 py-2 font-medium">Shadow / current</th>
+                                  <th className="px-3 py-2 font-medium">Mapped / displayed</th>
                                 </tr>
                               </thead>
                               <tbody>
@@ -424,7 +424,11 @@ export default function VehicleIntelligenceSettings({ initialData, initialFrameQ
                                     </td>
                                     <td className="px-3 py-2 font-mono">{read.triggerType || "Unavailable"}</td>
                                     <td className="px-3 py-2">
-                                      <div>{read.status === "ready" ? read.directionLabel : `Unknown — ${String(read.errorCode || "unresolved").toLowerCase().replaceAll("_", " ")}`}</div>
+                                      <div>{read.status === "ready"
+                                        ? read.directionLabel
+                                        : read.errorCode === "MONOCHROME_NIGHT_DIRECTION_UNAVAILABLE"
+                                          ? "Unavailable nighttime"
+                                          : `Unknown: ${String(read.errorCode || "unresolved").toLowerCase().replaceAll("_", " ")}`}</div>
                                       <div className="text-xs text-muted-foreground">Current: {read.currentDirectionLabel || "not available"}</div>
                                     </td>
                                   </tr>

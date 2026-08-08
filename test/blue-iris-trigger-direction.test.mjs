@@ -4,11 +4,15 @@ import test from "node:test";
 
 import {
   BLUE_IRIS_TRIGGER_DIRECTION_ALGORITHM,
+  BLUE_IRIS_TRIGGER_DIRECTION_LEGACY_SHADOW_ALGORITHM,
   BLUE_IRIS_TRIGGER_DIRECTION_PROFILE_SQL,
+  applyBlueIrisDirectionEligibility,
   blueIrisTriggerDirectionColumns,
   normalizeBlueIrisDirectionalTrigger,
   normalizeBlueIrisDirectionProfile,
   normalizeBlueIrisTriggerType,
+  persistBlueIrisPrimaryDirectionForRead,
+  primaryDirectionObservationFromBlueIris,
   resolveBlueIrisTriggerDirection,
   resolveBlueIrisTriggerDirectionForRead,
 } from "../lib/blue-iris-trigger-direction.mjs";
@@ -24,7 +28,7 @@ test("Blue Iris trigger types retain an ordered zone crossing safely", () => {
   );
 });
 
-test("camera mappings require two exact reverse crossings before shadow collection is enabled", () => {
+test("camera mappings require two exact reverse crossings before primary direction is enabled", () => {
   assert.deepEqual(normalizeBlueIrisDirectionProfile({
     blueIrisMotionEnabled: true,
     blueIrisFrontTriggerType: "MOTION_A>B",
@@ -48,7 +52,7 @@ test("camera mappings require two exact reverse crossings before shadow collecti
   );
 });
 
-test("an ordered Blue Iris trigger maps to the camera semantic direction without replacing live direction", () => {
+test("an ordered Blue Iris trigger maps to the camera semantic direction", () => {
   const profile = {
     blue_iris_motion_enabled: true,
     blue_iris_front_trigger_type: "MOTION_A>B",
@@ -74,6 +78,90 @@ test("an ordered Blue Iris trigger maps to the camera semantic direction without
     resolveBlueIrisTriggerDirection({ ...profile, blue_iris_motion_enabled: false }, "MOTION_A>B").errorCode,
     "BLUE_IRIS_DIRECTION_MAPPING_DISABLED"
   );
+});
+
+test("only current mapped crossings become primary direction observations", async () => {
+  const evidence = {
+    algorithm: BLUE_IRIS_TRIGGER_DIRECTION_ALGORITHM,
+    status: "ready",
+    triggerType: "MOTION_A>B",
+    orientation: "front",
+    directionLabel: "Eastbound",
+    profileVersion: 8,
+    errorCode: null,
+  };
+  assert.deepEqual(primaryDirectionObservationFromBlueIris(evidence), {
+    status: "ready",
+    orientation: "front",
+    confidence: 1,
+    directionLabel: "Eastbound",
+    profileVersion: 8,
+    embeddingModel: "blue-iris-zone-crossing",
+    classifierVersion: BLUE_IRIS_TRIGGER_DIRECTION_ALGORITHM,
+    counts: { front: 0, rear: 0, source: "blue_iris_zone_crossing" },
+    source: "blue_iris_zone_crossing",
+  });
+  assert.equal(primaryDirectionObservationFromBlueIris({
+    ...evidence,
+    algorithm: BLUE_IRIS_TRIGGER_DIRECTION_LEGACY_SHADOW_ALGORITHM,
+  }), null);
+  assert.equal(primaryDirectionObservationFromBlueIris({
+    ...evidence,
+    status: "unknown",
+    directionLabel: null,
+  }), null);
+
+  const calls = [];
+  const persisted = await persistBlueIrisPrimaryDirectionForRead({
+    query: async (text, values) => {
+      calls.push({ text, values });
+      return { rows: [{ read_id: 39001 }] };
+    },
+    readId: 39001,
+    camera: "Street LPR 1",
+    evidence,
+  });
+  assert.equal(persisted.directionLabel, "Eastbound");
+  assert.equal(calls.length, 1);
+  assert.match(calls[0].text, /INSERT INTO public\.vehicle_direction_observations/);
+  assert.match(calls[0].text, /ON CONFLICT \(read_id\) DO NOTHING/);
+  assert.equal(calls[0].values[0], 39001);
+  assert.equal(calls[0].values[1], "Street LPR 1");
+
+  const historicalCalls = [];
+  const historical = await persistBlueIrisPrimaryDirectionForRead({
+    query: async (...args) => historicalCalls.push(args),
+    readId: 38999,
+    camera: "Street LPR 1",
+    evidence: { ...evidence, algorithm: BLUE_IRIS_TRIGGER_DIRECTION_LEGACY_SHADOW_ALGORITHM },
+  });
+  assert.equal(historical, null);
+  assert.equal(historicalCalls.length, 0);
+});
+
+test("monochrome nighttime evidence cannot become a Blue Iris direction", () => {
+  const suppressed = applyBlueIrisDirectionEligibility({
+    algorithm: BLUE_IRIS_TRIGGER_DIRECTION_ALGORITHM,
+    status: "ready",
+    triggerType: "MOTION_A>B",
+    orientation: "front",
+    directionLabel: "Eastbound",
+    profileVersion: 8,
+    errorCode: null,
+  }, {
+    eligible: false,
+    reason: "monochrome_night_capture",
+  });
+  assert.deepEqual(suppressed, {
+    algorithm: BLUE_IRIS_TRIGGER_DIRECTION_ALGORITHM,
+    status: "unknown",
+    triggerType: "MOTION_A>B",
+    orientation: null,
+    directionLabel: null,
+    profileVersion: 8,
+    errorCode: "MONOCHROME_NIGHT_DIRECTION_UNAVAILABLE",
+  });
+  assert.equal(primaryDirectionObservationFromBlueIris(suppressed), null);
 });
 
 test("plate-read trigger lookup executes mapped, unmapped, invalid, and omitted evidence paths", async () => {
@@ -149,7 +237,7 @@ test("plate-read trigger lookup executes mapped, unmapped, invalid, and omitted 
   });
 });
 
-test("plate ingestion uses executable trigger evidence columns as isolated shadow data", async () => {
+test("plate ingestion promotes current mapped crossings while preserving legacy shadow data", async () => {
   const [route, migration, settings, readme] = await Promise.all([
     readFile(new URL("../app/api/plate-reads/route.js", import.meta.url), "utf8"),
     readFile(new URL("../migrations.sql", import.meta.url), "utf8"),
@@ -159,9 +247,14 @@ test("plate ingestion uses executable trigger evidence columns as isolated shado
   assert.match(route, /data\.trigger_type/);
   assert.match(route, /resolveBlueIrisTriggerDirectionForRead/);
   assert.match(route, /blueIrisTriggerDirectionColumns/);
+  assert.match(route, /persistBlueIrisPrimaryDirectionForRead/);
+  assert.match(route, /assessDirectionImageEligibility/);
+  assert.match(route, /applyBlueIrisDirectionEligibility/);
+  assert.match(route, /processVehicleDirection/);
   assert.match(route, /\.\.\.blueIrisTriggerColumns/);
   assert.match(migration, /2026080702_blue_iris_trigger_direction_shadow/);
   assert.match(migration, /2026080703_blue_iris_trigger_direction_hardening/);
-  assert.match(settings, /Blue Iris zone-crossing shadow/);
+  assert.match(settings, /Blue Iris zone-crossing direction/);
+  assert.match(settings, /primary direction source for new reads/);
   assert.match(readme, /"trigger_type":"&TYPE"/);
 });

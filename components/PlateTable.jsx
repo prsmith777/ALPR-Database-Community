@@ -256,6 +256,9 @@ function PlateIdentity({ plate, compact = false }) {
 }
 
 function directionDisplayLabel(plate) {
+  if (plate.direction_unavailable_reason === "monochrome_night_capture") {
+    return "Unavailable nighttime";
+  }
   if (plate.direction_label) return plate.direction_label;
   if (plate.direction_profile_configured && !plate.direction_status) return "Pending";
   return "Unknown";
@@ -632,6 +635,7 @@ export default function PlateTable({
         ? null
         : Number(plate.orientation_confidence),
       directionLabel: plate.direction_label || "",
+      directionUnavailableReason: plate.direction_unavailable_reason || null,
       directionProfileConfigured: plate.direction_profile_configured === true,
       vehicleColor: plate.vehicle_color || "",
       vehicleColorStatus: plate.vehicle_color_status || "",
@@ -822,6 +826,7 @@ export default function PlateTable({
       const selectedTagSignature = JSON.stringify(selectedImageTags);
       const currentDirectionLabel = currentPlate?.direction_label || "";
       const currentDirectionStatus = currentPlate?.direction_status || null;
+      const currentDirectionUnavailableReason = currentPlate?.direction_unavailable_reason || null;
       const currentDirectionProfileConfigured = currentPlate?.direction_profile_configured === true;
       const currentVehicleOrientation = currentPlate?.vehicle_orientation || "unknown";
       const currentDirectionConfidence = currentPlate?.orientation_confidence === null
@@ -872,6 +877,7 @@ export default function PlateTable({
           currentDirectionStatus !== selectedImage.directionStatus ||
           currentVehicleOrientation !== selectedImage.vehicleOrientation ||
           currentDirectionLabel !== selectedImage.directionLabel ||
+          currentDirectionUnavailableReason !== selectedImage.directionUnavailableReason ||
           currentDirectionProfileConfigured !== selectedImage.directionProfileConfigured ||
           currentDirectionConfidence !== selectedImage.directionConfidence ||
           currentVehicleColor !== selectedImage.vehicleColor ||
@@ -911,6 +917,7 @@ export default function PlateTable({
           vehicleOrientation: currentPlate.vehicle_orientation || "unknown",
           directionConfidence: currentDirectionConfidence,
           directionLabel: currentDirectionLabel,
+          directionUnavailableReason: currentDirectionUnavailableReason,
           directionProfileConfigured: currentDirectionProfileConfigured,
           vehicleColor: currentVehicleColor,
           vehicleColorStatus: currentVehicleColorStatus,
@@ -2980,7 +2987,9 @@ export default function PlateTable({
                     </DialogClose>
                   </div>
                   <div className={selectedImage.directionLabel ? "" : "text-muted-foreground"}>
-                    {selectedImage.directionLabel
+                    {selectedImage.directionUnavailableReason === "monochrome_night_capture"
+                      ? "Unavailable nighttime"
+                      : selectedImage.directionLabel
                       || (selectedImage.directionProfileConfigured && !selectedImage.directionStatus
                         ? "Pending"
                         : "Unknown")}
