@@ -3093,7 +3093,9 @@ ON CONFLICT(version) DO NOTHING;
 ALTER TABLE public.camera_direction_profiles
   ADD COLUMN IF NOT EXISTS blue_iris_motion_enabled BOOLEAN NOT NULL DEFAULT FALSE,
   ADD COLUMN IF NOT EXISTS blue_iris_front_trigger_type VARCHAR(80),
-  ADD COLUMN IF NOT EXISTS blue_iris_rear_trigger_type VARCHAR(80);
+  ADD COLUMN IF NOT EXISTS blue_iris_rear_trigger_type VARCHAR(80),
+  ADD COLUMN IF NOT EXISTS blue_iris_motion_profile_version INTEGER NOT NULL DEFAULT 1
+    CHECK (blue_iris_motion_profile_version > 0);
 
 ALTER TABLE public.camera_direction_profiles
   DROP CONSTRAINT IF EXISTS camera_direction_blue_iris_trigger_shape;
@@ -3102,7 +3104,11 @@ ALTER TABLE public.camera_direction_profiles
     blue_iris_motion_enabled = FALSE OR (
       blue_iris_front_trigger_type ~ '^MOTION_[A-H]>[A-H]$' AND
       blue_iris_rear_trigger_type ~ '^MOTION_[A-H]>[A-H]$' AND
-      blue_iris_front_trigger_type <> blue_iris_rear_trigger_type
+      SUBSTRING(blue_iris_front_trigger_type FROM 8 FOR 1) <>
+        SUBSTRING(blue_iris_front_trigger_type FROM 10 FOR 1) AND
+      blue_iris_rear_trigger_type =
+        'MOTION_' || SUBSTRING(blue_iris_front_trigger_type FROM 10 FOR 1) ||
+        '>' || SUBSTRING(blue_iris_front_trigger_type FROM 8 FOR 1)
     )
   );
 
@@ -3146,4 +3152,8 @@ CREATE INDEX IF NOT EXISTS idx_plate_reads_bi_trigger_direction
 
 INSERT INTO public.schema_migrations(version,description) VALUES
  ('2026080702_blue_iris_trigger_direction_shadow','Store and map ordered Blue Iris &TYPE zone crossings as camera-specific shadow direction evidence.')
+ON CONFLICT(version) DO NOTHING;
+
+INSERT INTO public.schema_migrations(version,description) VALUES
+ ('2026080703_blue_iris_trigger_direction_hardening','Separate Blue Iris mapping revisions from ReID, enforce exact reverse crossings, and scope diagnostics by camera.')
 ON CONFLICT(version) DO NOTHING;

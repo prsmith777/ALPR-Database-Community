@@ -507,7 +507,8 @@ restoring the failed vehicle-detection clip pass.
   LPR 1/2 traffic, including close vehicles and nearby opposing traffic, before
   promoting Blue Iris shadow evidence to displayed direction or using it for
   overview-camera association. Keep missing, shorthand, and unmapped trigger
-  values Unknown.
+  values Unknown. Mapping revisions remain independent from ReID calibration,
+  and validation totals and recent observations are scoped to one camera.
 - Ingest motion-triggered Street Overview candidate frames and Entry LPR 1/2
   fallback candidates without assigning them to a plate yet. Screen non-vehicle
   motion locally and never claim vehicle color from monochrome night imagery.

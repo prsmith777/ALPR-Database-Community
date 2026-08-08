@@ -40,6 +40,122 @@ test("camera direction profiles accept custom meanings and reject ambiguous mapp
   );
 });
 
+test("Blue Iris-only profile saves do not refresh or invalidate ReID direction", async () => {
+  let refreshCount = 0;
+  let savedProfileVersion = 4;
+  const repository = {
+    getLatestCameraRead: async () => ({ id: 42 }),
+    getDirectionProfile: async () => ({
+      camera_name: "Street LPR 1",
+      profile_version: 4,
+      blue_iris_motion_profile_version: 2,
+    }),
+    saveDirectionProfile: async () => ({
+      camera_name: "Street LPR 1",
+      profile_version: savedProfileVersion,
+      blue_iris_motion_profile_version: 3,
+    }),
+  };
+  const service = new CaptureAssetService({ repository, fileStorage: {} });
+  service.refreshCameraDirection = async () => {
+    refreshCount += 1;
+    return { evaluated: 0 };
+  };
+  const input = {
+    cameraName: "Street LPR 1",
+    enabled: true,
+    frontDirectionLabel: "Eastbound",
+    rearDirectionLabel: "Westbound",
+    minimumConfidence: 0.68,
+    blueIrisMotionEnabled: true,
+    blueIrisFrontTriggerType: "MOTION_A>B",
+    blueIrisRearTriggerType: "MOTION_B>A",
+  };
+
+  await service.saveDirectionProfile(input, { id: 1 });
+  assert.equal(refreshCount, 0);
+
+  savedProfileVersion = 5;
+  await service.saveDirectionProfile({ ...input, frontDirectionLabel: "Entering" }, { id: 1 });
+  assert.equal(refreshCount, 1);
+});
+
+test("direction profile persistence advances ReID and Blue Iris revisions independently", async () => {
+  const calls = [];
+  const repository = new CaptureAssetRepository({
+    executor: {
+      async query(text, values) {
+        calls.push({ text, values });
+        if (text.includes("INSERT INTO public.camera_direction_profiles")) {
+          return { rows: [{
+            camera_name: "Street LPR 1",
+            enabled: true,
+            front_direction_label: "Eastbound",
+            rear_direction_label: "Westbound",
+            minimum_confidence: 0.68,
+            blue_iris_motion_enabled: true,
+            blue_iris_front_trigger_type: "MOTION_A>B",
+            blue_iris_rear_trigger_type: "MOTION_B>A",
+            blue_iris_motion_profile_version: 3,
+            profile_version: 4,
+          }] };
+        }
+        return { rows: [] };
+      },
+    },
+  });
+
+  await repository.saveDirectionProfile({
+    cameraName: "Street LPR 1",
+    enabled: true,
+    frontDirectionLabel: "Eastbound",
+    rearDirectionLabel: "Westbound",
+    minimumConfidence: 0.68,
+    blueIrisMotionEnabled: true,
+    blueIrisFrontTriggerType: "MOTION_A>B",
+    blueIrisRearTriggerType: "MOTION_B>A",
+  }, { id: 1 });
+
+  const upsert = calls[0].text;
+  const blueIrisRevision = upsert.match(
+    /blue_iris_motion_profile_version = CASE WHEN([\s\S]*?)THEN public\.camera_direction_profiles\.blue_iris_motion_profile_version/
+  )?.[1] || "";
+  const reidRevision = upsert.match(
+    /\n\s+profile_version = CASE WHEN([\s\S]*?)THEN public\.camera_direction_profiles\.profile_version/
+  )?.[1] || "";
+  assert.match(blueIrisRevision, /blue_iris_front_trigger_type/);
+  assert.match(blueIrisRevision, /blue_iris_rear_trigger_type/);
+  assert.match(blueIrisRevision, /front_direction_label/);
+  assert.match(blueIrisRevision, /rear_direction_label/);
+  assert.doesNotMatch(reidRevision, /blue_iris_/);
+  assert.match(reidRevision, /minimum_confidence/);
+});
+
+test("Blue Iris shadow diagnostics are restricted to one selected camera", async () => {
+  const calls = [];
+  const repository = new CaptureAssetRepository({
+    executor: {
+      async query(text, values) {
+        calls.push({ text, values });
+        if (text.includes("COUNT(*)::integer AS received")) {
+          return { rows: [{ received: 3, ready: 2, unknown: 1, unmapped: 1, latest_at: null }] };
+        }
+        return { rows: [] };
+      },
+    },
+  });
+
+  const result = await repository.getBlueIrisTriggerDirectionStatus("Street LPR 1");
+
+  assert.equal(result.received, 3);
+  assert.equal(calls.length, 2);
+  for (const call of calls) {
+    assert.deepEqual(call.values, ["Street LPR 1"]);
+    assert.match(call.text, /camera_name = \$1/);
+    assert.match(call.text, /bi_trigger_direction_status IS NOT NULL/);
+  }
+});
+
 test("orientation remains collecting until each view has enough examples", () => {
   const result = classifyVehicleOrientation({
     embedding: vector(1, 0),

@@ -9,6 +9,9 @@
   semantic labels. Raw and mapped results are stored on the accepted read with
   versioned provenance, while displayed direction, notifications, vehicle-view
   selection, and ingestion latency remain unchanged pending live validation.
+  Blue Iris mapping revisions are isolated from ReID profile revisions so zone
+  setup cannot invalidate historical ReID observations, and shadow diagnostics
+  are scoped to the camera currently being configured.
 - Removed the dense 100-millisecond direction sampling, vehicle-detection
   anchoring, direction worker diagnostics, and associated UI. Existing Blue
   Iris alert pointers and bounded best-vehicle-frame selection remain intact.

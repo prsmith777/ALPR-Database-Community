@@ -12,7 +12,8 @@ import { NotificationRuntimeRepository } from "@/lib/notification-runtime-reposi
 import { createPlateReadEventIdentity } from "@/lib/plate-read-event-identity.mjs";
 import { parseBlueIrisAlertPointer } from "@/lib/blue-iris-alert-pointer.mjs";
 import {
-  resolveBlueIrisTriggerDirection,
+  blueIrisTriggerDirectionColumns,
+  resolveBlueIrisTriggerDirectionForRead,
 } from "@/lib/blue-iris-trigger-direction.mjs";
 import { wakeBlueIrisVehicleFrameWorker } from "@/lib/blue-iris-vehicle-frame-runtime.mjs";
 import {
@@ -265,27 +266,12 @@ async function processPlateRead(data) {
       logger: console,
       matchingSettings: config.plateMatching,
     });
-    const suppliedTriggerType = data.trigger_type ?? data.triggerType ?? data.TYPE;
-    const hasTriggerType = suppliedTriggerType !== null
-      && suppliedTriggerType !== undefined
-      && String(suppliedTriggerType).trim() !== "";
-    let blueIrisTriggerDirection = null;
-    if (hasTriggerType) {
-      const profileResult = camera
-        ? await dbClient.query(
-            `SELECT enabled, front_direction_label, rear_direction_label,
-                    blue_iris_motion_enabled, blue_iris_front_trigger_type,
-                    blue_iris_rear_trigger_type, profile_version
-             FROM public.camera_direction_profiles
-             WHERE camera_key = LOWER(BTRIM($1))`,
-            [camera]
-          )
-        : { rows: [] };
-      blueIrisTriggerDirection = resolveBlueIrisTriggerDirection(
-        profileResult.rows[0] || null,
-        suppliedTriggerType
-      );
-    }
+    const blueIrisTriggerDirection = await resolveBlueIrisTriggerDirectionForRead({
+      query: (text, values) => dbClient.query(text, values),
+      camera,
+      value: data.trigger_type ?? data.triggerType ?? data.TYPE,
+    });
+    const blueIrisTriggerColumns = blueIrisTriggerDirectionColumns(blueIrisTriggerDirection);
 
     const processedPlates = [];
     const duplicatePlates = [];
@@ -419,12 +405,12 @@ async function processPlateRead(data) {
           effectivePlateData.ocr_annotation || null,
           effectivePlateData.plate_annotation || null,
           eventIdentity,
-          blueIrisTriggerDirection?.triggerType || null,
-          blueIrisTriggerDirection?.status || null,
-          blueIrisTriggerDirection?.directionLabel || null,
-          blueIrisTriggerDirection?.profileVersion || null,
-          blueIrisTriggerDirection?.algorithm || null,
-          blueIrisTriggerDirection?.errorCode || null,
+          blueIrisTriggerColumns.bi_trigger_type,
+          blueIrisTriggerColumns.bi_trigger_direction_status,
+          blueIrisTriggerColumns.bi_trigger_direction_label,
+          blueIrisTriggerColumns.bi_trigger_direction_profile_version,
+          blueIrisTriggerColumns.bi_trigger_direction_algorithm,
+          blueIrisTriggerColumns.bi_trigger_direction_error_code,
         ]
       );
 
@@ -465,12 +451,7 @@ async function processPlateRead(data) {
           bi_alert_clip: blueIrisAlert.alertClip,
           bi_alert_path: blueIrisAlert.alertPath,
           bi_alert_offset_ms: blueIrisAlert.offsetMs,
-          bi_trigger_type: blueIrisTriggerDirection?.triggerType || null,
-          bi_trigger_direction_status: blueIrisTriggerDirection?.status || null,
-          bi_trigger_direction_label: blueIrisTriggerDirection?.directionLabel || null,
-          bi_trigger_direction_profile_version: blueIrisTriggerDirection?.profileVersion || null,
-          bi_trigger_direction_algorithm: blueIrisTriggerDirection?.algorithm || null,
-          bi_trigger_direction_error_code: blueIrisTriggerDirection?.errorCode || null,
+          ...blueIrisTriggerColumns,
         };
 
         const mqttResult = await mqttService.processAcceptedRead(acceptedRead);
