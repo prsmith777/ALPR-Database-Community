@@ -2874,19 +2874,30 @@ export default function PlateTable({
                       <div className="absolute left-2 top-2 z-20 max-w-[min(26rem,calc(100%-1rem))] space-y-2 rounded-md border bg-background/90 px-3 py-2 text-xs shadow-sm backdrop-blur">
                         <div>
                           Vehicle view: {{
-                            pending: "Queued",
+                            pending: selectedImage.vehicleImageErrorCode === "WAITING_FOR_DAYTIME_OVERVIEW"
+                              ? "Waiting for daytime overview"
+                              : "Queued",
                             processing: "Processing",
                             failed: selectedImage.vehicleImageRetryable && selectedImage.vehicleImageAttemptCount < 3
                               ? `Retry pending (attempt ${selectedImage.vehicleImageAttemptCount} of 3)`
                               : `Failed after ${selectedImage.vehicleImageAttemptCount || 3} attempts`,
                             unavailable: {
                               RECORDING_UNAVAILABLE: "Recording unavailable or expired",
-                              VEHICLE_NOT_VISIBLE: "Vehicle not visible in the sample window",
+                              VEHICLE_NOT_VISIBLE: "Legacy plate-camera view did not contain a complete vehicle",
                               CAMERA_NOT_MAPPED: "Camera not mapped in Blue Iris",
+                              NIGHTTIME_UNAVAILABLE: "Unavailable nighttime",
+                              DAYLIGHT_UNVERIFIED: "Unavailable because daylight could not be verified",
+                              NO_MATCHING_PLATE_READ: "No matching daytime overview was found",
+                              NO_MATCHING_DAYTIME_OVERVIEW: "No matching daytime overview was found",
+                              MULTIPLE_VEHICLES_MATCH: "Multiple vehicles could match; no image was assigned",
+                              CANDIDATE_IMAGE_MISSING: "The selected overview image is no longer available",
                             }[selectedImage.vehicleImageErrorCode] || "Unavailable",
                           }[selectedImage.vehicleImageStatus] || selectedImage.vehicleImageStatus}
                         </div>
-                        {canReview && ["failed", "unavailable"].includes(selectedImage.vehicleImageStatus) ? (
+                        {canReview
+                          && selectedImage.vehicleImageRetryable
+                          && selectedImage.vehicleImageAttemptCount < 3
+                          && ["failed", "unavailable"].includes(selectedImage.vehicleImageStatus) ? (
                           <Button
                             type="button"
                             size="sm"

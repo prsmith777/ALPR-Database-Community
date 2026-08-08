@@ -434,7 +434,7 @@ test("exact storage breakdown uses a single-flight cache", async () => {
   assert.equal(left.sourceImages.bytes, 10);
 });
 
-test("manual cleanup accepts only unchanged, unreferenced derived files and checks all five reference columns", async () => {
+test("manual cleanup protects queued overview candidates alongside established reference columns", async () => {
   const calls = [];
   let removed = null;
   const candidate = {
@@ -459,6 +459,7 @@ test("manual cleanup accepts only unchanged, unreferenced derived files and chec
   for (const column of ["image_path", "thumbnail_path", "vehicle_image_path", "source_image_path", "derived_path"]) {
     assert.match(calls[0].sql, new RegExp(column));
   }
+  assert.match(calls[0].sql, /vehicle_overview_candidates[\s\S]*frame_path/);
   await assert.rejects(() => validateAndDeleteCleanupCandidate({
     query: async () => ({ rows: [{ referenced: false }] }),
     storagePath: "/storage",

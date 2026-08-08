@@ -1806,6 +1806,111 @@ export async function getBlueIrisVehicleFrameQueueStatus() {
   }
 }
 
+export async function getVehicleOverviewSetup() {
+  await requirePermission("system.manage_settings");
+  try {
+    const [runtime, directionSetup] = await Promise.all([
+      getBlueIrisVehicleFrameRuntime(),
+      (await getCaptureAssetService()).getDirectionSetup(),
+    ]);
+    const [profiles, status] = await Promise.all([
+      runtime.repository.listOverviewPairProfiles(),
+      runtime.repository.getOverviewStatus(),
+    ]);
+    return {
+      success: true,
+      data: {
+        profiles: profiles.map((profile) => ({
+          id: Number(profile.id),
+          sourceCameraName: profile.source_camera_name,
+          plateCameraName: profile.plate_camera_name,
+          directionLabel: profile.direction_label,
+          sourceRole: profile.source_role,
+          expectedDeltaMs: Number(profile.expected_delta_ms),
+          toleranceMs: Number(profile.tolerance_ms),
+          priority: Number(profile.priority),
+          enabled: profile.enabled === true,
+        })),
+        plateCameras: directionSetup.profiles.map((profile) => ({
+          cameraName: profile.cameraName,
+          directions: [profile.frontDirectionLabel, profile.rearDirectionLabel].filter(Boolean),
+        })),
+        status,
+      },
+    };
+  } catch (error) {
+    return visualSearchFailure(error, "Unable to load overview Vehicle View setup.");
+  }
+}
+
+export async function saveVehicleOverviewPairProfile(input = {}) {
+  const principal = await requirePermission("system.manage_settings");
+  try {
+    const sourceCameraName = String(input.sourceCameraName || "").trim();
+    const plateCameraName = String(input.plateCameraName || "").trim();
+    const directionLabel = String(input.directionLabel || "").trim();
+    const sourceRole = String(input.sourceRole || "primary").toLowerCase();
+    const expectedDeltaMs = Number.parseInt(String(input.expectedDeltaMs ?? 0), 10);
+    const toleranceMs = Number.parseInt(String(input.toleranceMs ?? 1500), 10);
+    const priority = Number.parseInt(String(input.priority ?? 0), 10);
+    if (!sourceCameraName || !plateCameraName || !directionLabel) {
+      throw new Error("Source camera, plate camera, and direction are required.");
+    }
+    if (!["primary", "fallback"].includes(sourceRole)) {
+      throw new Error("Overview source role must be primary or fallback.");
+    }
+    if (!Number.isInteger(expectedDeltaMs) || expectedDeltaMs < -30_000 || expectedDeltaMs > 30_000) {
+      throw new Error("Expected timing delta must be between -30000 and 30000 milliseconds.");
+    }
+    if (!Number.isInteger(toleranceMs) || toleranceMs < 250 || toleranceMs > 10_000) {
+      throw new Error("Timing tolerance must be between 250 and 10000 milliseconds.");
+    }
+    if (!Number.isInteger(priority) || priority < 0 || priority > 100) {
+      throw new Error("Overview priority must be between 0 and 100.");
+    }
+    const directionSetup = await (await getCaptureAssetService()).getDirectionSetup(plateCameraName);
+    const camera = directionSetup.profiles.find((profile) => profile.cameraName === plateCameraName);
+    if (!camera || ![camera.frontDirectionLabel, camera.rearDirectionLabel].includes(directionLabel)) {
+      throw new Error("Select a configured direction from the chosen plate camera.");
+    }
+    const runtime = await getBlueIrisVehicleFrameRuntime();
+    const saved = await runtime.repository.saveOverviewPairProfile({
+      sourceCameraName,
+      plateCameraName,
+      directionLabel,
+      sourceRole,
+      expectedDeltaMs,
+      toleranceMs,
+      priority,
+      enabled: input.enabled !== false,
+    }, principal);
+    runtime.worker.wake();
+    revalidatePath("/settings/vehicle-intelligence");
+    return { success: true, data: { id: Number(saved.id) } };
+  } catch (error) {
+    return visualSearchFailure(error, "Unable to save this overview association profile.");
+  }
+}
+
+export async function deleteVehicleOverviewPairProfile(profileId) {
+  const principal = await requirePermission("system.manage_settings");
+  try {
+    const normalizedId = Number.parseInt(String(profileId), 10);
+    if (!Number.isSafeInteger(normalizedId) || normalizedId <= 0) {
+      throw new Error("A valid overview association profile is required.");
+    }
+    const runtime = await getBlueIrisVehicleFrameRuntime();
+    const deleted = await runtime.repository.deleteOverviewPairProfile(normalizedId, principal);
+    if (!deleted) {
+      throw new Error("This overview profile is already in use and cannot be deleted; disable it instead.");
+    }
+    revalidatePath("/settings/vehicle-intelligence");
+    return { success: true };
+  } catch (error) {
+    return visualSearchFailure(error, "Unable to delete this overview association profile.");
+  }
+}
+
 export async function retryBlueIrisVehicleFrameForRead(readId) {
   await requirePermission("plate.review");
   try {

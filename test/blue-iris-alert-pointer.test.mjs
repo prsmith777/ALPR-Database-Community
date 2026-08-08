@@ -33,8 +33,9 @@ test("partial Blue Iris metadata remains usable for future API correlation", () 
 });
 
 test("ingestion and migrations preserve Blue Iris pointers without storing BVR content", async () => {
-  const [route, migrations] = await Promise.all([
+  const [route, overviewRoute, migrations] = await Promise.all([
     readFile(new URL("../app/api/plate-reads/route.js", import.meta.url), "utf8"),
+    readFile(new URL("../app/api/vehicle-overview-candidates/route.js", import.meta.url), "utf8"),
     readFile(new URL("../migrations.sql", import.meta.url), "utf8"),
   ]);
 
@@ -46,7 +47,16 @@ test("ingestion and migrations preserve Blue Iris pointers without storing BVR c
   assert.match(migrations, /2026072801_blue_iris_vehicle_frames/);
   assert.match(migrations, /2026072802_blue_iris_vehicle_frame_queue/);
   assert.match(migrations, /2026072803_blue_iris_vehicle_frame_quality/);
-  assert.match(route, /vehicle_image_status[\s\S]*'pending', 'live'/);
+  assert.match(route, /queueKind: "overview"/);
+  assert.match(route, /NIGHTTIME_UNAVAILABLE/);
+  assert.match(route, /sourceProfiles\.some\(\(profile\) => profile\.enabled === true\)/);
+  assert.match(route, /createOverviewCandidate/);
+  assert.match(overviewRoute, /createIntegrationRouteHandler/);
+  assert.match(overviewRoute, /assessDirectionImageEligibility/);
+  assert.match(overviewRoute, /listOverviewPairProfiles/);
+  assert.match(overviewRoute, /not enabled in Vehicle Views/);
+  assert.match(overviewRoute, /Unavailable nighttime/);
+  assert.match(migrations, /2026080801_daytime_overview_vehicle_views/);
   assert.match(route, /wakeBlueIrisVehicleFrameWorker/);
   assert.doesNotMatch(route, /readFile\([^)]*ALERT_CLIP/);
 });
@@ -70,7 +80,9 @@ test("Blue Iris vehicle frames are bounded, read-owned, and exposed as a two-vie
   assert.match(reconciliation, /vehicle_image_path/);
   assert.match(table, /Vehicle view:/);
   assert.match(table, /Recording unavailable/);
-  assert.match(table, /Vehicle not visible/);
+  assert.match(table, /Legacy plate-camera view/);
+  assert.match(table, /Unavailable nighttime/);
+  assert.match(table, /Waiting for daytime overview/);
   assert.match(table, /Camera not mapped/);
   assert.match(repository, /FOR UPDATE SKIP LOCKED/);
   assert.match(repository, /vehicle_image_attempt_count/);
@@ -80,6 +92,8 @@ test("Blue Iris vehicle frames are bounded, read-owned, and exposed as a two-vie
   assert.match(vehicleSettings, /useRouteTab/);
   assert.match(vehicleSettings, /Cameras/);
   assert.match(vehicleSettings, /Vehicle Views/);
+  assert.match(vehicleSettings, /Daytime overview association/);
+  assert.match(vehicleSettings, /vehicle-overview-candidates/);
   assert.match(vehicleSettings, /Processing/);
   assert.match(vehicleSettings, /Camera for vehicle-view history/);
   assert.match(vehicleSettings, /Optional date range/);

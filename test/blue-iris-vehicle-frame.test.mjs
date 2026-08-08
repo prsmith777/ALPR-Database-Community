@@ -5,6 +5,7 @@ import sharp from "sharp";
 import {
   analyzeVehicleFrameQuality,
   BlueIrisVehicleFrameService,
+  OVERVIEW_VEHICLE_FRAME_SAMPLE_OFFSETS_MS,
   VEHICLE_FRAME_DEEP_EXTENSION_OFFSETS_MS,
   VEHICLE_FRAME_EXTENSION_OFFSETS_MS,
   VEHICLE_FRAME_SAMPLE_OFFSETS_MS,
@@ -45,6 +46,15 @@ test("default vehicle-frame sampling covers the event densely without retaining 
   assert.equal(VEHICLE_FRAME_DEEP_EXTENSION_OFFSETS_MS[0], -8_000);
   assert.equal(VEHICLE_FRAME_DEEP_EXTENSION_OFFSETS_MS.at(-1), 16_000);
   assert.equal(VEHICLE_FRAME_DEEP_EXTENSION_OFFSETS_MS.length, 10);
+});
+
+test("overview sampling covers six seconds at 100 ms intervals", () => {
+  assert.equal(OVERVIEW_VEHICLE_FRAME_SAMPLE_OFFSETS_MS.length, 61);
+  assert.equal(OVERVIEW_VEHICLE_FRAME_SAMPLE_OFFSETS_MS[0], -500);
+  assert.equal(OVERVIEW_VEHICLE_FRAME_SAMPLE_OFFSETS_MS.at(-1), 5_500);
+  assert.ok(OVERVIEW_VEHICLE_FRAME_SAMPLE_OFFSETS_MS.every((offset, index, offsets) => (
+    index === 0 || offset - offsets[index - 1] === 100
+  )));
 });
 
 test("the guarded selector retains the production winner when v3 would choose the plate-time frame", () => {
@@ -338,6 +348,64 @@ test("successful processing saves one frame before replacing the prior derived i
   assert.deepEqual(selectionRequest.plateBox, [700, 360, 780, 410]);
   assert.deepEqual(operations.map((operation) => operation[0]), ["pending", "save", "ready", "delete"]);
   assert.equal(operations.at(-1)[1], "derived/old.jpg");
+});
+
+test("overview processing retains one plate-independent candidate frame", async () => {
+  const operations = [];
+  let selectionRequest = null;
+  const service = new BlueIrisVehicleFrameService({
+    client: {},
+    repository: {
+      async markOverviewCandidateReady(id, frame) {
+        operations.push(["ready", id, frame]);
+      },
+      async markOverviewCandidateFailed() {
+        assert.fail("a successful overview candidate must not fail");
+      },
+    },
+    fileStorage: {
+      async saveDerivedImage(framePath) { operations.push(["save", framePath]); },
+      async deleteImage() { assert.fail("a retained candidate must not be deleted"); },
+    },
+  });
+  service.selectBestFrame = async (request) => {
+    selectionRequest = request;
+    return {
+      best: {
+        buffer: Buffer.from("overview"),
+        timestamp: "2026-08-08T18:00:05.500Z",
+        offsetMs: 500,
+        score: 0.93,
+        quality: { sharpnessScore: 0.9 },
+        scoreBreakdown: { completenessTier: 3 },
+        detection: { confidence: 0.91, left: 0.05, top: 0.05, right: 0.95, bottom: 0.95 },
+        width: 1920,
+        height: 1080,
+      },
+      sampledCount: 61,
+      detectedCount: 9,
+      trackedCount: 0,
+      anchorOffsetMs: null,
+      selectionReason: "production_baseline",
+    };
+  };
+
+  const result = await service.processOverviewCandidate({
+    candidate: {
+      id: 501,
+      source_camera_name: "Street Overview",
+      event_timestamp: "2026-08-08T18:00:05.000Z",
+    },
+    camera: "Cam149",
+    alreadyClaimed: true,
+  });
+
+  assert.equal(result.status, "ready");
+  assert.equal(selectionRequest.plateBox, null);
+  assert.equal(operations[0][0], "save");
+  assert.equal(operations[1][0], "ready");
+  assert.equal(operations[1][2].sampledCount, 61);
+  assert.match(operations[1][2].selectionMetadata.algorithm, /overview-100ms$/);
 });
 
 test("expired recording becomes terminal without writing or deleting an image", async () => {
