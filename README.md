@@ -121,13 +121,16 @@ We can make use of the built-in macros to dynamically get the alert data and sen
 
     { "ai_dump":&JSON, "Image":"&ALERT_JPEG", "camera":"&CAM", "ALERT_PATH":"&ALERT_PATH", "ALERT_CLIP":"&ALERT_CLIP", "timestamp":"&ALERT_TIME", "trigger_type":"&TYPE" }
 
-For direction shadowing without a cloned camera, configure the motion sensor
+For primary direction without a cloned camera, configure the motion sensor
 with both explicit ordered crossings (for example `A>B,B>A`) rather than the
 bidirectional shorthand `A-B`. Blue Iris then sends `MOTION_A>B` or
 `MOTION_B>A` in `&TYPE`. Map those two values to the camera's semantic
-direction labels under Settings > Vehicle Setup > Cameras. This evidence stays
-separate from the displayed direction until it has been validated with live
-traffic in both directions.
+direction labels under Settings > Vehicle Setup > Cameras and enable the
+mapping only after live validation in both directions. New mapped reads use
+Blue Iris as the displayed and notification direction source; missing or
+unmapped crossings fall back to Vehicle ReID. Monochrome nighttime captures
+are not classified and display `Unavailable nighttime`. Existing historical
+reads are not rewritten.
 
 **Set your API key with the `x-api-key` header as seen below.**
 ![Notification settings](Images/alert.JPG)

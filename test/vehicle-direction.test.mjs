@@ -10,6 +10,7 @@ import {
 import { CaptureAssetRepository } from "../lib/capture-asset-repository.mjs";
 import { CaptureAssetService } from "../lib/capture-asset-service.mjs";
 import { VEHICLE_REID_MODEL } from "../lib/vehicle-reid.mjs";
+import { BLUE_IRIS_TRIGGER_DIRECTION_ALGORITHM } from "../lib/blue-iris-trigger-direction.mjs";
 
 function vector(x, y) {
   const value = new Float32Array(512);
@@ -292,6 +293,99 @@ test("historical evaluation discovers and preserves an existing human orientatio
   assert.equal(observations[0].result.orientation, "rear");
 });
 
+test("mapped Blue Iris direction prevents ReID from replacing or renotifying the read", async () => {
+  let assetLoads = 0;
+  let reidWrites = 0;
+  const repository = {
+    getPrimaryDirectionObservation: async (readId, classifierVersion) => {
+      assert.equal(readId, 42);
+      assert.equal(classifierVersion, BLUE_IRIS_TRIGGER_DIRECTION_ALGORITHM);
+      return {
+        status: "ready",
+        orientation: "front",
+        orientation_confidence: 1,
+        direction_label: "Entering driveway",
+        sample_counts: { front: 0, rear: 0, source: "blue_iris_zone_crossing" },
+      };
+    },
+    getAsset: async () => {
+      assetLoads += 1;
+      return null;
+    },
+    getDirectionProfile: async () => null,
+    listOrientationSamples: async () => [],
+    saveDirectionObservation: async () => {
+      reidWrites += 1;
+    },
+  };
+  const service = new CaptureAssetService({ repository, fileStorage: {} });
+
+  const observation = await service.refreshDirectionObservation(42);
+
+  assert.deepEqual(observation, {
+    status: "ready",
+    orientation: "front",
+    confidence: 1,
+    directionLabel: "Entering driveway",
+    counts: { front: 0, rear: 0, source: "blue_iris_zone_crossing" },
+    source: "blue_iris_zone_crossing",
+    notificationRequired: false,
+  });
+  assert.equal(assetLoads, 0);
+  assert.equal(reidWrites, 0);
+});
+
+test("monochrome nighttime captures bypass Blue Iris and ReID direction", async () => {
+  let primaryLoads = 0;
+  let sampleLoads = 0;
+  const observations = [];
+  const repository = {
+    getDirectionImageEligibility: async () => ({
+      eligible: false,
+      reason: "monochrome_night_capture",
+    }),
+    getPrimaryDirectionObservation: async () => {
+      primaryLoads += 1;
+      return null;
+    },
+    getAsset: async () => ({
+      read_id: 77,
+      camera_name: "Street LPR 2",
+      embedding_model: VEHICLE_REID_MODEL,
+      vehicle_embedding: "indexed",
+    }),
+    getDirectionProfile: async () => ({
+      profile_version: 5,
+      front_direction_label: "Eastbound",
+      rear_direction_label: "Westbound",
+    }),
+    listOrientationSamples: async () => {
+      sampleLoads += 1;
+      return [];
+    },
+    saveDirectionObservation: async (observation) => observations.push(observation),
+  };
+  const service = new CaptureAssetService({ repository, fileStorage: {} });
+
+  const observation = await service.refreshDirectionObservation(77);
+
+  assert.equal(primaryLoads, 0);
+  assert.equal(sampleLoads, 0);
+  assert.deepEqual(observation, {
+    status: "unknown",
+    orientation: "unknown",
+    confidence: null,
+    counts: { front: 0, rear: 0, reason: "monochrome_night_capture" },
+    directionLabel: null,
+    unavailableReason: "monochrome_night_capture",
+    displayLabel: "Unavailable nighttime",
+    notificationRequired: false,
+  });
+  assert.equal(observations.length, 1);
+  assert.equal(observations[0].directionLabel, null);
+  assert.equal(observations[0].result.counts.reason, "monochrome_night_capture");
+});
+
 test("historical direction backfill is bounded, resumable, and records individual failures", async () => {
   const cleared = [];
   const failures = [];
@@ -432,16 +526,19 @@ test("historical direction re-evaluation queues machine results and preserves ma
   const queueCall = calls.find((call) => call.text.includes("INSERT INTO public.vehicle_direction_reevaluation_queue"));
   assert.match(queueCall.text, /LEFT JOIN public\.vehicle_orientation_labels labels/i);
   assert.match(queueCall.text, /labels\.read_id IS NULL/i);
-  assert.match(queueCall.text, /LOWER\(BTRIM\(reads\.camera_name\)\) = LOWER\(BTRIM\(\$4\)\)/i);
-  assert.equal(queueCall.values[3], "Street LPR 2");
+  assert.match(queueCall.text, /observations\.classifier_version IS NOT DISTINCT FROM \$4/i);
+  assert.match(queueCall.text, /LOWER\(BTRIM\(reads\.camera_name\)\) = LOWER\(BTRIM\(\$5\)\)/i);
+  assert.equal(queueCall.values[4], "Street LPR 2");
   assert.match(calls.at(-1).text, /vehicle\.direction_reevaluation_queued/i);
 });
 
 test("direction schema and administrator setup are durable and camera driven", async () => {
-  const [migration, settings, actions] = await Promise.all([
+  const [migration, settings, actions, plateTable, database] = await Promise.all([
     readFile(new URL("../migrations.sql", import.meta.url), "utf8"),
     readFile(new URL("../components/settings/VehicleIntelligenceSettings.jsx", import.meta.url), "utf8"),
     readFile(new URL("../app/actions.js", import.meta.url), "utf8"),
+    readFile(new URL("../components/PlateTable.jsx", import.meta.url), "utf8"),
+    readFile(new URL("../lib/db.js", import.meta.url), "utf8"),
   ]);
   assert.match(migration, /CREATE TABLE IF NOT EXISTS public\.camera_direction_profiles/i);
   assert.match(migration, /CREATE TABLE IF NOT EXISTS public\.vehicle_orientation_labels/i);
@@ -450,6 +547,10 @@ test("direction schema and administrator setup are durable and camera driven", a
   assert.match(settings, /When the front of the vehicle is visible/);
   assert.match(settings, /When the rear of the vehicle is visible/);
   assert.match(settings, /Anything below this level stays Unknown/);
+  assert.match(settings, /Monochrome nighttime captures show Unavailable nighttime/);
+  assert.match(plateTable, /Unavailable nighttime/);
+  assert.match(database, /MONOCHROME_NIGHT_DIRECTION_UNAVAILABLE/);
+  assert.match(database, /direction_unavailable_reason/);
   assert.doesNotMatch(settings, /Street LPR|Entry LPR/);
   assert.match(actions, /saveVehicleDirectionProfile[\s\S]*?requirePermission\("system\.manage_settings"\)/);
   assert.match(actions, /labelVehicleOrientation[\s\S]*?requirePermission\("system\.manage_settings"\)/);

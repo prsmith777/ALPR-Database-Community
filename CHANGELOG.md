@@ -2,15 +2,18 @@
 
 ## Unreleased
 
-- Replaced the unsuccessful dense Blue Iris clip vehicle-direction experiment
-  with ordered zone-crossing shadow evidence from the existing alert action.
-  The plate payload may include `"trigger_type":"&TYPE"`; camera setup maps
+- Promoted validated ordered Blue Iris zone crossings from shadow evidence to
+  the primary direction source for new reads. The existing alert-action
+  payload may include `"trigger_type":"&TYPE"`; camera setup maps
   two exact reverse values such as `MOTION_A>B` and `MOTION_B>A` to existing
   semantic labels. Raw and mapped results are stored on the accepted read with
-  versioned provenance, while displayed direction, notifications, vehicle-view
-  selection, and ingestion latency remain unchanged pending live validation.
+  versioned provenance; mapped results now drive displayed direction and
+  direction notifications immediately. Missing or unmapped crossings fall
+  back to Vehicle ReID. Monochrome nighttime captures bypass both direction
+  sources, display `Unavailable nighttime`, and do not send a direction
+  notification. Historical directions are not rewritten.
   Blue Iris mapping revisions are isolated from ReID profile revisions so zone
-  setup cannot invalidate historical ReID observations, and shadow diagnostics
+  setup cannot invalidate historical ReID observations, and diagnostics
   are scoped to the camera currently being configured.
 - Removed the dense 100-millisecond direction sampling, vehicle-detection
   anchoring, direction worker diagnostics, and associated UI. Existing Blue
