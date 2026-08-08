@@ -2,16 +2,19 @@
 
 import NextImage from "next/image";
 import { useEffect, useMemo, useState } from "react";
-import { BrainCircuit, Check, History, Images, Loader2, Pause, Play, RotateCcw, Save, ScanSearch, Settings2, XCircle } from "lucide-react";
+import { BrainCircuit, Check, History, Images, Loader2, Pause, Play, RotateCcw, Save, ScanSearch, Settings2, Trash2, XCircle } from "lucide-react";
 
 import {
   getVehicleDirectionSetup,
+  getVehicleOverviewSetup,
   getBlueIrisVehicleFrameQueueStatus,
   labelVehicleOrientation,
   previewVehicleDirectionReevaluation,
   queueVehicleDirectionReevaluation,
   runVehicleDirectionBackfillBatch,
   saveVehicleDirectionProfile,
+  saveVehicleOverviewPairProfile,
+  deleteVehicleOverviewPairProfile,
   cancelBlueIrisVehicleFrameHistory,
   queueBlueIrisVehicleFrameHistory,
   runBlueIrisVehicleFrameBatch,
@@ -62,7 +65,11 @@ function compactCount(value) {
   }).format(number);
 }
 
-export default function VehicleIntelligenceSettings({ initialData, initialFrameQueue = null }) {
+export default function VehicleIntelligenceSettings({
+  initialData,
+  initialFrameQueue = null,
+  initialOverviewSetup = null,
+}) {
   const routeTab = useRouteTab(VEHICLE_SETUP_ROUTES, "cameras");
   const [data, setData] = useState(initialData);
   const [cameraName, setCameraName] = useState(initialData.selectedCamera || "");
@@ -75,9 +82,29 @@ export default function VehicleIntelligenceSettings({ initialData, initialFrameQ
   const [frameStartDate, setFrameStartDate] = useState("");
   const [frameEndDate, setFrameEndDate] = useState("");
   const [cancelFrameHistoryOpen, setCancelFrameHistoryOpen] = useState(false);
+  const [overviewSetup, setOverviewSetup] = useState(initialOverviewSetup);
+  const [overviewDraft, setOverviewDraft] = useState(() => {
+    const plateCamera = initialOverviewSetup?.plateCameras?.[0] || null;
+    return {
+      sourceCameraName: initialOverviewSetup?.status?.observedSources?.[0] || "",
+      plateCameraName: plateCamera?.cameraName || "",
+      directionLabel: plateCamera?.directions?.[0] || "",
+      sourceRole: "primary",
+      expectedDeltaMs: 0,
+      toleranceMs: 1500,
+      priority: 0,
+      enabled: true,
+    };
+  });
   const profile = useMemo(
     () => data.profiles.find((item) => item.cameraName === cameraName) || data.profiles[0] || null,
     [cameraName, data.profiles]
+  );
+  const overviewPlateCamera = useMemo(
+    () => overviewSetup?.plateCameras?.find((item) => item.cameraName === overviewDraft.plateCameraName)
+      || overviewSetup?.plateCameras?.[0]
+      || null,
+    [overviewDraft.plateCameraName, overviewSetup?.plateCameras]
   );
 
   useEffect(() => {
@@ -129,6 +156,37 @@ export default function VehicleIntelligenceSettings({ initialData, initialFrameQ
       if (!result.success) throw new Error(result.error);
       await reload(cameraName);
       setMessage("Camera direction setup saved. Recent captures were updated and the remaining historical reads were queued.");
+    } catch (error) { setMessage(error.message); }
+    finally { setBusy(""); }
+  };
+
+  const reloadOverviewSetup = async () => {
+    const result = await getVehicleOverviewSetup();
+    if (!result.success) throw new Error(result.error);
+    setOverviewSetup(result.data);
+    return result.data;
+  };
+
+  const saveOverviewProfile = async () => {
+    setBusy("overview-profile");
+    setMessage("");
+    try {
+      const result = await saveVehicleOverviewPairProfile(overviewDraft);
+      if (!result.success) throw new Error(result.error);
+      await reloadOverviewSetup();
+      setMessage("Overview timing and direction association saved.");
+    } catch (error) { setMessage(error.message); }
+    finally { setBusy(""); }
+  };
+
+  const removeOverviewProfile = async (profileId) => {
+    setBusy(`overview-delete:${profileId}`);
+    setMessage("");
+    try {
+      const result = await deleteVehicleOverviewPairProfile(profileId);
+      if (!result.success) throw new Error(result.error);
+      await reloadOverviewSetup();
+      setMessage("Overview association removed.");
     } catch (error) { setMessage(error.message); }
     finally { setBusy(""); }
   };
@@ -454,11 +512,152 @@ export default function VehicleIntelligenceSettings({ initialData, initialFrameQ
         </TabsContent>
 
         <TabsContent value="views" className="mt-0">
-          <Card>
+          <Card className="mt-6">
+            <CardHeader>
+              <CardTitle>Daytime overview association</CardTitle>
+              <CardDescription>
+                Street Overview and driveway fallback alerts are screened independently, then associated using the plate camera&apos;s validated direction and a camera-pair timing window. Monochrome nighttime alerts and reads are skipped.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-5">
+              <div className="grid grid-cols-2 gap-3 text-center sm:grid-cols-4 lg:grid-cols-8">
+                <div className="rounded-md border p-2"><div className="font-semibold">{Number(overviewSetup?.status?.pending || 0).toLocaleString()}</div><div className="text-xs text-muted-foreground">candidates queued</div></div>
+                <div className="rounded-md border p-2"><div className="font-semibold">{Number(overviewSetup?.status?.processing || 0).toLocaleString()}</div><div className="text-xs text-muted-foreground">processing</div></div>
+                <div className="rounded-md border p-2"><div className="font-semibold">{Number(overviewSetup?.status?.awaitingMatch || 0).toLocaleString()}</div><div className="text-xs text-muted-foreground">awaiting plates</div></div>
+                <div className="rounded-md border p-2"><div className="font-semibold">{Number(overviewSetup?.status?.associated || 0).toLocaleString()}</div><div className="text-xs text-muted-foreground">associated</div></div>
+                <div className="rounded-md border p-2"><div className="font-semibold">{Number(overviewSetup?.status?.ambiguous || 0).toLocaleString()}</div><div className="text-xs text-muted-foreground">ambiguous</div></div>
+                <div className="rounded-md border p-2"><div className="font-semibold">{Number(overviewSetup?.status?.unavailable || 0).toLocaleString()}</div><div className="text-xs text-muted-foreground">unavailable</div></div>
+                <div className="rounded-md border p-2"><div className="font-semibold">{Number(overviewSetup?.status?.nighttimeSkipped || 0).toLocaleString()}</div><div className="text-xs text-muted-foreground">nighttime skipped</div></div>
+                <div className="rounded-md border p-2"><div className="font-semibold">{Number(overviewSetup?.status?.failed || 0).toLocaleString()}</div><div className="text-xs text-muted-foreground">failures</div></div>
+              </div>
+
+              <div className="rounded-lg border p-4">
+                <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+                  <div className="space-y-2 lg:col-span-2">
+                    <Label htmlFor="overview-source-camera">Overview source camera</Label>
+                    <Input
+                      id="overview-source-camera"
+                      list="overview-source-cameras"
+                      value={overviewDraft.sourceCameraName}
+                      onChange={(event) => setOverviewDraft({ ...overviewDraft, sourceCameraName: event.target.value })}
+                      placeholder="Example: Street Overview"
+                    />
+                    <datalist id="overview-source-cameras">
+                      {(overviewSetup?.status?.observedSources || []).map((source) => <option key={source} value={source} />)}
+                    </datalist>
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Plate camera</Label>
+                    <Select
+                      value={overviewDraft.plateCameraName}
+                      onValueChange={(plateCameraName) => {
+                        const selected = overviewSetup?.plateCameras?.find((item) => item.cameraName === plateCameraName);
+                        setOverviewDraft({
+                          ...overviewDraft,
+                          plateCameraName,
+                          directionLabel: selected?.directions?.[0] || "",
+                        });
+                      }}
+                    >
+                      <SelectTrigger><SelectValue placeholder="Select a plate camera" /></SelectTrigger>
+                      <SelectContent>
+                        {(overviewSetup?.plateCameras || []).map((item) => <SelectItem key={item.cameraName} value={item.cameraName}>{item.cameraName}</SelectItem>)}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Validated direction</Label>
+                    <Select value={overviewDraft.directionLabel} onValueChange={(directionLabel) => setOverviewDraft({ ...overviewDraft, directionLabel })}>
+                      <SelectTrigger><SelectValue placeholder="Select direction" /></SelectTrigger>
+                      <SelectContent>
+                        {(overviewPlateCamera?.directions || []).map((direction) => <SelectItem key={direction} value={direction}>{direction}</SelectItem>)}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Source role</Label>
+                    <Select value={overviewDraft.sourceRole} onValueChange={(sourceRole) => setOverviewDraft({ ...overviewDraft, sourceRole })}>
+                      <SelectTrigger><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="primary">Primary overview</SelectItem>
+                        <SelectItem value="fallback">Driveway fallback</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="overview-expected-delta">Expected delta (ms)</Label>
+                    <Input id="overview-expected-delta" type="number" min="-30000" max="30000" value={overviewDraft.expectedDeltaMs} onChange={(event) => setOverviewDraft({ ...overviewDraft, expectedDeltaMs: Number(event.target.value) })} />
+                    <p className="text-xs text-muted-foreground">Overview time minus plate-read time. Positive means Overview is later.</p>
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="overview-tolerance">Tolerance (ms)</Label>
+                    <Input id="overview-tolerance" type="number" min="250" max="10000" step="50" value={overviewDraft.toleranceMs} onChange={(event) => setOverviewDraft({ ...overviewDraft, toleranceMs: Number(event.target.value) })} />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="overview-priority">Priority</Label>
+                    <Input id="overview-priority" type="number" min="0" max="100" value={overviewDraft.priority} onChange={(event) => setOverviewDraft({ ...overviewDraft, priority: Number(event.target.value) })} />
+                  </div>
+                  <div className="flex items-center justify-between rounded-md border px-3 py-2">
+                    <div><div className="text-sm font-medium">Association enabled</div><div className="text-xs text-muted-foreground">Disable without deleting its history.</div></div>
+                    <Switch checked={overviewDraft.enabled} onCheckedChange={(enabled) => setOverviewDraft({ ...overviewDraft, enabled })} />
+                  </div>
+                </div>
+                <Button className="mt-4" onClick={saveOverviewProfile} disabled={Boolean(busy) || !overviewDraft.sourceCameraName || !overviewDraft.plateCameraName || !overviewDraft.directionLabel}>
+                  {busy === "overview-profile" ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
+                  Save overview association
+                </Button>
+              </div>
+
+              {overviewSetup?.profiles?.length ? (
+                <div className="overflow-x-auto rounded-md border">
+                  <table className="w-full min-w-[900px] text-left text-sm">
+                    <thead className="border-b bg-muted/40 text-xs text-muted-foreground">
+                      <tr><th className="px-3 py-2">Source</th><th className="px-3 py-2">Plate camera</th><th className="px-3 py-2">Direction</th><th className="px-3 py-2">Role</th><th className="px-3 py-2">Expected / tolerance</th><th className="px-3 py-2">State</th><th className="px-3 py-2">Action</th></tr>
+                    </thead>
+                    <tbody>
+                      {overviewSetup.profiles.map((item) => (
+                        <tr key={item.id} className="border-b last:border-0">
+                          <td className="px-3 py-2">{item.sourceCameraName}</td>
+                          <td className="px-3 py-2">{item.plateCameraName}</td>
+                          <td className="px-3 py-2">{item.directionLabel}</td>
+                          <td className="px-3 py-2 capitalize">{item.sourceRole}</td>
+                          <td className="px-3 py-2 font-mono">{item.expectedDeltaMs} ms / ±{item.toleranceMs} ms</td>
+                          <td className="px-3 py-2">{item.enabled ? "Enabled" : "Disabled"}</td>
+                          <td className="px-3 py-2">
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="ghost"
+                              disabled={Boolean(busy)}
+                              onClick={() => setOverviewDraft({ ...item })}
+                            >
+                              <Settings2 className="h-4 w-4" />
+                              <span className="sr-only">Edit overview association</span>
+                            </Button>
+                            <Button type="button" size="sm" variant="ghost" disabled={Boolean(busy)} onClick={() => removeOverviewProfile(item.id)}>
+                              {busy === `overview-delete:${item.id}` ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
+                              <span className="sr-only">Delete overview association</span>
+                            </Button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              ) : <p className="text-sm text-muted-foreground">No overview timing profiles are configured yet.</p>}
+
+              <div className="rounded-md border p-3 text-sm">
+                <div className="font-medium">Blue Iris daytime motion action</div>
+                <p className="mt-1 text-xs text-muted-foreground">POST the existing authenticated web request to <code>/api/vehicle-overview-candidates</code> with the alert JPEG, camera, alert pointer, timestamp, and optional &amp;TYPE. No plate or AI dump is required.</p>
+                <pre className="mt-2 overflow-x-auto rounded bg-muted p-2 text-xs">{`{ "Image":"&ALERT_JPEG", "camera":"&NAME", "ALERT_PATH":"&ALERT_PATH", "ALERT_CLIP":"&ALERT_CLIP", "timestamp":"&ALERT_TIME", "trigger_type":"&TYPE" }`}</pre>
+              </div>
+            </CardContent>
+          </Card>
+          <Card className="mt-6">
           <CardHeader>
             <CardTitle className="flex items-center gap-2"><Images className="h-5 w-5" /> Blue Iris vehicle views</CardTitle>
             <CardDescription>
-              New reads are sampled automatically from continuous Blue Iris recordings. Historical reads are processed only after you queue them, and can be paused without stopping live work.
+              New daytime reads use the overview association above. These controls retain the older plate-camera selector only for historical jobs and deliberate manual recovery; it no longer supplies normal live Vehicle Views.
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">

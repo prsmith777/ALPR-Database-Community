@@ -153,6 +153,7 @@ test("reconciliation schema and UI expose inventory without cleanup controls", a
   assert.match(migrations, /WHERE job_name = 'storage-reconciliation'[\s\S]*status = 'failed'/);
   assert.match(repository, /LIMIT 25/);
   assert.match(repository, /\) referenced_paths/);
+  assert.match(repository, /vehicle_overview_candidates[\s\S]*frame_path/);
   assert.doesNotMatch(repository, /\) references\s/);
   assert.match(repository, /next_run_at = CURRENT_TIMESTAMP \+ INTERVAL '1 minute'/);
   assert.doesNotMatch(repository, /rm\(|rmdir\(|unlink\(|DELETE\s+FROM|TRUNCATE/i);

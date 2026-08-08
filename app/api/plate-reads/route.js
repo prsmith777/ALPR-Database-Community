@@ -18,6 +18,7 @@ import {
   resolveBlueIrisTriggerDirectionForRead,
 } from "@/lib/blue-iris-trigger-direction.mjs";
 import { assessDirectionImageEligibility } from "@/lib/direction-image-eligibility.mjs";
+import { BlueIrisVehicleFrameRepository } from "@/lib/blue-iris-vehicle-frame-repository.mjs";
 import { wakeBlueIrisVehicleFrameWorker } from "@/lib/blue-iris-vehicle-frame-runtime.mjs";
 import {
   recordAliasApplicationWithClient,
@@ -28,6 +29,11 @@ import { MqttRepository } from "@/lib/mqtt/repository.mjs";
 import { getConfig } from "@/lib/settings";
 import fileStorage from "@/lib/fileStorage";
 import { createIntegrationRouteHandler } from "@/lib/request-auth.mjs";
+import {
+  createOverviewCandidateIdentity,
+  normalizeOverviewTriggerType,
+  overviewNighttimeState,
+} from "@/lib/vehicle-overview-candidate.mjs";
 import { revalidatePath } from "next/cache";
 
 // Revised to use a blacklist of all other possible AI labels if using the memo
@@ -293,11 +299,36 @@ async function processPlateRead(data) {
       directionImageEligibility
     );
     const blueIrisTriggerColumns = blueIrisTriggerDirectionColumns(blueIrisTriggerDirection);
+    const overviewVehicleView = directionImageEligibility.monochrome === true
+      ? {
+          status: "unavailable",
+          queueKind: null,
+          retryable: false,
+          errorCode: "NIGHTTIME_UNAVAILABLE",
+        }
+      : directionImageEligibility.evaluated !== true
+        ? {
+            status: "unavailable",
+            queueKind: null,
+            retryable: false,
+            errorCode: "DAYLIGHT_UNVERIFIED",
+          }
+        : {
+          status: "pending",
+          queueKind: "overview",
+          retryable: true,
+          errorCode: "WAITING_FOR_DAYTIME_OVERVIEW",
+        };
 
     const processedPlates = [];
     const duplicatePlates = [];
     const ignoredPlates = [];
     const pendingEffects = [];
+    const blueIrisAlert = parseBlueIrisAlertPointer({
+      clip: data.ALERT_CLIP,
+      path: data.ALERT_PATH,
+      camera,
+    });
 
     for (const plateData of plates) {
       const observedPlate = plateData.plate_number;
@@ -338,11 +369,6 @@ async function processPlateRead(data) {
         transactionImages.push(imagePaths);
       }
 
-      const blueIrisAlert = parseBlueIrisAlertPointer({
-        clip: data.ALERT_CLIP,
-        path: data.ALERT_PATH,
-        camera,
-      });
       const biPath = blueIrisAlert.playbackPath;
 
       const eventIdentity = createPlateReadEventIdentity({
@@ -389,6 +415,7 @@ async function processPlateRead(data) {
             vehicle_image_queue_kind,
             vehicle_image_attempt_count,
             vehicle_image_retryable,
+            vehicle_image_error_code,
             vehicle_image_updated_at
           )
           SELECT $1, $2::varchar, $3,
@@ -398,7 +425,7 @@ async function processPlateRead(data) {
                  $4, $5, $6, $7, $8::varchar, $9, $10, $11, $12,
                  $18, $19, $20, $21, $22, $23,
                  $13, $14, $15, $16, $17,
-                 'pending', 'live', 0, TRUE, CURRENT_TIMESTAMP
+                 $24, $25, 0, $26, $27, CURRENT_TIMESTAMP
           WHERE NOT EXISTS (
             SELECT 1 FROM plate_reads
             WHERE observed_plate = $2::varchar AND timestamp = $7
@@ -432,6 +459,10 @@ async function processPlateRead(data) {
           blueIrisTriggerColumns.bi_trigger_direction_profile_version,
           blueIrisTriggerColumns.bi_trigger_direction_algorithm,
           blueIrisTriggerColumns.bi_trigger_direction_error_code,
+          overviewVehicleView.status,
+          overviewVehicleView.queueKind,
+          overviewVehicleView.retryable,
+          overviewVehicleView.errorCode,
         ]
       );
 
@@ -516,6 +547,42 @@ async function processPlateRead(data) {
 
     await dbClient.query("COMMIT");
     transactionOpen = false;
+    if (processedPlates.length > 0 && camera) {
+      try {
+        const overviewRepository = new BlueIrisVehicleFrameRepository(pool);
+        const sourceProfiles = await overviewRepository.listOverviewPairProfiles(camera);
+        if (sourceProfiles.some((profile) => profile.enabled === true)) {
+          const daylight = overviewNighttimeState(directionImageEligibility);
+          if (daylight.accepted) {
+            await overviewRepository.createOverviewCandidate({
+              eventIdentity: createOverviewCandidateIdentity({
+                sourceCameraName: camera,
+                eventTimestamp: timestamp,
+                alertClip: blueIrisAlert.alertClip,
+                alertPath: blueIrisAlert.alertPath,
+              }),
+              sourceCameraName: camera,
+              eventTimestamp: new Date(timestamp).toISOString(),
+              alertClip: blueIrisAlert.alertClip,
+              alertPath: blueIrisAlert.alertPath,
+              alertOffsetMs: blueIrisAlert.offsetMs,
+              triggerType: normalizeOverviewTriggerType(
+                data.trigger_type ?? data.triggerType ?? data.TYPE
+              ),
+              daylightStatus: daylight.daylightStatus,
+              monochromeRatio: directionImageEligibility.monochromeRatio,
+              status: daylight.status,
+              retryable: daylight.retryable,
+              errorCode: daylight.errorCode,
+            });
+          }
+        }
+      } catch {
+        // The accepted plate read remains authoritative. A fallback overview
+        // candidate can be retried by the independent Blue Iris action.
+        console.error("Driveway fallback overview candidate handoff failed");
+      }
+    }
     if (processedPlates.length > 0) wakeBlueIrisVehicleFrameWorker();
 
     // Unified MQTT and Pushover handoffs committed with each read. The legacy

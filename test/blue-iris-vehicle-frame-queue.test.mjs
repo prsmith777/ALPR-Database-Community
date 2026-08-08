@@ -70,6 +70,47 @@ test("unconfigured Blue Iris leaves queued reads untouched", async () => {
   assert.equal(claimed, false);
 });
 
+test("overview candidates are processed before legacy plate-owned frame work", async () => {
+  const claims = [];
+  let servicesCreated = 0;
+  const queue = new BlueIrisVehicleFrameQueue({
+    repository: {
+      async getQueueStatus() { return { historicalPaused: true }; },
+      async expireOverviewReads() {},
+      async claimNextOverviewCandidate() {
+        claims.push("overview");
+        return claims.length === 1
+          ? { id: 901, source_camera_name: "Street Overview", event_timestamp: "2026-08-08T18:00:05Z" }
+          : null;
+      },
+      async claimNextOverviewAssociation() { claims.push("association"); return null; },
+      async claimNext() { claims.push("legacy"); return null; },
+    },
+    fileStorage: {},
+    loadConfig: async () => configured,
+    clientFactory: () => ({
+      async testConnection() {
+        return { cameras: [{ id: "Cam149", name: "Street Overview" }] };
+      },
+    }),
+    serviceFactory: () => {
+      servicesCreated += 1;
+      return {
+        async processOverviewCandidate(input) {
+          assert.equal(input.camera, "Cam149");
+          return { kind: "overview_candidate", status: "ready", candidateId: input.candidate.id };
+        },
+      };
+    },
+  });
+
+  const result = await queue.processBatch({ limit: 1 });
+  assert.equal(result.processed, 1);
+  assert.equal(result.succeeded, 1);
+  assert.deepEqual(claims, ["overview"]);
+  assert.equal(servicesCreated, 2);
+});
+
 test("missing camera mappings receive an explicit terminal status", async () => {
   let failure = null;
   const queue = new BlueIrisVehicleFrameQueue({
@@ -103,6 +144,7 @@ test("worker drains queued reads quickly and sleeps when idle", async () => {
     queue: { async processBatch() { return batches.shift(); } },
     intervalMs: 5_000,
   });
+  assert.equal(worker.intervalMs, 5_000);
   assert.equal((await worker.runOnce()).processed, 1);
   assert.equal(worker.phase, "sleeping");
   assert.equal((await worker.runOnce()).processed, 0);
