@@ -400,6 +400,7 @@ export default function VehicleIntelligenceSettings({ initialData, initialFrameQ
                         <div className="rounded-md border p-2"><div className="font-semibold">{Number(data.blueIrisTriggerDirection?.unknown || 0).toLocaleString()}</div><div className="text-xs text-muted-foreground">unknown</div></div>
                         <div className="rounded-md border p-2"><div className="font-semibold">{Number(data.blueIrisTriggerDirection?.unmapped || 0).toLocaleString()}</div><div className="text-xs text-muted-foreground">unmapped</div></div>
                       </div>
+                      <p className="text-xs text-muted-foreground">Counts and observations are limited to {cameraName || "the selected camera"}.</p>
                       {data.blueIrisTriggerDirection?.recent?.length ? (
                         <details className="rounded-md border">
                           <summary className="cursor-pointer px-3 py-2 text-sm font-medium">Newest shadow observations</summary>
