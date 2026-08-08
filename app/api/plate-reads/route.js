@@ -12,9 +12,12 @@ import { NotificationRuntimeRepository } from "@/lib/notification-runtime-reposi
 import { createPlateReadEventIdentity } from "@/lib/plate-read-event-identity.mjs";
 import { parseBlueIrisAlertPointer } from "@/lib/blue-iris-alert-pointer.mjs";
 import {
+  applyBlueIrisDirectionEligibility,
   blueIrisTriggerDirectionColumns,
+  persistBlueIrisPrimaryDirectionForRead,
   resolveBlueIrisTriggerDirectionForRead,
 } from "@/lib/blue-iris-trigger-direction.mjs";
+import { assessDirectionImageEligibility } from "@/lib/direction-image-eligibility.mjs";
 import { wakeBlueIrisVehicleFrameWorker } from "@/lib/blue-iris-vehicle-frame-runtime.mjs";
 import {
   recordAliasApplicationWithClient,
@@ -243,6 +246,20 @@ async function processPlateRead(data) {
       );
     }
 
+    let directionImageEligibility;
+    try {
+      directionImageEligibility = await assessDirectionImageEligibility(data.Image);
+    } catch {
+      directionImageEligibility = {
+        eligible: false,
+        evaluated: false,
+        monochrome: false,
+        monochromeRatio: null,
+        reason: "direction_image_assessment_failed",
+      };
+      console.error("Direction image lighting assessment failed");
+    }
+
     // Get database connection
     const pool = await getPool();
     dbClient = await pool.connect();
@@ -266,11 +283,15 @@ async function processPlateRead(data) {
       logger: console,
       matchingSettings: config.plateMatching,
     });
-    const blueIrisTriggerDirection = await resolveBlueIrisTriggerDirectionForRead({
+    const resolvedBlueIrisTriggerDirection = await resolveBlueIrisTriggerDirectionForRead({
       query: (text, values) => dbClient.query(text, values),
       camera,
       value: data.trigger_type ?? data.triggerType ?? data.TYPE,
     });
+    const blueIrisTriggerDirection = applyBlueIrisDirectionEligibility(
+      resolvedBlueIrisTriggerDirection,
+      directionImageEligibility
+    );
     const blueIrisTriggerColumns = blueIrisTriggerDirectionColumns(blueIrisTriggerDirection);
 
     const processedPlates = [];
@@ -425,6 +446,12 @@ async function processPlateRead(data) {
         }
       } else {
         const readId = result.rows[0].id;
+        const primaryDirection = await persistBlueIrisPrimaryDirectionForRead({
+          query: (text, values) => dbClient.query(text, values),
+          readId,
+          camera,
+          evidence: blueIrisTriggerDirection,
+        });
         await recordAliasApplicationWithClient(dbClient, {
           readId,
           eventIdentity,
@@ -465,6 +492,17 @@ async function processPlateRead(data) {
           throw new Error(
             `Unified notification outbox handoff failed for accepted read ${readId}`
           );
+        }
+        if (primaryDirection) {
+          const directionResult = await notificationService.processVehicleDirection(
+            acceptedRead,
+            primaryDirection
+          );
+          if (directionResult.status === "error" || directionResult.status === "partial") {
+            throw new Error(
+              `Blue Iris direction notification outbox handoff failed for accepted read ${readId}`
+            );
+          }
         }
 
         pendingEffects.push({

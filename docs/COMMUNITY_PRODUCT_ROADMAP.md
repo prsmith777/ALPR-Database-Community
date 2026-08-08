@@ -462,17 +462,20 @@ notes. Updates remain externally orchestrated.
   error, while Recognition Feed shows attempt-aware processing failures and
   lets authorized reviewers explicitly retry an individual failed or
   unavailable vehicle view.
-- Blue Iris ordered zone-crossing shadow implemented as the replacement for the
-  unsuccessful dense clip vehicle-direction experiment. The existing plate web
+- Blue Iris ordered zone-crossing direction implemented as the replacement for
+  the unsuccessful dense clip vehicle-direction experiment. The existing plate web
   action may include `"trigger_type":"&TYPE"`; ALPR normalizes an exact value
   such as `MOTION_A>B`, maps it through the selected camera's two semantic
   direction labels, and stores the raw trigger plus versioned mapping result on
   the same read. Camera setup requires two exact reverse crossings and exposes
-  received, mapped, unknown, and unmapped totals. This remains isolated shadow
-  evidence: it does not replace displayed ReID direction, send direction
-  notifications, choose a vehicle view, or delay ingestion. The former dense
-  100-millisecond clip sampling and vehicle-detection direction worker have
-  been removed; an already-created production shadow table may remain unused.
+  received, mapped, unknown, and unmapped totals. Live validation completed for
+  Street LPR 1/2 and Entry LPR 1/2. New mapped reads now use the Blue Iris
+  result as displayed direction and emit the existing direction notification
+  event immediately; missing, disabled, shorthand, and unmapped crossings fall
+  back to Vehicle ReID. Monochrome nighttime captures bypass both direction
+  sources and display `Unavailable nighttime`. Legacy shadow observations and
+  historical direction assignments are not rewritten. The former dense 100-millisecond clip
+  sampling and vehicle-detection direction worker remain removed.
 - Per-read vehicle color observations and reviewable vehicle profiles are
   implemented as an evidence-gathering phase. Color is stored with confidence
   and local algorithm provenance against the individual read, never copied onto
@@ -490,12 +493,11 @@ notes. Updates remain externally orchestrated.
 Street LPR 1 and Street Overview are installed. Street Overview supplies strong
 daytime vehicle images but is monochrome at night and is not expected to read a
 plate. Street LPR 1/2 direction will use Blue Iris's existing motion tracker and
-ordered `&TYPE` crossing rather than ALPR vehicle detection. Before promotion,
-draw and validate each Street LPR zone map in daylight, preserve the working
-plate alert, and collect representative traffic in both directions. If Blue
-Iris does not emit the ordered crossing reliably on these cameras, keep live
-direction on the current ReID result and reassess local block motion without
-restoring the failed vehicle-detection clip pass.
+ordered `&TYPE` crossing rather than ALPR vehicle detection. Camera-specific
+zone maps and direction meanings were validated with live traffic before
+promotion. Vehicle ReID remains the automatic fallback if Blue Iris does not
+emit a usable ordered crossing; the failed vehicle-detection clip pass will not
+be restored. Monochrome nighttime captures do not receive a direction result.
 
 - Expand the implemented asynchronous color, coarse-type, and direction
   observations to make/model/year with per-field confidence,
@@ -503,12 +505,11 @@ restoring the failed vehicle-detection clip pass.
 - Store make, model, year range, alternate OCR candidates, and bounding boxes;
   expand current orientation observations with optional multiframe motion
   validation before speed claims.
-- Validate `MOTION_A>B` and `MOTION_B>A` payloads against known-direction Street
-  LPR 1/2 traffic, including close vehicles and nearby opposing traffic, before
-  promoting Blue Iris shadow evidence to displayed direction or using it for
-  overview-camera association. Keep missing, shorthand, and unmapped trigger
-  values Unknown. Mapping revisions remain independent from ReID calibration,
-  and validation totals and recent observations are scoped to one camera.
+- Continue monitoring camera-scoped Blue Iris mapping diagnostics after
+  promotion, especially close vehicles and nearby opposing traffic. Keep
+  missing, shorthand, and unmapped trigger values on the ReID fallback path.
+  Mapping revisions remain independent from ReID calibration, and validation
+  totals and recent observations stay scoped to one camera.
 - Ingest motion-triggered Street Overview candidate frames and Entry LPR 1/2
   fallback candidates without assigning them to a plate yet. Screen non-vehicle
   motion locally and never claim vehicle color from monochrome night imagery.

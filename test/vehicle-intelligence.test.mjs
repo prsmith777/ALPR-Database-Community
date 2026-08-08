@@ -15,6 +15,7 @@ import {
 } from "../lib/vehicle-attributes.mjs";
 import { chooseShadowCluster } from "../lib/vehicle-clustering.mjs";
 import { VEHICLE_INTELLIGENCE_NAVIGATION } from "../lib/vehicle-intelligence-navigation.mjs";
+import { BLUE_IRIS_TRIGGER_DIRECTION_ALGORITHM } from "../lib/blue-iris-trigger-direction.mjs";
 
 async function source(path) {
   return readFile(new URL(`../${path}`, import.meta.url), "utf8");
@@ -426,7 +427,8 @@ test("vehicle profile and review queues paginate independently", async () => {
   assert.equal(calls[0].values.at(-1), 100);
   assert.equal(calls[1].values.at(-1), 20);
   assert.equal(calls[2].values.at(-1), 60);
-  assert.equal(calls[3].values.at(-1), 80);
+  assert.equal(calls[3].values.at(-2), 80);
+  assert.equal(calls[3].values.at(-1), BLUE_IRIS_TRIGGER_DIRECTION_ALGORITHM);
   assert.equal(result.pagination.profiles.page, 3);
   assert.equal(result.pagination.plateReviews.page, 4);
 });
