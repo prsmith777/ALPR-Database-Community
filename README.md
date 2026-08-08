@@ -119,7 +119,15 @@ browser session instead of the integration API key.
 
 We can make use of the built-in macros to dynamically get the alert data and send it as our payload. It should look like this:
 
-    { "ai_dump":&JSON, "Image":"&ALERT_JPEG", "camera":"&CAM", "ALERT_PATH": "&ALERT_PATH", "ALERT_CLIP": "&ALERT_CLIP", "timestamp":"&ALERT_TIME" }
+    { "ai_dump":&JSON, "Image":"&ALERT_JPEG", "camera":"&CAM", "ALERT_PATH":"&ALERT_PATH", "ALERT_CLIP":"&ALERT_CLIP", "timestamp":"&ALERT_TIME", "trigger_type":"&TYPE" }
+
+For direction shadowing without a cloned camera, configure the motion sensor
+with both explicit ordered crossings (for example `A>B,B>A`) rather than the
+bidirectional shorthand `A-B`. Blue Iris then sends `MOTION_A>B` or
+`MOTION_B>A` in `&TYPE`. Map those two values to the camera's semantic
+direction labels under Settings > Vehicle Setup > Cameras. This evidence stays
+separate from the displayed direction until it has been validated with live
+traffic in both directions.
 
 **Set your API key with the `x-api-key` header as seen below.**
 ![Notification settings](Images/alert.JPG)

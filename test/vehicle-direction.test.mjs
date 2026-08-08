@@ -30,6 +30,9 @@ test("camera direction profiles accept custom meanings and reject ambiguous mapp
     frontDirectionLabel: "Entering driveway",
     rearDirectionLabel: "Exiting driveway",
     minimumConfidence: 0.72,
+    blueIrisMotionEnabled: false,
+    blueIrisFrontTriggerType: null,
+    blueIrisRearTriggerType: null,
   });
   assert.throws(
     () => normalizeDirectionProfile({ cameraName: "Street", frontDirectionLabel: "West", rearDirectionLabel: " west " }),

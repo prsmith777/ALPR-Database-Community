@@ -11,6 +11,9 @@ import { NotificationAcceptedReadService } from "@/lib/notification-accepted-rea
 import { NotificationRuntimeRepository } from "@/lib/notification-runtime-repository.mjs";
 import { createPlateReadEventIdentity } from "@/lib/plate-read-event-identity.mjs";
 import { parseBlueIrisAlertPointer } from "@/lib/blue-iris-alert-pointer.mjs";
+import {
+  resolveBlueIrisTriggerDirection,
+} from "@/lib/blue-iris-trigger-direction.mjs";
 import { wakeBlueIrisVehicleFrameWorker } from "@/lib/blue-iris-vehicle-frame-runtime.mjs";
 import {
   recordAliasApplicationWithClient,
@@ -262,6 +265,27 @@ async function processPlateRead(data) {
       logger: console,
       matchingSettings: config.plateMatching,
     });
+    const suppliedTriggerType = data.trigger_type ?? data.triggerType ?? data.TYPE;
+    const hasTriggerType = suppliedTriggerType !== null
+      && suppliedTriggerType !== undefined
+      && String(suppliedTriggerType).trim() !== "";
+    let blueIrisTriggerDirection = null;
+    if (hasTriggerType) {
+      const profileResult = camera
+        ? await dbClient.query(
+            `SELECT enabled, front_direction_label, rear_direction_label,
+                    blue_iris_motion_enabled, blue_iris_front_trigger_type,
+                    blue_iris_rear_trigger_type, profile_version
+             FROM public.camera_direction_profiles
+             WHERE camera_key = LOWER(BTRIM($1))`,
+            [camera]
+          )
+        : { rows: [] };
+      blueIrisTriggerDirection = resolveBlueIrisTriggerDirection(
+        profileResult.rows[0] || null,
+        suppliedTriggerType
+      );
+    }
 
     const processedPlates = [];
     const duplicatePlates = [];
@@ -343,6 +367,12 @@ async function processPlateRead(data) {
             bi_alert_clip,
             bi_alert_path,
             bi_alert_offset_ms,
+            bi_trigger_type,
+            bi_trigger_direction_status,
+            bi_trigger_direction_label,
+            bi_trigger_direction_profile_version,
+            bi_trigger_direction_algorithm,
+            bi_trigger_direction_error_code,
             confidence,
             crop_coordinates,
             ocr_annotation,
@@ -358,7 +388,9 @@ async function processPlateRead(data) {
                  CASE WHEN $3::bigint IS NULL THEN 'unreviewed' ELSE 'alias_resolved' END,
                  CASE WHEN $3::bigint IS NULL THEN 0 ELSE 1 END,
                  ($3::bigint IS NOT NULL),
-                 $4, $5, $6, $7, $8::varchar, $9, $10, $11, $12, $13, $14, $15, $16, $17,
+                 $4, $5, $6, $7, $8::varchar, $9, $10, $11, $12,
+                 $18, $19, $20, $21, $22, $23,
+                 $13, $14, $15, $16, $17,
                  'pending', 'live', 0, TRUE, CURRENT_TIMESTAMP
           WHERE NOT EXISTS (
             SELECT 1 FROM plate_reads
@@ -387,6 +419,12 @@ async function processPlateRead(data) {
           effectivePlateData.ocr_annotation || null,
           effectivePlateData.plate_annotation || null,
           eventIdentity,
+          blueIrisTriggerDirection?.triggerType || null,
+          blueIrisTriggerDirection?.status || null,
+          blueIrisTriggerDirection?.directionLabel || null,
+          blueIrisTriggerDirection?.profileVersion || null,
+          blueIrisTriggerDirection?.algorithm || null,
+          blueIrisTriggerDirection?.errorCode || null,
         ]
       );
 
@@ -427,6 +465,12 @@ async function processPlateRead(data) {
           bi_alert_clip: blueIrisAlert.alertClip,
           bi_alert_path: blueIrisAlert.alertPath,
           bi_alert_offset_ms: blueIrisAlert.offsetMs,
+          bi_trigger_type: blueIrisTriggerDirection?.triggerType || null,
+          bi_trigger_direction_status: blueIrisTriggerDirection?.status || null,
+          bi_trigger_direction_label: blueIrisTriggerDirection?.directionLabel || null,
+          bi_trigger_direction_profile_version: blueIrisTriggerDirection?.profileVersion || null,
+          bi_trigger_direction_algorithm: blueIrisTriggerDirection?.algorithm || null,
+          bi_trigger_direction_error_code: blueIrisTriggerDirection?.errorCode || null,
         };
 
         const mqttResult = await mqttService.processAcceptedRead(acceptedRead);
