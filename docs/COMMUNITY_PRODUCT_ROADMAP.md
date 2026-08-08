@@ -18,7 +18,7 @@ reliable background processing.
 6. Audit sensitive searches, exports, corrections, rule changes, and
    destructive maintenance.
 
-## Release candidate baseline — August 7, 2026
+## Release candidate baseline — August 8, 2026
 
 - Application `0.1.18` candidate includes named users and roles, evidence-preserving plate
   review, filter-respecting exports, the searchable help center, local privacy
@@ -476,6 +476,21 @@ notes. Updates remain externally orchestrated.
   sources and display `Unavailable nighttime`. Legacy shadow observations and
   historical direction assignments are not rewritten. The former dense 100-millisecond clip
   sampling and vehicle-detection direction worker remain removed.
+- Daytime overview Vehicle View candidate implemented as one guarded phase.
+  Street Overview motion alerts enter a plate-independent durable candidate
+  queue, are screened locally for a complete vehicle, and sample a bounded
+  six-second interval at 100-millisecond spacing while retaining only the best
+  JPEG. Entry LPR 1/2 can be configured as driveway fallbacks; their existing
+  accepted plate action creates the fallback candidate automatically, so no
+  Blue Iris clone is needed. Association waits for expected reads and uses a
+  camera-pair signed timing profile, validated Blue Iris direction, same-event
+  plate agreement, and a conservative runner-up margin. Street LPR 1/2 reads
+  for the same vehicle may share the candidate, while competing nearby
+  vehicles remain unassigned. Monochrome candidate alerts and plate reads are
+  terminal `Unavailable nighttime` and never enter frame selection or matching.
+  Normal new reads no longer use the plate-camera clip for Vehicle View;
+  historical/manual recovery keeps the older selector. Production timing and
+  live association accuracy still require post-deployment validation.
 - Per-read vehicle color observations and reviewable vehicle profiles are
   implemented as an evidence-gathering phase. Color is stored with confidence
   and local algorithm provenance against the individual read, never copied onto
@@ -510,15 +525,12 @@ be restored. Monochrome nighttime captures do not receive a direction result.
   missing, shorthand, and unmapped trigger values on the ReID fallback path.
   Mapping revisions remain independent from ReID calibration, and validation
   totals and recent observations stay scoped to one camera.
-- Ingest motion-triggered Street Overview candidate frames and Entry LPR 1/2
-  fallback candidates without assigning them to a plate yet. Screen non-vehicle
-  motion locally and never claim vehicle color from monochrome night imagery.
-- Associate overview candidates to Street LPR plate reads using timestamp,
-  validated direction, and conservative ambiguity gates. Profile camera-pair
-  timing rather than using one nearest-time rule: Street LPR 1 and Street
-  Overview are normally within about one second, while Street LPR 2 is roughly
-  four to five seconds away. Prefer Street Overview as the eventual Vehicle
-  view, with Entry LPR 1/2 fallback for vehicles turning into the driveway.
+- Validate the new daytime overview pipeline with live production traffic.
+  Confirm the signed Street Overview timing profiles for Street LPR 1 (normally
+  within about one second) and Street LPR 2 (roughly four to five seconds), then
+  validate Entry LPR fallback timing for driveway turns. Review every ambiguous
+  or unmatched outcome before changing tolerances; do not enable nighttime
+  processing or restore the retired clip-based direction analyzer.
 - Expand Vehicle ReID calibration with larger labeled local samples and
   camera-pair reporting before making stronger labels or applying thresholds.
 - Consider pgvector only when the bounded in-process cosine scan no longer
