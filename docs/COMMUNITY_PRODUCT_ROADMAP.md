@@ -100,7 +100,14 @@ reliable background processing.
   coordinates from the original capture into the Blue Iris timeline resolution.
   If the exact-time frame is unavailable, one unambiguous Street LPR sample
   within 750 milliseconds may anchor the track; competing plausible vehicles
-  remain Unknown. Street Overview is never used as a plate anchor.
+  remain Unknown. Phase 2A.2 replaces that sparse motion input with a separate
+  dense pass matched by stored Blue Iris clip and recording offset. It samples
+  the real alert duration every 100 milliseconds with 500 milliseconds of
+  safety padding per side and a six-second cap/fallback, removes exact duplicate
+  frames, permits four unique frames over 300 milliseconds, and keeps
+  edge-clipped close vehicles eligible for motion while the saved Vehicle view
+  still prefers complete framing. ReID is soft supporting evidence rather than
+  a hard track filter. Street Overview is never used as a plate anchor.
   Settings > Vehicle Setup now separates Cameras, Vehicle Views, Processing,
   and Calibration into clean route-backed pages. Camera-specific vehicle-view
   and re-evaluation controls include their own selectors and name the selected
@@ -475,13 +482,19 @@ notes. Updates remain externally orchestrated.
   error, while Recognition Feed shows attempt-aware processing failures and
   lets authorized reviewers explicitly retry an individual failed or
   unavailable vehicle view.
-- Phase 2A daytime clip-motion shadow implemented: the existing bounded sample
-  pass scales the stored Street LPR plate geometry into the Blue Iris timeline
-  resolution, reuses the plate-time detection as the target anchor, and measures
-  its detector/ReID-assisted track centers over time. When the exact-time frame
-  is unavailable, one unambiguous LPR sample within 750 milliseconds can supply
-  the anchor; competing plausible vehicles remain Unknown. Direction comes from
-  the observed trajectory rather than from single-frame front/rear orientation.
+- Phase 2A daytime clip-motion shadow implemented: a direction-only dense pass
+  matches the stored Blue Iris clip and recording offset to alert metadata,
+  samples the actual alert duration every 100 milliseconds with 500 milliseconds
+  of safety padding per side, and caps both alert-driven and fallback windows at
+  six seconds. It scales the stored Street LPR plate geometry into every sampled
+  timeline frame, removes exact duplicate frames, anchors one unambiguous
+  detected vehicle anywhere in the bounded alert, and measures its track centers
+  over time. Four unique frames spanning at least 300 milliseconds can resolve a
+  sub-second passage. Edge-clipped close vehicles remain valid motion evidence;
+  complete framing is still preferred independently for the saved Vehicle view.
+  ReID contributes soft identity evidence but is not a hard direction filter.
+  Competing plausible vehicles remain Unknown. Direction comes from the observed
+  trajectory rather than from single-frame front/rear orientation.
   Inconsistent, stationary, unanchored, or low-confidence tracks remain
   Unknown. Results persist in a dedicated table with versioned diagnostics and
   are summarized read-only under Vehicle Setup > Processing; nothing joins
