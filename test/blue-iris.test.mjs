@@ -141,37 +141,6 @@ test("nearest alert matching uses camera and a bounded timestamp window", async 
   });
 });
 
-test("stored clip and recording offset disambiguate nearby Blue Iris alerts", async () => {
-  const target = Date.parse("2026-08-08T00:00:00Z") / 1000;
-  const responses = [
-    { result: "fail", session: "challenge" },
-    { result: "success", session: "active", data: {} },
-    {
-      result: "success",
-      data: [
-        { date: target + 1, clip: "@unrelated.bvr", offset: 1_000, msec: 10_000 },
-        { date: target + 3, clip: "@plate-read.bvr", offset: 2_842_150, msec: 3_000 },
-      ],
-    },
-  ];
-  const client = new BlueIrisClient(
-    { host: "blueiris.local:81", username: "alpr", password: "secret" },
-    { fetchImpl: async () => jsonResponse(responses.shift()) }
-  );
-
-  const result = await client.findMatchingAlert({
-    camera: "Street_LPR_2",
-    timestamp: "2026-08-08T00:00:00Z",
-    toleranceSeconds: 15,
-    clip: "plate-read.bvr",
-    offsetMs: 2_842_150,
-  });
-  assert.equal(result.matched, true);
-  assert.equal(result.alert.clip, "@plate-read.bvr");
-  assert.equal(result.alert.offset, 2_842_150);
-  assert.equal(result.alert.msec, 3_000);
-});
-
 test("invalid credentials return a stable error without exposing the password", async () => {
   const client = new BlueIrisClient(
     { host: "blueiris.local:81", username: "alpr", password: "do-not-expose" },

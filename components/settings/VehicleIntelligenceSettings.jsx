@@ -353,6 +353,87 @@ export default function VehicleIntelligenceSettings({ initialData, initialFrameQ
                       <div><div className="text-sm font-medium">Direction classification</div><div className="text-xs text-muted-foreground">Pause without deleting calibration.</div></div>
                       <Switch checked={draft.enabled} onCheckedChange={(enabled) => setDraft({ ...draft, enabled })} />
                     </div>
+                    <div className="space-y-4 rounded-md border p-4 md:col-span-2">
+                      <div className="flex items-center justify-between gap-4">
+                        <div>
+                          <div className="text-sm font-medium">Blue Iris zone-crossing shadow</div>
+                          <div className="text-xs text-muted-foreground">
+                            Map the ordered &amp;TYPE value from the existing plate alert. Shadow evidence does not replace the displayed direction or send direction notifications.
+                          </div>
+                        </div>
+                        <Switch
+                          checked={draft.blueIrisMotionEnabled === true}
+                          onCheckedChange={(blueIrisMotionEnabled) => setDraft({ ...draft, blueIrisMotionEnabled })}
+                          aria-label="Enable Blue Iris zone-crossing shadow"
+                        />
+                      </div>
+                      <div className="grid gap-4 md:grid-cols-2">
+                        <div className="space-y-2">
+                          <Label htmlFor="blue-iris-front-trigger">
+                            Trigger meaning {draft.frontDirectionLabel || "front-view direction"}
+                          </Label>
+                          <Input
+                            id="blue-iris-front-trigger"
+                            value={draft.blueIrisFrontTriggerType || ""}
+                            onChange={(event) => setDraft({ ...draft, blueIrisFrontTriggerType: event.target.value })}
+                            placeholder="MOTION_A>B"
+                          />
+                        </div>
+                        <div className="space-y-2">
+                          <Label htmlFor="blue-iris-rear-trigger">
+                            Trigger meaning {draft.rearDirectionLabel || "rear-view direction"}
+                          </Label>
+                          <Input
+                            id="blue-iris-rear-trigger"
+                            value={draft.blueIrisRearTriggerType || ""}
+                            onChange={(event) => setDraft({ ...draft, blueIrisRearTriggerType: event.target.value })}
+                            placeholder="MOTION_B>A"
+                          />
+                        </div>
+                      </div>
+                      <p className="text-xs text-muted-foreground">
+                        Configure Blue Iris with both ordered rules, for example A&gt;B,B&gt;A. The existing web request sends the crossing as <code>"trigger_type":"&amp;TYPE"</code>.
+                      </p>
+                      <div className="grid grid-cols-2 gap-3 text-center sm:grid-cols-4">
+                        <div className="rounded-md border p-2"><div className="font-semibold">{Number(data.blueIrisTriggerDirection?.received || 0).toLocaleString()}</div><div className="text-xs text-muted-foreground">received</div></div>
+                        <div className="rounded-md border p-2"><div className="font-semibold">{Number(data.blueIrisTriggerDirection?.ready || 0).toLocaleString()}</div><div className="text-xs text-muted-foreground">mapped</div></div>
+                        <div className="rounded-md border p-2"><div className="font-semibold">{Number(data.blueIrisTriggerDirection?.unknown || 0).toLocaleString()}</div><div className="text-xs text-muted-foreground">unknown</div></div>
+                        <div className="rounded-md border p-2"><div className="font-semibold">{Number(data.blueIrisTriggerDirection?.unmapped || 0).toLocaleString()}</div><div className="text-xs text-muted-foreground">unmapped</div></div>
+                      </div>
+                      {data.blueIrisTriggerDirection?.recent?.length ? (
+                        <details className="rounded-md border">
+                          <summary className="cursor-pointer px-3 py-2 text-sm font-medium">Newest shadow observations</summary>
+                          <div className="overflow-x-auto border-t">
+                            <table className="w-full min-w-[760px] text-left text-sm">
+                              <thead className="border-b bg-muted/40 text-xs text-muted-foreground">
+                                <tr>
+                                  <th className="px-3 py-2 font-medium">Plate</th>
+                                  <th className="px-3 py-2 font-medium">Camera / time</th>
+                                  <th className="px-3 py-2 font-medium">Blue Iris &amp;TYPE</th>
+                                  <th className="px-3 py-2 font-medium">Shadow / current</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {data.blueIrisTriggerDirection.recent.map((read) => (
+                                  <tr key={read.readId} className="border-b last:border-0">
+                                    <td className="px-3 py-2 font-mono font-semibold">{read.plateNumber}</td>
+                                    <td className="px-3 py-2">
+                                      <div>{read.cameraName}</div>
+                                      <div className="text-xs text-muted-foreground">{new Date(read.timestamp).toLocaleString()}</div>
+                                    </td>
+                                    <td className="px-3 py-2 font-mono">{read.triggerType || "Unavailable"}</td>
+                                    <td className="px-3 py-2">
+                                      <div>{read.status === "ready" ? read.directionLabel : `Unknown — ${String(read.errorCode || "unresolved").toLowerCase().replaceAll("_", " ")}`}</div>
+                                      <div className="text-xs text-muted-foreground">Current: {read.currentDirectionLabel || "not available"}</div>
+                                    </td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
+                        </details>
+                      ) : null}
+                    </div>
                     <div className="md:col-span-2">
                       <Button onClick={saveProfile} disabled={Boolean(busy)}>
                         {busy === "profile" ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
@@ -448,66 +529,6 @@ export default function VehicleIntelligenceSettings({ initialData, initialFrameQ
         </TabsContent>
 
         <TabsContent value="processing" className="mt-0">
-          <div className="space-y-6">
-          <Card>
-          <CardHeader>
-            <CardTitle>Clip motion direction shadow</CardTitle>
-            <CardDescription>
-              Daytime color reads are measured from plate-anchored movement across bounded Blue Iris samples. These results are diagnostic only and do not change displayed direction, notifications, vehicle views, or Confirm and Next.
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="grid grid-cols-2 gap-3 text-center sm:grid-cols-5">
-              <div className="rounded-md border p-3"><div className="text-xl font-semibold">{Number(frameQueue?.motionShadow?.observed || 0).toLocaleString()}</div><div className="text-xs text-muted-foreground">reads observed</div></div>
-              <div className="rounded-md border p-3"><div className="text-xl font-semibold">{Number(frameQueue?.motionShadow?.ready || 0).toLocaleString()}</div><div className="text-xs text-muted-foreground">day tracks ready</div></div>
-              <div className="rounded-md border p-3"><div className="text-xl font-semibold">{Number(frameQueue?.motionShadow?.unknown || 0).toLocaleString()}</div><div className="text-xs text-muted-foreground">unknown</div></div>
-              <div className="rounded-md border p-3"><div className="text-xl font-semibold">{Number(frameQueue?.motionShadow?.nightDisabled || 0).toLocaleString()}</div><div className="text-xs text-muted-foreground">night disabled</div></div>
-              <div className="rounded-md border p-3"><div className="text-xl font-semibold">{Number(frameQueue?.motionShadow?.failed || 0).toLocaleString()}</div><div className="text-xs text-muted-foreground">analysis failures</div></div>
-            </div>
-            <p className="text-xs text-muted-foreground">
-              Nighttime monochrome reads deliberately remain Unknown. Day reads also fail closed when the plate anchor is missing, motion is too small, or the trajectory is inconsistent. The current displayed ReID direction remains unchanged while this shadow evidence is evaluated.
-            </p>
-            {frameQueue?.motionShadow?.recent?.length ? (
-              <div className="overflow-x-auto rounded-md border">
-                <table className="w-full min-w-[760px] text-left text-sm">
-                  <thead className="border-b bg-muted/40 text-xs text-muted-foreground">
-                    <tr>
-                      <th className="px-3 py-2 font-medium">Read</th>
-                      <th className="px-3 py-2 font-medium">Camera / UTC time</th>
-                      <th className="px-3 py-2 font-medium">Motion shadow</th>
-                      <th className="px-3 py-2 font-medium">Current ReID comparison</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {frameQueue.motionShadow.recent.map((observation) => (
-                      <tr key={observation.readId} className="border-b last:border-0">
-                        <td className="px-3 py-2 font-mono font-semibold">{observation.plateNumber}</td>
-                        <td className="px-3 py-2">
-                          <div>{observation.cameraName}</div>
-                          <div className="text-xs text-muted-foreground">{new Date(observation.readTimestamp).toISOString().replace("T", " ").slice(0, 19)} UTC</div>
-                        </td>
-                        <td className="px-3 py-2">
-                          {observation.status === "ready"
-                            ? `${observation.imageDirection} (${Math.round(Number(observation.confidence || 0) * 100)}%)`
-                            : observation.captureMode === "night_monochrome"
-                              ? "Unknown — night disabled"
-                              : `Unknown — ${String(observation.errorCode || "low confidence").toLowerCase().replaceAll("_", " ")}`}
-                        </td>
-                        <td className="px-3 py-2">
-                          {observation.comparisonDirectionLabel
-                            ? `${observation.comparisonDirectionLabel}${observation.comparisonDirectionConfidence === null ? "" : ` (${Math.round(observation.comparisonDirectionConfidence * 100)}%)`}`
-                            : "Not available"}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            ) : (
-              <p className="rounded-md border p-3 text-sm text-muted-foreground">No motion shadow observations have been collected yet.</p>
-            )}
-          </CardContent>
-          </Card>
           <Card>
           <CardHeader>
             <CardTitle>Historical direction backfill</CardTitle>
@@ -597,7 +618,6 @@ export default function VehicleIntelligenceSettings({ initialData, initialFrameQ
             </details>
           </CardContent>
           </Card>
-          </div>
         </TabsContent>
 
         <TabsContent value="calibration" className="mt-0">

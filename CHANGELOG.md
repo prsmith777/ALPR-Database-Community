@@ -2,18 +2,17 @@
 
 ## Unreleased
 
-- Fixed Phase 2A LPR motion anchoring by scaling the stored plate geometry from
-  the original capture into the Blue Iris timeline resolution and accepting a
-  single unambiguous LPR sample within 750 milliseconds when the exact frame is
-  unavailable. Competing candidates remain Unknown; Street Overview is never
-  treated as a plate anchor, and night direction remains disabled.
-- Added Phase 2A plate-anchored daytime clip-motion direction as an isolated
-  shadow observation. It reuses the existing bounded Blue Iris timeline pass,
-  records versioned trajectory/confidence/failure diagnostics and current ReID
-  output only for comparison, and exposes aggregate status under Vehicle Setup
-  > Processing. Monochrome night reads explicitly remain Unknown. No shadow
-  result changes displayed direction, notifications, vehicle-view selection,
-  or read-review navigation.
+- Replaced the unsuccessful dense Blue Iris clip vehicle-direction experiment
+  with ordered zone-crossing shadow evidence from the existing alert action.
+  The plate payload may include `"trigger_type":"&TYPE"`; camera setup maps
+  two exact reverse values such as `MOTION_A>B` and `MOTION_B>A` to existing
+  semantic labels. Raw and mapped results are stored on the accepted read with
+  versioned provenance, while displayed direction, notifications, vehicle-view
+  selection, and ingestion latency remain unchanged pending live validation.
+- Removed the dense 100-millisecond direction sampling, vehicle-detection
+  anchoring, direction worker diagnostics, and associated UI. Existing Blue
+  Iris alert pointers and bounded best-vehicle-frame selection remain intact.
+
 - Added configurable storage warning/critical thresholds, exact source,
   thumbnail, derived-image, database, Docker, and backup breakdowns, durable
   maintenance run/heartbeat/failure reporting, rate-limited SMTP and signed
