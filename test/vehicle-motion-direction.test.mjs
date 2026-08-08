@@ -11,9 +11,16 @@ import {
   VEHICLE_MOTION_DIRECTION_ALGORITHM,
 } from "../lib/vehicle-motion-direction.mjs";
 
-function trackCandidate(offsetMs, centerX, { containsPlate = false, continuity = 0.96 } = {}) {
+function trackCandidate(offsetMs, centerX, {
+  containsPlate = false,
+  continuity = 0.96,
+  motionAnchor = false,
+  motionAnchorSource = null,
+} = {}) {
   return {
     offsetMs,
+    motionAnchor,
+    motionAnchorSource,
     detection: {
       left: centerX - 0.1,
       right: centerX + 0.1,
@@ -61,6 +68,7 @@ test("daytime plate-anchored motion resolves a consistent camera-plane direction
   assert.ok(result.confidence >= 0.64);
   assert.equal(result.vector.dominantAxis, "horizontal");
   assert.equal(result.trackedCount, 5);
+  assert.equal(result.diagnostics.anchorDistance, null);
 });
 
 test("daytime motion fails closed without a plate-anchored vehicle", () => {
@@ -96,8 +104,50 @@ test("monochrome night reads are recorded as disabled rather than guessed", asyn
   assert.equal(result.errorCode, "NIGHT_DIRECTION_DISABLED");
 });
 
+test("daytime motion uses a bounded nearby LPR anchor when the exact frame is unavailable", async () => {
+  const buffer = await solidFrame({ red: 220, green: 80, blue: 30 });
+  const result = await analyzeVehicleMotionDirection({
+    frames: [-500, 500, 1_000, 1_500, 2_000].map((offsetMs) => ({
+      buffer,
+      offsetMs,
+      width: 320,
+      height: 180,
+    })),
+    track: [
+      trackCandidate(-500, 0.28, {
+        motionAnchor: true,
+        motionAnchorSource: "scaled_stored_plate_proximity",
+      }),
+      trackCandidate(500, 0.36),
+      trackCandidate(1_000, 0.4),
+      trackCandidate(1_500, 0.44),
+      trackCandidate(2_000, 0.48),
+    ],
+    anchorOffsetMs: -500,
+    anchorSource: "scaled_stored_plate_proximity",
+    anchorDistance: 0.02,
+  });
+  assert.equal(result.status, "ready");
+  assert.equal(result.imageDirection, "right");
+  assert.equal(result.diagnostics.anchorOffsetMs, -500);
+  assert.equal(result.diagnostics.anchorSource, "scaled_stored_plate_proximity");
+  assert.equal(result.diagnostics.anchorDistance, 0.02);
+});
+
+test("motion refuses an unbounded substitute for a missing anchor frame", async () => {
+  const buffer = await solidFrame({ red: 220, green: 80, blue: 30 });
+  const result = await analyzeVehicleMotionDirection({
+    frames: [{ buffer, offsetMs: 1_000, width: 320, height: 180 }],
+    track: [trackCandidate(1_000, 0.4, { motionAnchor: true })],
+    anchorOffsetMs: 0,
+  });
+  assert.equal(result.status, "unknown");
+  assert.equal(result.errorCode, "ANCHOR_FRAME_UNAVAILABLE");
+  assert.equal(result.diagnostics.nearestFrameOffsetMs, 1_000);
+});
+
 test("the shadow algorithm remains explicitly versioned", () => {
-  assert.equal(VEHICLE_MOTION_DIRECTION_ALGORITHM, "plate-anchored-motion-v1-shadow");
+  assert.equal(VEHICLE_MOTION_DIRECTION_ALGORITHM, "plate-anchored-motion-v2-shadow");
 });
 
 test("motion shadow schema cannot overwrite the displayed ReID direction", async () => {

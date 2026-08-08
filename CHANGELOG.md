@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Fixed Phase 2A LPR motion anchoring by scaling the stored plate geometry from
+  the original capture into the Blue Iris timeline resolution and accepting a
+  single unambiguous LPR sample within 750 milliseconds when the exact frame is
+  unavailable. Competing candidates remain Unknown; Street Overview is never
+  treated as a plate anchor, and night direction remains disabled.
 - Added Phase 2A plate-anchored daytime clip-motion direction as an isolated
   shadow observation. It reuses the existing bounded Blue Iris timeline pass,
   records versioned trajectory/confidence/failure diagnostics and current ReID
