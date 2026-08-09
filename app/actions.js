@@ -1856,14 +1856,18 @@ export async function saveVehicleOverviewPairProfile(input = {}) {
     if (!sourceCameraName || !plateCameraName || !directionLabel) {
       throw new Error("Source camera, plate camera, and direction are required.");
     }
+    if (sourceCameraName.toLowerCase() === plateCameraName.toLowerCase()) {
+      throw new Error("The Vehicle View source camera must be different from the plate camera.");
+    }
     if (!["primary", "fallback"].includes(sourceRole)) {
       throw new Error("Overview source role must be primary or fallback.");
     }
     if (!Number.isInteger(expectedDeltaMs) || expectedDeltaMs < -30_000 || expectedDeltaMs > 30_000) {
       throw new Error("Expected timing delta must be between -30000 and 30000 milliseconds.");
     }
-    if (!Number.isInteger(toleranceMs) || toleranceMs < 250 || toleranceMs > 10_000) {
-      throw new Error("Timing tolerance must be between 250 and 10000 milliseconds.");
+    const maximumToleranceMs = sourceRole === "primary" ? 3_000 : 10_000;
+    if (!Number.isInteger(toleranceMs) || toleranceMs < 250 || toleranceMs > maximumToleranceMs) {
+      throw new Error(`Timing tolerance must be between 250 and ${maximumToleranceMs} milliseconds for this source role.`);
     }
     if (!Number.isInteger(priority) || priority < 0 || priority > 100) {
       throw new Error("Overview priority must be between 0 and 100.");
