@@ -427,6 +427,68 @@ test("a stale claim cannot publish and deletes only its attempt-specific derived
   assert.deepEqual(released, [{ id: 901, claimToken: CLAIM_TOKEN }]);
 });
 
+test("a deadline crossed during atomic save deletes only its attempt file and fails terminally", async () => {
+  const originalDateNow = Date.now;
+  const saved = [];
+  const deleted = [];
+  const failures = [];
+  let now = 1_000;
+  Date.now = () => now;
+  try {
+    const service = new BlueIrisVehicleFrameService({
+      client: {},
+      repository: {
+        async markReady() { assert.fail("an expired worker must not attempt the READY commit"); },
+        async markFailed(id, failure) {
+          failures.push({ id, failure });
+          return { id };
+        },
+        async releaseOverviewReadClaim() {
+          assert.fail("deadline expiry must not requeue through claim release");
+        },
+      },
+      fileStorage: {
+        async saveDerivedImageAtomic(framePath) {
+          saved.push(framePath);
+          now = 3_000;
+        },
+        async deleteImage(framePath) { deleted.push(framePath); },
+      },
+    });
+    service.selectBestFrame = async () => selectedOverview();
+    service.refetchOverviewFrame = async ({ selected }) => ({
+      buffer: Buffer.from("maximum"),
+      timestamp: selected.timestamp,
+      width: 3840,
+      height: 2160,
+      identitySimilarity: 0.99,
+      detectionOverlap: 0.99,
+      detectionContinuity: 0.99,
+      mode: "maximum_resolution",
+    });
+
+    const result = await service.processOverviewRead({
+      read: overviewRead({
+        vehicle_image_attempt_count: 2,
+        vehicle_image_hard_deadline_at: new Date(2_000).toISOString(),
+      }),
+      profile: overviewProfile(),
+      camera: "Cam149",
+      alreadyClaimed: true,
+    });
+
+    assert.equal(result.status, "failed");
+    assert.equal(result.errorCode, "OVERVIEW_PROCESSING_DEADLINE");
+    assert.equal(saved.length, 1);
+    assert.deepEqual(deleted, saved);
+    assert.equal(failures.length, 1);
+    assert.equal(failures[0].failure.retryable, false);
+    assert.equal(failures[0].failure.errorCode, "OVERVIEW_PROCESSING_DEADLINE");
+  } finally {
+    Date.now = originalDateNow;
+  }
+});
+
 test("repository completion and failure updates are guarded by the current claim token", async () => {
   const statements = [];
   const values = [];
@@ -462,10 +524,13 @@ test("repository completion and failure updates are guarded by the current claim
     selectionMetadata: { failure: { code: "RECORDING_UNAVAILABLE" } },
     profileSnapshot: { id: 42, updatedAt: "2026-08-09T13:59:00.000Z" },
   });
+  const released = await repository.releaseOverviewReadClaim(901, CLAIM_TOKEN);
 
   assert.equal(ready, null);
   assert.equal(failed, null);
+  assert.equal(released, null);
   assert.match(statements[0], /vehicle_image_claim_token = \$12::uuid/);
+  assert.match(statements[0], /\$12::uuid IS NULL OR vehicle_image_hard_deadline_at > CURRENT_TIMESTAMP/);
   assert.match(statements[1], /vehicle_image_claim_token = \$7::uuid/);
   assert.match(statements[0], /profile\.id = \$13::bigint/);
   assert.match(statements[0], /profile\.updated_at IS NOT DISTINCT FROM \$14::timestamptz/);
@@ -475,6 +540,8 @@ test("repository completion and failure updates are guarded by the current claim
   assert.equal(values[1][6], CLAIM_TOKEN);
   assert.deepEqual(values[0].slice(12), [42, "2026-08-09T13:59:00.000Z"]);
   assert.deepEqual(values[1].slice(7), [42, "2026-08-09T13:59:00.000Z"]);
+  assert.match(statements[2], /vehicle_image_claim_token = \$2::uuid/);
+  assert.match(statements[2], /vehicle_image_hard_deadline_at > CURRENT_TIMESTAMP/);
 });
 
 test("atomic derived writes leave a complete final file and no temporary attempt", async () => {
@@ -509,4 +576,18 @@ test("the additive migration enforces primary tolerance and claim safety", async
   )];
   assert.ok(queueConstraints.length >= 2);
   assert.ok(queueConstraints.every((match) => match[1].includes("'overview'")));
+});
+
+test("timeline export migration is read-owned, bounded, and safely cleanable", async () => {
+  const migrations = await fs.readFile(new URL("../migrations.sql", import.meta.url), "utf8");
+  const section = migrations.slice(migrations.indexOf("-- Timeline exports replace"));
+  assert.match(section, /blue_iris_timeline_exports/);
+  assert.match(section, /REFERENCES public\.plate_reads\(id\) ON DELETE CASCADE/);
+  assert.match(section, /vehicle_image_hard_deadline_at TIMESTAMPTZ/);
+  assert.match(section, /remote_utc_ms BIGINT/);
+  assert.match(section, /remote_duration_ms INTEGER/);
+  assert.match(section, /next_delete_attempt_at TIMESTAMPTZ/);
+  assert.match(section, /hard_deadline_at TIMESTAMPTZ NOT NULL/);
+  assert.match(section, /2026080902_blue_iris_timeline_exports/);
+  assert.doesNotMatch(section, /ON DELETE RESTRICT/);
 });

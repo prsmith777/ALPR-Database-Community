@@ -71,7 +71,8 @@ test("live feed image review advances visibly and starts focused on the plate", 
   assert.match(plateTable, /<span className=\{POPUP_ACTION_LABEL_CLASS\}>Delete<\/span>[\s\S]*?<span className=\{POPUP_ACTION_LABEL_CLASS\}>Previous Read<\/span>/);
   assert.match(plateTable, /Retry vehicle view/);
   assert.match(plateTable, /retryBlueIrisVehicleFrameForRead/);
-  assert.match(plateTable, /Failed after \$\{selectedImage\.vehicleImageAttemptCount \|\| 3\} attempts/);
+  assert.match(plateTable, /selectedVehicleImageAttemptLimit = selectedImage\?\.vehicleImageQueueKind === "overview" \? 2 : 3/);
+  assert.match(plateTable, /Failed after \$\{selectedImage\.vehicleImageAttemptCount \|\| selectedVehicleImageAttemptLimit\} attempts/);
   assert.match(plateTable, /Delete this read/);
   assert.match(plateTable, /setIsDeleteConfirmOpen\(true\)/);
   assert.match(plateTable, /<DialogTitle>Confirm Deletion<\/DialogTitle>/);

@@ -69,12 +69,18 @@ test("Blue Iris initialization uses dedicated environment settings", () => {
     BLUEIRIS_USERNAME: "alpr-reader",
     BLUEIRIS_PASSWORD: "runtime-bi-secret",
     BLUEIRIS_TIMEOUT_SECONDS: "12",
+    BLUEIRIS_TIMELINE_EXPORT_PROFILE: "2",
+    BLUEIRIS_TIMELINE_EXPORT_MIN_WIDTH: "3840",
+    BLUEIRIS_TIMELINE_EXPORT_MIN_HEIGHT: "2160",
   });
 
   assert.equal(config.blueiris.host, "http://192.168.0.10:81");
   assert.equal(config.blueiris.username, "alpr-reader");
   assert.equal(config.blueiris.password, "runtime-bi-secret");
   assert.equal(config.blueiris.timeout_seconds, 12);
+  assert.equal(config.blueiris.timeline_export_profile, 2);
+  assert.equal(config.blueiris.timeline_export_min_width, 3840);
+  assert.equal(config.blueiris.timeline_export_min_height, 2160);
 });
 
 test("runtime Blue Iris passwords are not copied into persisted settings", () => {
@@ -108,6 +114,9 @@ test("Blue Iris environment values override persisted credentials", () => {
       username: "runtime-user",
       password: "runtime-secret",
       timeout_seconds: 15,
+      timeline_export_profile: 0,
+      timeline_export_min_width: 1920,
+      timeline_export_min_height: 1080,
     }
   );
 });

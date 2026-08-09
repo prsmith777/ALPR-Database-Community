@@ -354,10 +354,69 @@ test("overview reads are claimed atomically only after validated Blue Iris direc
   assert.match(statement, /profile\.expected_delta_ms \* INTERVAL '1 millisecond'/);
   assert.match(statement, /\(6000 - profile\.tolerance_ms\) \* INTERVAL '1 millisecond'/);
   assert.match(statement, /CURRENT_TIMESTAMP - INTERVAL '5 seconds'/);
+  assert.match(statement, /\+ INTERVAL '1 second'/);
+  assert.match(statement, /ORDER BY reads\."timestamp" ASC, reads\.id ASC/);
+  assert.match(statement, /vehicle_image_hard_deadline_at = CURRENT_TIMESTAMP \+ INTERVAL '5 minutes'/);
+  assert.match(statement, /vehicle_image_attempt_count = COALESCE\(reads\.vehicle_image_attempt_count, 0\) \+ 1/);
   assert.match(statement, /vehicle_image_claim_token = \$1::uuid/);
   assert.match(statement, /LOWER\(BTRIM\(source_camera_name\)\) <> LOWER\(BTRIM\(plate_camera_name\)\)/);
   assert.match(read.vehicle_image_claim_token || "", /^[0-9a-f-]{36}$/i);
   assert.equal(read.vehicle_image_claim_token, parameters[0]);
+});
+
+test("timeline export cleanup claims only due owned jobs with locking and exponential backoff", async () => {
+  let statement = "";
+  const repository = new BlueIrisVehicleFrameRepository({
+    async query(sql) {
+      statement = sql;
+      return { rows: [] };
+    },
+  });
+  await repository.claimTimelineExportsNeedingCleanup({ limit: 12 });
+  assert.match(statement, /exports\.status = 'delete_pending'/);
+  assert.match(statement, /next_delete_attempt_at/);
+  assert.match(statement, /FOR UPDATE OF exports SKIP LOCKED/);
+  assert.match(statement, /reads\.vehicle_image_claim_token IS DISTINCT FROM exports\.claim_token/);
+  assert.match(statement, /exports\.hard_deadline_at <= CURRENT_TIMESTAMP/);
+  assert.match(statement, /delete_attempt_count = exports\.delete_attempt_count \+ 1/);
+  assert.match(statement, /POWER\(2, LEAST\(exports\.delete_attempt_count, 6\)\)/);
+});
+
+test("incomplete overview recovery is bounded to transient errors and preserves scene decisions", async () => {
+  let statement = "";
+  let parameters = null;
+  const repository = new BlueIrisVehicleFrameRepository({
+    async query(sql, values) {
+      statement = sql;
+      parameters = values;
+      return { rows: [{ id: 1 }], rowCount: 1 };
+    },
+  });
+  const result = await repository.recoverIncompleteOverviewReads({ sinceHours: 48 });
+  assert.deepEqual(result, { queued: 1, sinceHours: 48 });
+  assert.deepEqual(parameters, [48]);
+  assert.match(statement, /vehicle_image_status = 'pending'/);
+  assert.match(statement, /vehicle_image_status = 'processing'[\s\S]*vehicle_image_hard_deadline_at/);
+  assert.match(statement, /'EXPORT_TIMEOUT'/);
+  assert.match(statement, /'MEDIA_TOOL_FAILED'/);
+  assert.doesNotMatch(statement, /VEHICLE_NOT_VISIBLE/);
+  assert.doesNotMatch(statement, /MULTIPLE_VEHICLES_VISIBLE/);
+  assert.doesNotMatch(statement, /EXPORT_RESOLUTION_TOO_LOW/);
+});
+
+test("expired second-attempt overview claims are terminalized instead of remaining stuck", async () => {
+  let statement = "";
+  const repository = new BlueIrisVehicleFrameRepository({
+    async query(sql) {
+      statement = sql;
+      return { rows: [{ id: 9 }], rowCount: 1 };
+    },
+  });
+  assert.deepEqual(await repository.terminalizeExpiredOverviewReads(), { terminalized: 1 });
+  assert.match(statement, /vehicle_image_attempt_count, 0\) >= 2/);
+  assert.match(statement, /vehicle_image_status = 'failed'/);
+  assert.match(statement, /vehicle_image_retryable = FALSE/);
+  assert.match(statement, /OVERVIEW_PROCESSING_DEADLINE/);
 });
 
 test("primary overview profiles require an exact plate-camera and direction match", async () => {

@@ -22,6 +22,10 @@ WORKDIR /app
 
 ENV NEXT_TELEMETRY_DISABLED=1
 
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends ffmpeg \
+    && rm -rf /var/lib/apt/lists/*
+
 COPY --from=builder --chown=node:node /app /app
 
 RUN mkdir -p /app/auth /app/config /app/logs /app/storage \
