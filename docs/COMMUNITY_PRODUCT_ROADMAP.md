@@ -478,11 +478,29 @@ notes. Updates remain externally orchestrated.
   sampling and vehicle-detection direction worker remain removed.
 - Plate-anchored daytime Street Overview Vehicle Views implemented as the
   corrective primary path. Each new mapped Street LPR read selects an enabled
-  primary profile by plate camera plus validated Blue Iris direction, adds the
-  signed timing delta to the read timestamp, and directly retrieves a bounded
-  six-second Street Overview timeline window at 100-millisecond spacing. Frame
-  selection follows the vehicle track nearest the calculated anchor and refuses
-  ambiguous competing tracks instead of assigning an unrelated vehicle. The
+  primary profile by plate camera plus validated Blue Iris direction in the
+  same atomic claim, snapshots that profile revision, adds the signed timing
+  delta to the read timestamp, and directly retrieves exactly 61 samples over a
+  profile-derived six-second Street Overview window at 100-millisecond spacing.
+  Claims wait for the calculated source window plus a short Blue Iris
+  finalization grace; a fresh all-unavailable result receives one bounded retry.
+  Frame selection follows the continuous vehicle track nearest the calculated
+  anchor, accepts a uniquely owned confident one-edge crop when necessary,
+  ignores nonviable detector specks, and refuses two viable tracks instead of
+  assigning an unrelated vehicle. Source frames must remain color/daytime.
+  Bounded selection telemetry persists requested range, sample availability,
+  detections, viable tracks, completeness, edge contact, and failure reason.
+  After low-resolution analysis, ALPR refetches the exact selected camera
+  timestamp up to three times at up to 3840 by 2160, validates frame and detector
+  continuity, and preserves the first validated returned JPEG without Q88
+  recompression. Camera and timestamp never change between attempts; only after
+  all three fail may a safe same-timestamp analysis-frame fallback be used, with
+  bounded per-attempt diagnostics recorded. Claim-token and profile-
+  revision compare-and-set updates plus attempt-unique atomic files prevent a
+  reclaimed worker or mid-analysis profile edit from overwriting a winner. The
+  additive constraints remain migration-safe for community installations:
+  legacy primary tolerances above 3000 milliseconds and same-camera source rows
+  are preserved but excluded from claims until corrected through settings. The
   selected JPEG is written directly to its originating read as an overview
   primary image. Street Overview requires no motion or web-request action.
   Monochrome plate reads remain terminal `Unavailable nighttime` and make no
@@ -527,11 +545,14 @@ be restored. Monochrome nighttime captures do not receive a direction result.
 - Validate the corrected plate-anchored daytime overview pipeline with live
   production traffic.
   Confirm the signed Street Overview timing profiles for Street LPR 1 (normally
-  within about one second) and Street LPR 2 (roughly four to five seconds), then
-  implement and validate Entry LPR fallback timing for driveway turns as a
-  separate follow-up. Review every ambiguous or unmatched outcome before
-  changing tolerances; do not enable nighttime processing or restore the
-  retired clip-based direction analyzer.
+  within about one second) and Street LPR 2 (roughly four to five seconds).
+  Follow with a separate paired-Street-read sharing release that requires plate,
+  direction, camera-order, and derived-anchor agreement and never auto-fills an
+  ambiguous outcome. Then implement and validate the two explicitly allowlisted
+  Entry LPR driveway routes using asynchronous read-to-read matching and dual-
+  camera corroboration. Review every ambiguous or unmatched outcome before
+  changing tolerances; do not synthesize Street reads, enable nighttime
+  processing, or restore the retired clip-based direction analyzer.
 - Expand Vehicle ReID calibration with larger labeled local samples and
   camera-pair reporting before making stronger labels or applying thresholds.
 - Consider pgvector only when the bounded in-process cosine scan no longer

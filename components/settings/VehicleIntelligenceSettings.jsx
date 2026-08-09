@@ -591,7 +591,10 @@ export default function VehicleIntelligenceSettings({
                   </div>
                   <div className="space-y-2">
                     <Label htmlFor="overview-tolerance">Tolerance (ms)</Label>
-                    <Input id="overview-tolerance" type="number" min="250" max="10000" step="50" value={overviewDraft.toleranceMs} onChange={(event) => setOverviewDraft({ ...overviewDraft, toleranceMs: Number(event.target.value) })} />
+                    <Input id="overview-tolerance" type="number" min="250" max={overviewDraft.sourceRole === "primary" ? 3000 : 10000} step="50" value={overviewDraft.toleranceMs} onChange={(event) => setOverviewDraft({ ...overviewDraft, toleranceMs: Number(event.target.value) })} />
+                    <p className="text-xs text-muted-foreground">
+                      Primary Overview uses exactly six seconds of 100 ms samples, so its tolerance is limited to 3000 ms.
+                    </p>
                   </div>
                   <div className="space-y-2">
                     <Label htmlFor="overview-priority">Priority</Label>
@@ -602,7 +605,7 @@ export default function VehicleIntelligenceSettings({
                     <Switch checked={overviewDraft.enabled} onCheckedChange={(enabled) => setOverviewDraft({ ...overviewDraft, enabled })} />
                   </div>
                 </div>
-                <Button className="mt-4" onClick={saveOverviewProfile} disabled={Boolean(busy) || !overviewDraft.sourceCameraName || !overviewDraft.plateCameraName || !overviewDraft.directionLabel}>
+                <Button className="mt-4" onClick={saveOverviewProfile} disabled={Boolean(busy) || !overviewDraft.sourceCameraName || !overviewDraft.plateCameraName || !overviewDraft.directionLabel || overviewDraft.sourceCameraName.trim().toLowerCase() === overviewDraft.plateCameraName.trim().toLowerCase()}>
                   {busy === "overview-profile" ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
                   Save overview association
                 </Button>

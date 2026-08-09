@@ -84,23 +84,15 @@ test("read-owned overview work resolves an exact direction profile and source ca
               camera_name: "Street LPR 2",
               timestamp: "2026-08-08T18:00:00Z",
               bi_trigger_direction_label: "Eastbound",
+              vehicle_image_claim_token: "11111111-1111-4111-8111-111111111111",
+              overview_profile_id: 42,
+              overview_source_camera_name: "Street Overview",
+              overview_expected_delta_ms: 4_500,
+              overview_tolerance_ms: 2_000,
+              overview_profile_priority: 0,
+              overview_profile_updated_at: "2026-08-08T17:00:00Z",
             }
           : null;
-      },
-      async listPrimaryOverviewProfilesForRead(input) {
-        assert.deepEqual(input, {
-          plateCameraName: "Street LPR 2",
-          directionLabel: "Eastbound",
-        });
-        return [{
-          id: 42,
-          source_camera_name: "Street Overview",
-          plate_camera_name: "Street LPR 2",
-          direction_label: "Eastbound",
-          source_role: "primary",
-          expected_delta_ms: 4_500,
-          tolerance_ms: 2_000,
-        }];
       },
       async claimNextOverviewCandidate() { assert.fail("candidate work must not own live reads"); },
       async claimNextOverviewAssociation() { assert.fail("candidate association must not own live reads"); },
@@ -117,8 +109,8 @@ test("read-owned overview work resolves an exact direction profile and source ca
       servicesCreated += 1;
       if (servicesCreated === 2) {
         assert.equal(options.sampleOffsetsMs.length, 61);
-        assert.equal(options.sampleOffsetsMs[0], -500);
-        assert.equal(options.sampleOffsetsMs.at(-1), 5_500);
+        assert.equal(options.sampleOffsetsMs[0], -1_500);
+        assert.equal(options.sampleOffsetsMs.at(-1), 4_500);
         assert.deepEqual(options.extensionOffsetsMs, []);
       }
       return {
@@ -337,15 +329,18 @@ test("retrying a read-owned overview preserves the overview queue instead of usi
 
 test("overview reads are claimed atomically only after validated Blue Iris direction is ready", async () => {
   let statement = "";
+  let parameters = null;
   const repository = new BlueIrisVehicleFrameRepository({
-    async query(sql) {
+    async query(sql, values) {
       statement = sql;
+      parameters = values;
       return { rows: [{
         id: 103,
         camera_name: "Street LPR 1",
         timestamp: "2026-08-08T18:00:00Z",
         bi_trigger_direction_label: "Westbound",
         vehicle_image_queue_kind: "overview",
+        vehicle_image_claim_token: values[0],
       }] };
     },
   });
@@ -354,8 +349,15 @@ test("overview reads are claimed atomically only after validated Blue Iris direc
   assert.equal(read.id, 103);
   assert.match(statement, /vehicle_image_queue_kind = 'overview'/);
   assert.match(statement, /bi_trigger_direction_status = 'ready'/);
-  assert.match(statement, /FOR UPDATE SKIP LOCKED/);
+  assert.match(statement, /FOR UPDATE OF reads SKIP LOCKED/);
   assert.match(statement, /vehicle_image_status = 'processing'/);
+  assert.match(statement, /profile\.expected_delta_ms \* INTERVAL '1 millisecond'/);
+  assert.match(statement, /\(6000 - profile\.tolerance_ms\) \* INTERVAL '1 millisecond'/);
+  assert.match(statement, /CURRENT_TIMESTAMP - INTERVAL '5 seconds'/);
+  assert.match(statement, /vehicle_image_claim_token = \$1::uuid/);
+  assert.match(statement, /LOWER\(BTRIM\(source_camera_name\)\) <> LOWER\(BTRIM\(plate_camera_name\)\)/);
+  assert.match(read.vehicle_image_claim_token || "", /^[0-9a-f-]{36}$/i);
+  assert.equal(read.vehicle_image_claim_token, parameters[0]);
 });
 
 test("primary overview profiles require an exact plate-camera and direction match", async () => {
