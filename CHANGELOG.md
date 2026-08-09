@@ -2,18 +2,17 @@
 
 ## Unreleased
 
-- Added a daytime-only Vehicle View pipeline for plate-independent Street
-  Overview motion alerts. A durable candidate queue screens non-vehicle motion,
-  samples 61 read-only JPEG positions from 0.5 seconds before through 5.5
-  seconds after the alert, and retains only the best complete frame. Configured
-  camera-pair timing, validated Blue Iris direction, same-event plate agreement,
-  and an ambiguity margin associate the frame to Street LPR reads. Entry LPR
-  cameras can act as driveway fallbacks from their existing accepted plate
-  action, with no clone or second action required. Monochrome candidates and
-  plate reads are terminal `Unavailable nighttime` and are never analyzed.
-- Normal new reads no longer use the plate-camera clip for Vehicle View.
-  Recognition Feed now distinguishes waiting, nighttime, no-match, ambiguity,
-  and legacy outcomes, and offers Retry only when another attempt can help.
+- Corrected daytime Vehicle Views to use each mapped Street LPR read as the
+  owner and timing anchor. The worker selects the exact Street Overview profile
+  by validated Blue Iris direction, adds its signed timing delta, samples 61
+  read-only JPEG positions from 0.5 seconds before through 5.5 seconds after the
+  calculated anchor, and saves the selected frame directly to the originating
+  read. No separate Street Overview motion or web-request action is required.
+- Restricted frame selection to the vehicle track nearest the calculated anchor
+  and refuse ambiguous competing tracks rather than assigning the best-looking
+  unrelated vehicle. Monochrome nighttime reads remain terminal `Unavailable
+  nighttime` and make no Blue Iris timeline requests. Entry LPR driveway
+  fallback and historical candidate cleanup remain separate follow-up work.
 
 - Promoted validated ordered Blue Iris zone crossings from shadow evidence to
   the primary direction source for new reads. The existing alert-action
