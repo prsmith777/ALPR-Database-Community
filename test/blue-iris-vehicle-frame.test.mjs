@@ -6,6 +6,7 @@ import {
   analyzeVehicleFrameQuality,
   BlueIrisVehicleFrameService,
   OVERVIEW_VEHICLE_FRAME_SAMPLE_OFFSETS_MS,
+  overviewVehicleFrameSampleOffsets,
   VEHICLE_FRAME_DEEP_EXTENSION_OFFSETS_MS,
   VEHICLE_FRAME_EXTENSION_OFFSETS_MS,
   VEHICLE_FRAME_SAMPLE_OFFSETS_MS,
@@ -49,13 +50,16 @@ test("default vehicle-frame sampling covers the event densely without retaining 
   assert.equal(VEHICLE_FRAME_DEEP_EXTENSION_OFFSETS_MS.length, 10);
 });
 
-test("overview sampling covers six seconds at 100 ms intervals", () => {
+test("overview sampling derives a six-second 100 ms window from the primary tolerance", () => {
   assert.equal(OVERVIEW_VEHICLE_FRAME_SAMPLE_OFFSETS_MS.length, 61);
-  assert.equal(OVERVIEW_VEHICLE_FRAME_SAMPLE_OFFSETS_MS[0], -500);
-  assert.equal(OVERVIEW_VEHICLE_FRAME_SAMPLE_OFFSETS_MS.at(-1), 5_500);
+  assert.equal(OVERVIEW_VEHICLE_FRAME_SAMPLE_OFFSETS_MS[0], -1_500);
+  assert.equal(OVERVIEW_VEHICLE_FRAME_SAMPLE_OFFSETS_MS.at(-1), 4_500);
   assert.ok(OVERVIEW_VEHICLE_FRAME_SAMPLE_OFFSETS_MS.every((offset, index, offsets) => (
     index === 0 || offset - offsets[index - 1] === 100
   )));
+  const lpr2 = overviewVehicleFrameSampleOffsets(2_000);
+  assert.deepEqual([lpr2.length, lpr2[0], lpr2.at(-1)], [61, -2_000, 4_000]);
+  assert.throws(() => overviewVehicleFrameSampleOffsets(3_001), /between 250 and 3000/);
 });
 
 test("the guarded selector retains the production winner when v3 would choose the plate-time frame", () => {
@@ -153,7 +157,7 @@ test("overview anchoring keeps the timed vehicle track instead of a stronger unr
     offsetMs: 0,
     primarySample: true,
     frameRank: 0,
-    detection: { left: 0.1, top: 0.1, right: 0.5, bottom: 0.6, area: 0.2 },
+    detection: { confidence: 0.82, left: 0.1, top: 0.1, right: 0.5, bottom: 0.6, area: 0.2 },
     embedding: Float32Array.from([1, 0]),
     baselineScore: 0.55,
     score: 0.5,
@@ -163,17 +167,17 @@ test("overview anchoring keeps the timed vehicle track instead of a stronger unr
     offsetMs: 100,
     primarySample: true,
     frameRank: 1,
-    detection: { left: 0.14, top: 0.1, right: 0.55, bottom: 0.62, area: 0.21 },
+    detection: { confidence: 0.86, left: 0.14, top: 0.1, right: 0.55, bottom: 0.62, area: 0.21 },
     embedding: Float32Array.from([0.995, 0.1]),
     baselineScore: 0.66,
     score: 0.82,
     scoreBreakdown: { completenessTier: 3 },
   };
   const unrelated = {
-    offsetMs: 100,
+    offsetMs: 2_000,
     primarySample: true,
     frameRank: 0,
-    detection: { left: 0.65, top: 0.2, right: 0.98, bottom: 0.8, area: 0.3 },
+    detection: { confidence: 0.96, left: 0.65, top: 0.2, right: 0.98, bottom: 0.8, area: 0.3 },
     embedding: Float32Array.from([0, 1]),
     baselineScore: 0.96,
     score: 0.97,
@@ -181,7 +185,7 @@ test("overview anchoring keeps the timed vehicle track instead of a stronger unr
   };
   const laterUnrelated = {
     ...unrelated,
-    offsetMs: 200,
+    offsetMs: 2_100,
     frameRank: 0,
     baselineScore: 0.99,
     score: 0.99,
@@ -201,15 +205,33 @@ test("overview anchoring fails closed when multiple vehicles occupy the timing a
       offsetMs: 0,
       primarySample: true,
       frameRank: 0,
-      detection: { left: 0.05, top: 0.1, right: 0.4, bottom: 0.8 },
+      detection: { confidence: 0.9, area: 0.245, left: 0.05, top: 0.1, right: 0.4, bottom: 0.8 },
+      embedding: Float32Array.from([1, 0]),
       score: 0.9,
     },
     {
       offsetMs: 0,
       primarySample: true,
       frameRank: 1,
-      detection: { left: 0.55, top: 0.1, right: 0.9, bottom: 0.8 },
+      detection: { confidence: 0.88, area: 0.245, left: 0.55, top: 0.1, right: 0.9, bottom: 0.8 },
+      embedding: Float32Array.from([0, 1]),
       score: 0.88,
+    },
+    {
+      offsetMs: 100,
+      primarySample: true,
+      frameRank: 0,
+      detection: { confidence: 0.91, area: 0.245, left: 0.08, top: 0.1, right: 0.43, bottom: 0.8 },
+      embedding: Float32Array.from([0.99, 0.05]),
+      score: 0.91,
+    },
+    {
+      offsetMs: 100,
+      primarySample: true,
+      frameRank: 1,
+      detection: { confidence: 0.89, area: 0.245, left: 0.52, top: 0.1, right: 0.87, bottom: 0.8 },
+      embedding: Float32Array.from([0.05, 0.99]),
+      score: 0.89,
     },
   ]);
   assert.equal(result.status, "ambiguous");
@@ -217,17 +239,117 @@ test("overview anchoring fails closed when multiple vehicles occupy the timing a
   assert.equal(result.selectionReason, "multiple_vehicles_at_overview_anchor");
 });
 
-test("overview anchoring fails closed for equally near competing vehicles and ignores detections outside profile tolerance", () => {
+test("overview anchoring fails closed when a second viable track begins one sample from the anchor", () => {
+  const target = [0, 100, 200].map((offsetMs) => ({
+    offsetMs,
+    frameRank: 0,
+    detection: { confidence: 0.9, area: 0.22, left: 0.08, top: 0.1, right: 0.43, bottom: 0.73 },
+    embedding: Float32Array.from([1, 0]),
+    score: 0.88,
+  }));
+  const competitor = [100, 200, 300].map((offsetMs) => ({
+    offsetMs,
+    frameRank: 1,
+    detection: { confidence: 0.87, area: 0.2, left: 0.58, top: 0.12, right: 0.91, bottom: 0.72 },
+    embedding: Float32Array.from([0, 1]),
+    score: 0.86,
+  }));
+  const result = selectAnchoredOverviewVehicleFrame([...target, ...competitor]);
+  assert.equal(result.status, "ambiguous");
+  assert.equal(result.viableTrackCount, 2);
+});
+
+test("an early nonviable speck cannot suppress a later unique viable track inside tolerance", () => {
+  const speck = {
+    offsetMs: 0,
+    frameRank: 0,
+    detection: { confidence: 0.35, area: 0.002, left: 0.02, top: 0.02, right: 0.07, bottom: 0.06 },
+    embedding: Float32Array.from([0, 1]),
+    score: 0.99,
+  };
+  const target = [500, 600, 700].map((offsetMs) => ({
+    offsetMs,
+    frameRank: 0,
+    detection: { confidence: 0.9, area: 0.24, left: 0.2, top: 0.12, right: 0.68, bottom: 0.62 },
+    embedding: Float32Array.from([1, 0]),
+    score: 0.86,
+  }));
+  const result = selectAnchoredOverviewVehicleFrame([speck, ...target], { toleranceMs: 1_500 });
+  assert.equal(result.status, "selected");
+  assert.equal(result.viableTrackCount, 1);
+  assert.equal(result.best.offsetMs >= 500, true);
+});
+
+test("two temporally offset viable tracks inside tolerance remain ambiguous", () => {
+  const first = [0, 100, 200].map((offsetMs) => ({
+    offsetMs,
+    frameRank: 0,
+    detection: { confidence: 0.9, area: 0.22, left: 0.05, top: 0.12, right: 0.42, bottom: 0.7 },
+    embedding: Float32Array.from([1, 0]),
+    score: 0.86,
+  }));
+  const second = [500, 600, 700].map((offsetMs) => ({
+    offsetMs,
+    frameRank: 0,
+    detection: { confidence: 0.88, area: 0.21, left: 0.58, top: 0.1, right: 0.91, bottom: 0.68 },
+    embedding: Float32Array.from([0, 1]),
+    score: 0.84,
+  }));
+  const result = selectAnchoredOverviewVehicleFrame([...first, ...second], { toleranceMs: 1_500 });
+  assert.equal(result.status, "ambiguous");
+  assert.equal(result.viableTrackCount, 2);
+});
+
+test("separate vehicles occupying the same lane box at different times are not deduplicated", () => {
+  const laneBox = { confidence: 0.9, area: 0.22, left: 0.18, top: 0.12, right: 0.62, bottom: 0.62 };
+  const first = [0, 100, 200].map((offsetMs) => ({
+    offsetMs,
+    frameRank: 0,
+    detection: { ...laneBox },
+    embedding: Float32Array.from([1, 0]),
+    score: 0.86,
+  }));
+  const second = [1_000, 1_100, 1_200].map((offsetMs) => ({
+    offsetMs,
+    frameRank: 0,
+    detection: { ...laneBox, confidence: 0.88 },
+    embedding: Float32Array.from([0, 1]),
+    score: 0.84,
+  }));
+  const result = selectAnchoredOverviewVehicleFrame([...first, ...second], { toleranceMs: 1_500 });
+  assert.equal(result.status, "ambiguous");
+  assert.equal(result.viableTrackCount, 2);
+});
+
+test("overview anchoring fails closed for competing viable tracks and ignores detections outside profile tolerance", () => {
   const competing = selectAnchoredOverviewVehicleFrame([
     {
-      offsetMs: -100,
-      detection: { left: 0.05, top: 0.1, right: 0.4, bottom: 0.8 },
+      offsetMs: 0,
+      frameRank: 0,
+      detection: { confidence: 0.9, area: 0.245, left: 0.05, top: 0.1, right: 0.4, bottom: 0.8 },
+      embedding: Float32Array.from([1, 0]),
       score: 0.9,
     },
     {
-      offsetMs: 100,
-      detection: { left: 0.55, top: 0.1, right: 0.9, bottom: 0.8 },
+      offsetMs: 0,
+      frameRank: 1,
+      detection: { confidence: 0.88, area: 0.245, left: 0.55, top: 0.1, right: 0.9, bottom: 0.8 },
+      embedding: Float32Array.from([0, 1]),
       score: 0.88,
+    },
+    {
+      offsetMs: -100,
+      frameRank: 0,
+      detection: { confidence: 0.89, area: 0.245, left: 0.02, top: 0.1, right: 0.37, bottom: 0.8 },
+      embedding: Float32Array.from([0.99, 0.05]),
+      score: 0.89,
+    },
+    {
+      offsetMs: 100,
+      frameRank: 1,
+      detection: { confidence: 0.89, area: 0.245, left: 0.58, top: 0.1, right: 0.93, bottom: 0.8 },
+      embedding: Float32Array.from([0.05, 0.99]),
+      score: 0.89,
     },
   ], { toleranceMs: 1_500 });
   assert.equal(competing.status, "ambiguous");
@@ -241,6 +363,60 @@ test("overview anchoring fails closed for equally near competing vehicles and ig
   ], { toleranceMs: 1_500 });
   assert.equal(outsideTolerance.status, "not_visible");
   assert.equal(outsideTolerance.selectionReason, "overview_anchor_outside_tolerance");
+});
+
+test("overview anchoring accepts a unique confident continuous one-edge vehicle but rejects unsafe crops", () => {
+  const oneEdgeTrack = [-100, 0, 100].map((offsetMs, index) => ({
+    offsetMs,
+    frameRank: 0,
+    detection: {
+      confidence: 0.82,
+      area: 0.42,
+      left: 0,
+      top: 0.08,
+      right: 0.7 + index * 0.01,
+      bottom: 0.68,
+    },
+    embedding: Float32Array.from([1, 0]),
+    baselineScore: 0.7,
+    score: 0.72 + index * 0.01,
+  }));
+  const accepted = selectAnchoredOverviewVehicleFrame(oneEdgeTrack);
+  assert.equal(accepted.status, "selected");
+  assert.equal(accepted.viableTrackCount, 1);
+  assert.equal(accepted.selectionReason, "overview_anchor_track_one_edge");
+
+  const twoEdgeTrack = oneEdgeTrack.map((candidate) => ({
+    ...candidate,
+    detection: { ...candidate.detection, top: 0 },
+  }));
+  assert.equal(selectAnchoredOverviewVehicleFrame(twoEdgeTrack).status, "not_visible");
+  assert.equal(selectAnchoredOverviewVehicleFrame([{
+    ...oneEdgeTrack[1],
+    detection: { ...oneEdgeTrack[1].detection, left: 0.1 },
+  }]).status, "not_visible");
+});
+
+test("a nonviable detector speck does not make a uniquely owned overview track ambiguous", () => {
+  const target = [-100, 0, 100].map((offsetMs) => ({
+    offsetMs,
+    frameRank: 0,
+    detection: { confidence: 0.85, area: 0.2, left: 0.2, top: 0.1, right: 0.6, bottom: 0.6 },
+    embedding: Float32Array.from([1, 0]),
+    score: 0.8,
+    baselineScore: 0.78,
+  }));
+  const speck = {
+    offsetMs: 0,
+    frameRank: 1,
+    detection: { confidence: 0.41, area: 0.003, left: 0.85, top: 0.1, right: 0.91, bottom: 0.15 },
+    embedding: Float32Array.from([0, 1]),
+    score: 0.95,
+  };
+  const result = selectAnchoredOverviewVehicleFrame([...target, speck]);
+  assert.equal(result.status, "selected");
+  assert.equal(result.viableTrackCount, 1);
+  assert.equal(result.best.detection.left, 0.2);
 });
 
 test("a weak primary selection expands the timeline and selects a complete later view", async () => {
@@ -510,11 +686,11 @@ test("read-owned overview processing applies the signed profile delta and saves 
   const service = new BlueIrisVehicleFrameService({
     client: {},
     repository: {
-      async markReady(id, frame) { operations.push(["ready", id, frame]); },
+      async markReady(id, frame, options) { operations.push(["ready", id, frame, options]); return { id }; },
       async markFailed() { assert.fail("a successful read-owned overview must not fail"); },
     },
     fileStorage: {
-      async saveDerivedImage(framePath) { operations.push(["save", framePath]); },
+      async saveDerivedImageAtomic(framePath) { operations.push(["save", framePath]); },
       async deleteImage() {},
     },
     sampleOffsetsMs: OVERVIEW_VEHICLE_FRAME_SAMPLE_OFFSETS_MS,
@@ -540,6 +716,21 @@ test("read-owned overview processing applies the signed profile delta and saves 
       trackedCount: 5,
       anchorOffsetMs: 0,
       selectionReason: "overview_anchor_track",
+      telemetry: { successfulSampleCount: 61 },
+    };
+  };
+  service.refetchOverviewFrame = async ({ camera, selected }) => {
+    assert.equal(camera, "Cam149");
+    assert.equal(selected.timestamp, "2026-08-08T18:00:05.000Z");
+    return {
+      buffer: Buffer.from("maximum-resolution-overview"),
+      timestamp: selected.timestamp,
+      width: 3840,
+      height: 2160,
+      identitySimilarity: 0.99,
+      detectionOverlap: 0.96,
+      detectionContinuity: 0.98,
+      mode: "maximum_resolution",
     };
   };
 
@@ -550,12 +741,15 @@ test("read-owned overview processing applies the signed profile delta and saves 
       camera_name: "Street LPR 2",
       timestamp: "2026-08-08T18:00:00.000Z",
       bi_trigger_direction_label: "Eastbound",
+      vehicle_image_claim_token: "11111111-1111-4111-8111-111111111111",
+      vehicle_image_attempt_count: 1,
     },
     profile: {
       id: 42,
       source_camera_name: "Street Overview",
       expected_delta_ms: 4_500,
       tolerance_ms: 2_000,
+      updated_at: "2026-08-08T17:55:00.000Z",
     },
     camera: "Cam149",
     alreadyClaimed: true,
@@ -567,11 +761,24 @@ test("read-owned overview processing applies the signed profile delta and saves 
   assert.equal(selectionRequest.plateBox, null);
   assert.equal(selectionRequest.selectionMode, "overview_anchor");
   assert.equal(selectionRequest.anchorToleranceMs, 2_000);
+  assert.deepEqual(
+    [selectionRequest.sampleOffsetsMs.length, selectionRequest.sampleOffsetsMs[0], selectionRequest.sampleOffsetsMs.at(-1)],
+    [61, -2_000, 4_000]
+  );
+  assert.equal(selectionRequest.requireColor, true);
   assert.equal(operations[1][0], "ready");
   assert.equal(operations[1][1], 701);
   assert.equal(operations[1][2].sourceKind, "overview_primary");
   assert.equal(operations[1][2].selectionMetadata.sourceCameraName, "Street Overview");
   assert.equal(operations[1][2].selectionMetadata.expectedDeltaMs, 4_500);
+  assert.equal(operations[1][2].imageWidth, 3840);
+  assert.equal(operations[1][2].selectionMetadata.finalImage.mode, "maximum_resolution");
+  assert.equal(operations[1][3].claimToken, "11111111-1111-4111-8111-111111111111");
+  assert.deepEqual(operations[1][3].profileSnapshot, {
+    id: 42,
+    updatedAt: "2026-08-08T17:55:00.000Z",
+  });
+  assert.match(operations[0][1], /blue_iris_vehicle_read_701_11111111111141118111111111111111\.jpg$/);
 });
 
 test("expired recording becomes terminal without writing or deleting an image", async () => {
