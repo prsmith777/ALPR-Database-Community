@@ -500,7 +500,10 @@ notes. Updates remain externally orchestrated.
   reclaimed worker or mid-analysis profile edit from overwriting a winner. The
   additive constraints remain migration-safe for community installations:
   legacy primary tolerances above 3000 milliseconds and same-camera source rows
-  are preserved but excluded from claims until corrected through settings. The
+  are preserved but excluded from claims until corrected through settings.
+  Every idempotent queue-kind constraint also accepts existing `overview` work
+  before later migration blocks run, so an upgrade cannot fail merely because
+  plate-owned overview rows already exist. The
   selected JPEG is written directly to its originating read as an overview
   primary image. Street Overview requires no motion or web-request action.
   Monochrome plate reads remain terminal `Unavailable nighttime` and make no
