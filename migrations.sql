@@ -2372,8 +2372,8 @@ ALTER TABLE IF EXISTS public.plate_reads
 ALTER TABLE IF EXISTS public.plate_reads
     DROP CONSTRAINT IF EXISTS plate_reads_vehicle_image_queue_kind_check;
 ALTER TABLE IF EXISTS public.plate_reads
-    ADD CONSTRAINT plate_reads_vehicle_image_queue_kind_check
-    CHECK (vehicle_image_queue_kind IS NULL OR vehicle_image_queue_kind IN ('live', 'historical', 'manual'));
+  ADD CONSTRAINT plate_reads_vehicle_image_queue_kind_check
+  CHECK (vehicle_image_queue_kind IS NULL OR vehicle_image_queue_kind IN ('live', 'historical', 'manual', 'overview'));
 
 CREATE TABLE IF NOT EXISTS public.vehicle_frame_processing_control (
     singleton BOOLEAN PRIMARY KEY DEFAULT TRUE CHECK (singleton),
