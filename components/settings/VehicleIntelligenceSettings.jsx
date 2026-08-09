@@ -514,9 +514,9 @@ export default function VehicleIntelligenceSettings({
         <TabsContent value="views" className="mt-0">
           <Card className="mt-6">
             <CardHeader>
-              <CardTitle>Daytime overview association</CardTitle>
+              <CardTitle>Daytime overview retrieval</CardTitle>
               <CardDescription>
-                Street Overview and driveway fallback alerts are screened independently, then associated using the plate camera&apos;s validated direction and a camera-pair timing window. Monochrome nighttime alerts and reads are skipped.
+                Each daytime plate read uses its validated direction and camera-pair timing profile to retrieve Street Overview directly. Monochrome nighttime reads are skipped.
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-5">
@@ -647,9 +647,8 @@ export default function VehicleIntelligenceSettings({
               ) : <p className="text-sm text-muted-foreground">No overview timing profiles are configured yet.</p>}
 
               <div className="rounded-md border p-3 text-sm">
-                <div className="font-medium">Blue Iris daytime motion action</div>
-                <p className="mt-1 text-xs text-muted-foreground">POST the existing authenticated web request to <code>/api/vehicle-overview-candidates</code> with the alert JPEG, camera, alert pointer, timestamp, and optional &amp;TYPE. No plate or AI dump is required.</p>
-                <pre className="mt-2 overflow-x-auto rounded bg-muted p-2 text-xs">{`{ "Image":"&ALERT_JPEG", "camera":"&NAME", "ALERT_PATH":"&ALERT_PATH", "ALERT_CLIP":"&ALERT_CLIP", "timestamp":"&ALERT_TIME", "trigger_type":"&TYPE" }`}</pre>
+                <div className="font-medium">No Street Overview alert action required</div>
+                <p className="mt-1 text-xs text-muted-foreground">ALPR retrieves the configured Street Overview timeline directly after a daytime plate read. Do not add a separate Blue Iris motion web request for this feature.</p>
               </div>
             </CardContent>
           </Card>

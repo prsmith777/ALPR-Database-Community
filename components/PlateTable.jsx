@@ -2875,7 +2875,7 @@ export default function PlateTable({
                         <div>
                           Vehicle view: {{
                             pending: selectedImage.vehicleImageErrorCode === "WAITING_FOR_DAYTIME_OVERVIEW"
-                              ? "Waiting for daytime overview"
+                              ? "Queued for daytime overview"
                               : "Queued",
                             processing: "Processing",
                             failed: selectedImage.vehicleImageRetryable && selectedImage.vehicleImageAttemptCount < 3
@@ -2887,9 +2887,11 @@ export default function PlateTable({
                               CAMERA_NOT_MAPPED: "Camera not mapped in Blue Iris",
                               NIGHTTIME_UNAVAILABLE: "Unavailable nighttime",
                               DAYLIGHT_UNVERIFIED: "Unavailable because daylight could not be verified",
+                              OVERVIEW_DIRECTION_UNAVAILABLE: "Unavailable because Blue Iris did not provide a validated direction",
                               NO_MATCHING_PLATE_READ: "No matching daytime overview was found",
                               NO_MATCHING_DAYTIME_OVERVIEW: "No matching daytime overview was found",
                               MULTIPLE_VEHICLES_MATCH: "Multiple vehicles could match; no image was assigned",
+                              MULTIPLE_VEHICLES_VISIBLE: "Multiple vehicles were visible at the expected time; no image was assigned",
                               CANDIDATE_IMAGE_MISSING: "The selected overview image is no longer available",
                             }[selectedImage.vehicleImageErrorCode] || "Unavailable",
                           }[selectedImage.vehicleImageStatus] || selectedImage.vehicleImageStatus}

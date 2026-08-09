@@ -70,20 +70,40 @@ test("unconfigured Blue Iris leaves queued reads untouched", async () => {
   assert.equal(claimed, false);
 });
 
-test("overview candidates are processed before legacy plate-owned frame work", async () => {
+test("read-owned overview work resolves an exact direction profile and source camera", async () => {
   const claims = [];
   let servicesCreated = 0;
   const queue = new BlueIrisVehicleFrameQueue({
     repository: {
       async getQueueStatus() { return { historicalPaused: true }; },
-      async expireOverviewReads() {},
-      async claimNextOverviewCandidate() {
-        claims.push("overview");
+      async claimNextOverviewRead() {
+        claims.push("overview_read");
         return claims.length === 1
-          ? { id: 901, source_camera_name: "Street Overview", event_timestamp: "2026-08-08T18:00:05Z" }
+          ? {
+              id: 901,
+              camera_name: "Street LPR 2",
+              timestamp: "2026-08-08T18:00:00Z",
+              bi_trigger_direction_label: "Eastbound",
+            }
           : null;
       },
-      async claimNextOverviewAssociation() { claims.push("association"); return null; },
+      async listPrimaryOverviewProfilesForRead(input) {
+        assert.deepEqual(input, {
+          plateCameraName: "Street LPR 2",
+          directionLabel: "Eastbound",
+        });
+        return [{
+          id: 42,
+          source_camera_name: "Street Overview",
+          plate_camera_name: "Street LPR 2",
+          direction_label: "Eastbound",
+          source_role: "primary",
+          expected_delta_ms: 4_500,
+          tolerance_ms: 2_000,
+        }];
+      },
+      async claimNextOverviewCandidate() { assert.fail("candidate work must not own live reads"); },
+      async claimNextOverviewAssociation() { assert.fail("candidate association must not own live reads"); },
       async claimNext() { claims.push("legacy"); return null; },
     },
     fileStorage: {},
@@ -93,12 +113,20 @@ test("overview candidates are processed before legacy plate-owned frame work", a
         return { cameras: [{ id: "Cam149", name: "Street Overview" }] };
       },
     }),
-    serviceFactory: () => {
+    serviceFactory: (options) => {
       servicesCreated += 1;
+      if (servicesCreated === 2) {
+        assert.equal(options.sampleOffsetsMs.length, 61);
+        assert.equal(options.sampleOffsetsMs[0], -500);
+        assert.equal(options.sampleOffsetsMs.at(-1), 5_500);
+        assert.deepEqual(options.extensionOffsetsMs, []);
+      }
       return {
-        async processOverviewCandidate(input) {
+        async processOverviewRead(input) {
           assert.equal(input.camera, "Cam149");
-          return { kind: "overview_candidate", status: "ready", candidateId: input.candidate.id };
+          assert.equal(input.read.id, 901);
+          assert.equal(input.profile.expected_delta_ms, 4_500);
+          return { kind: "overview_read", status: "ready", readId: input.read.id };
         },
       };
     },
@@ -107,8 +135,29 @@ test("overview candidates are processed before legacy plate-owned frame work", a
   const result = await queue.processBatch({ limit: 1 });
   assert.equal(result.processed, 1);
   assert.equal(result.succeeded, 1);
-  assert.deepEqual(claims, ["overview"]);
+  assert.deepEqual(claims, ["overview_read"]);
   assert.equal(servicesCreated, 2);
+});
+
+test("persisted candidate rows are no longer claimed or associated into live overview reads", async () => {
+  const queue = new BlueIrisVehicleFrameQueue({
+    repository: {
+      async getQueueStatus() { return { historicalPaused: true }; },
+      async claimNextOverviewRead() { return null; },
+      async claimNextOverviewCandidate() { assert.fail("candidate rows must remain dormant"); },
+      async claimNextOverviewAssociation() { assert.fail("candidate associations must remain dormant"); },
+      async claimNext() { return null; },
+    },
+    fileStorage: {},
+    loadConfig: async () => configured,
+    clientFactory: () => ({
+      async testConnection() { return { cameras: [] }; },
+    }),
+    serviceFactory: () => ({}),
+  });
+
+  const result = await queue.processBatch({ limit: 1 });
+  assert.equal(result.processed, 0);
 });
 
 test("missing camera mappings receive an explicit terminal status", async () => {
@@ -258,10 +307,76 @@ test("an administrator can explicitly retry a failed or unavailable read", async
   const result = await repository.retryRead(82);
   assert.equal(result.vehicle_image_status, "pending");
   assert.deepEqual(parameters, [82]);
-  assert.match(statement, /vehicle_image_queue_kind = 'manual'/);
+  assert.match(statement, /WHEN vehicle_image_queue_kind = 'overview' THEN 'overview'/);
+  assert.match(statement, /ELSE 'manual'/);
   assert.match(statement, /vehicle_image_attempt_count = 0/);
   assert.match(statement, /vehicle_image_status IN \('failed', 'unavailable'\)/);
   assert.match(statement, /vehicle_image_path IS NULL/);
+});
+
+test("retrying a read-owned overview preserves the overview queue instead of using the plate camera", async () => {
+  let statement = "";
+  const repository = new BlueIrisVehicleFrameRepository({
+    async query(sql) {
+      statement = sql;
+      return { rows: [{
+        id: 104,
+        vehicle_image_status: "pending",
+        vehicle_image_queue_kind: "overview",
+        vehicle_image_attempt_count: 0,
+        vehicle_image_retryable: true,
+      }] };
+    },
+  });
+
+  const result = await repository.retryRead(104);
+  assert.equal(result.vehicle_image_queue_kind, "overview");
+  assert.match(statement, /WHEN vehicle_image_queue_kind = 'overview' THEN 'overview'/);
+  assert.doesNotMatch(statement, /COALESCE\(vehicle_image_queue_kind, ''\) <> 'overview'/);
+});
+
+test("overview reads are claimed atomically only after validated Blue Iris direction is ready", async () => {
+  let statement = "";
+  const repository = new BlueIrisVehicleFrameRepository({
+    async query(sql) {
+      statement = sql;
+      return { rows: [{
+        id: 103,
+        camera_name: "Street LPR 1",
+        timestamp: "2026-08-08T18:00:00Z",
+        bi_trigger_direction_label: "Westbound",
+        vehicle_image_queue_kind: "overview",
+      }] };
+    },
+  });
+
+  const read = await repository.claimNextOverviewRead();
+  assert.equal(read.id, 103);
+  assert.match(statement, /vehicle_image_queue_kind = 'overview'/);
+  assert.match(statement, /bi_trigger_direction_status = 'ready'/);
+  assert.match(statement, /FOR UPDATE SKIP LOCKED/);
+  assert.match(statement, /vehicle_image_status = 'processing'/);
+});
+
+test("primary overview profiles require an exact plate-camera and direction match", async () => {
+  let parameters = null;
+  let statement = "";
+  const repository = new BlueIrisVehicleFrameRepository({
+    async query(sql, values) {
+      statement = sql;
+      parameters = values;
+      return { rows: [] };
+    },
+  });
+
+  await repository.listPrimaryOverviewProfilesForRead({
+    plateCameraName: "Street LPR 2",
+    directionLabel: "Eastbound",
+  });
+  assert.deepEqual(parameters, ["Street LPR 2", "Eastbound"]);
+  assert.match(statement, /source_role = 'primary'/);
+  assert.match(statement, /LOWER\(BTRIM\(plate_camera_name\)\) = LOWER\(BTRIM\(\$1\)\)/);
+  assert.match(statement, /LOWER\(BTRIM\(direction_label\)\) = LOWER\(BTRIM\(\$2\)\)/);
 });
 
 test("the selected vehicle frame persists bounded quality and tracking diagnostics", async () => {

@@ -5,6 +5,8 @@ import {
   associationMinimumAgeMs,
   chooseOverviewAssociation,
   OVERVIEW_ASSOCIATION_ALGORITHM,
+  overviewReadQueueState,
+  overviewSourceTimestamp,
 } from "../lib/vehicle-overview-association.mjs";
 
 const candidate = {
@@ -37,6 +39,60 @@ const profiles = [
     enabled: true,
   },
 ];
+
+test("read-owned source timestamps preserve positive and negative profile deltas", () => {
+  assert.equal(
+    overviewSourceTimestamp("2026-08-08T18:00:00.000Z", 4_500),
+    "2026-08-08T18:00:04.500Z"
+  );
+  assert.equal(
+    overviewSourceTimestamp("2026-08-08T18:00:00.000Z", -4_500),
+    "2026-08-08T17:59:55.500Z"
+  );
+});
+
+test("read-owned overview queueing requires a ready nonblank Blue Iris direction", () => {
+  assert.deepEqual(overviewReadQueueState({
+    eligibility: { evaluated: true, monochrome: true },
+    directionStatus: "ready",
+    directionLabel: "Eastbound",
+  }), {
+    status: "unavailable",
+    queueKind: null,
+    retryable: false,
+    errorCode: "NIGHTTIME_UNAVAILABLE",
+  });
+  assert.equal(overviewReadQueueState({
+    eligibility: { evaluated: false, monochrome: false },
+    directionStatus: "ready",
+    directionLabel: "Eastbound",
+  }).errorCode, "DAYLIGHT_UNVERIFIED");
+  for (const input of [
+    { directionStatus: null, directionLabel: null },
+    { directionStatus: "unknown", directionLabel: "Eastbound" },
+    { directionStatus: "ready", directionLabel: "   " },
+  ]) {
+    assert.deepEqual(overviewReadQueueState({
+      eligibility: { evaluated: true, monochrome: false },
+      ...input,
+    }), {
+      status: "unavailable",
+      queueKind: null,
+      retryable: false,
+      errorCode: "OVERVIEW_DIRECTION_UNAVAILABLE",
+    });
+  }
+  assert.deepEqual(overviewReadQueueState({
+    eligibility: { evaluated: true, monochrome: false },
+    directionStatus: "ready",
+    directionLabel: "Eastbound",
+  }), {
+    status: "pending",
+    queueKind: "overview",
+    retryable: true,
+    errorCode: "WAITING_FOR_DAYTIME_OVERVIEW",
+  });
+});
 
 test("overview association joins paired LPR reads for the same vehicle", () => {
   const result = chooseOverviewAssociation({
