@@ -12,6 +12,7 @@ import {
   isLikelyBlueIrisPlaceholder,
   productionBaselineVehicleFrameScore,
   scoreVehicleFrame,
+  selectAnchoredOverviewVehicleFrame,
   selectGuardedVehicleFrame,
   selectBestTrackedVehicleFrame,
 } from "../lib/blue-iris-vehicle-frame.mjs";
@@ -145,6 +146,101 @@ test("plate anchoring and ReID tracking reject a larger unrelated vehicle", () =
   assert.equal(result.best.offsetMs, tracked.offsetMs);
   assert.equal(result.best.score, tracked.score);
   assert.equal(result.trackedCount, 2);
+});
+
+test("overview anchoring keeps the timed vehicle track instead of a stronger unrelated production candidate", () => {
+  const anchor = {
+    offsetMs: 0,
+    primarySample: true,
+    frameRank: 0,
+    detection: { left: 0.1, top: 0.1, right: 0.5, bottom: 0.6, area: 0.2 },
+    embedding: Float32Array.from([1, 0]),
+    baselineScore: 0.55,
+    score: 0.5,
+    scoreBreakdown: { completenessTier: 3 },
+  };
+  const target = {
+    offsetMs: 100,
+    primarySample: true,
+    frameRank: 1,
+    detection: { left: 0.14, top: 0.1, right: 0.55, bottom: 0.62, area: 0.21 },
+    embedding: Float32Array.from([0.995, 0.1]),
+    baselineScore: 0.66,
+    score: 0.82,
+    scoreBreakdown: { completenessTier: 3 },
+  };
+  const unrelated = {
+    offsetMs: 100,
+    primarySample: true,
+    frameRank: 0,
+    detection: { left: 0.65, top: 0.2, right: 0.98, bottom: 0.8, area: 0.3 },
+    embedding: Float32Array.from([0, 1]),
+    baselineScore: 0.96,
+    score: 0.97,
+    scoreBreakdown: { completenessTier: 2 },
+  };
+  const laterUnrelated = {
+    ...unrelated,
+    offsetMs: 200,
+    frameRank: 0,
+    baselineScore: 0.99,
+    score: 0.99,
+  };
+
+  const result = selectAnchoredOverviewVehicleFrame([anchor, target, unrelated, laterUnrelated]);
+  assert.equal(result.status, "selected");
+  assert.equal(result.best.frameRank, target.frameRank);
+  assert.equal(result.best.score, target.score);
+  assert.equal(result.trackedCount, 2);
+  assert.equal(result.selectionReason, "overview_anchor_track");
+});
+
+test("overview anchoring fails closed when multiple vehicles occupy the timing anchor", () => {
+  const result = selectAnchoredOverviewVehicleFrame([
+    {
+      offsetMs: 0,
+      primarySample: true,
+      frameRank: 0,
+      detection: { left: 0.05, top: 0.1, right: 0.4, bottom: 0.8 },
+      score: 0.9,
+    },
+    {
+      offsetMs: 0,
+      primarySample: true,
+      frameRank: 1,
+      detection: { left: 0.55, top: 0.1, right: 0.9, bottom: 0.8 },
+      score: 0.88,
+    },
+  ]);
+  assert.equal(result.status, "ambiguous");
+  assert.equal(result.best, null);
+  assert.equal(result.selectionReason, "multiple_vehicles_at_overview_anchor");
+});
+
+test("overview anchoring fails closed for equally near competing vehicles and ignores detections outside profile tolerance", () => {
+  const competing = selectAnchoredOverviewVehicleFrame([
+    {
+      offsetMs: -100,
+      detection: { left: 0.05, top: 0.1, right: 0.4, bottom: 0.8 },
+      score: 0.9,
+    },
+    {
+      offsetMs: 100,
+      detection: { left: 0.55, top: 0.1, right: 0.9, bottom: 0.8 },
+      score: 0.88,
+    },
+  ], { toleranceMs: 1_500 });
+  assert.equal(competing.status, "ambiguous");
+
+  const outsideTolerance = selectAnchoredOverviewVehicleFrame([
+    {
+      offsetMs: 2_000,
+      detection: { left: 0.1, top: 0.1, right: 0.8, bottom: 0.8 },
+      score: 0.95,
+    },
+  ], { toleranceMs: 1_500 });
+  assert.equal(outsideTolerance.status, "not_visible");
+  assert.equal(outsideTolerance.selectionReason, "overview_anchor_outside_tolerance");
 });
 
 test("a weak primary selection expands the timeline and selects a complete later view", async () => {
@@ -406,6 +502,76 @@ test("overview processing retains one plate-independent candidate frame", async 
   assert.equal(operations[1][0], "ready");
   assert.equal(operations[1][2].sampledCount, 61);
   assert.match(operations[1][2].selectionMetadata.algorithm, /overview-100ms$/);
+});
+
+test("read-owned overview processing applies the signed profile delta and saves directly to the plate read", async () => {
+  const operations = [];
+  let selectionRequest = null;
+  const service = new BlueIrisVehicleFrameService({
+    client: {},
+    repository: {
+      async markReady(id, frame) { operations.push(["ready", id, frame]); },
+      async markFailed() { assert.fail("a successful read-owned overview must not fail"); },
+    },
+    fileStorage: {
+      async saveDerivedImage(framePath) { operations.push(["save", framePath]); },
+      async deleteImage() {},
+    },
+    sampleOffsetsMs: OVERVIEW_VEHICLE_FRAME_SAMPLE_OFFSETS_MS,
+    extensionOffsetsMs: [],
+    deepExtensionOffsetsMs: [],
+  });
+  service.selectBestFrame = async (request) => {
+    selectionRequest = request;
+    return {
+      best: {
+        buffer: Buffer.from("overview"),
+        timestamp: "2026-08-08T18:00:05.000Z",
+        offsetMs: 500,
+        score: 0.93,
+        quality: { sharpnessScore: 0.9 },
+        scoreBreakdown: { completenessTier: 3 },
+        detection: { confidence: 0.91, left: 0.05, top: 0.05, right: 0.95, bottom: 0.95 },
+        width: 1920,
+        height: 1080,
+      },
+      sampledCount: 61,
+      detectedCount: 8,
+      trackedCount: 5,
+      anchorOffsetMs: 0,
+      selectionReason: "overview_anchor_track",
+    };
+  };
+
+  const result = await service.processOverviewRead({
+    read: {
+      id: 701,
+      plate_number: "ABC123",
+      camera_name: "Street LPR 2",
+      timestamp: "2026-08-08T18:00:00.000Z",
+      bi_trigger_direction_label: "Eastbound",
+    },
+    profile: {
+      id: 42,
+      source_camera_name: "Street Overview",
+      expected_delta_ms: 4_500,
+      tolerance_ms: 2_000,
+    },
+    camera: "Cam149",
+    alreadyClaimed: true,
+  });
+
+  assert.equal(result.status, "ready");
+  assert.equal(selectionRequest.camera, "Cam149");
+  assert.equal(selectionRequest.timestamp, "2026-08-08T18:00:04.500Z");
+  assert.equal(selectionRequest.plateBox, null);
+  assert.equal(selectionRequest.selectionMode, "overview_anchor");
+  assert.equal(selectionRequest.anchorToleranceMs, 2_000);
+  assert.equal(operations[1][0], "ready");
+  assert.equal(operations[1][1], 701);
+  assert.equal(operations[1][2].sourceKind, "overview_primary");
+  assert.equal(operations[1][2].selectionMetadata.sourceCameraName, "Street Overview");
+  assert.equal(operations[1][2].selectionMetadata.expectedDeltaMs, 4_500);
 });
 
 test("expired recording becomes terminal without writing or deleting an image", async () => {

@@ -476,21 +476,20 @@ notes. Updates remain externally orchestrated.
   sources and display `Unavailable nighttime`. Legacy shadow observations and
   historical direction assignments are not rewritten. The former dense 100-millisecond clip
   sampling and vehicle-detection direction worker remain removed.
-- Daytime overview Vehicle View candidate implemented as one guarded phase.
-  Street Overview motion alerts enter a plate-independent durable candidate
-  queue, are screened locally for a complete vehicle, and sample a bounded
-  six-second interval at 100-millisecond spacing while retaining only the best
-  JPEG. Entry LPR 1/2 can be configured as driveway fallbacks; their existing
-  accepted plate action creates the fallback candidate automatically, so no
-  Blue Iris clone is needed. Association waits for expected reads and uses a
-  camera-pair signed timing profile, validated Blue Iris direction, same-event
-  plate agreement, and a conservative runner-up margin. Street LPR 1/2 reads
-  for the same vehicle may share the candidate, while competing nearby
-  vehicles remain unassigned. Monochrome candidate alerts and plate reads are
-  terminal `Unavailable nighttime` and never enter frame selection or matching.
-  Normal new reads no longer use the plate-camera clip for Vehicle View;
-  historical/manual recovery keeps the older selector. Production timing and
-  live association accuracy still require post-deployment validation.
+- Plate-anchored daytime Street Overview Vehicle Views implemented as the
+  corrective primary path. Each new mapped Street LPR read selects an enabled
+  primary profile by plate camera plus validated Blue Iris direction, adds the
+  signed timing delta to the read timestamp, and directly retrieves a bounded
+  six-second Street Overview timeline window at 100-millisecond spacing. Frame
+  selection follows the vehicle track nearest the calculated anchor and refuses
+  ambiguous competing tracks instead of assigning an unrelated vehicle. The
+  selected JPEG is written directly to its originating read as an overview
+  primary image. Street Overview requires no motion or web-request action.
+  Monochrome plate reads remain terminal `Unavailable nighttime` and make no
+  timeline requests. The former candidate tables and historical records remain
+  intact for compatibility, but independent candidate ingestion no longer owns
+  the live path. Entry LPR driveway fallback is deliberately deferred until the
+  corrected primary path is validated with production traffic.
 - Per-read vehicle color observations and reviewable vehicle profiles are
   implemented as an evidence-gathering phase. Color is stored with confidence
   and local algorithm provenance against the individual read, never copied onto
@@ -525,12 +524,14 @@ be restored. Monochrome nighttime captures do not receive a direction result.
   missing, shorthand, and unmapped trigger values on the ReID fallback path.
   Mapping revisions remain independent from ReID calibration, and validation
   totals and recent observations stay scoped to one camera.
-- Validate the new daytime overview pipeline with live production traffic.
+- Validate the corrected plate-anchored daytime overview pipeline with live
+  production traffic.
   Confirm the signed Street Overview timing profiles for Street LPR 1 (normally
   within about one second) and Street LPR 2 (roughly four to five seconds), then
-  validate Entry LPR fallback timing for driveway turns. Review every ambiguous
-  or unmatched outcome before changing tolerances; do not enable nighttime
-  processing or restore the retired clip-based direction analyzer.
+  implement and validate Entry LPR fallback timing for driveway turns as a
+  separate follow-up. Review every ambiguous or unmatched outcome before
+  changing tolerances; do not enable nighttime processing or restore the
+  retired clip-based direction analyzer.
 - Expand Vehicle ReID calibration with larger labeled local samples and
   camera-pair reporting before making stronger labels or applying thresholds.
 - Consider pgvector only when the bounded in-process cosine scan no longer

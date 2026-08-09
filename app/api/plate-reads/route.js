@@ -18,7 +18,6 @@ import {
   resolveBlueIrisTriggerDirectionForRead,
 } from "@/lib/blue-iris-trigger-direction.mjs";
 import { assessDirectionImageEligibility } from "@/lib/direction-image-eligibility.mjs";
-import { BlueIrisVehicleFrameRepository } from "@/lib/blue-iris-vehicle-frame-repository.mjs";
 import { wakeBlueIrisVehicleFrameWorker } from "@/lib/blue-iris-vehicle-frame-runtime.mjs";
 import {
   recordAliasApplicationWithClient,
@@ -29,11 +28,7 @@ import { MqttRepository } from "@/lib/mqtt/repository.mjs";
 import { getConfig } from "@/lib/settings";
 import fileStorage from "@/lib/fileStorage";
 import { createIntegrationRouteHandler } from "@/lib/request-auth.mjs";
-import {
-  createOverviewCandidateIdentity,
-  normalizeOverviewTriggerType,
-  overviewNighttimeState,
-} from "@/lib/vehicle-overview-candidate.mjs";
+import { overviewReadQueueState } from "@/lib/vehicle-overview-association.mjs";
 import { revalidatePath } from "next/cache";
 
 // Revised to use a blacklist of all other possible AI labels if using the memo
@@ -299,26 +294,11 @@ async function processPlateRead(data) {
       directionImageEligibility
     );
     const blueIrisTriggerColumns = blueIrisTriggerDirectionColumns(blueIrisTriggerDirection);
-    const overviewVehicleView = directionImageEligibility.monochrome === true
-      ? {
-          status: "unavailable",
-          queueKind: null,
-          retryable: false,
-          errorCode: "NIGHTTIME_UNAVAILABLE",
-        }
-      : directionImageEligibility.evaluated !== true
-        ? {
-            status: "unavailable",
-            queueKind: null,
-            retryable: false,
-            errorCode: "DAYLIGHT_UNVERIFIED",
-          }
-        : {
-          status: "pending",
-          queueKind: "overview",
-          retryable: true,
-          errorCode: "WAITING_FOR_DAYTIME_OVERVIEW",
-        };
+    const overviewVehicleView = overviewReadQueueState({
+      eligibility: directionImageEligibility,
+      directionStatus: blueIrisTriggerColumns.bi_trigger_direction_status,
+      directionLabel: blueIrisTriggerColumns.bi_trigger_direction_label,
+    });
 
     const processedPlates = [];
     const duplicatePlates = [];
@@ -547,42 +527,6 @@ async function processPlateRead(data) {
 
     await dbClient.query("COMMIT");
     transactionOpen = false;
-    if (processedPlates.length > 0 && camera) {
-      try {
-        const overviewRepository = new BlueIrisVehicleFrameRepository(pool);
-        const sourceProfiles = await overviewRepository.listOverviewPairProfiles(camera);
-        if (sourceProfiles.some((profile) => profile.enabled === true)) {
-          const daylight = overviewNighttimeState(directionImageEligibility);
-          if (daylight.accepted) {
-            await overviewRepository.createOverviewCandidate({
-              eventIdentity: createOverviewCandidateIdentity({
-                sourceCameraName: camera,
-                eventTimestamp: timestamp,
-                alertClip: blueIrisAlert.alertClip,
-                alertPath: blueIrisAlert.alertPath,
-              }),
-              sourceCameraName: camera,
-              eventTimestamp: new Date(timestamp).toISOString(),
-              alertClip: blueIrisAlert.alertClip,
-              alertPath: blueIrisAlert.alertPath,
-              alertOffsetMs: blueIrisAlert.offsetMs,
-              triggerType: normalizeOverviewTriggerType(
-                data.trigger_type ?? data.triggerType ?? data.TYPE
-              ),
-              daylightStatus: daylight.daylightStatus,
-              monochromeRatio: directionImageEligibility.monochromeRatio,
-              status: daylight.status,
-              retryable: daylight.retryable,
-              errorCode: daylight.errorCode,
-            });
-          }
-        }
-      } catch {
-        // The accepted plate read remains authoritative. A fallback overview
-        // candidate can be retried by the independent Blue Iris action.
-        console.error("Driveway fallback overview candidate handoff failed");
-      }
-    }
     if (processedPlates.length > 0) wakeBlueIrisVehicleFrameWorker();
 
     // Unified MQTT and Pushover handoffs committed with each read. The legacy
