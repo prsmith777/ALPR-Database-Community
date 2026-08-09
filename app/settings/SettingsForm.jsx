@@ -164,6 +164,9 @@ export default function SettingsForm({
           formData.get("clearBiPassword") === "on"
         );
         newFormData.append("biTimeoutSeconds", formData.get("biTimeoutSeconds"));
+        newFormData.append("biTimelineExportProfile", formData.get("biTimelineExportProfile"));
+        newFormData.append("biTimelineExportMinWidth", formData.get("biTimelineExportMinWidth"));
+        newFormData.append("biTimelineExportMinHeight", formData.get("biTimelineExportMinHeight"));
         break;
     }
 
@@ -829,6 +832,44 @@ export default function SettingsForm({
               Clear saved password
             </label>
           )}
+        </div>
+        <div className="space-y-2">
+          <Label htmlFor="biTimelineExportProfile">Timeline export profile</Label>
+          <Input
+            id="biTimelineExportProfile"
+            name="biTimelineExportProfile"
+            type="number"
+            min="0"
+            max="3"
+            defaultValue={initialSettings.blueiris.timeline_export_profile ?? 0}
+          />
+          <p className="text-xs text-muted-foreground">
+            Blue Iris re-encodes timeline exports with profile 0–3. ALPR requests the main-stream source, but the selected profile controls the exported resolution.
+          </p>
+        </div>
+        <div className="space-y-2">
+          <Label>Minimum overview export resolution</Label>
+          <div className="grid grid-cols-2 gap-2">
+            <Input
+              aria-label="Minimum timeline export width"
+              name="biTimelineExportMinWidth"
+              type="number"
+              min="1920"
+              max="7680"
+              defaultValue={initialSettings.blueiris.timeline_export_min_width ?? 1920}
+            />
+            <Input
+              aria-label="Minimum timeline export height"
+              name="biTimelineExportMinHeight"
+              type="number"
+              min="1080"
+              max="4320"
+              defaultValue={initialSettings.blueiris.timeline_export_min_height ?? 1080}
+            />
+          </div>
+          <p className="text-xs text-muted-foreground">
+            ALPR verifies the finished file with FFprobe. Exports below this size fail closed instead of saving a low-resolution Vehicle View.
+          </p>
         </div>
       </div>
       <BlueIrisConnectionTest />

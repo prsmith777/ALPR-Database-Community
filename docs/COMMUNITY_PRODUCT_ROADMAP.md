@@ -446,7 +446,8 @@ notes. Updates remain externally orchestrated.
   cameras, and searches bounded alert metadata around a plate-read timestamp.
   New reads preserve the supplied alert clip/path/offset pointer while all BVR
   recordings and retention remain under Blue Iris on the existing DrivePool
-  volumes. No drive is mounted and no video is copied into ALPR.
+  volumes. No source drive is mounted and no BVR recording is copied into ALPR;
+  the later Street Overview path uses only a short API-generated temporary export.
 - Durable Blue Iris vehicle-frame processing implemented: every accepted live
   read is queued only after its database transaction commits, then a bounded
   worker samples an initial 17 timeline JPEGs and retains one best vehicle
@@ -480,22 +481,27 @@ notes. Updates remain externally orchestrated.
   corrective primary path. Each new mapped Street LPR read selects an enabled
   primary profile by plate camera plus validated Blue Iris direction in the
   same atomic claim, snapshots that profile revision, adds the signed timing
-  delta to the read timestamp, and directly retrieves exactly 61 samples over a
-  profile-derived six-second Street Overview window at 100-millisecond spacing.
-  Claims wait for the calculated source window plus a short Blue Iris
-  finalization grace; a fresh all-unavailable result receives one bounded retry.
+  delta to the read timestamp, and requests one read-owned eight-second
+  temporary timeline export from the continuous Street Overview recording.
+  Claims wait for the calculated source window, one second of export padding,
+  and a short Blue Iris finalization grace. ALPR validates the returned UTC,
+  duration, and configured minimum resolution, immediately sends `delete:true`
+  for the exact returned export path, and reconciles only ledger-owned cleanup
+  failures with bounded backoff. The local MP4 and working frames are deleted
+  after each read.
+  FFmpeg normalizes source timestamps and extracts exactly 61 local analysis
+  frames over the profile-derived six-second window at 100-millisecond spacing.
   Frame selection follows the continuous vehicle track nearest the calculated
   anchor, accepts a uniquely owned confident one-edge crop when necessary,
   ignores nonviable detector specks, and refuses two viable tracks instead of
   assigning an unrelated vehicle. Source frames must remain color/daytime.
   Bounded selection telemetry persists requested range, sample availability,
   detections, viable tracks, completeness, edge contact, and failure reason.
-  After low-resolution analysis, ALPR refetches the exact selected camera
-  timestamp up to three times at up to 3840 by 2160, validates frame and detector
-  continuity, and preserves the first validated returned JPEG without Q88
-  recompression. Camera and timestamp never change between attempts; only after
-  all three fail may a safe same-timestamp analysis-frame fallback be used, with
-  bounded per-attempt diagnostics recorded. Claim-token and profile-
+  Analysis remains bounded to 1280-pixel frames, while the saved Vehicle View is
+  extracted from the original verified export at the exact selected 10-fps slot
+  and full exported resolution. Blue Iris still re-encodes the MP4 according to
+  its selected export profile, so ALPR exposes profile 0-3 plus a fail-closed
+  minimum resolution instead of promising native output. Claim-token and profile-
   revision compare-and-set updates plus attempt-unique atomic files prevent a
   reclaimed worker or mid-analysis profile edit from overwriting a winner. The
   additive constraints remain migration-safe for community installations:
@@ -505,7 +511,11 @@ notes. Updates remain externally orchestrated.
   before later migration blocks run, so an upgrade cannot fail merely because
   plate-owned overview rows already exist. The
   selected JPEG is written directly to its originating read as an overview
-  primary image. Street Overview requires no motion or web-request action.
+  primary image. Work is claimed oldest first, refreshed by heartbeat, and bound
+  by a non-extendable five-minute deadline; expired second attempts become an
+  explicit failed state rather than remaining Processing. A deliberate 48-hour
+  recovery control requeues only pending, stuck, and allowlisted transient
+  operational failures. Street Overview requires no motion or web-request action.
   Monochrome plate reads remain terminal `Unavailable nighttime` and make no
   timeline requests. The former candidate tables and historical records remain
   intact for compatibility, but independent candidate ingestion no longer owns

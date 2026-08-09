@@ -617,6 +617,7 @@ export default function PlateTable({
       vehicleImageUrl: plate.vehicle_image_path ? `/images/${plate.vehicle_image_path}` : null,
       vehicleImageStatus: plate.vehicle_image_status || null,
       vehicleImageErrorCode: plate.vehicle_image_error_code || null,
+      vehicleImageQueueKind: plate.vehicle_image_queue_kind || null,
       vehicleImageAttemptCount: Number(plate.vehicle_image_attempt_count || 0),
       vehicleImageRetryable: plate.vehicle_image_retryable !== false,
       vehicleImageTimestamp: plate.vehicle_image_timestamp || null,
@@ -897,6 +898,7 @@ export default function PlateTable({
         : null;
       const currentVehicleImageStatus = currentPlate?.vehicle_image_status || null;
       const currentVehicleImageErrorCode = currentPlate?.vehicle_image_error_code || null;
+      const currentVehicleImageQueueKind = currentPlate?.vehicle_image_queue_kind || null;
       const currentVehicleImageAttemptCount = Number(currentPlate?.vehicle_image_attempt_count || 0);
       const currentVehicleImageRetryable = currentPlate?.vehicle_image_retryable !== false;
       const currentVehicleImageTimestamp = currentPlate?.vehicle_image_timestamp || null;
@@ -933,6 +935,7 @@ export default function PlateTable({
           currentVehicleImageUrl !== selectedImage.vehicleImageUrl ||
           currentVehicleImageStatus !== selectedImage.vehicleImageStatus ||
           currentVehicleImageErrorCode !== selectedImage.vehicleImageErrorCode ||
+          currentVehicleImageQueueKind !== selectedImage.vehicleImageQueueKind ||
           currentVehicleImageAttemptCount !== selectedImage.vehicleImageAttemptCount ||
           currentVehicleImageRetryable !== selectedImage.vehicleImageRetryable ||
           currentVehicleImageTimestamp !== selectedImage.vehicleImageTimestamp ||
@@ -972,6 +975,7 @@ export default function PlateTable({
           vehicleImageUrl: currentVehicleImageUrl,
           vehicleImageStatus: currentVehicleImageStatus,
           vehicleImageErrorCode: currentVehicleImageErrorCode,
+          vehicleImageQueueKind: currentVehicleImageQueueKind,
           vehicleImageAttemptCount: currentVehicleImageAttemptCount,
           vehicleImageRetryable: currentVehicleImageRetryable,
           vehicleImageTimestamp: currentVehicleImageTimestamp,
@@ -1877,6 +1881,8 @@ export default function PlateTable({
   const aliasOnlyCorrection = Boolean(
     correction?.rememberAlias && correction?.newPlateNumber && !correctionChangesPlate
   );
+
+  const selectedVehicleImageAttemptLimit = selectedImage?.vehicleImageQueueKind === "overview" ? 2 : 3;
 
   return (
     <TooltipProvider delayDuration={200}>
@@ -2967,9 +2973,14 @@ export default function PlateTable({
                               ? "Queued for daytime overview"
                               : "Queued",
                             processing: "Processing",
-                            failed: selectedImage.vehicleImageRetryable && selectedImage.vehicleImageAttemptCount < 3
-                              ? `Retry pending (attempt ${selectedImage.vehicleImageAttemptCount} of 3)`
-                              : `Failed after ${selectedImage.vehicleImageAttemptCount || 3} attempts`,
+                            failed: selectedImage.vehicleImageRetryable
+                              && selectedImage.vehicleImageAttemptCount < selectedVehicleImageAttemptLimit
+                              ? `Retry pending (attempt ${selectedImage.vehicleImageAttemptCount} of ${selectedVehicleImageAttemptLimit})`
+                              : ({
+                                  OVERVIEW_PROCESSING_DEADLINE: `Processing deadline exceeded after ${selectedImage.vehicleImageAttemptCount || selectedVehicleImageAttemptLimit} attempts`,
+                                  EXPORT_START_UNCERTAIN: "Blue Iris export ownership could not be verified safely",
+                                }[selectedImage.vehicleImageErrorCode]
+                                  || `Failed after ${selectedImage.vehicleImageAttemptCount || selectedVehicleImageAttemptLimit} attempts`),
                             unavailable: {
                               RECORDING_UNAVAILABLE: "Recording unavailable or expired",
                               VEHICLE_NOT_VISIBLE: "Legacy plate-camera view did not contain a complete vehicle",
@@ -2981,13 +2992,17 @@ export default function PlateTable({
                               NO_MATCHING_DAYTIME_OVERVIEW: "No matching daytime overview was found",
                               MULTIPLE_VEHICLES_MATCH: "Multiple vehicles could match; no image was assigned",
                               MULTIPLE_VEHICLES_VISIBLE: "Multiple vehicles were visible at the expected time; no image was assigned",
+                              EXPORT_RESOLUTION_TOO_LOW: "Blue Iris export was below the configured minimum resolution",
+                              EXPORT_TIMELINE_UNVERIFIED: "Blue Iris did not provide exact UTC export timing",
+                              EXPORT_TIMELINE_MISMATCH: "Blue Iris export did not cover the requested timeline",
+                              MEDIA_TOOL_UNAVAILABLE: "Vehicle View media tools are unavailable",
                               CANDIDATE_IMAGE_MISSING: "The selected overview image is no longer available",
                             }[selectedImage.vehicleImageErrorCode] || "Unavailable",
                           }[selectedImage.vehicleImageStatus] || selectedImage.vehicleImageStatus}
                         </div>
                         {canReview
                           && selectedImage.vehicleImageRetryable
-                          && selectedImage.vehicleImageAttemptCount < 3
+                          && selectedImage.vehicleImageAttemptCount < selectedVehicleImageAttemptLimit
                           && ["failed", "unavailable"].includes(selectedImage.vehicleImageStatus) ? (
                           <Button
                             type="button"

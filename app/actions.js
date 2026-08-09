@@ -2042,6 +2042,31 @@ export async function runBlueIrisVehicleFrameBatch() {
   }
 }
 
+export async function recoverIncompleteBlueIrisOverviewReads(input = {}) {
+  await requirePermission("maintenance.manage");
+  try {
+    const runtime = await getBlueIrisVehicleFrameRuntime();
+    const recovery = await runtime.repository.recoverIncompleteOverviewReads({
+      sinceHours: input.sinceHours ?? 48,
+    });
+    if (recovery.queued > 0) wakeBlueIrisVehicleFrameWorker();
+    revalidatePath("/settings/vehicle-intelligence");
+    revalidatePath("/live_feed");
+    return {
+      success: true,
+      data: {
+        ...recovery,
+        status: {
+          ...await runtime.queue.getStatus(),
+          worker: runtime.worker.snapshot(),
+        },
+      },
+    };
+  } catch (error) {
+    return visualSearchFailure(error, "Unable to recover incomplete overview Vehicle Views.");
+  }
+}
+
 export async function getPlateViewSettings() {
   await requirePermission("plate.read");
   const config = await getConfig();
@@ -2187,7 +2212,10 @@ export async function updateSettings(formData) {
       updateIfExists("bihost") ||
       updateIfExists("biUsername") ||
       updateIfExists("biPassword") ||
-      updateIfExists("biTimeoutSeconds")
+      updateIfExists("biTimeoutSeconds") ||
+      updateIfExists("biTimelineExportProfile") ||
+      updateIfExists("biTimelineExportMinWidth") ||
+      updateIfExists("biTimelineExportMinHeight")
     ) {
       const candidateBlueIris = {
         ...currentConfig.blueiris,
@@ -2205,8 +2233,36 @@ export async function updateSettings(formData) {
             currentConfig.blueiris?.timeout_seconds ??
             10
         ),
+        timeline_export_profile: Number(
+          formData.get("biTimelineExportProfile")
+            ?? currentConfig.blueiris?.timeline_export_profile
+            ?? 0
+        ),
+        timeline_export_min_width: Number(
+          formData.get("biTimelineExportMinWidth")
+            ?? currentConfig.blueiris?.timeline_export_min_width
+            ?? 1920
+        ),
+        timeline_export_min_height: Number(
+          formData.get("biTimelineExportMinHeight")
+            ?? currentConfig.blueiris?.timeline_export_min_height
+            ?? 1080
+        ),
       };
       normalizeBlueIrisSettings(candidateBlueIris);
+      if (!Number.isInteger(candidateBlueIris.timeline_export_profile)
+        || candidateBlueIris.timeline_export_profile < 0
+        || candidateBlueIris.timeline_export_profile > 3) {
+        throw new Error("Blue Iris timeline export profile must be between 0 and 3.");
+      }
+      if (!Number.isInteger(candidateBlueIris.timeline_export_min_width)
+        || candidateBlueIris.timeline_export_min_width < 1920
+        || candidateBlueIris.timeline_export_min_width > 7680
+        || !Number.isInteger(candidateBlueIris.timeline_export_min_height)
+        || candidateBlueIris.timeline_export_min_height < 1080
+        || candidateBlueIris.timeline_export_min_height > 4320) {
+        throw new Error("Blue Iris minimum timeline export resolution is invalid.");
+      }
       newConfig.blueiris = {
         ...candidateBlueIris,
       };

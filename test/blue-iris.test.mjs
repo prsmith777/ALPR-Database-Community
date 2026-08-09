@@ -1,4 +1,7 @@
 import assert from "node:assert/strict";
+import fs from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
 import test from "node:test";
 
 import {
@@ -6,6 +9,7 @@ import {
   BlueIrisClient,
   BlueIrisError,
   normalizeBlueIrisBaseUrl,
+  timelineExportFromResponse,
 } from "../lib/blue-iris.mjs";
 
 function jsonResponse(body, status = 200) {
@@ -21,6 +25,12 @@ function binaryResponse(buffer, status = 200) {
     ok: status >= 200 && status < 300,
     status,
     headers: { get: (name) => name === "content-length" ? String(buffer.length) : "image/jpeg" },
+    body: new ReadableStream({
+      start(controller) {
+        controller.enqueue(buffer);
+        controller.close();
+      },
+    }),
     async arrayBuffer() { return buffer; },
   };
 }
@@ -202,5 +212,132 @@ test("missing timeline recording produces a stable terminal error", async () => 
   await assert.rejects(
     client.fetchTimelineJpeg({ camera: "Cam146", timestamp: "2026-01-01T00:00:00Z" }),
     (error) => error.code === "RECORDING_UNAVAILABLE"
+  );
+});
+
+test("timeline export lifecycle uses the documented start, poll, download, and delete commands", async () => {
+  const requests = [];
+  const mp4 = Buffer.from("synthetic-mp4-payload");
+  const responses = [
+    jsonResponse({ result: "fail", session: "challenge" }),
+    jsonResponse({ result: "success", session: "active", data: {} }),
+    jsonResponse({
+      result: "success",
+      data: { path: "@ALPR_42.mp4", status: "exporting", progress: 5 },
+    }),
+    jsonResponse({
+      result: "success",
+      data: [{
+        path: "@ALPR_42.mp4",
+        status: "completed",
+        progress: 100,
+        uri: "@ALPR_42.mp4",
+        filesize: mp4.length,
+        utc: 1_786_300_000_000,
+        msec: 8_000,
+        camera: "Cam149",
+      }],
+    }),
+    binaryResponse(mp4),
+    jsonResponse({ result: "success", data: { path: "@ALPR_42.mp4" } }),
+  ];
+  const client = new BlueIrisClient(
+    { host: "blueiris.local:81", username: "alpr", password: "secret" },
+    { fetchImpl: async (url, options) => {
+      requests.push({
+        url: String(url),
+        method: options.method,
+        body: options.body ? JSON.parse(options.body) : null,
+      });
+      return responses.shift();
+    } }
+  );
+  const directory = await fs.mkdtemp(path.join(os.tmpdir(), "alpr-bi-client-test-"));
+  const destinationPath = path.join(directory, "timeline.mp4");
+  try {
+    const started = await client.startTimelineExport({
+      camera: "Cam149",
+      start: "2026-08-09T13:00:00.000Z",
+      durationMs: 8_000,
+      profile: 0,
+    });
+    assert.equal(started.remotePath, "@ALPR_42.mp4");
+    assert.equal(started.complete, false);
+    const completed = await client.getTimelineExport(started.remotePath);
+    assert.equal(completed.complete, true);
+    assert.equal(completed.uri, "@ALPR_42.mp4");
+    assert.equal(completed.utc, 1_786_300_000_000);
+    assert.equal(completed.durationMs, 8_000);
+    const downloaded = await client.downloadTimelineExport({
+      uri: completed.uri,
+      destinationPath,
+    });
+    assert.equal(downloaded.bytes, mp4.length);
+    assert.deepEqual(await fs.readFile(destinationPath), mp4);
+    assert.deepEqual(await client.deleteTimelineExport(started.remotePath), {
+      remotePath: "@ALPR_42.mp4",
+      deleted: true,
+      alreadyMissing: false,
+    });
+    assert.deepEqual(requests[2].body, {
+      cmd: "export",
+      path: "Cam149",
+      startms: Date.parse("2026-08-09T13:00:00.000Z"),
+      msec: 8_000,
+      format: 1,
+      profile: 0,
+      reencode: true,
+      substream: false,
+      audio: false,
+      overlay: false,
+      session: "active",
+    });
+    assert.deepEqual(requests[3].body, {
+      cmd: "export",
+      session: "active",
+    });
+    assert.match(requests[4].url, /\/clips\/%40ALPR_42\.mp4\?dl=1&session=active$/);
+    assert.deepEqual(requests[5].body, {
+      cmd: "export",
+      path: "@ALPR_42.mp4",
+      delete: true,
+      session: "active",
+    });
+  } finally {
+    await fs.rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("timeline export response normalization rejects unsafe paths and recognizes completed exports", () => {
+  assert.deepEqual(
+    timelineExportFromResponse({
+      result: "success",
+      data: { path: "@safe.mp4", progress: 100, uri: "@safe.mp4", filesize: 123 },
+    }),
+    {
+      remotePath: "@safe.mp4",
+      progress: 100,
+      status: "",
+      error: null,
+      fileSize: 123,
+      uri: "@safe.mp4",
+      utc: null,
+      durationMs: null,
+      camera: null,
+      failed: false,
+      complete: true,
+    }
+  );
+  assert.throws(
+    () => timelineExportFromResponse({ data: { path: "unsafe\npath", progress: 1 } }),
+    (error) => error.code === "INVALID_EXPORT_PATH"
+  );
+  assert.equal(
+    timelineExportFromResponse({
+      result: "success",
+      data: { path: "@reserved.mp4", uri: "@reserved.mp4" },
+    }).complete,
+    false,
+    "a reserved download URI without explicit completion must remain in progress"
   );
 });

@@ -17,6 +17,7 @@ import {
   deleteVehicleOverviewPairProfile,
   cancelBlueIrisVehicleFrameHistory,
   queueBlueIrisVehicleFrameHistory,
+  recoverIncompleteBlueIrisOverviewReads,
   runBlueIrisVehicleFrameBatch,
   setBlueIrisVehicleFrameHistoryPaused,
   setVehicleDirectionReevaluationPaused,
@@ -344,6 +345,18 @@ export default function VehicleIntelligenceSettings({
     finally { setBusy(""); }
   };
 
+  const recoverIncompleteOverview = async () => {
+    setBusy("overview-recovery");
+    setFrameMessage("");
+    try {
+      const result = await recoverIncompleteBlueIrisOverviewReads({ sinceHours: 48 });
+      if (!result.success) throw new Error(result.error);
+      setFrameQueue(result.data.status);
+      setFrameMessage(`Queued ${result.data.queued.toLocaleString()} incomplete overview Vehicle View${result.data.queued === 1 ? "" : "s"} from the last ${result.data.sinceHours} hours. Ready images and terminal scene decisions were preserved.`);
+    } catch (error) { setFrameMessage(error.message); }
+    finally { setBusy(""); }
+  };
+
   return (
     <SettingsShell
       activeId="vehicleIntelligence"
@@ -659,7 +672,7 @@ export default function VehicleIntelligenceSettings({
           <CardHeader>
             <CardTitle className="flex items-center gap-2"><Images className="h-5 w-5" /> Blue Iris vehicle views</CardTitle>
             <CardDescription>
-              New daytime reads use the overview association above. These controls retain the older plate-camera selector only for historical jobs and deliberate manual recovery; it no longer supplies normal live Vehicle Views.
+              New daytime reads export one temporary Street Overview timeline segment, analyze 61 local frames at 100 ms intervals, retain the exact selected full-resolution frame, and immediately delete both temporary copies. The older plate-camera selector remains only for historical jobs and deliberate manual recovery.
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
@@ -727,6 +740,7 @@ export default function VehicleIntelligenceSettings({
                 <Button variant="secondary" disabled={Boolean(busy) || !frameQueue?.configured} onClick={toggleFrameHistory}>{frameQueue?.historicalPaused ? <Play className="mr-2 h-4 w-4" /> : <Pause className="mr-2 h-4 w-4" />}{frameQueue?.historicalPaused ? "Resume history" : "Pause history"}</Button>
                 <Button variant="destructive" disabled={Boolean(busy) || !cameraName || !frameQueue?.historicalOutstanding} onClick={() => setCancelFrameHistoryOpen(true)}><XCircle className="mr-2 h-4 w-4" />Cancel pending {cameraName || "camera"} history</Button>
                 <Button variant="secondary" disabled={Boolean(busy) || !frameQueue?.configured} onClick={runFrameBatch}>{busy === "frame-batch" ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Play className="mr-2 h-4 w-4" />}Run one frame now</Button>
+                <Button variant="outline" disabled={Boolean(busy) || !frameQueue?.configured} onClick={recoverIncompleteOverview}>{busy === "overview-recovery" ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <History className="mr-2 h-4 w-4" />}Recover incomplete overview jobs (48h)</Button>
               </div>
             </div>
             {frameMessage && <p className="rounded-md border p-3 text-sm">{frameMessage}</p>}
