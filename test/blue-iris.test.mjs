@@ -308,6 +308,38 @@ test("timeline export lifecycle uses the documented start, poll, download, and d
   }
 });
 
+test("timeline export creation can explicitly disable re-encoding", async () => {
+  const requests = [];
+  const responses = [
+    jsonResponse({ result: "fail", session: "challenge" }),
+    jsonResponse({ result: "success", session: "active", data: {} }),
+    jsonResponse({
+      result: "success",
+      data: { path: "Clipboard\\ALPR_DIAGNOSTIC.mp4", status: "queued" },
+    }),
+  ];
+  const client = new BlueIrisClient(
+    { host: "blueiris.local:81", username: "alpr", password: "secret" },
+    { fetchImpl: async (_url, options) => {
+      requests.push(JSON.parse(options.body));
+      return responses.shift();
+    } }
+  );
+
+  await client.startTimelineExport({
+    camera: "Cam149",
+    start: "2026-08-09T13:00:00.000Z",
+    durationMs: 8_000,
+    profile: 0,
+    reencode: false,
+    substream: false,
+  });
+
+  assert.equal(requests[2].reencode, false);
+  assert.equal(requests[2].format, 1);
+  assert.equal(requests[2].substream, false);
+});
+
 test("timeline export response normalization rejects unsafe paths and recognizes completed exports", () => {
   assert.deepEqual(
     timelineExportFromResponse({

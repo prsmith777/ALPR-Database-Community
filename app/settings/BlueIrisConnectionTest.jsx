@@ -1,8 +1,11 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { Images, Loader2, Search, Wifi } from "lucide-react";
+import { FileVideo2, Images, Loader2, RefreshCw, Search, Trash2, Wifi } from "lucide-react";
 import {
+  checkBlueIrisExportDiagnostic,
+  createBlueIrisExportDiagnostic,
+  deleteBlueIrisExportDiagnostic,
   previewBlueIrisAlertMatch,
   selectBlueIrisVehicleFrame,
   testBlueIrisConnection,
@@ -19,6 +22,7 @@ export default function BlueIrisConnectionTest() {
   const [tolerance, setTolerance] = useState("90");
   const [match, setMatch] = useState(null);
   const [vehicleFrame, setVehicleFrame] = useState(null);
+  const [exportDiagnostic, setExportDiagnostic] = useState(null);
 
   const testConnection = () => {
     setConnection(null);
@@ -62,6 +66,36 @@ export default function BlueIrisConnectionTest() {
         cameraName: selectedCamera?.name || camera,
         timestamp: parsed.toISOString(),
       }));
+    });
+  };
+
+  const createExportDiagnostic = () => {
+    const parsed = new Date(timestamp);
+    if (!timestamp || Number.isNaN(parsed.getTime())) {
+      setExportDiagnostic({ success: false, error: "Choose a recorded local date and time." });
+      return;
+    }
+    startTransition(async () => {
+      setExportDiagnostic(await createBlueIrisExportDiagnostic({
+        camera,
+        start: parsed.toISOString(),
+      }));
+    });
+  };
+
+  const checkExportDiagnostic = () => {
+    const token = exportDiagnostic?.data?.token;
+    if (!token) return;
+    startTransition(async () => {
+      setExportDiagnostic(await checkBlueIrisExportDiagnostic({ token }));
+    });
+  };
+
+  const deleteExportDiagnostic = () => {
+    const token = exportDiagnostic?.data?.token;
+    if (!token) return;
+    startTransition(async () => {
+      setExportDiagnostic(await deleteBlueIrisExportDiagnostic({ token }));
     });
   };
 
@@ -136,6 +170,62 @@ export default function BlueIrisConnectionTest() {
           {vehicleFrame && !vehicleFrame.success && (
             <p className="text-sm text-destructive">{vehicleFrame.message || "Unable to select a Blue Iris vehicle frame."}</p>
           )}
+          <div className="space-y-3 rounded-md border border-amber-500/40 bg-amber-500/5 p-4">
+            <div>
+              <h4 className="font-medium">Manual timeline-export diagnostic</h4>
+              <p className="mt-1 text-sm text-muted-foreground">
+                This temporary diagnostic creates one eight-second main-stream MP4 with re-encoding disabled. Every phase requires a separate click. It does not poll, download, or delete automatically.
+              </p>
+            </div>
+            {!exportDiagnostic?.data && (
+              <Button type="button" variant="outline" onClick={createExportDiagnostic} disabled={pending || !camera || !timestamp}>
+                {pending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <FileVideo2 className="mr-2 h-4 w-4" />}
+                Create diagnostic export
+              </Button>
+            )}
+            {exportDiagnostic && !exportDiagnostic.success && (
+              <p className="text-sm text-destructive">{exportDiagnostic.error}</p>
+            )}
+            {exportDiagnostic?.success && exportDiagnostic.data && (
+              <div className="space-y-3 rounded-md border bg-background p-3 text-sm">
+                <p>
+                  Status: <strong>{exportDiagnostic.data.status || "queued"}</strong>
+                  {Number.isFinite(exportDiagnostic.data.progress) ? ` (${exportDiagnostic.data.progress}%)` : ""}
+                </p>
+                <p className="break-all text-muted-foreground">
+                  Exact Blue Iris path: {exportDiagnostic.data.remotePath}
+                </p>
+                {!exportDiagnostic.data.deletedAt && !exportDiagnostic.data.checkedAt && (
+                  <p className="font-medium text-amber-700 dark:text-amber-300">
+                    Paused after creation. Check the Blue Iris Clipboard folder, then click Check export status.
+                  </p>
+                )}
+                {!exportDiagnostic.data.deletedAt && exportDiagnostic.data.checkedAt && (
+                  <p className="font-medium text-amber-700 dark:text-amber-300">
+                    {exportDiagnostic.data.complete
+                      ? "Paused after one status request. Blue Iris reports that the export completed; check the folder, then delete it."
+                      : "Paused after one status request. Blue Iris has not confirmed completion, so deletion remains disabled. Check the folder and request status again later."}
+                  </p>
+                )}
+                {exportDiagnostic.data.deletedAt && (
+                  <p className="font-medium text-green-700 dark:text-green-300">
+                    Blue Iris accepted deletion of the exact diagnostic path. Paused so you can verify that the folder is empty.
+                  </p>
+                )}
+                {!exportDiagnostic.data.deletedAt && (
+                  <div className="flex flex-wrap gap-2">
+                    <Button type="button" variant="outline" onClick={checkExportDiagnostic} disabled={pending}>
+                      {pending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <RefreshCw className="mr-2 h-4 w-4" />}
+                      Check export status once
+                    </Button>
+                    <Button type="button" variant="destructive" onClick={deleteExportDiagnostic} disabled={pending || !exportDiagnostic.data.complete}>
+                      <Trash2 className="mr-2 h-4 w-4" /> Delete exact diagnostic export
+                    </Button>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
         </div>
       )}
     </div>
