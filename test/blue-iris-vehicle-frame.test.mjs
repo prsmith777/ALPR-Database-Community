@@ -781,6 +781,169 @@ test("read-owned overview processing applies the signed profile delta and saves 
   assert.match(operations[0][1], /blue_iris_vehicle_read_701_11111111111141118111111111111111\.jpg$/);
 });
 
+test("read-owned overview uses one local timeline export and the exact selected full-resolution slot", async () => {
+  const operations = [];
+  const timelineFrames = Array.from({ length: 61 }, (_, index) => ({
+    index,
+    offsetMs: index * 100,
+    buffer: Buffer.from(`local-${index}`),
+  }));
+  const service = new BlueIrisVehicleFrameService({
+    client: {
+      async fetchTimelineJpeg() {
+        assert.fail("the timeline-export path must not make legacy /time JPEG requests");
+      },
+    },
+    repository: {
+      async heartbeatOverviewRead() { return { id: 702 }; },
+      async markReady(id, frame) { operations.push(["ready", id, frame]); return { id }; },
+      async markFailed() { assert.fail("a successful timeline export must not fail"); },
+    },
+    fileStorage: {
+      async saveDerivedImageAtomic(framePath, buffer) { operations.push(["save", framePath, buffer]); },
+      async deleteImage() {},
+    },
+    timelineExportService: {
+      async acquire(input) {
+        operations.push(["acquire", input]);
+        return {
+          exportToken: "33333333-3333-4333-8333-333333333333",
+          requestedStartMs: Date.parse(input.intendedStartAt) - 1_000,
+          remoteStartMs: Date.parse(input.intendedStartAt) - 1_000,
+          trimStartMs: 1_000,
+          utcVerified: true,
+          deletedRemotely: true,
+          probe: { width: 3840, height: 2160, durationMs: 8_000, codec: "h264", fileSize: 5000 },
+          frames: timelineFrames,
+          async extractFinalFrame({ selectedOffsetMs }) {
+            operations.push(["final", selectedOffsetMs]);
+            return Buffer.from("full-resolution-slot");
+          },
+          async cleanup() { operations.push(["cleanup"]); },
+        };
+      },
+    },
+    extensionOffsetsMs: [],
+    deepExtensionOffsetsMs: [],
+  });
+  service.selectBestFrame = async (request) => {
+    assert.equal(typeof request.frameProvider, "function");
+    for (const offsetMs of request.sampleOffsetsMs) {
+      const frame = await request.frameProvider({ offsetMs });
+      assert.match(frame.buffer.toString(), /^local-\d+$/);
+    }
+    return {
+      best: {
+        buffer: Buffer.from("analysis-frame"),
+        timestamp: "2026-08-08T18:00:05.000Z",
+        offsetMs: 500,
+        score: 0.93,
+        quality: { sharpnessScore: 0.9 },
+        scoreBreakdown: { completenessTier: 3 },
+        detection: { confidence: 0.91, left: 0.05, top: 0.05, right: 0.95, bottom: 0.95 },
+        width: 1280,
+        height: 720,
+      },
+      sampledCount: 61,
+      detectedCount: 8,
+      trackedCount: 5,
+      anchorOffsetMs: 0,
+      selectionReason: "overview_anchor_track",
+      telemetry: { successfulSampleCount: 61 },
+    };
+  };
+  service.validateOverviewFinalFrame = async ({ buffer, mode }) => {
+    assert.equal(buffer.toString(), "full-resolution-slot");
+    assert.equal(mode, "timeline_export");
+    return {
+      buffer,
+      timestamp: "2026-08-08T18:00:05.000Z",
+      width: 3840,
+      height: 2160,
+      identitySimilarity: 0.99,
+      detectionOverlap: 0.98,
+      detectionContinuity: 0.99,
+      mode,
+    };
+  };
+
+  const result = await service.processOverviewRead({
+    read: {
+      id: 702,
+      plate_number: "ABC123",
+      camera_name: "Street LPR 2",
+      timestamp: "2026-08-08T18:00:00.000Z",
+      bi_trigger_direction_label: "Eastbound",
+      vehicle_image_claim_token: "22222222-2222-4222-8222-222222222222",
+      vehicle_image_attempt_count: 1,
+      vehicle_image_hard_deadline_at: new Date(Date.now() + 300_000).toISOString(),
+    },
+    profile: {
+      id: 42,
+      source_camera_name: "Street Overview",
+      expected_delta_ms: 4_500,
+      tolerance_ms: 2_000,
+      updated_at: "2026-08-08T17:55:00.000Z",
+    },
+    camera: "Cam149",
+    alreadyClaimed: true,
+  });
+  assert.equal(result.status, "ready");
+  assert.deepEqual(operations.find(([name]) => name === "final"), ["final", 2_500]);
+  const ready = operations.find(([name]) => name === "ready")[2];
+  assert.equal(ready.imageWidth, 3840);
+  assert.equal(ready.imageHeight, 2160);
+  assert.equal(ready.selectionMetadata.acquisition.mode, "blue_iris_timeline_export");
+  assert.equal(ready.selectionMetadata.finalImage.mode, "timeline_export");
+  assert.ok(operations.some(([name]) => name === "cleanup"));
+});
+
+test("timeline export failures never fall back to sequential network frame requests", async () => {
+  const operations = [];
+  const service = new BlueIrisVehicleFrameService({
+    client: {
+      async fetchTimelineJpeg() {
+        assert.fail("timeline export failures must not reopen the legacy network sampler");
+      },
+    },
+    repository: {
+      async heartbeatOverviewRead() { return { id: 703 }; },
+      async markReady() { assert.fail("a failed export must not become ready"); },
+      async markFailed(_id, failure) { operations.push(failure); return { id: 703 }; },
+    },
+    fileStorage: {
+      async saveDerivedImageAtomic() { assert.fail("a failed export must not save"); },
+      async deleteImage() {},
+    },
+    timelineExportService: {
+      async acquire() { throw new BlueIrisError("EXPORT_TIMEOUT", "timed out"); },
+    },
+  });
+  const result = await service.processOverviewRead({
+    read: {
+      id: 703,
+      timestamp: new Date().toISOString(),
+      camera_name: "Street LPR 2",
+      bi_trigger_direction_label: "Eastbound",
+      vehicle_image_claim_token: "44444444-4444-4444-8444-444444444444",
+      vehicle_image_attempt_count: 1,
+      vehicle_image_hard_deadline_at: new Date(Date.now() + 300_000).toISOString(),
+    },
+    profile: {
+      id: 42,
+      source_camera_name: "Street Overview",
+      expected_delta_ms: 4_500,
+      tolerance_ms: 2_000,
+      updated_at: "2026-08-08T17:55:00.000Z",
+    },
+    camera: "Cam149",
+    alreadyClaimed: true,
+  });
+  assert.equal(result.status, "retry_scheduled");
+  assert.equal(operations[0].errorCode, "EXPORT_TIMEOUT");
+  assert.equal(operations[0].retryable, true);
+});
+
 test("expired recording becomes terminal without writing or deleting an image", async () => {
   const operations = [];
   const service = new BlueIrisVehicleFrameService({
