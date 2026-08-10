@@ -578,7 +578,7 @@ test("the additive migration enforces primary tolerance and claim safety", async
   assert.ok(queueConstraints.every((match) => match[1].includes("'overview'")));
 });
 
-test("timeline export migration is read-owned, bounded, and safely cleanable", async () => {
+test("timeline export migration is read-owned, bounded, and leaves Clipboard retention to Blue Iris", async () => {
   const migrations = await fs.readFile(new URL("../migrations.sql", import.meta.url), "utf8");
   const section = migrations.slice(migrations.indexOf("-- Timeline exports replace"));
   assert.match(section, /blue_iris_timeline_exports/);
@@ -589,5 +589,8 @@ test("timeline export migration is read-owned, bounded, and safely cleanable", a
   assert.match(section, /next_delete_attempt_at TIMESTAMPTZ/);
   assert.match(section, /hard_deadline_at TIMESTAMPTZ NOT NULL/);
   assert.match(section, /2026080902_blue_iris_timeline_exports/);
+  assert.match(section, /2026080903_blue_iris_clipboard_retention/);
+  assert.match(section, /WHERE status IN \('delete_pending', 'deleting'\)/);
+  assert.match(section, /SET status = CASE WHEN downloaded_at IS NOT NULL THEN 'downloaded' ELSE 'failed' END/);
   assert.doesNotMatch(section, /ON DELETE RESTRICT/);
 });

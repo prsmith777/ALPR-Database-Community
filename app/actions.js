@@ -122,7 +122,6 @@ import {
   BlueIrisClient,
   normalizeBlueIrisSettings,
 } from "@/lib/blue-iris.mjs";
-import { BlueIrisExportDiagnosticService } from "@/lib/blue-iris-export-diagnostic.mjs";
 import { BlueIrisVehicleFrameService } from "@/lib/blue-iris-vehicle-frame.mjs";
 import { BlueIrisVehicleFrameRepository } from "@/lib/blue-iris-vehicle-frame-repository.mjs";
 import {
@@ -1726,106 +1725,6 @@ export async function testBlueIrisConnection() {
       success: false,
       error: error?.message || "Unable to connect to Blue Iris.",
     };
-  }
-}
-
-function blueIrisExportDiagnostic(config) {
-  return new BlueIrisExportDiagnosticService({
-    client: new BlueIrisClient(config.blueiris),
-    minimumWidth: config.blueiris.timeline_export_min_width,
-    minimumHeight: config.blueiris.timeline_export_min_height,
-  });
-}
-
-function blueIrisExportDiagnosticFailure(error, fallback) {
-  return {
-    success: false,
-    error: String(error?.message || fallback).slice(0, 500),
-  };
-}
-
-export async function createBlueIrisExportDiagnostic(input = {}) {
-  const principal = await requirePermission("system.manage_settings");
-  try {
-    const config = await getConfig();
-    const data = await blueIrisExportDiagnostic(config).create({
-      actor: principal,
-      camera: input.camera,
-      start: input.start,
-    });
-    return { success: true, data };
-  } catch (error) {
-    return blueIrisExportDiagnosticFailure(error, "Unable to create the diagnostic export.");
-  }
-}
-
-export async function checkBlueIrisExportDiagnostic(input = {}) {
-  const principal = await requirePermission("system.manage_settings");
-  try {
-    const config = await getConfig();
-    const data = await blueIrisExportDiagnostic(config).check({
-      actor: principal,
-      token: input.token,
-    });
-    return { success: true, data };
-  } catch (error) {
-    return blueIrisExportDiagnosticFailure(error, "Unable to check the diagnostic export.");
-  }
-}
-
-export async function downloadBlueIrisExportDiagnostic(input = {}) {
-  const principal = await requirePermission("system.manage_settings");
-  try {
-    const config = await getConfig();
-    const data = await blueIrisExportDiagnostic(config).download({
-      actor: principal,
-      token: input.token,
-    });
-    return { success: true, data };
-  } catch (error) {
-    return blueIrisExportDiagnosticFailure(error, "Unable to download the diagnostic export.");
-  }
-}
-
-export async function deleteBlueIrisExportDiagnostic(input = {}) {
-  const principal = await requirePermission("system.manage_settings");
-  try {
-    const config = await getConfig();
-    const data = await blueIrisExportDiagnostic(config).remove({
-      actor: principal,
-      token: input.token,
-    });
-    return { success: true, data };
-  } catch (error) {
-    return blueIrisExportDiagnosticFailure(error, "Unable to delete the diagnostic export.");
-  }
-}
-
-export async function verifyBlueIrisExportDiagnosticDeletion(input = {}) {
-  const principal = await requirePermission("system.manage_settings");
-  try {
-    const config = await getConfig();
-    const data = await blueIrisExportDiagnostic(config).verifyRemoval({
-      actor: principal,
-      token: input.token,
-    });
-    return { success: true, data };
-  } catch (error) {
-    return blueIrisExportDiagnosticFailure(error, "Unable to verify diagnostic export deletion.");
-  }
-}
-
-export async function cleanupBlueIrisExportDiagnostic(input = {}) {
-  const principal = await requirePermission("system.manage_settings");
-  try {
-    const config = await getConfig();
-    const data = await blueIrisExportDiagnostic(config).cleanup({
-      actor: principal,
-      token: input.token,
-    });
-    return { success: true, data };
-  } catch (error) {
-    return blueIrisExportDiagnosticFailure(error, "Unable to remove the staging diagnostic copy.");
   }
 }
 
