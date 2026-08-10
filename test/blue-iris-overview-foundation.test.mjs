@@ -578,6 +578,12 @@ test("the additive migration enforces primary tolerance and claim safety", async
   assert.match(migrations, /vehicle_overview_distinct_camera_check[\s\S]*?\) NOT VALID;/);
   assert.match(migrations, /2026080901_overview_primary_claim_safety/);
 
+  const statusConstraints = [...migrations.matchAll(
+    /ADD CONSTRAINT plate_reads_vehicle_image_status_check\s+CHECK \(vehicle_image_status IS NULL OR vehicle_image_status IN \(([^)]+)\)\)/g
+  )];
+  assert.ok(statusConstraints.length >= 2);
+  assert.ok(statusConstraints.every((match) => match[1].includes("'processing'")));
+
   const queueConstraints = [...migrations.matchAll(
     /ADD CONSTRAINT plate_reads_vehicle_image_queue_kind_check\s+CHECK \(vehicle_image_queue_kind IS NULL OR vehicle_image_queue_kind IN \(([^)]+)\)\)/g
   )];
