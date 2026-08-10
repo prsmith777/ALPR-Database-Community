@@ -2078,7 +2078,15 @@ export async function recoverIncompleteBlueIrisOverviewReads(input = {}) {
   await requirePermission("maintenance.manage");
   try {
     const runtime = await getBlueIrisVehicleFrameRuntime();
+    if (input.previewOnly === true) {
+      const preview = await runtime.repository.previewIncompleteOverviewReads({
+        startAt: input.startAt ?? null,
+        sinceHours: input.sinceHours ?? 48,
+      });
+      return { success: true, data: { preview } };
+    }
     const recovery = await runtime.repository.recoverIncompleteOverviewReads({
+      startAt: input.startAt ?? null,
       sinceHours: input.sinceHours ?? 48,
     });
     if (recovery.queued > 0) wakeBlueIrisVehicleFrameWorker();

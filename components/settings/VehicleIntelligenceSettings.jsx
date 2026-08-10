@@ -82,6 +82,8 @@ export default function VehicleIntelligenceSettings({
   const [frameMessage, setFrameMessage] = useState("");
   const [frameStartDate, setFrameStartDate] = useState("");
   const [frameEndDate, setFrameEndDate] = useState("");
+  const [overviewRecoveryStart, setOverviewRecoveryStart] = useState("");
+  const [overviewRecoveryPreview, setOverviewRecoveryPreview] = useState(null);
   const [cancelFrameHistoryOpen, setCancelFrameHistoryOpen] = useState(false);
   const [overviewSetup, setOverviewSetup] = useState(initialOverviewSetup);
   const [overviewDraft, setOverviewDraft] = useState(() => {
@@ -349,10 +351,33 @@ export default function VehicleIntelligenceSettings({
     setBusy("overview-recovery");
     setFrameMessage("");
     try {
-      const result = await recoverIncompleteBlueIrisOverviewReads({ sinceHours: 48 });
+      const recoveryStart = new Date(overviewRecoveryStart);
+      if (!Number.isFinite(recoveryStart.getTime())) throw new Error("Choose a valid recovery start time.");
+      if (!overviewRecoveryPreview || overviewRecoveryPreview.startAt !== recoveryStart.toISOString()) {
+        throw new Error("Preview this exact recovery range before queuing it.");
+      }
+      const result = await recoverIncompleteBlueIrisOverviewReads({ startAt: recoveryStart.toISOString() });
       if (!result.success) throw new Error(result.error);
       setFrameQueue(result.data.status);
-      setFrameMessage(`Queued ${result.data.queued.toLocaleString()} incomplete overview Vehicle View${result.data.queued === 1 ? "" : "s"} from the last ${result.data.sinceHours} hours. Ready images and terminal scene decisions were preserved.`);
+      setOverviewRecoveryPreview(null);
+      setFrameMessage(`Queued ${result.data.queued.toLocaleString()} incomplete overview Vehicle View${result.data.queued === 1 ? "" : "s"} from ${new Date(result.data.startAt).toLocaleString()}. Ready images and terminal scene decisions were preserved.`);
+    } catch (error) { setFrameMessage(error.message); }
+    finally { setBusy(""); }
+  };
+
+  const previewIncompleteOverview = async () => {
+    setBusy("overview-recovery-preview");
+    setFrameMessage("");
+    try {
+      const recoveryStart = new Date(overviewRecoveryStart);
+      if (!Number.isFinite(recoveryStart.getTime())) throw new Error("Choose a valid recovery start time.");
+      const result = await recoverIncompleteBlueIrisOverviewReads({
+        startAt: recoveryStart.toISOString(),
+        previewOnly: true,
+      });
+      if (!result.success) throw new Error(result.error);
+      setOverviewRecoveryPreview(result.data.preview);
+      setFrameMessage(`Preview found ${result.data.preview.eligible.toLocaleString()} eligible incomplete overview Vehicle View${result.data.preview.eligible === 1 ? "" : "s"}. Nothing was changed.`);
     } catch (error) { setFrameMessage(error.message); }
     finally { setBusy(""); }
   };
@@ -534,15 +559,42 @@ export default function VehicleIntelligenceSettings({
             </CardHeader>
             <CardContent className="space-y-5">
               <div className="grid grid-cols-2 gap-3 text-center sm:grid-cols-4 lg:grid-cols-8">
-                <div className="rounded-md border p-2"><div className="font-semibold">{Number(overviewSetup?.status?.pending || 0).toLocaleString()}</div><div className="text-xs text-muted-foreground">candidates queued</div></div>
+                <div className="rounded-md border p-2"><div className="font-semibold">{Number(overviewSetup?.status?.pending || 0).toLocaleString()}</div><div className="text-xs text-muted-foreground">reads queued</div></div>
                 <div className="rounded-md border p-2"><div className="font-semibold">{Number(overviewSetup?.status?.processing || 0).toLocaleString()}</div><div className="text-xs text-muted-foreground">processing</div></div>
-                <div className="rounded-md border p-2"><div className="font-semibold">{Number(overviewSetup?.status?.awaitingMatch || 0).toLocaleString()}</div><div className="text-xs text-muted-foreground">awaiting plates</div></div>
-                <div className="rounded-md border p-2"><div className="font-semibold">{Number(overviewSetup?.status?.associated || 0).toLocaleString()}</div><div className="text-xs text-muted-foreground">associated</div></div>
+                <div className="rounded-md border p-2"><div className="font-semibold">{Number(overviewSetup?.status?.ready || 0).toLocaleString()}</div><div className="text-xs text-muted-foreground">views ready</div></div>
                 <div className="rounded-md border p-2"><div className="font-semibold">{Number(overviewSetup?.status?.ambiguous || 0).toLocaleString()}</div><div className="text-xs text-muted-foreground">ambiguous</div></div>
                 <div className="rounded-md border p-2"><div className="font-semibold">{Number(overviewSetup?.status?.unavailable || 0).toLocaleString()}</div><div className="text-xs text-muted-foreground">unavailable</div></div>
                 <div className="rounded-md border p-2"><div className="font-semibold">{Number(overviewSetup?.status?.nighttimeSkipped || 0).toLocaleString()}</div><div className="text-xs text-muted-foreground">nighttime skipped</div></div>
                 <div className="rounded-md border p-2"><div className="font-semibold">{Number(overviewSetup?.status?.failed || 0).toLocaleString()}</div><div className="text-xs text-muted-foreground">failures</div></div>
+                <div className="rounded-md border p-2"><div className="font-semibold">{Number(overviewSetup?.status?.exports?.automaticStarts || 0).toLocaleString()}</div><div className="text-xs text-muted-foreground">BI exports started</div></div>
               </div>
+
+              {overviewSetup?.status?.recentJobs?.length ? (
+                <details className="rounded-md border p-3 text-sm">
+                  <summary className="cursor-pointer font-medium">Recent overview pipeline diagnostics</summary>
+                  <div className="mt-3 overflow-x-auto">
+                    <table className="w-full min-w-[900px] text-left text-xs">
+                      <thead className="border-b text-muted-foreground">
+                        <tr><th className="px-2 py-2">Read</th><th className="px-2 py-2">Camera</th><th className="px-2 py-2">Read state</th><th className="px-2 py-2">Attempts</th><th className="px-2 py-2">Export state</th><th className="px-2 py-2">BI starts</th><th className="px-2 py-2">Media</th><th className="px-2 py-2">Error</th></tr>
+                      </thead>
+                      <tbody>
+                        {overviewSetup.status.recentJobs.map((job) => (
+                          <tr key={job.readId} className="border-b last:border-0">
+                            <td className="px-2 py-2 font-mono">#{job.readId} {job.plateNumber || ""}</td>
+                            <td className="px-2 py-2">{job.cameraName || "Unknown"}</td>
+                            <td className="px-2 py-2">{job.readStatus || "Not queued"}</td>
+                            <td className="px-2 py-2">{job.attemptCount} / recovery {job.recoveryCount}</td>
+                            <td className="px-2 py-2">{job.exportStatus || "No export"}</td>
+                            <td className="px-2 py-2">{job.automaticStartCount}</td>
+                            <td className="px-2 py-2">{job.width && job.height ? `${job.width}x${job.height}` : "Not validated"}</td>
+                            <td className="px-2 py-2">{job.readErrorCode || job.exportErrorCode || "None"}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </details>
+              ) : null}
 
               <div className="rounded-lg border p-4">
                 <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
@@ -672,7 +724,7 @@ export default function VehicleIntelligenceSettings({
           <CardHeader>
             <CardTitle className="flex items-center gap-2"><Images className="h-5 w-5" /> Blue Iris vehicle views</CardTitle>
             <CardDescription>
-              New daytime reads export one temporary Street Overview timeline segment, analyze 61 local frames at 100 ms intervals, retain the exact selected full-resolution frame, and immediately delete both temporary copies. The older plate-camera selector remains only for historical jobs and deliberate manual recovery.
+              New daytime reads export one temporary Street Overview timeline segment, analyze 61 local frames at 100 ms intervals, and retain the exact selected full-resolution frame. ALPR removes its local workspace; Blue Iris removes Clipboard exports according to your configured retention. The older plate-camera selector remains only for historical jobs and deliberate manual recovery.
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
@@ -740,7 +792,12 @@ export default function VehicleIntelligenceSettings({
                 <Button variant="secondary" disabled={Boolean(busy) || !frameQueue?.configured} onClick={toggleFrameHistory}>{frameQueue?.historicalPaused ? <Play className="mr-2 h-4 w-4" /> : <Pause className="mr-2 h-4 w-4" />}{frameQueue?.historicalPaused ? "Resume history" : "Pause history"}</Button>
                 <Button variant="destructive" disabled={Boolean(busy) || !cameraName || !frameQueue?.historicalOutstanding} onClick={() => setCancelFrameHistoryOpen(true)}><XCircle className="mr-2 h-4 w-4" />Cancel pending {cameraName || "camera"} history</Button>
                 <Button variant="secondary" disabled={Boolean(busy) || !frameQueue?.configured} onClick={runFrameBatch}>{busy === "frame-batch" ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Play className="mr-2 h-4 w-4" />}Run one frame now</Button>
-                <Button variant="outline" disabled={Boolean(busy) || !frameQueue?.configured} onClick={recoverIncompleteOverview}>{busy === "overview-recovery" ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <History className="mr-2 h-4 w-4" />}Recover incomplete overview jobs (48h)</Button>
+                <div className="flex min-w-[18rem] flex-col gap-1">
+                  <Label htmlFor="overview-recovery-start">Incomplete overview recovery start</Label>
+                  <Input id="overview-recovery-start" type="datetime-local" value={overviewRecoveryStart} onChange={(event) => { setOverviewRecoveryStart(event.target.value); setOverviewRecoveryPreview(null); }} />
+                </div>
+                <Button variant="outline" disabled={Boolean(busy) || !frameQueue?.configured || !overviewRecoveryStart} onClick={previewIncompleteOverview}>{busy === "overview-recovery-preview" ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <ScanSearch className="mr-2 h-4 w-4" />}Preview incomplete jobs</Button>
+                <Button variant="outline" disabled={Boolean(busy) || !frameQueue?.configured || !overviewRecoveryPreview || overviewRecoveryPreview.eligible < 1} onClick={recoverIncompleteOverview}>{busy === "overview-recovery" ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <History className="mr-2 h-4 w-4" />}Queue {overviewRecoveryPreview ? Number(overviewRecoveryPreview.eligible || 0).toLocaleString() : "previewed"} incomplete jobs</Button>
               </div>
             </div>
             {frameMessage && <p className="rounded-md border p-3 text-sm">{frameMessage}</p>}
