@@ -20,12 +20,28 @@ const overviewCamera = `Codex Overview ${suffix}`;
 const plateCamera = `Codex LPR ${suffix}`;
 let readId = null;
 let profileId = null;
+let migrationCompatibilityReadId = null;
 const clients = [];
 
 try {
   // The production compose runner applies this same file with ON_ERROR_STOP.
-  // Running it twice here proves additive migration idempotency on PostgreSQL 17.
+  // Running it twice around an active processing row proves additive migration
+  // idempotency against the exact production queue state on PostgreSQL 17.
   await pool.query(migrations);
+  const migrationCompatibilityRead = await pool.query(
+    `INSERT INTO public.plate_reads (
+       plate_number, camera_name, "timestamp", bi_trigger_direction_status,
+       bi_trigger_direction_label, bi_trigger_direction_profile_version,
+       bi_trigger_direction_algorithm, vehicle_image_queue_kind,
+       vehicle_image_status, vehicle_image_attempt_count, vehicle_image_retryable
+     ) VALUES (
+       'MIGTEST', $1, CURRENT_TIMESTAMP - INTERVAL '1 minute',
+       'ready', 'Eastbound', 1, 'blue-iris-zone-crossing-v1',
+       'overview', 'processing', 1, TRUE
+     ) RETURNING id`,
+    [plateCamera]
+  );
+  migrationCompatibilityReadId = Number(migrationCompatibilityRead.rows[0].id);
   await pool.query(migrations);
 
   const profile = await pool.query(
@@ -172,6 +188,10 @@ try {
   console.log("overview_export_postgres_gate=passed");
 } finally {
   for (const client of clients) client.release();
+  if (migrationCompatibilityReadId !== null) {
+    await pool.query("DELETE FROM public.plate_reads WHERE id = $1", [migrationCompatibilityReadId])
+      .catch(() => {});
+  }
   if (readId !== null) {
     await pool.query("DELETE FROM public.plate_reads WHERE id = $1", [readId]).catch(() => {});
   }

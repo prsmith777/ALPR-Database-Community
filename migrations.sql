@@ -2343,7 +2343,7 @@ ALTER TABLE IF EXISTS public.plate_reads
     DROP CONSTRAINT IF EXISTS plate_reads_vehicle_image_status_check;
 ALTER TABLE IF EXISTS public.plate_reads
     ADD CONSTRAINT plate_reads_vehicle_image_status_check
-    CHECK (vehicle_image_status IS NULL OR vehicle_image_status IN ('pending', 'ready', 'unavailable', 'failed'));
+    CHECK (vehicle_image_status IS NULL OR vehicle_image_status IN ('pending', 'processing', 'ready', 'unavailable', 'failed'));
 
 CREATE INDEX IF NOT EXISTS idx_plate_reads_vehicle_image_work
     ON public.plate_reads (vehicle_image_status, vehicle_image_retryable, vehicle_image_updated_at, id)
