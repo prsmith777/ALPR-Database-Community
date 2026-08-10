@@ -32,9 +32,11 @@ reliable background processing.
   that selection drives every dashboard card, chart, preview, and result link.
   Camera and time-frame selections persist in the browser across refreshes and
   application restarts, with removed camera names pruned after configuration loads.
-  Tag Distribution slices and legend entries drill into the matching Live Feed
-  tag results, while the center total links to all tags represented by the chart;
-  each link preserves the active time window and selected cameras.
+  One Tag Distribution card compares two side-by-side views: Tagged Vehicles
+  counts each corrected plate identity once per tag, while Tagged Plate Reads
+  counts every matching capture. Their slices, legends, and center totals drill into
+  corresponding unique-vehicle or all-read Live Feed results while preserving
+  the active time window and every selected camera.
   Total Reads, Unique Vehicles, and New Vehicles are also linked to matching
   Live Feed result sets. Unique and new result sets show one latest read per
   corrected/effective plate identity while preserving the original OCR evidence.
