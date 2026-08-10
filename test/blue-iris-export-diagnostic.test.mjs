@@ -29,18 +29,9 @@ function harness() {
         fileSize: null,
       };
     },
-    async getTimelineExport(path) {
-      calls.push(["exact-status", path]);
-      return {
-        remotePath,
-        uri: remotePath,
-        utc: Date.parse("2026-08-09T23:29:30.000Z"),
-        durationMs: 8_000,
-        status: "complete",
-        progress: 100,
-        complete: true,
-        fileSize: 12_345,
-      };
+    async checkTimelineExportDownloadAvailability(uri) {
+      calls.push(["availability", uri]);
+      return { uri, available: true, status: 206 };
     },
     async downloadTimelineExport(input) {
       calls.push(["download", input]);
@@ -114,8 +105,9 @@ test("manual export diagnostic pauses after every explicit direct-copy phase", a
 
   state.advance(2_000);
   const checked = await service.check({ actor, token: created.token });
-  assert.equal(checked.status, "complete");
+  assert.equal(checked.status, "download_ready");
   assert.equal(checked.complete, true);
+  assert.deepEqual(state.calls.at(-1), ["availability", "@202073"]);
   assert.equal(state.calls.some(([name]) => name === "download"), false);
 
   state.advance(2_000);
@@ -160,13 +152,11 @@ test("manual export diagnostic pauses after every explicit direct-copy phase", a
   assert.equal(state.registry.size, 0);
 });
 
-test("an unavailable exact status never becomes permission to download or delete", async () => {
+test("an unavailable exact URI never becomes permission to download or delete", async () => {
   const state = harness();
-  state.client.getTimelineExport = async (path) => {
-    state.calls.push(["exact-status", path]);
-    const error = new Error("export not found");
-    error.code = "EXPORT_UNAVAILABLE";
-    throw error;
+  state.client.checkTimelineExportDownloadAvailability = async (uri) => {
+    state.calls.push(["availability", uri]);
+    return { uri, available: false, status: 404 };
   };
   const service = new BlueIrisExportDiagnosticService(state);
   const actor = { id: 7 };
@@ -177,8 +167,8 @@ test("an unavailable exact status never becomes permission to download or delete
   });
   const checked = await service.check({ actor, token: created.token });
 
-  assert.equal(checked.status, "status_unavailable");
-  assert.equal(checked.listed, false);
+  assert.equal(checked.status, "queued");
+  assert.equal(checked.listed, null);
   assert.equal(checked.complete, false);
 
   await assert.rejects(
@@ -189,7 +179,7 @@ test("an unavailable exact status never becomes permission to download or delete
   assert.equal(state.calls.some(([name]) => name === "delete-request"), false);
 });
 
-test("manual export diagnostic cannot download before an explicit status check", async () => {
+test("manual export diagnostic cannot download before an explicit availability check", async () => {
   const state = harness();
   const service = new BlueIrisExportDiagnosticService(state);
   const actor = { id: 7 };
@@ -201,7 +191,7 @@ test("manual export diagnostic cannot download before an explicit status check",
 
   await assert.rejects(
     service.download({ actor, token: created.token }),
-    /check the export status once/i
+    /check whether the export is available/i
   );
   assert.equal(state.calls.some(([name]) => name === "download"), false);
 });
@@ -269,15 +259,6 @@ test("mismatched reserved start metadata fails closed before download", async ()
     actor,
     camera: "Cam149",
     start: "2026-08-09T23:29:30.000Z",
-  });
-  state.client.getTimelineExport = async () => ({
-    remotePath: "@202073",
-    uri: "@202073",
-    utc: Date.parse("2026-08-09T23:29:32.000Z"),
-    durationMs: 8_000,
-    status: "complete",
-    progress: 100,
-    complete: true,
   });
   await service.check({ actor, token: created.token });
 

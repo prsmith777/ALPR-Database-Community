@@ -180,21 +180,20 @@ function timelineHarness({ width = 3840, height = 2160 } = {}) {
     },
     async startTimelineExport(input) {
       events.push(["start", input]);
-      return { remotePath: "@owned.mp4", complete: false, failed: false, progress: 10 };
-    },
-    async getTimelineExport() {
-      events.push(["poll"]);
       return {
         remotePath: "@owned.mp4",
-        complete: true,
-        failed: false,
-        progress: 100,
         uri: "@owned.mp4",
         utc: Date.parse("2026-08-09T12:59:59.000Z"),
         durationMs: 8_000,
         camera: "Cam149",
-        fileSize: 100,
+        complete: false,
+        failed: false,
+        progress: 10,
       };
+    },
+    async checkTimelineExportDownloadAvailability(uri) {
+      events.push(["availability", uri]);
+      return { uri, available: true, status: 206 };
     },
     async downloadTimelineExport() { events.push(["download"]); },
     async deleteTimelineExport(remotePath, options) { events.push(["delete", remotePath, options]); },
@@ -276,15 +275,18 @@ test("timeline export fails closed on low resolution but still deletes the owned
 
 test("timeline export fails closed when Blue Iris omits exact UTC alignment metadata", async () => {
   const harness = timelineHarness();
-  harness.client.getTimelineExport = async () => ({
-    remotePath: "@owned.mp4",
-    complete: true,
-    failed: false,
-    progress: 100,
-    uri: "@owned.mp4",
-    durationMs: 8_000,
-    camera: "Cam149",
-  });
+  harness.client.startTimelineExport = async (input) => {
+    harness.events.push(["start", input]);
+    return {
+      remotePath: "@owned.mp4",
+      complete: false,
+      failed: false,
+      progress: 10,
+      uri: "@owned.mp4",
+      durationMs: 8_000,
+      camera: "Cam149",
+    };
+  };
   const service = new BlueIrisTimelineExportService({
     ...harness,
     sleepImpl: async () => {},
@@ -339,7 +341,7 @@ test("one exact export-list match is adopted after an uncertain start response",
   await acquired.cleanup();
 });
 
-test("an unavailable exact export status fails closed without attempting a download", async () => {
+test("an unavailable exact export URI waits five seconds before checking again", async () => {
   const harness = timelineHarness();
   harness.client.startTimelineExport = async (input) => {
     harness.events.push(["start", input]);
@@ -355,26 +357,28 @@ test("an unavailable exact export status fails closed without attempting a downl
       fileSize: 100,
     };
   };
-  harness.client.getTimelineExport = async () => {
-    harness.events.push(["poll-disappeared"]);
-    throw new BlueIrisError("EXPORT_UNAVAILABLE", "completed job left the active queue");
+  let availabilityChecks = 0;
+  harness.client.checkTimelineExportDownloadAvailability = async (uri) => {
+    availabilityChecks += 1;
+    harness.events.push(["availability", uri, availabilityChecks]);
+    return { uri, available: availabilityChecks >= 2, status: availabilityChecks >= 2 ? 206 : 404 };
   };
+  const sleeps = [];
   const service = new BlueIrisTimelineExportService({
     ...harness,
-    sleepImpl: async () => {},
+    sleepImpl: async (milliseconds) => { sleeps.push(milliseconds); },
   });
-  await assert.rejects(
-    service.acquire({
-      read: { id: 42 },
-      claimToken: "22222222-2222-4222-8222-222222222222",
-      camera: "Cam149",
-      sourceCameraName: "Street Overview",
-      intendedStartAt: "2026-08-09T13:00:00.000Z",
-    }),
-    (error) => error.code === "EXPORT_UNAVAILABLE"
-  );
-  assert.ok(harness.events.some(([name]) => name === "poll-disappeared"));
-  assert.equal(harness.events.some(([name]) => name === "download"), false);
+  const acquired = await service.acquire({
+    read: { id: 42 },
+    claimToken: "22222222-2222-4222-8222-222222222222",
+    camera: "Cam149",
+    sourceCameraName: "Street Overview",
+    intendedStartAt: "2026-08-09T13:00:00.000Z",
+  });
+  assert.equal(availabilityChecks, 2);
+  assert.deepEqual(sleeps, [5_000, 5_000]);
+  assert.ok(harness.events.some(([name]) => name === "download"));
+  await acquired.cleanup();
 });
 
 test("ambiguous uncertain starts are not blindly resubmitted or deleted", async () => {

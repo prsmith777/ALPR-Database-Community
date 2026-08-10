@@ -359,6 +359,26 @@ test("timeline export deletion is not reported successful while the exported fil
   assert.equal(requests[4].headers.range, "bytes=0-0");
 });
 
+test("timeline export deletion can be verified by the exact URI when Blue Iris rejects status lookup", async () => {
+  const responses = [
+    jsonResponse({ result: "fail", session: "challenge" }),
+    jsonResponse({ result: "success", session: "active", data: {} }),
+    jsonResponse({ result: "success", data: { path: "@deleted.mp4" } }),
+    jsonResponse({ result: "fail" }),
+    binaryResponse(Buffer.alloc(0), 404),
+  ];
+  const client = new BlueIrisClient(
+    { host: "blueiris.local:81", username: "alpr", password: "secret" },
+    { fetchImpl: async () => responses.shift() }
+  );
+
+  const result = await client.deleteTimelineExport("@deleted.mp4", { uri: "@deleted.mp4" });
+  assert.equal(result.deleted, true);
+  assert.equal(result.verification.recordAvailable, null);
+  assert.equal(result.verification.downloadAvailable, false);
+  assert.equal(result.verification.downloadStatus, 404);
+});
+
 test("timeline export creation can explicitly disable re-encoding", async () => {
   const requests = [];
   const responses = [

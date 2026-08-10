@@ -485,12 +485,15 @@ notes. Updates remain externally orchestrated.
   temporary timeline export from the continuous Street Overview recording.
   Claims wait for the calculated source window, one second of export padding,
   and a short Blue Iris finalization grace. ALPR validates the returned UTC,
-  duration, and configured minimum resolution. The worker polls only the exact
-  returned export locator at five-second intervals and downloads only after an
-  explicit `done` response; a missing global-list entry is not completion.
+  duration, and configured minimum resolution. Because the installed Blue Iris
+  may reject status queries for an accepted reserved `@record`, the worker checks
+  only that exact reserved download URI at five-second intervals. It downloads
+  only when the owned URI is available; a missing global-list entry is not
+  completion, and the full MP4 must still pass local FFprobe validation.
   After validation it sends `delete:true` for the exact returned export path,
-  then requires both the exact export record and its download URI to be absent
-  before recording cleanup success. Still-present Clipboard exports remain in
+  then requires its exact download URI to be absent before recording cleanup
+  success. Exact status is additional evidence only on Blue Iris versions that
+  support it. Still-present Clipboard exports remain in
   the read-owned cleanup ledger for bounded backoff instead of being reported
   deleted. The local MP4 and working frames are deleted after each read.
   FFmpeg normalizes source timestamps and extracts exactly 61 local analysis
