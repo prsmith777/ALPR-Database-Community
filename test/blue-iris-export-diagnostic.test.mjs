@@ -5,7 +5,12 @@ import { BlueIrisExportDiagnosticService } from "../lib/blue-iris-export-diagnos
 function harness() {
   const calls = [];
   let now = Date.parse("2026-08-09T23:30:00.000Z");
-  const remotePath = "Clipboard\\ALPR_DIAGNOSTIC.mp4";
+  const remotePath = "@202073";
+  const workspace = {
+    root: "/tmp/alpr-blue-iris-timeline",
+    workspace: "/tmp/alpr-blue-iris-timeline/job-test",
+    clipPath: "/tmp/alpr-blue-iris-timeline/job-test/export.mp4",
+  };
   const client = {
     async testConnection() {
       calls.push(["connection"]);
@@ -29,27 +34,53 @@ function harness() {
       return [{
         remotePath,
         uri: remotePath,
+        utc: Date.parse("2026-08-09T23:29:30.000Z"),
+        durationMs: 8_000,
         status: "complete",
         progress: 100,
         complete: true,
         fileSize: 12_345,
       }];
     },
+    async downloadTimelineExport(input) {
+      calls.push(["download", input]);
+      return { bytes: 2_500_000 };
+    },
     async deleteTimelineExport(path) {
       calls.push(["delete", path]);
       return { remotePath: path, deleted: true };
     },
   };
-  return {
+  const state = {
     calls,
     client,
+    workspace,
     registry: new Map(),
     now: () => now,
+    async createWorkspace() {
+      calls.push(["workspace-create"]);
+      return workspace;
+    },
+    async removeWorkspace(value) {
+      calls.push(["workspace-remove", value]);
+    },
+    async probe(filePath) {
+      calls.push(["probe", filePath]);
+      return {
+        codec: "h264",
+        width: 2_688,
+        height: 1_520,
+        durationMs: 8_000,
+        startTimeMs: 0,
+        fileSize: 2_500_000,
+      };
+    },
     advance(milliseconds) { now += milliseconds; },
   };
+  return state;
 }
 
-test("manual export diagnostic pauses after each explicit direct-copy phase", async () => {
+test("manual export diagnostic pauses after every explicit direct-copy phase", async () => {
   const state = harness();
   const service = new BlueIrisExportDiagnosticService(state);
   const actor = { id: 7, username: "admin" };
@@ -60,7 +91,7 @@ test("manual export diagnostic pauses after each explicit direct-copy phase", as
   });
 
   assert.equal(created.status, "queued");
-  assert.equal(created.remotePath, "Clipboard\\ALPR_DIAGNOSTIC.mp4");
+  assert.equal(created.remotePath, "@202073");
   assert.deepEqual(state.calls.map(([name]) => name), ["connection", "start"]);
   assert.deepEqual(state.calls[1][1], {
     camera: "Cam149",
@@ -74,18 +105,42 @@ test("manual export diagnostic pauses after each explicit direct-copy phase", as
   state.advance(2_000);
   const checked = await service.check({ actor, token: created.token });
   assert.equal(checked.status, "complete");
-  assert.equal(checked.progress, 100);
   assert.equal(checked.complete, true);
-  assert.deepEqual(state.calls.map(([name]) => name), ["connection", "start", "list"]);
+  assert.equal(state.calls.some(([name]) => name === "download"), false);
+
+  state.advance(2_000);
+  const downloaded = await service.download({ actor, token: created.token });
+  assert.equal(downloaded.status, "download_validated");
+  assert.equal(downloaded.downloadValidated, true);
+  assert.deepEqual(downloaded.probe, {
+    codec: "h264",
+    width: 2_688,
+    height: 1_520,
+    durationMs: 8_000,
+    startTimeMs: 0,
+    fileSize: 2_500_000,
+  });
+  assert.deepEqual(
+    state.calls.find(([name]) => name === "download"),
+    ["download", { uri: "@202073", destinationPath: "/tmp/alpr-blue-iris-timeline/job-test/export.mp4" }]
+  );
+  assert.equal(state.calls.some(([name]) => name === "delete"), false);
 
   state.advance(2_000);
   const removed = await service.remove({ actor, token: created.token });
-  assert.equal(removed.status, "deleted");
+  assert.equal(removed.status, "remote_deleted");
   assert.ok(removed.deletedAt);
-  assert.deepEqual(state.calls.at(-1), ["delete", "Clipboard\\ALPR_DIAGNOSTIC.mp4"]);
+  assert.deepEqual(state.calls.at(-1), ["delete", "@202073"]);
+
+  state.advance(2_000);
+  const cleaned = await service.cleanup({ actor, token: created.token });
+  assert.equal(cleaned.status, "finished");
+  assert.ok(cleaned.localRemovedAt);
+  assert.deepEqual(state.calls.at(-1), ["workspace-remove", state.workspace]);
+  assert.equal(state.registry.size, 0);
 });
 
-test("manual export diagnostic treats a missing queue record as unconfirmed", async () => {
+test("a disappeared queue record remains eligible for its one verified exact download", async () => {
   const state = harness();
   state.client.listTimelineExports = async () => {
     state.calls.push(["list"]);
@@ -103,26 +158,14 @@ test("manual export diagnostic treats a missing queue record as unconfirmed", as
   assert.equal(checked.status, "not_listed");
   assert.equal(checked.listed, false);
   assert.equal(checked.complete, false);
-  assert.deepEqual(state.calls.map(([name]) => name), ["connection", "start", "list"]);
-});
 
-test("manual export diagnostic cannot delete another administrator's path", async () => {
-  const state = harness();
-  const service = new BlueIrisExportDiagnosticService(state);
-  const created = await service.create({
-    actor: { id: 7 },
-    camera: "Cam149",
-    start: "2026-08-09T23:29:30.000Z",
-  });
-
-  await assert.rejects(
-    service.remove({ actor: { id: 8 }, token: created.token }),
-    /unavailable or has expired/i
-  );
+  const downloaded = await service.download({ actor, token: created.token });
+  assert.equal(downloaded.downloadValidated, true);
+  assert.equal(state.calls.filter(([name]) => name === "download").length, 1);
   assert.equal(state.calls.some(([name]) => name === "delete"), false);
 });
 
-test("manual export diagnostic cannot delete before a status check confirms completion", async () => {
+test("manual export diagnostic cannot download before an explicit status check", async () => {
   const state = harness();
   const service = new BlueIrisExportDiagnosticService(state);
   const actor = { id: 7 };
@@ -133,9 +176,100 @@ test("manual export diagnostic cannot delete before a status check confirms comp
   });
 
   await assert.rejects(
-    service.remove({ actor, token: created.token }),
-    /confirm completion before deleting/i
+    service.download({ actor, token: created.token }),
+    /check the export status once/i
   );
+  assert.equal(state.calls.some(([name]) => name === "download"), false);
+});
+
+test("manual export diagnostic cannot delete before a validated download", async () => {
+  const state = harness();
+  const service = new BlueIrisExportDiagnosticService(state);
+  const actor = { id: 7 };
+  const created = await service.create({
+    actor,
+    camera: "Cam149",
+    start: "2026-08-09T23:29:30.000Z",
+  });
+  await service.check({ actor, token: created.token });
+
+  await assert.rejects(
+    service.remove({ actor, token: created.token }),
+    /download and validate/i
+  );
+  assert.equal(state.calls.some(([name]) => name === "delete"), false);
+});
+
+test("download validation failure removes only the staging copy and permits an explicit retry", async () => {
+  const state = harness();
+  let probeCount = 0;
+  state.probe = async (filePath) => {
+    state.calls.push(["probe", filePath]);
+    probeCount += 1;
+    return probeCount === 1
+      ? { codec: "h264", width: 1_280, height: 720, durationMs: 8_000, fileSize: 500_000 }
+      : { codec: "h264", width: 2_688, height: 1_520, durationMs: 8_000, fileSize: 2_500_000 };
+  };
+  const service = new BlueIrisExportDiagnosticService(state);
+  const actor = { id: 7 };
+  const created = await service.create({
+    actor,
+    camera: "Cam149",
+    start: "2026-08-09T23:29:30.000Z",
+  });
+  await service.check({ actor, token: created.token });
+
+  const failed = await service.download({ actor, token: created.token });
+  assert.equal(failed.status, "download_failed");
+  assert.equal(failed.downloadValidated, false);
+  assert.match(failed.downloadError, /1280x720/);
+  assert.equal(state.calls.filter(([name]) => name === "workspace-remove").length, 1);
+  assert.equal(state.calls.some(([name]) => name === "delete"), false);
+
+  const retried = await service.download({ actor, token: created.token });
+  assert.equal(retried.downloadValidated, true);
+  assert.equal(retried.downloadAttemptCount, 2);
+  assert.equal(state.calls.filter(([name]) => name === "download").length, 2);
+});
+
+test("mismatched reserved start metadata fails closed before download", async () => {
+  const state = harness();
+  const originalStart = state.client.startTimelineExport;
+  state.client.startTimelineExport = async (input) => ({
+    ...await originalStart(input),
+    utc: new Date(input.start).getTime() + 2_000,
+  });
+  const service = new BlueIrisExportDiagnosticService(state);
+  const actor = { id: 7 };
+  const created = await service.create({
+    actor,
+    camera: "Cam149",
+    start: "2026-08-09T23:29:30.000Z",
+  });
+  state.client.listTimelineExports = async () => [];
+  await service.check({ actor, token: created.token });
+
+  const failed = await service.download({ actor, token: created.token });
+  assert.equal(failed.downloadValidated, false);
+  assert.match(failed.downloadError, /requested export start time/i);
+  assert.equal(state.calls.some(([name]) => name === "download"), false);
+  assert.equal(state.calls.some(([name]) => name === "delete"), false);
+});
+
+test("manual export diagnostic cannot operate on another administrator's path", async () => {
+  const state = harness();
+  const service = new BlueIrisExportDiagnosticService(state);
+  const created = await service.create({
+    actor: { id: 7 },
+    camera: "Cam149",
+    start: "2026-08-09T23:29:30.000Z",
+  });
+
+  await assert.rejects(
+    service.check({ actor: { id: 8 }, token: created.token }),
+    /unavailable or has expired/i
+  );
+  assert.equal(state.calls.some(([name]) => name === "download"), false);
   assert.equal(state.calls.some(([name]) => name === "delete"), false);
 });
 
