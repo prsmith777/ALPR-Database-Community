@@ -586,8 +586,17 @@ notes. Updates remain externally orchestrated.
   Monochrome plate reads remain terminal `Unavailable nighttime` and make no
   timeline requests. The former candidate tables and historical records remain
   intact for compatibility, but independent candidate ingestion no longer owns
-  the live path. Entry LPR driveway fallback is deliberately deferred until the
-  corrected primary path is validated with production traffic.
+  the live path. Entry LPR driveway fallback is implemented as the final
+  shadow-first read-to-read layer after primary retrieval and Street companion
+  sharing. Administrators configure explicit routes from an existing Street
+  camera and direction to two Entry LPR cameras, one Entry direction, a signed
+  expected delta, tolerance, and inter-camera event window. Both Entry cameras
+  must corroborate one unique daytime event. Exact corrected plate identity is
+  preferred; one confusion-normalized edit is allowed only with dual-camera
+  consensus and a clear timing margin. Active mode copies the chosen full Entry
+  capture into a separate target-read file with direct provenance. It never
+  synthesizes a missing Street read, overwrites a ready image, processes night,
+  or fills ambiguity, direction, profile, and configuration outcomes.
 - Per-read vehicle color observations and reviewable vehicle profiles are
   implemented as an evidence-gathering phase. Color is stored with confidence
   and local algorithm provenance against the individual read, never copied onto
@@ -626,15 +635,13 @@ be restored. Monochrome nighttime captures do not receive a direction result.
   with live production traffic.
   Confirm the signed Street Overview timing profiles for Street LPR 1 (normally
   within about one second) and Street LPR 2 (roughly four to five seconds).
-  Observe the implemented paired-Street-read sharing release in Shadow first;
-  manually verify its plate, direction, camera-order, derived-anchor, and
-  one-to-one decisions before enabling guarded writes. It never auto-fills an
-  ambiguous or multi-vehicle outcome. The remaining Vehicle View implementation
-  phase is the two explicitly allowlisted Entry LPR driveway routes using
-  asynchronous read-to-read matching and dual-camera corroboration. Review every
-  ambiguous or unmatched outcome before changing tolerances; do not synthesize
-  Street reads, enable nighttime processing, or restore the retired clip-based
-  direction analyzer.
+  Continue observing guarded paired-Street-read sharing and the implemented
+  Entry LPR route fallback. Start Entry fallback in Shadow, configure only the
+  two approved driveway routes, and manually verify plate evidence, signed
+  timing, source/corroborating reads, and one-to-one decisions before enabling
+  writes. Review every ambiguous or unmatched outcome before changing
+  tolerances; do not synthesize Street reads, enable nighttime processing, or
+  restore the retired clip-based direction analyzer.
 - Expand Vehicle ReID calibration with larger labeled local samples and
   camera-pair reporting before making stronger labels or applying thresholds.
 - Consider pgvector only when the bounded in-process cosine scan no longer

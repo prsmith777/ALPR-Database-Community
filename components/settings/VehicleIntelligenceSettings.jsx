@@ -14,8 +14,11 @@ import {
   runVehicleDirectionBackfillBatch,
   saveVehicleDirectionProfile,
   saveVehicleOverviewPairProfile,
+  saveVehicleEntryRouteProfile,
   setVehicleOverviewPairSharingMode,
+  setVehicleEntryFallbackMode,
   deleteVehicleOverviewPairProfile,
+  deleteVehicleEntryRouteProfile,
   cancelBlueIrisVehicleFrameHistory,
   queueBlueIrisVehicleFrameHistory,
   recoverIncompleteBlueIrisOverviewReads,
@@ -67,6 +70,15 @@ function compactCount(value) {
   }).format(number);
 }
 
+function localDateTimeInput(value) {
+  if (!value) return "";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  return new Date(date.getTime() - date.getTimezoneOffset() * 60_000)
+    .toISOString()
+    .slice(0, 16);
+}
+
 export default function VehicleIntelligenceSettings({
   initialData,
   initialFrameQueue = null,
@@ -90,6 +102,30 @@ export default function VehicleIntelligenceSettings({
   const [pairSharingMode, setPairSharingMode] = useState(
     initialOverviewSetup?.status?.pairSharing?.mode || "off"
   );
+  const [entryFallbackMode, setEntryFallbackMode] = useState(
+    initialOverviewSetup?.entryFallback?.mode || "off"
+  );
+  const [entryFallbackStart, setEntryFallbackStart] = useState(
+    localDateTimeInput(initialOverviewSetup?.entryFallback?.observationStartedAt)
+  );
+  const [entryRouteDraft, setEntryRouteDraft] = useState(() => {
+    const cameras = initialOverviewSetup?.plateCameras || [];
+    const target = cameras[0] || null;
+    const sourceOne = cameras[1] || null;
+    const sourceTwo = cameras[2] || null;
+    return {
+      routeName: "",
+      targetCameraName: target?.cameraName || "",
+      targetDirectionLabel: target?.directions?.[0] || "",
+      sourceCameraNames: [sourceOne?.cameraName || "", sourceTwo?.cameraName || ""],
+      sourceDirectionLabel: sourceOne?.directions?.[0] || "",
+      expectedDeltaMs: 10_000,
+      toleranceMs: 3_000,
+      eventWindowMs: 3_000,
+      priority: 0,
+      enabled: true,
+    };
+  });
   const [overviewDraft, setOverviewDraft] = useState(() => {
     const plateCamera = initialOverviewSetup?.plateCameras?.[0] || null;
     return {
@@ -122,6 +158,11 @@ export default function VehicleIntelligenceSettings({
   useEffect(() => {
     setPairSharingMode(overviewSetup?.status?.pairSharing?.mode || "off");
   }, [overviewSetup?.status?.pairSharing?.mode]);
+
+  useEffect(() => {
+    setEntryFallbackMode(overviewSetup?.entryFallback?.mode || "off");
+    setEntryFallbackStart(localDateTimeInput(overviewSetup?.entryFallback?.observationStartedAt));
+  }, [overviewSetup?.entryFallback?.mode, overviewSetup?.entryFallback?.observationStartedAt]);
 
   useEffect(() => {
     const pending = Number(data.backfill?.pending || 0)
@@ -214,6 +255,49 @@ export default function VehicleIntelligenceSettings({
         : pairSharingMode === "shadow"
           ? "Companion overview sharing is observing proposals only; no read or image is changed."
           : "Companion overview sharing is paused.");
+    } catch (error) { setMessage(error.message); }
+    finally { setBusy(""); }
+  };
+
+  const saveEntryFallbackMode = async () => {
+    setBusy("entry-fallback-mode");
+    setMessage("");
+    try {
+      const result = await setVehicleEntryFallbackMode({
+        mode: entryFallbackMode,
+        observationStartedAt: entryFallbackStart || null,
+      });
+      if (!result.success) throw new Error(result.error);
+      await reloadOverviewSetup();
+      setMessage(entryFallbackMode === "active"
+        ? "Paired-camera fallback is active for uniquely corroborated configured routes."
+        : entryFallbackMode === "shadow"
+          ? "Paired-camera fallback is observing route matches only; no image is changed."
+          : "Paired-camera fallback is paused.");
+    } catch (error) { setMessage(error.message); }
+    finally { setBusy(""); }
+  };
+
+  const saveEntryRoute = async () => {
+    setBusy("entry-route");
+    setMessage("");
+    try {
+      const result = await saveVehicleEntryRouteProfile(entryRouteDraft);
+      if (!result.success) throw new Error(result.error);
+      await reloadOverviewSetup();
+      setMessage("Paired-camera route saved. Shadow matching will evaluate only existing eligible target reads.");
+    } catch (error) { setMessage(error.message); }
+    finally { setBusy(""); }
+  };
+
+  const removeEntryRoute = async (profileId) => {
+    setBusy(`entry-route-delete:${profileId}`);
+    setMessage("");
+    try {
+      const result = await deleteVehicleEntryRouteProfile(profileId);
+      if (!result.success) throw new Error(result.error);
+      await reloadOverviewSetup();
+      setMessage("Paired-camera route removed.");
     } catch (error) { setMessage(error.message); }
     finally { setBusy(""); }
   };
@@ -680,6 +764,183 @@ export default function VehicleIntelligenceSettings({
                               <td className="px-3 py-2">{item.sourceReadId ? `#${item.sourceReadId} ${item.sourceCameraName}` : "No unique source"} to #{item.targetReadId} {item.targetCameraName}</td>
                               <td className="px-3 py-2">{item.directionLabel || "Unknown"}</td>
                               <td className="px-3 py-2 font-mono">{item.anchorDeltaMs == null ? "n/a" : `${item.anchorDeltaMs} ms`}</td>
+                              <td className="px-3 py-2">{item.status}: {item.errorCode || item.reason}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </details>
+                ) : null}
+              </div>
+
+              <div className="space-y-4 rounded-lg border p-4">
+                <div className="flex flex-wrap items-start justify-between gap-4">
+                  <div className="max-w-3xl">
+                    <div className="font-medium">Paired-camera route fallback</div>
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      If the primary overview and companion sharing both fail, two configured source-camera reads may supply a daytime vehicle image for an existing target read. The route must match camera order, directions, timing, and plate identity. It never creates a target read from a source-only trigger.
+                    </p>
+                  </div>
+                  <Badge variant={overviewSetup?.entryFallback?.mode === "active" ? "default" : "secondary"}>
+                    {overviewSetup?.entryFallback?.mode === "active"
+                      ? "Active"
+                      : overviewSetup?.entryFallback?.mode === "shadow"
+                        ? "Shadow only"
+                        : "Off"}
+                  </Badge>
+                </div>
+                <div className="grid grid-cols-2 gap-3 text-center sm:grid-cols-5">
+                  <div className="rounded-md border p-2"><div className="font-semibold">{Number(overviewSetup?.entryFallback?.proposed || 0).toLocaleString()}</div><div className="text-xs text-muted-foreground">proposed</div></div>
+                  <div className="rounded-md border p-2"><div className="font-semibold">{Number(overviewSetup?.entryFallback?.processing || 0).toLocaleString()}</div><div className="text-xs text-muted-foreground">processing</div></div>
+                  <div className="rounded-md border p-2"><div className="font-semibold">{Number(overviewSetup?.entryFallback?.applied || 0).toLocaleString()}</div><div className="text-xs text-muted-foreground">filled</div></div>
+                  <div className="rounded-md border p-2"><div className="font-semibold">{Number(overviewSetup?.entryFallback?.rejected || 0).toLocaleString()}</div><div className="text-xs text-muted-foreground">rejected</div></div>
+                  <div className="rounded-md border p-2"><div className="font-semibold">{Number(overviewSetup?.entryFallback?.failed || 0).toLocaleString()}</div><div className="text-xs text-muted-foreground">copy failures</div></div>
+                </div>
+                <div className="grid gap-3 md:grid-cols-[15rem_18rem_auto] md:items-end">
+                  <div className="space-y-2">
+                    <Label>Fallback mode</Label>
+                    <Select value={entryFallbackMode} onValueChange={setEntryFallbackMode}>
+                      <SelectTrigger><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="off">Off</SelectItem>
+                        <SelectItem value="shadow">Shadow proposals only</SelectItem>
+                        <SelectItem value="active">Active guarded fallback</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="entry-fallback-start">Observe reads after</Label>
+                    <Input id="entry-fallback-start" type="datetime-local" value={entryFallbackStart} onChange={(event) => setEntryFallbackStart(event.target.value)} />
+                  </div>
+                  <Button
+                    type="button"
+                    variant={entryFallbackMode === "active" ? "default" : "secondary"}
+                    disabled={Boolean(busy) || (
+                      entryFallbackMode === overviewSetup?.entryFallback?.mode
+                      && entryFallbackStart === localDateTimeInput(overviewSetup?.entryFallback?.observationStartedAt)
+                    )}
+                    onClick={saveEntryFallbackMode}
+                  >
+                    {busy === "entry-fallback-mode" ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
+                    Save fallback mode
+                  </Button>
+                </div>
+
+                <div className="grid gap-4 rounded-md border p-3 md:grid-cols-2 lg:grid-cols-4">
+                  <div className="space-y-2 lg:col-span-2">
+                    <Label htmlFor="entry-route-name">Route name</Label>
+                    <Input id="entry-route-name" value={entryRouteDraft.routeName} onChange={(event) => setEntryRouteDraft({ ...entryRouteDraft, routeName: event.target.value })} placeholder="Example: Street eastbound entering driveway" />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Existing Street target read</Label>
+                    <Select
+                      value={entryRouteDraft.targetCameraName}
+                      onValueChange={(targetCameraName) => {
+                        const selected = overviewSetup?.plateCameras?.find((item) => item.cameraName === targetCameraName);
+                        setEntryRouteDraft({
+                          ...entryRouteDraft,
+                          targetCameraName,
+                          targetDirectionLabel: selected?.directions?.[0] || "",
+                        });
+                      }}
+                    >
+                      <SelectTrigger><SelectValue placeholder="Street camera" /></SelectTrigger>
+                      <SelectContent>{(overviewSetup?.plateCameras || []).map((item) => <SelectItem key={item.cameraName} value={item.cameraName}>{item.cameraName}</SelectItem>)}</SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Street direction</Label>
+                    <Select value={entryRouteDraft.targetDirectionLabel} onValueChange={(targetDirectionLabel) => setEntryRouteDraft({ ...entryRouteDraft, targetDirectionLabel })}>
+                      <SelectTrigger><SelectValue placeholder="Direction" /></SelectTrigger>
+                      <SelectContent>
+                        {(overviewSetup?.plateCameras?.find((item) => item.cameraName === entryRouteDraft.targetCameraName)?.directions || []).map((direction) => <SelectItem key={direction} value={direction}>{direction}</SelectItem>)}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  {[0, 1].map((index) => (
+                    <div key={index} className="space-y-2">
+                      <Label>Corroborating source {index + 1}</Label>
+                      <Select
+                        value={entryRouteDraft.sourceCameraNames[index] || ""}
+                        onValueChange={(cameraName) => {
+                          const sourceCameraNames = [...entryRouteDraft.sourceCameraNames];
+                          sourceCameraNames[index] = cameraName;
+                          const selected = overviewSetup?.plateCameras?.find((item) => item.cameraName === cameraName);
+                          setEntryRouteDraft({
+                            ...entryRouteDraft,
+                            sourceCameraNames,
+                            sourceDirectionLabel: entryRouteDraft.sourceDirectionLabel || selected?.directions?.[0] || "",
+                          });
+                        }}
+                      >
+                        <SelectTrigger><SelectValue placeholder="Entry camera" /></SelectTrigger>
+                        <SelectContent>{(overviewSetup?.plateCameras || []).map((item) => <SelectItem key={item.cameraName} value={item.cameraName}>{item.cameraName}</SelectItem>)}</SelectContent>
+                      </Select>
+                    </div>
+                  ))}
+                  <div className="space-y-2">
+                    <Label htmlFor="entry-route-direction">Entry direction</Label>
+                    <Input id="entry-route-direction" value={entryRouteDraft.sourceDirectionLabel} onChange={(event) => setEntryRouteDraft({ ...entryRouteDraft, sourceDirectionLabel: event.target.value })} placeholder="Entering or Exiting" />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="entry-route-delta">Expected delta (ms)</Label>
+                    <Input id="entry-route-delta" type="number" min="-30000" max="30000" value={entryRouteDraft.expectedDeltaMs} onChange={(event) => setEntryRouteDraft({ ...entryRouteDraft, expectedDeltaMs: Number(event.target.value) })} />
+                    <p className="text-xs text-muted-foreground">Entry event minus Street read. Negative means Entry occurred first.</p>
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="entry-route-tolerance">Route tolerance (ms)</Label>
+                    <Input id="entry-route-tolerance" type="number" min="250" max="15000" step="50" value={entryRouteDraft.toleranceMs} onChange={(event) => setEntryRouteDraft({ ...entryRouteDraft, toleranceMs: Number(event.target.value) })} />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="entry-route-event-window">Entry pair window (ms)</Label>
+                    <Input id="entry-route-event-window" type="number" min="250" max="5000" step="50" value={entryRouteDraft.eventWindowMs} onChange={(event) => setEntryRouteDraft({ ...entryRouteDraft, eventWindowMs: Number(event.target.value) })} />
+                  </div>
+                  <div className="flex items-center gap-3 pt-6">
+                    <Switch checked={entryRouteDraft.enabled} onCheckedChange={(enabled) => setEntryRouteDraft({ ...entryRouteDraft, enabled })} />
+                    <Label>Route enabled</Label>
+                  </div>
+                  <div className="lg:col-span-4">
+                    <Button type="button" onClick={saveEntryRoute} disabled={Boolean(busy)}>
+                      {busy === "entry-route" ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
+                      Save Entry route
+                    </Button>
+                  </div>
+                </div>
+
+                {(overviewSetup?.entryRouteProfiles || []).length ? (
+                  <div className="space-y-2">
+                    {overviewSetup.entryRouteProfiles.map((route) => (
+                      <div key={route.id} className="flex flex-wrap items-center justify-between gap-3 rounded-md border p-3 text-sm">
+                        <div>
+                          <div className="font-medium">{route.routeName} {!route.enabled ? <Badge variant="secondary">Disabled</Badge> : null}</div>
+                          <div className="text-xs text-muted-foreground">
+                            {route.targetCameraName} {route.targetDirectionLabel} to {route.sourceCameraNames.join(" + ")} {route.sourceDirectionLabel}; {route.expectedDeltaMs} ms ± {route.toleranceMs} ms
+                          </div>
+                        </div>
+                        <Button type="button" variant="ghost" size="sm" disabled={Boolean(busy)} onClick={() => removeEntryRoute(route.id)}>
+                          {busy === `entry-route-delete:${route.id}` ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
+                        </Button>
+                      </div>
+                    ))}
+                  </div>
+                ) : null}
+
+                {overviewSetup?.entryFallback?.recent?.length ? (
+                  <details className="rounded-md border">
+                    <summary className="cursor-pointer px-3 py-2 text-sm font-medium">Recent Entry fallback decisions</summary>
+                    <div className="overflow-x-auto border-t">
+                      <table className="w-full min-w-[760px] text-left text-xs">
+                        <thead className="border-b text-muted-foreground">
+                          <tr><th className="px-3 py-2">Plate</th><th className="px-3 py-2">Route</th><th className="px-3 py-2">Reads</th><th className="px-3 py-2">Timing</th><th className="px-3 py-2">Decision</th></tr>
+                        </thead>
+                        <tbody>
+                          {overviewSetup.entryFallback.recent.map((item) => (
+                            <tr key={item.id} className="border-b last:border-0">
+                              <td className="px-3 py-2 font-mono">{item.targetPlate || "Unknown"}</td>
+                              <td className="px-3 py-2">{item.routeName}</td>
+                              <td className="px-3 py-2">{item.sourceReadId ? `#${item.sourceReadId}` : "No source"} to #{item.targetReadId}</td>
+                              <td className="px-3 py-2 font-mono">{item.actualDeltaMs == null ? "n/a" : `${item.actualDeltaMs} ms`}</td>
                               <td className="px-3 py-2">{item.status}: {item.errorCode || item.reason}</td>
                             </tr>
                           ))}
