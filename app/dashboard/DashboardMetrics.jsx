@@ -53,16 +53,25 @@ import {
   Loader2,
 } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
-import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { TimeFrameSelector } from "./TimeSelect";
-import { TagDistributionChart } from "./TagDistribution";
+import { TagDistributionComparison } from "./TagDistribution";
 import { Separator } from "@/components/ui/separator";
 import Image from "next/image";
 import { FaRoad, FaGithub } from "react-icons/fa";
 import CameraReadsChart from "./CameraChart";
 import { CameraSelector } from "./CameraSelect";
 import { DashboardSkeleton } from "@/components/DashboardSkeleton";
+import {
+  buildDashboardFeedHref,
+  buildTimeDistributionHref,
+  DASHBOARD_TIME_FRAME_LABELS,
+  getDashboardTimeWindow,
+} from "@/lib/dashboard-time-distribution.mjs";
+import {
+  readDashboardFilterPreference,
+  writeDashboardFilterPreference,
+} from "@/lib/dashboard-filter-preference.mjs";
 
 export function formatTimeRange(hour, timeFormat) {
   if (timeFormat === 24) {
@@ -74,7 +83,13 @@ export function formatTimeRange(hour, timeFormat) {
   return `${adjustedHour}${period}`;
 }
 
-const PlateImagePreviews = ({ plate, timeFrame }) => {
+const PlateImagePreviews = ({
+  plate,
+  timeFrame,
+  cameras,
+  startDate,
+  endDate,
+}) => {
   const [images, setImages] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -85,7 +100,13 @@ const PlateImagePreviews = ({ plate, timeFrame }) => {
     const loadImages = async () => {
       try {
         setLoading(true);
-        const fetchedImages = await fetchPlateImagePreviews(plate, timeFrame);
+        const fetchedImages = await fetchPlateImagePreviews(
+          plate,
+          timeFrame,
+          cameras,
+          startDate,
+          endDate
+        );
         if (mounted) {
           setImages(fetchedImages || []);
         }
@@ -105,7 +126,7 @@ const PlateImagePreviews = ({ plate, timeFrame }) => {
     return () => {
       mounted = false;
     };
-  }, [plate, timeFrame]);
+  }, [cameras, endDate, plate, startDate, timeFrame]);
 
   if (loading) {
     return (
@@ -131,28 +152,39 @@ const PlateImagePreviews = ({ plate, timeFrame }) => {
     );
   }
 
+  const overviewImage = images.find((image) => image.vehicle_image_path);
+  const quickLookImages = images.map((image, index) =>
+    index === 3 && overviewImage
+      ? { ...overviewImage, isOverview: true }
+      : image
+  );
+
   return (
     <div className="grid grid-cols-2 gap-2">
-      {images.map((img, idx) => (
+      {quickLookImages.map((img, idx) => (
         <div
           key={idx}
           className="relative aspect-video bg-muted rounded-sm overflow-hidden"
         >
           <Image
             src={
-              img.thumbnail_path
+              img.isOverview
+                ? `/images/${img.vehicle_image_path}`
+                : img.thumbnail_path
                 ? `/images/${img.thumbnail_path}`
                 : img.image_data
                 ? `data:image/jpeg;base64,${img.image_data}`
                 : "/placeholder.jpg"
             }
-            alt={`Capture from ${new Date(img.timestamp).toLocaleString()}`}
+            alt={`${img.isOverview ? "Vehicle overview" : "Plate capture"} from ${new Date(img.timestamp).toLocaleString()}`}
             unoptimized
             fill
             className="object-cover"
           />
           <div className="absolute bottom-0 left-0 right-0 px-2 py-1 text-[10px] bg-black/50 text-white">
-            {new Date(img.timestamp).toLocaleTimeString()}
+            {img.isOverview
+              ? "Overview"
+              : new Date(img.timestamp).toLocaleTimeString()}
           </div>
         </div>
       ))}
@@ -160,23 +192,26 @@ const PlateImagePreviews = ({ plate, timeFrame }) => {
   );
 };
 
-const ClickableBar = ({ payload, x, y, width, height, radius }) => {
-  const localHour = payload.hour_block;
-  const tzOffset = -(new Date().getTimezoneOffset() / 60);
-  const utcFrom = (localHour - tzOffset + 24) % 24;
-  const utcTo = (localHour - tzOffset + 24) % 24;
+const ClickableBar = ({
+  payload,
+  x,
+  y,
+  width,
+  height,
+  radius,
+  queryContext,
+}) => {
+  const href = buildTimeDistributionHref({
+    hour: payload.hour_block,
+    timeFrame: queryContext.timeFrame,
+    startDate: queryContext.startDate,
+    endDate: queryContext.endDate,
+    timeZone: queryContext.timeZone,
+    cameras: queryContext.cameras,
+  });
 
   return (
-    <Link
-      href={{
-        pathname: "/live_feed",
-        query: {
-          page: 1,
-          hourFrom: Math.floor(utcFrom).toString().padStart(2, "0"),
-          hourTo: Math.floor(utcTo).toString().padStart(2, "0"),
-        },
-      }}
-    >
+    <Link href={href}>
       <g>
         <rect
           x={x}
@@ -209,23 +244,50 @@ export default function DashboardMetrics() {
     unique_plates: 0,
     weekly_unique: 0,
     suspicious_count: 0,
+    tagged_vehicles_count: 0,
+    tagged_reads_count: 0,
+    tag_stats: [],
+    tag_read_stats: [],
     top_plates: [],
   });
 
   const [loading, setLoading] = useState(true);
-  const router = useRouter();
   const [timeFormat, setTimeFormat] = useState(12);
   const [timeFrame, setTimeFrame] = useState("24h");
-  const [selectedCamera, setSelectedCamera] = useState("all");
+  const [selectedCameras, setSelectedCameras] = useState([]);
   const [camerasLoading, setCamerasLoading] = useState(true);
   const [cameras, setCameras] = useState([]);
+  const [queryContext, setQueryContext] = useState(null);
+  const [preferencesReady, setPreferencesReady] = useState(false);
+
+  useEffect(() => {
+    const preference = readDashboardFilterPreference();
+    setSelectedCameras(preference.cameras);
+    setTimeFrame(preference.timeFrame);
+    setPreferencesReady(true);
+  }, []);
+
+  useEffect(() => {
+    if (!preferencesReady) return;
+    writeDashboardFilterPreference({
+      cameras: selectedCameras,
+      timeFrame,
+    });
+  }, [preferencesReady, selectedCameras, timeFrame]);
 
   useEffect(() => {
     async function loadCameras() {
       try {
         setCamerasLoading(true);
         const cameraRes = await getCameraNames();
-        setCameras(cameraRes.success ? cameraRes.data : []);
+        const availableCameras = cameraRes.success ? cameraRes.data : [];
+        setCameras(availableCameras);
+        if (cameraRes.success) {
+          const availableCameraSet = new Set(availableCameras);
+          setSelectedCameras((current) =>
+            current.filter((camera) => availableCameraSet.has(camera))
+          );
+        }
       } catch (error) {
         console.error("Error loading cameras:", error);
         setCameras([]);
@@ -237,39 +299,21 @@ export default function DashboardMetrics() {
   }, []);
 
   useEffect(() => {
+    if (!preferencesReady) return undefined;
+    let cancelled = false;
+
     async function fetchData() {
       try {
         setLoading(true);
         const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
-        const endDate = new Date();
-        const startDate = new Date();
-
-        switch (timeFrame) {
-          case "3d":
-            startDate.setDate(endDate.getDate() - 3);
-            break;
-          case "7d":
-            startDate.setDate(endDate.getDate() - 7);
-            break;
-          case "30d":
-            startDate.setDate(endDate.getDate() - 30);
-            break;
-          case "all":
-            startDate.setFullYear(2000);
-            break;
-          default:
-            startDate.setDate(endDate.getDate() - 1);
-        }
-
-        const args = [timeZone, startDate, endDate];
-        if (selectedCamera && selectedCamera !== "all") {
-          args.push(selectedCamera);
-        }
+        const { startDate, endDate } = getDashboardTimeWindow(timeFrame);
 
         const [data, config] = await Promise.all([
-          getDashboardMetrics(...args),
+          getDashboardMetrics(timeZone, startDate, endDate, selectedCameras),
           getTimeFormat(),
         ]);
+
+        if (cancelled) return;
 
         setTimeFormat(config);
 
@@ -284,9 +328,33 @@ export default function DashboardMetrics() {
           unique_plates: Number.parseInt(data?.unique_plates) || 0,
           weekly_unique: Number.parseInt(data?.weekly_unique) || 0,
           suspicious_count: Number.parseInt(data?.suspicious_count) || 0,
+          tagged_vehicles_count:
+            Number.parseInt(data?.tagged_vehicles_count, 10) || 0,
+          tagged_reads_count:
+            Number.parseInt(data?.tagged_reads_count, 10) || 0,
+          tag_stats: Array.isArray(data?.tag_stats)
+            ? data.tag_stats.map((tag) => ({
+                ...tag,
+                count: Number.parseInt(tag.count, 10) || 0,
+              }))
+            : [],
+          tag_read_stats: Array.isArray(data?.tag_read_stats)
+            ? data.tag_read_stats.map((tag) => ({
+                ...tag,
+                count: Number.parseInt(tag.count, 10) || 0,
+              }))
+            : [],
         };
         setMetrics(sanitizedData);
+        setQueryContext({
+          timeFrame,
+          startDate: startDate.toISOString(),
+          endDate: endDate.toISOString(),
+          timeZone,
+          cameras: [...selectedCameras],
+        });
       } catch (error) {
+        if (cancelled) return;
         console.error("Error fetching data:", error);
         setMetrics({
           time_distribution: [],
@@ -295,14 +363,22 @@ export default function DashboardMetrics() {
           unique_plates: 0,
           weekly_unique: 0,
           suspicious_count: 0,
+          tagged_vehicles_count: 0,
+          tagged_reads_count: 0,
+          tag_stats: [],
+          tag_read_stats: [],
           top_plates: [],
         });
       } finally {
-        setLoading(false);
+        if (!cancelled) setLoading(false);
       }
     }
     fetchData();
-  }, [timeFrame, selectedCamera]);
+
+    return () => {
+      cancelled = true;
+    };
+  }, [preferencesReady, timeFrame, selectedCameras]);
 
   const timeDistributionData = metrics.time_distribution
     .filter((item) => item && typeof item.hour_block === "number")
@@ -319,6 +395,76 @@ export default function DashboardMetrics() {
           current.frequency > max.frequency ? current : max
         ).timeRange
       : "No data available";
+
+  const topPlateHref = (plateNumber) =>
+    queryContext
+      ? buildDashboardFeedHref({
+          search: plateNumber,
+          timeFrame: queryContext.timeFrame,
+          startDate: queryContext.startDate,
+          endDate: queryContext.endDate,
+          timeZone: queryContext.timeZone,
+          cameras: queryContext.cameras,
+        })
+      : `/live_feed?search=${encodeURIComponent(plateNumber)}&matchMode=off`;
+
+  const metricHref = (metric) =>
+    queryContext
+      ? buildDashboardFeedHref({
+          metric,
+          timeFrame: queryContext.timeFrame,
+          startDate: queryContext.startDate,
+          endDate: queryContext.endDate,
+          timeZone: queryContext.timeZone,
+          cameras: queryContext.cameras,
+        })
+      : undefined;
+
+  const tagHref = (tag, metric) =>
+    queryContext
+      ? buildDashboardFeedHref({
+          tags: [tag],
+          metric,
+          timeFrame: queryContext.timeFrame,
+          startDate: queryContext.startDate,
+          endDate: queryContext.endDate,
+          timeZone: queryContext.timeZone,
+          cameras: queryContext.cameras,
+        })
+      : `/live_feed?tag=${encodeURIComponent(tag)}`;
+
+  const tagVehicleHref = (tag) => tagHref(tag, "uniqueVehicles");
+  const tagReadHref = (tag) => tagHref(tag);
+
+  const tagVehicleCategories = (metrics.tag_stats || []).map(
+    (tag) => tag.category
+  );
+  const tagReadCategories = (metrics.tag_read_stats || []).map(
+    (tag) => tag.category
+  );
+  const taggedVehicleTotalHref =
+    queryContext && tagVehicleCategories.length > 0
+      ? buildDashboardFeedHref({
+          tags: tagVehicleCategories,
+          metric: "uniqueVehicles",
+          timeFrame: queryContext.timeFrame,
+          startDate: queryContext.startDate,
+          endDate: queryContext.endDate,
+          timeZone: queryContext.timeZone,
+          cameras: queryContext.cameras,
+        })
+      : undefined;
+  const taggedReadTotalHref =
+    queryContext && tagReadCategories.length > 0
+      ? buildDashboardFeedHref({
+          tags: tagReadCategories,
+          timeFrame: queryContext.timeFrame,
+          startDate: queryContext.startDate,
+          endDate: queryContext.endDate,
+          timeZone: queryContext.timeZone,
+          cameras: queryContext.cameras,
+        })
+      : undefined;
 
   return (
     <div className="relative space-y-4">
@@ -370,14 +516,25 @@ export default function DashboardMetrics() {
         </div>
         <div className="flex items-center gap-2">
           <CameraSelector
-            value={selectedCamera}
-            onValueChange={setSelectedCamera}
+            value={selectedCameras}
+            onValueChange={setSelectedCameras}
             cameras={cameras}
             loading={camerasLoading}
           />
           <TimeFrameSelector value={timeFrame} onValueChange={setTimeFrame} />
         </div>
       </div>
+
+      {selectedCameras.length > 0 && (
+        <div className="flex flex-wrap items-center gap-2 rounded-md border bg-card/40 px-3 py-2 text-sm">
+          <span className="text-muted-foreground">Dashboard cameras:</span>
+          {selectedCameras.map((camera) => (
+            <Badge key={camera} variant="secondary">
+              {camera}
+            </Badge>
+          ))}
+        </div>
+      )}
 
       {loading && (
         <div className="absolute w-full h-svh dark:bg-black/60  backdrop-blur-md rounded-xl flex flex-col items-center justify-center text-center space-y-4 z-20">
@@ -401,7 +558,7 @@ export default function DashboardMetrics() {
           <CardHeader>
             <CardTitle>Time Distribution</CardTitle>
             <CardDescription>
-              Frequency of plate sightings by time of day ({timeFrame})
+              Frequency of plate sightings by time of day ({DASHBOARD_TIME_FRAME_LABELS[timeFrame]})
             </CardDescription>
           </CardHeader>
           <CardContent className="flex-1 min-h-[350px] sm:min-h-[400px] py-0">
@@ -502,7 +659,7 @@ export default function DashboardMetrics() {
                     dataKey="frequency"
                     fill="var(--color-frequency)"
                     radius={4}
-                    shape={<ClickableBar />}
+                    shape={queryContext ? <ClickableBar queryContext={queryContext} /> : undefined}
                   >
                     <LabelList
                       dataKey="frequency"
@@ -521,7 +678,7 @@ export default function DashboardMetrics() {
               <TrendingUp className="h-4 w-4" />
             </div>
             <div className="leading-none text-muted-foreground text-xs sm:text-sm">
-              Total plate reads by hour over the last {timeFrame}
+              Total plate reads by hour for {DASHBOARD_TIME_FRAME_LABELS[timeFrame]}
             </div>
           </CardFooter>
         </Card>
@@ -532,12 +689,12 @@ export default function DashboardMetrics() {
             <CardTitle className="flex items-center gap-2 text-xl sm:text-2xl">
               Top 10 Plates
               <span className="text-sm sm:text-base font-normal text-muted-foreground">
-                ({timeFrame})
+                ({DASHBOARD_TIME_FRAME_LABELS[timeFrame]})
               </span>
             </CardTitle>
             <CardDescription className="text-xs sm:text-sm">
-              Most frequently seen license plates in the last {timeFrame} -
-              Hover to preview images
+              Most frequently seen license plates for {DASHBOARD_TIME_FRAME_LABELS[timeFrame]}
+              {selectedCameras.length > 0 ? " across the selected cameras" : " across all cameras"} — hover to preview images
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -585,6 +742,9 @@ export default function DashboardMetrics() {
                                   <PlateImagePreviews
                                     plate={plate.plate}
                                     timeFrame={timeFrame}
+                                    cameras={selectedCameras}
+                                    startDate={queryContext?.startDate}
+                                    endDate={queryContext?.endDate}
                                   />
                                 </Suspense>
                               </div>
@@ -616,12 +776,7 @@ export default function DashboardMetrics() {
                         )}
                       </div>
                     </div>
-                    <Link
-                      href={{
-                        pathname: "/live_feed",
-                        query: { search: plate.plate },
-                      }}
-                    >
+                    <Link href={topPlateHref(plate.plate)}>
                       <Button
                         variant="secondary"
                         size="sm"
@@ -696,13 +851,17 @@ export default function DashboardMetrics() {
       {/* Bottom section - Made responsive */}
       <div className="grid grid-cols-1 xl:grid-cols-12 gap-4">
         {/* Metrics Grid */}
-        <div className="xl:col-span-8 grid grid-rows-auto gap-4">
+        <div className="xl:col-span-12 grid grid-rows-auto gap-4">
           <div className="grid grid-cols-1 xs:grid-cols-2 xl:grid-cols-4 gap-4">
             <MetricCard
               title="Total Unique Plates"
               value={metrics.total_plates_count}
               icon={<Database className="h-4 w-4" />}
-              description="Total unique plates stored in the database"
+              description={
+                selectedCameras.length > 0
+                  ? "Unique plates recorded by the selected cameras"
+                  : "Total unique plates stored in the database"
+              }
               loading={false}
             />
             <MetricCard
@@ -710,6 +869,7 @@ export default function DashboardMetrics() {
               value={metrics.total_reads}
               icon={<Eye className="h-4 w-4" />}
               description="License plates read during period"
+              href={metricHref("totalReads")}
               loading={false}
             />
             <MetricCard
@@ -717,6 +877,7 @@ export default function DashboardMetrics() {
               value={metrics.unique_plates}
               icon={<Car className="h-4 w-4" />}
               description="Distinct vehicles detected during period"
+              href={metricHref("uniqueVehicles")}
               loading={false}
             />
             <MetricCard
@@ -724,23 +885,31 @@ export default function DashboardMetrics() {
               value={metrics.new_plates_count}
               icon={<Calendar className="h-4 w-4" />}
               description="Vehicles detected for the first time during period"
-              loading={false}
-            />
-          </div>
-          <div className="w-full">
-            <CameraReadsChart
-              data={metrics.camera_counts || []}
+              href={metricHref("newVehicles")}
               loading={false}
             />
           </div>
         </div>
 
-        {/* Tag Distribution Chart */}
         <div className="xl:col-span-4">
-          <TagDistributionChart
-            data={metrics.tag_stats || []}
+          <CameraReadsChart
+            data={metrics.camera_counts || []}
             loading={false}
-            className="h-full"
+          />
+        </div>
+
+        {/* Tag distributions share one comparison card */}
+        <div className="xl:col-span-8">
+          <TagDistributionComparison
+            loading={false}
+            vehicleData={metrics.tag_stats || []}
+            vehicleTotal={metrics.tagged_vehicles_count}
+            getVehicleHref={tagVehicleHref}
+            vehicleTotalHref={taggedVehicleTotalHref}
+            readData={metrics.tag_read_stats || []}
+            readTotal={metrics.tagged_reads_count}
+            getReadHref={tagReadHref}
+            readTotalHref={taggedReadTotalHref}
           />
         </div>
       </div>
@@ -748,12 +917,23 @@ export default function DashboardMetrics() {
   );
 }
 
-function MetricCard({ title, value, icon, description, loading }) {
+function MetricCard({ title, value, icon, description, href, loading }) {
   return (
     <Card className="dark:bg-[#0e0e10] rounded-lg">
       <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 px-3 sm:px-6">
         <CardTitle className="text-xs sm:text-sm font-medium">
-          {title}
+          {href ? (
+            <Link
+              href={href}
+              className="group inline-flex items-center gap-1 hover:text-primary hover:underline"
+              aria-label={`View ${title} in Recognition Feed`}
+            >
+              {title}
+              <ArrowUpRight className="h-3 w-3 opacity-0 transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100" />
+            </Link>
+          ) : (
+            title
+          )}
         </CardTitle>
         {icon}
       </CardHeader>

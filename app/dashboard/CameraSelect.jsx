@@ -1,31 +1,24 @@
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+import MultiSelectFilter from "@/components/MultiSelectFilter";
 
 export function CameraSelector({ value, onValueChange, cameras, loading }) {
+  const selectedCameras = Array.isArray(value) ? value : [];
+  const options = (cameras || []).map((camera) => ({
+    value: camera,
+    label: camera,
+  }));
+
   return (
-    <div className="">
-      <Select
-        value={value || "all"}
-        onValueChange={onValueChange}
-        disabled={loading}
-      >
-        <SelectTrigger className="w-44 dark:bg-[#161618]">
-          <SelectValue placeholder="Select camera" />
-        </SelectTrigger>
-        <SelectContent>
-          <SelectItem value="all">All cameras</SelectItem>
-          {cameras?.map((camera) => (
-            <SelectItem key={camera} value={camera}>
-              {camera}
-            </SelectItem>
-          ))}
-        </SelectContent>
-      </Select>
+    <div>
+      <fieldset disabled={loading} className="m-0 min-w-0 border-0 p-0">
+        <MultiSelectFilter
+          ariaLabel="Filter dashboard by cameras"
+          allLabel={loading ? "Loading cameras…" : "All cameras"}
+          value={selectedCameras}
+          options={options}
+          onChange={onValueChange}
+          className="w-44 dark:bg-[#161618]"
+        />
+      </fieldset>
     </div>
   );
 }

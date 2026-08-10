@@ -34,6 +34,8 @@ export default function PlateTableWrapper({
   timeFormat,
   biHost,
   matchingSettings,
+  dashboardTimeFrame,
+  dashboardMetric,
 }) {
   const router = useRouter();
   const pathname = usePathname();
@@ -438,10 +440,12 @@ export default function PlateTableWrapper({
         matchMode: params.get("matchMode") || preferredMatchMode,
         tags: params.getAll("tag").filter((tag) => tag && tag !== "all"),
         dateRange: {
-          from: params.get("dateFrom")
-            ? new Date(params.get("dateFrom"))
+          from: params.get("timestampFrom") || params.get("dateFrom")
+            ? new Date(params.get("timestampFrom") || params.get("dateFrom"))
             : null,
-          to: params.get("dateTo") ? new Date(params.get("dateTo")) : null,
+          to: params.get("timestampTo") || params.get("dateTo")
+            ? new Date(params.get("timestampTo") || params.get("dateTo"))
+            : null,
         },
         hourRange:
           params.get("hourFrom") && params.get("hourTo")
@@ -453,6 +457,8 @@ export default function PlateTableWrapper({
         cameraNames: params.getAll("camera").filter(Boolean),
         reviewStatuses: params.getAll("reviewStatus").filter(Boolean),
         directionLabels: params.getAll("direction").filter(Boolean),
+        dashboardTimeFrame,
+        dashboardMetric,
       }}
       sort={{
         field: params.get("sortField") || "timestamp",
