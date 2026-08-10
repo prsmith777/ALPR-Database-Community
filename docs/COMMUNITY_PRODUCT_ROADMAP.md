@@ -485,10 +485,15 @@ notes. Updates remain externally orchestrated.
   temporary timeline export from the continuous Street Overview recording.
   Claims wait for the calculated source window, one second of export padding,
   and a short Blue Iris finalization grace. ALPR validates the returned UTC,
-  duration, and configured minimum resolution, immediately sends `delete:true`
-  for the exact returned export path, and reconciles only ledger-owned cleanup
-  failures with bounded backoff. The local MP4 and working frames are deleted
-  after each read.
+  duration, and configured minimum resolution. Because the installed Blue Iris
+  may reject status queries for an accepted reserved `@record`, the worker checks
+  only that exact reserved download URI at five-second intervals. It downloads
+  only when the owned URI is available; a missing global-list entry is not
+  completion, and the full MP4 must still pass local FFprobe validation.
+  After validation ALPR deletes its local MP4 and working frames. Blue Iris
+  remains responsible for age and size retention of its generated Clipboard
+  export. ALPR never sends a remote delete request and therefore does not need
+  Blue Iris Administrator access.
   FFmpeg normalizes source timestamps and extracts exactly 61 local analysis
   frames over the profile-derived six-second window at 100-millisecond spacing.
   Frame selection follows the continuous vehicle track nearest the calculated
@@ -499,9 +504,9 @@ notes. Updates remain externally orchestrated.
   detections, viable tracks, completeness, edge contact, and failure reason.
   Analysis remains bounded to 1280-pixel frames, while the saved Vehicle View is
   extracted from the original verified export at the exact selected 10-fps slot
-  and full exported resolution. Blue Iris still re-encodes the MP4 according to
-  its selected export profile, so ALPR exposes profile 0-3 plus a fail-closed
-  minimum resolution instead of promising native output. Claim-token and profile-
+  and full exported resolution. ALPR explicitly disables re-encoding and requests
+  the recorded main-stream video, while still enforcing a fail-closed minimum
+  output resolution. Claim-token and profile-
   revision compare-and-set updates plus attempt-unique atomic files prevent a
   reclaimed worker or mid-analysis profile edit from overwriting a winner. The
   additive constraints remain migration-safe for community installations:

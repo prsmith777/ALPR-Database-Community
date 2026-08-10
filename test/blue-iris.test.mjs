@@ -215,7 +215,7 @@ test("missing timeline recording produces a stable terminal error", async () => 
   );
 });
 
-test("timeline export lifecycle uses the documented start, poll, download, and delete commands", async () => {
+test("timeline export lifecycle uses the documented start, poll, and download commands", async () => {
   const requests = [];
   const mp4 = Buffer.from("synthetic-mp4-payload");
   const responses = [
@@ -227,7 +227,7 @@ test("timeline export lifecycle uses the documented start, poll, download, and d
     }),
     jsonResponse({
       result: "success",
-      data: [{
+      data: {
         path: "@ALPR_42.mp4",
         status: "completed",
         progress: 100,
@@ -236,10 +236,9 @@ test("timeline export lifecycle uses the documented start, poll, download, and d
         utc: 1_786_300_000_000,
         msec: 8_000,
         camera: "Cam149",
-      }],
+      },
     }),
     binaryResponse(mp4),
-    jsonResponse({ result: "success", data: { path: "@ALPR_42.mp4" } }),
   ];
   const client = new BlueIrisClient(
     { host: "blueiris.local:81", username: "alpr", password: "secret" },
@@ -274,11 +273,9 @@ test("timeline export lifecycle uses the documented start, poll, download, and d
     });
     assert.equal(downloaded.bytes, mp4.length);
     assert.deepEqual(await fs.readFile(destinationPath), mp4);
-    assert.deepEqual(await client.deleteTimelineExport(started.remotePath), {
-      remotePath: "@ALPR_42.mp4",
-      deleted: true,
-      alreadyMissing: false,
-    });
+    assert.equal(typeof client.requestTimelineExportDeletion, "undefined");
+    assert.equal(typeof client.verifyTimelineExportDeletion, "undefined");
+    assert.equal(typeof client.deleteTimelineExport, "undefined");
     assert.deepEqual(requests[2].body, {
       cmd: "export",
       path: "Cam149",
@@ -294,18 +291,46 @@ test("timeline export lifecycle uses the documented start, poll, download, and d
     });
     assert.deepEqual(requests[3].body, {
       cmd: "export",
+      path: "@ALPR_42.mp4",
       session: "active",
     });
     assert.match(requests[4].url, /\/clips\/%40ALPR_42\.mp4\?dl=1&session=active$/);
-    assert.deepEqual(requests[5].body, {
-      cmd: "export",
-      path: "@ALPR_42.mp4",
-      delete: true,
-      session: "active",
-    });
+    assert.equal(requests.length, 5);
   } finally {
     await fs.rm(directory, { recursive: true, force: true });
   }
+});
+
+test("timeline export creation can explicitly disable re-encoding", async () => {
+  const requests = [];
+  const responses = [
+    jsonResponse({ result: "fail", session: "challenge" }),
+    jsonResponse({ result: "success", session: "active", data: {} }),
+    jsonResponse({
+      result: "success",
+      data: { path: "Clipboard\\ALPR_DIAGNOSTIC.mp4", status: "queued" },
+    }),
+  ];
+  const client = new BlueIrisClient(
+    { host: "blueiris.local:81", username: "alpr", password: "secret" },
+    { fetchImpl: async (_url, options) => {
+      requests.push(JSON.parse(options.body));
+      return responses.shift();
+    } }
+  );
+
+  await client.startTimelineExport({
+    camera: "Cam149",
+    start: "2026-08-09T13:00:00.000Z",
+    durationMs: 8_000,
+    profile: 0,
+    reencode: false,
+    substream: false,
+  });
+
+  assert.equal(requests[2].reencode, false);
+  assert.equal(requests[2].format, 1);
+  assert.equal(requests[2].substream, false);
 });
 
 test("timeline export response normalization rejects unsafe paths and recognizes completed exports", () => {

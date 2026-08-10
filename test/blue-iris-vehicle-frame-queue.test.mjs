@@ -364,22 +364,25 @@ test("overview reads are claimed atomically only after validated Blue Iris direc
   assert.equal(read.vehicle_image_claim_token, parameters[0]);
 });
 
-test("timeline export cleanup claims only due owned jobs with locking and exponential backoff", async () => {
+test("a downloaded timeline export becomes terminal without a remote-delete schedule", async () => {
   let statement = "";
+  let parameters = null;
   const repository = new BlueIrisVehicleFrameRepository({
-    async query(sql) {
+    async query(sql, values) {
       statement = sql;
-      return { rows: [] };
+      parameters = values;
+      return { rows: [{ status: "downloaded" }] };
     },
   });
-  await repository.claimTimelineExportsNeedingCleanup({ limit: 12 });
-  assert.match(statement, /exports\.status = 'delete_pending'/);
-  assert.match(statement, /next_delete_attempt_at/);
-  assert.match(statement, /FOR UPDATE OF exports SKIP LOCKED/);
-  assert.match(statement, /reads\.vehicle_image_claim_token IS DISTINCT FROM exports\.claim_token/);
-  assert.match(statement, /exports\.hard_deadline_at <= CURRENT_TIMESTAMP/);
-  assert.match(statement, /delete_attempt_count = exports\.delete_attempt_count \+ 1/);
-  assert.match(statement, /POWER\(2, LEAST\(exports\.delete_attempt_count, 6\)\)/);
+  const result = await repository.markTimelineExportDownloaded(
+    "11111111-1111-4111-8111-111111111111",
+    { uri: "@owned.mp4", fileSize: 100, width: 2688, height: 1520, durationMs: 8000 }
+  );
+  assert.equal(result.status, "downloaded");
+  assert.equal(parameters.length, 6);
+  assert.match(statement, /status = 'downloaded'/);
+  assert.match(statement, /next_delete_attempt_at = NULL/);
+  assert.doesNotMatch(statement, /delete_pending/);
 });
 
 test("incomplete overview recovery is bounded to transient errors and preserves scene decisions", async () => {

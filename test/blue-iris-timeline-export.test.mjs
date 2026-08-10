@@ -170,7 +170,6 @@ function timelineHarness({ width = 3840, height = 2160 } = {}) {
     async recordTimelineExportRemote(_token, remote) { events.push(["remote", remote]); },
     async heartbeatOverviewRead() { events.push(["heartbeat"]); return { id: 42 }; },
     async markTimelineExportDownloaded(_token, media) { events.push(["downloaded", media]); },
-    async markTimelineExportDeleted() { events.push(["ledger-deleted"]); },
     async markTimelineExportFailed(_token, failure) { events.push(["failed", failure]); },
   };
   const client = {
@@ -180,24 +179,22 @@ function timelineHarness({ width = 3840, height = 2160 } = {}) {
     },
     async startTimelineExport(input) {
       events.push(["start", input]);
-      return { remotePath: "@owned.mp4", complete: false, failed: false, progress: 10 };
-    },
-    async getTimelineExport() {
-      events.push(["poll"]);
       return {
         remotePath: "@owned.mp4",
-        complete: true,
-        failed: false,
-        progress: 100,
         uri: "@owned.mp4",
         utc: Date.parse("2026-08-09T12:59:59.000Z"),
         durationMs: 8_000,
         camera: "Cam149",
-        fileSize: 100,
+        complete: false,
+        failed: false,
+        progress: 10,
       };
     },
+    async checkTimelineExportDownloadAvailability(uri) {
+      events.push(["availability", uri]);
+      return { uri, available: true, status: 206 };
+    },
     async downloadTimelineExport() { events.push(["download"]); },
-    async deleteTimelineExport() { events.push(["delete"]); },
   };
   const frames = Array.from({ length: 61 }, (_, index) => ({
     index,
@@ -221,11 +218,12 @@ function timelineHarness({ width = 3840, height = 2160 } = {}) {
   return { client, repository, media, events };
 }
 
-test("timeline export downloads and validates before immediate delete:true cleanup", async () => {
+test("timeline export downloads and validates while Blue Iris owns Clipboard retention", async () => {
   const harness = timelineHarness();
+  const sleeps = [];
   const service = new BlueIrisTimelineExportService({
     ...harness,
-    sleepImpl: async () => {},
+    sleepImpl: async (milliseconds) => { sleeps.push(milliseconds); },
   });
   const acquired = await service.acquire({
     read: { id: 42 },
@@ -235,17 +233,20 @@ test("timeline export downloads and validates before immediate delete:true clean
     intendedStartAt: "2026-08-09T13:00:00.000Z",
   });
   assert.equal(acquired.frames.length, 61);
-  assert.equal(acquired.deletedRemotely, true);
+  assert.equal(acquired.remoteRetentionManaged, true);
   assert.equal(acquired.trimStartMs, 1_000);
   const names = harness.events.map(([name]) => name);
   assert.ok(names.indexOf("download") < names.indexOf("probe"));
-  assert.ok(names.indexOf("probe") < names.indexOf("delete"));
-  assert.ok(names.indexOf("delete") < names.indexOf("extract"));
+  assert.ok(names.indexOf("probe") < names.indexOf("downloaded"));
+  assert.ok(names.indexOf("downloaded") < names.indexOf("extract"));
+  assert.equal(names.includes("delete"), false);
+  assert.deepEqual(sleeps, [5_000]);
   assert.equal(harness.events.find(([name]) => name === "start")[1].substream, false);
+  assert.equal(harness.events.find(([name]) => name === "start")[1].reencode, false);
   await acquired.cleanup();
 });
 
-test("timeline export fails closed on low resolution but still deletes the owned remote export", async () => {
+test("timeline export fails closed on low resolution without requesting remote deletion", async () => {
   const harness = timelineHarness({ width: 1280, height: 720 });
   const service = new BlueIrisTimelineExportService({
     ...harness,
@@ -262,22 +263,25 @@ test("timeline export fails closed on low resolution but still deletes the owned
     (error) => error.code === "EXPORT_RESOLUTION_TOO_LOW"
   );
   const names = harness.events.map(([name]) => name);
-  assert.ok(names.includes("delete"));
+  assert.equal(names.includes("delete"), false);
   assert.ok(names.includes("cleanup"));
   assert.equal(names.includes("extract"), false);
 });
 
 test("timeline export fails closed when Blue Iris omits exact UTC alignment metadata", async () => {
   const harness = timelineHarness();
-  harness.client.getTimelineExport = async () => ({
-    remotePath: "@owned.mp4",
-    complete: true,
-    failed: false,
-    progress: 100,
-    uri: "@owned.mp4",
-    durationMs: 8_000,
-    camera: "Cam149",
-  });
+  harness.client.startTimelineExport = async (input) => {
+    harness.events.push(["start", input]);
+    return {
+      remotePath: "@owned.mp4",
+      complete: false,
+      failed: false,
+      progress: 10,
+      uri: "@owned.mp4",
+      durationMs: 8_000,
+      camera: "Cam149",
+    };
+  };
   const service = new BlueIrisTimelineExportService({
     ...harness,
     sleepImpl: async () => {},
@@ -292,7 +296,7 @@ test("timeline export fails closed when Blue Iris omits exact UTC alignment meta
     }),
     (error) => error.code === "EXPORT_TIMELINE_UNVERIFIED"
   );
-  assert.ok(harness.events.some(([name]) => name === "delete"));
+  assert.equal(harness.events.some(([name]) => name === "delete"), false);
 });
 
 test("one exact export-list match is adopted after an uncertain start response", async () => {
@@ -332,7 +336,7 @@ test("one exact export-list match is adopted after an uncertain start response",
   await acquired.cleanup();
 });
 
-test("a completed export that disappears from the queue is downloaded only from its verified reserved URI", async () => {
+test("an unavailable exact export URI waits five seconds before checking again", async () => {
   const harness = timelineHarness();
   harness.client.startTimelineExport = async (input) => {
     harness.events.push(["start", input]);
@@ -348,13 +352,16 @@ test("a completed export that disappears from the queue is downloaded only from 
       fileSize: 100,
     };
   };
-  harness.client.getTimelineExport = async () => {
-    harness.events.push(["poll-disappeared"]);
-    throw new BlueIrisError("EXPORT_UNAVAILABLE", "completed job left the active queue");
+  let availabilityChecks = 0;
+  harness.client.checkTimelineExportDownloadAvailability = async (uri) => {
+    availabilityChecks += 1;
+    harness.events.push(["availability", uri, availabilityChecks]);
+    return { uri, available: availabilityChecks >= 2, status: availabilityChecks >= 2 ? 206 : 404 };
   };
+  const sleeps = [];
   const service = new BlueIrisTimelineExportService({
     ...harness,
-    sleepImpl: async () => {},
+    sleepImpl: async (milliseconds) => { sleeps.push(milliseconds); },
   });
   const acquired = await service.acquire({
     read: { id: 42 },
@@ -363,12 +370,9 @@ test("a completed export that disappears from the queue is downloaded only from 
     sourceCameraName: "Street Overview",
     intendedStartAt: "2026-08-09T13:00:00.000Z",
   });
-  assert.equal(acquired.frames.length, 61);
-  assert.ok(harness.events.some(([name]) => name === "poll-disappeared"));
+  assert.equal(availabilityChecks, 2);
+  assert.deepEqual(sleeps, [5_000, 5_000]);
   assert.ok(harness.events.some(([name]) => name === "download"));
-  assert.ok(harness.events.some(([name, remote]) =>
-    name === "remote" && remote.status === "disappeared_after_export"
-  ));
   await acquired.cleanup();
 });
 
@@ -407,29 +411,22 @@ test("ambiguous uncertain starts are not blindly resubmitted or deleted", async 
   assert.equal(harness.events.some(([name]) => name === "delete"), false);
 });
 
-test("a failed immediate delete is deferred without discarding a valid local export", async () => {
+test("remote export reconciliation is inert because Blue Iris owns Clipboard retention", async () => {
   const harness = timelineHarness();
+  harness.repository.claimTimelineExportsNeedingCleanup = async () => {
+    assert.fail("retention-managed exports must not be claimed for deletion");
+  };
   harness.client.deleteTimelineExport = async () => {
-    harness.events.push(["delete-failed"]);
-    throw new BlueIrisError("CONNECTION_FAILED", "temporary cleanup failure");
+    assert.fail("ALPR must not request Blue Iris Clipboard deletion");
   };
   const service = new BlueIrisTimelineExportService({
     ...harness,
     sleepImpl: async () => {},
-    logger: { warn() {} },
   });
-  const acquired = await service.acquire({
-    read: { id: 42 },
-    claimToken: "22222222-2222-4222-8222-222222222222",
-    camera: "Cam149",
-    sourceCameraName: "Street Overview",
-    intendedStartAt: "2026-08-09T13:00:00.000Z",
+  assert.deepEqual(await service.reconcileRemoteExports({ limit: 50 }), {
+    examined: 0,
+    deleted: 0,
+    failed: 0,
+    retentionManagedBy: "blue_iris",
   });
-  assert.equal(acquired.frames.length, 61);
-  assert.equal(acquired.deletedRemotely, false);
-  const pending = harness.events.find(([name, failure]) =>
-    name === "failed" && failure?.errorCode === "EXPORT_DELETE_FAILED");
-  assert.ok(pending);
-  assert.equal(pending[1].deletePending, true);
-  await acquired.cleanup();
 });

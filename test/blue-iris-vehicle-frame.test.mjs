@@ -812,7 +812,7 @@ test("read-owned overview uses one local timeline export and the exact selected 
           remoteStartMs: Date.parse(input.intendedStartAt) - 1_000,
           trimStartMs: 1_000,
           utcVerified: true,
-          deletedRemotely: true,
+          remoteRetentionManaged: true,
           probe: { width: 3840, height: 2160, durationMs: 8_000, codec: "h264", fileSize: 5000 },
           frames: timelineFrames,
           async extractFinalFrame({ selectedOffsetMs }) {

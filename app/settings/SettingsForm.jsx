@@ -844,7 +844,7 @@ export default function SettingsForm({
             defaultValue={initialSettings.blueiris.timeline_export_profile ?? 0}
           />
           <p className="text-xs text-muted-foreground">
-            Blue Iris re-encodes timeline exports with profile 0–3. ALPR requests the main-stream source, but the selected profile controls the exported resolution.
+            ALPR requests a direct-copy main-stream export with re-encoding disabled. The profile value is retained for Blue Iris API compatibility; ALPR validates the actual exported resolution before analysis.
           </p>
         </div>
         <div className="space-y-2">
