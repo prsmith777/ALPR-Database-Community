@@ -1845,9 +1845,11 @@ export async function getVehicleOverviewSetup() {
       getBlueIrisVehicleFrameRuntime(),
       (await getCaptureAssetService()).getDirectionSetup(),
     ]);
-    const [profiles, status] = await Promise.all([
+    const [profiles, status, entryRouteProfiles, entryFallback] = await Promise.all([
       runtime.repository.listOverviewPairProfiles(),
       runtime.repository.getOverviewStatus(),
+      runtime.repository.listEntryRouteProfiles(),
+      runtime.repository.getEntryFallbackStatus(),
     ]);
     return {
       success: true,
@@ -1867,6 +1869,22 @@ export async function getVehicleOverviewSetup() {
           cameraName: profile.cameraName,
           directions: [profile.frontDirectionLabel, profile.rearDirectionLabel].filter(Boolean),
         })),
+        entryRouteProfiles: entryRouteProfiles.map((profile) => ({
+          id: Number(profile.id),
+          routeName: profile.route_name,
+          targetCameraName: profile.target_camera_name,
+          targetDirectionLabel: profile.target_direction_label,
+          sourceDirectionLabel: profile.source_direction_label,
+          sourceCameraNames: profile.source_camera_names || [],
+          expectedDeltaMs: Number(profile.expected_delta_ms),
+          toleranceMs: Number(profile.tolerance_ms),
+          eventWindowMs: Number(profile.event_window_ms),
+          minimumSourceCount: Number(profile.minimum_source_count),
+          priority: Number(profile.priority),
+          enabled: profile.enabled === true,
+          revision: Number(profile.revision || 1),
+        })),
+        entryFallback,
         status,
       },
     };
@@ -1969,6 +1987,130 @@ export async function setVehicleOverviewPairSharingMode(mode) {
     };
   } catch (error) {
     return visualSearchFailure(error, "Unable to update Street pair sharing.");
+  }
+}
+
+export async function setVehicleEntryFallbackMode(input = {}) {
+  const principal = await requirePermission("system.manage_settings");
+  try {
+    const mode = String(input.mode || "").trim().toLowerCase();
+    if (!["off", "shadow", "active"].includes(mode)) {
+      throw new Error("Select Off, Shadow, or Active for Entry LPR fallback.");
+    }
+    const observationStartedAt = input.observationStartedAt
+      ? new Date(input.observationStartedAt)
+      : null;
+    if (observationStartedAt && Number.isNaN(observationStartedAt.getTime())) {
+      throw new Error("Enter a valid observation start time.");
+    }
+    const runtime = await getBlueIrisVehicleFrameRuntime();
+    const saved = await runtime.repository.setEntryFallbackMode(mode, {
+      observationStartedAt: observationStartedAt?.toISOString() || null,
+      actor: principal,
+    });
+    if (mode !== "off") runtime.worker.wake();
+    revalidatePath("/settings/vehicle-intelligence");
+    revalidatePath("/settings/vehicle-intelligence/vehicle-views");
+    return {
+      success: true,
+      data: {
+        mode: saved.mode,
+        observationStartedAt: saved.observation_started_at,
+        updatedAt: saved.updated_at,
+      },
+    };
+  } catch (error) {
+    return visualSearchFailure(error, "Unable to update Entry LPR fallback.");
+  }
+}
+
+export async function saveVehicleEntryRouteProfile(input = {}) {
+  const principal = await requirePermission("system.manage_settings");
+  try {
+    const routeName = String(input.routeName || "").trim();
+    const targetCameraName = String(input.targetCameraName || "").trim();
+    const targetDirectionLabel = String(input.targetDirectionLabel || "").trim();
+    const sourceDirectionLabel = String(input.sourceDirectionLabel || "").trim();
+    const sourceCameraNames = [...new Set(
+      (Array.isArray(input.sourceCameraNames) ? input.sourceCameraNames : [])
+        .map((value) => String(value || "").trim())
+        .filter(Boolean)
+    )];
+    const expectedDeltaMs = Number.parseInt(String(input.expectedDeltaMs ?? 0), 10);
+    const toleranceMs = Number.parseInt(String(input.toleranceMs ?? 3000), 10);
+    const eventWindowMs = Number.parseInt(String(input.eventWindowMs ?? 3000), 10);
+    const priority = Number.parseInt(String(input.priority ?? 0), 10);
+    if (!routeName || !targetCameraName || !targetDirectionLabel || !sourceDirectionLabel) {
+      throw new Error("Route name, target camera, target direction, and Entry direction are required.");
+    }
+    if (sourceCameraNames.length !== 2) {
+      throw new Error("Select exactly two different Entry LPR cameras for corroboration.");
+    }
+    if (sourceCameraNames.some((camera) => camera.toLowerCase() === targetCameraName.toLowerCase())) {
+      throw new Error("An Entry source camera must be different from the Street target camera.");
+    }
+    if (!Number.isInteger(expectedDeltaMs) || expectedDeltaMs < -30_000 || expectedDeltaMs > 30_000) {
+      throw new Error("Expected timing delta must be between -30000 and 30000 milliseconds.");
+    }
+    if (!Number.isInteger(toleranceMs) || toleranceMs < 250 || toleranceMs > 15_000) {
+      throw new Error("Route timing tolerance must be between 250 and 15000 milliseconds.");
+    }
+    if (!Number.isInteger(eventWindowMs) || eventWindowMs < 250 || eventWindowMs > 5_000) {
+      throw new Error("Entry camera event window must be between 250 and 5000 milliseconds.");
+    }
+    if (!Number.isInteger(priority) || priority < 0 || priority > 100) {
+      throw new Error("Route priority must be between 0 and 100.");
+    }
+    const directionSetup = await (await getCaptureAssetService()).getDirectionSetup();
+    const profiles = new Map(directionSetup.profiles.map((profile) => [profile.cameraName, profile]));
+    const targetProfile = profiles.get(targetCameraName);
+    if (!targetProfile || ![targetProfile.frontDirectionLabel, targetProfile.rearDirectionLabel].includes(targetDirectionLabel)) {
+      throw new Error("Select a configured direction from the chosen Street target camera.");
+    }
+    for (const cameraName of sourceCameraNames) {
+      const sourceProfile = profiles.get(cameraName);
+      if (!sourceProfile || ![sourceProfile.frontDirectionLabel, sourceProfile.rearDirectionLabel].includes(sourceDirectionLabel)) {
+        throw new Error(`The ${cameraName} camera is not configured for ${sourceDirectionLabel}.`);
+      }
+    }
+    const runtime = await getBlueIrisVehicleFrameRuntime();
+    const saved = await runtime.repository.saveEntryRouteProfile({
+      routeName,
+      targetCameraName,
+      targetDirectionLabel,
+      sourceDirectionLabel,
+      sourceCameraNames,
+      expectedDeltaMs,
+      toleranceMs,
+      eventWindowMs,
+      minimumSourceCount: 2,
+      priority,
+      enabled: input.enabled !== false,
+    }, principal);
+    runtime.worker.wake();
+    revalidatePath("/settings/vehicle-intelligence/vehicle-views");
+    return { success: true, data: { id: Number(saved.id), revision: Number(saved.revision) } };
+  } catch (error) {
+    return visualSearchFailure(error, "Unable to save this Entry LPR route.");
+  }
+}
+
+export async function deleteVehicleEntryRouteProfile(profileId) {
+  const principal = await requirePermission("system.manage_settings");
+  try {
+    const normalizedId = Number.parseInt(String(profileId), 10);
+    if (!Number.isSafeInteger(normalizedId) || normalizedId <= 0) {
+      throw new Error("A valid Entry LPR route profile is required.");
+    }
+    const runtime = await getBlueIrisVehicleFrameRuntime();
+    const deleted = await runtime.repository.deleteEntryRouteProfile(normalizedId, principal);
+    if (!deleted) {
+      throw new Error("This route already has audit decisions and cannot be deleted; disable it instead.");
+    }
+    revalidatePath("/settings/vehicle-intelligence/vehicle-views");
+    return { success: true };
+  } catch (error) {
+    return visualSearchFailure(error, "Unable to delete this Entry LPR route.");
   }
 }
 
