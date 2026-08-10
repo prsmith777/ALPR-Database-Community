@@ -18,13 +18,27 @@ reliable background processing.
 6. Audit sensitive searches, exports, corrections, rule changes, and
    destructive maintenance.
 
-## Release candidate baseline — August 8, 2026
+## Release candidate baseline — August 10, 2026
 
 - Application `0.1.18` candidate includes named users and roles, evidence-preserving plate
   review, filter-respecting exports, the searchable help center, local privacy
   controls, and viewport-safe date/help navigation. Monitored Plates now lives
   inside Known Plates with reason, priority, monitoring-since, and read-history
   context; the former `/flagged` route redirects to that view.
+- Dashboard Time Distribution columns now open Live Feed with the exact selected
+  Last 24 Hours, Last 3 Days, Last 7 Days, Last 30 Days, or All Time window,
+  browser-local hour, and every selected camera filter. The dashboard camera
+  control accepts multiple cameras while an empty selection means All cameras;
+  that selection drives every dashboard card, chart, preview, and result link.
+  Total Reads, Unique Vehicles, and New Vehicles are also linked to matching
+  Live Feed result sets. Unique and new result sets show one latest read per
+  corrected/effective plate identity while preserving the original OCR evidence.
+  Top Plates quick-look previews use the newest available Vehicle View from the
+  same four recent reads in the bottom-right tile, while retaining four plate
+  captures when none of those reads has an overview.
+  Live Feed review identifies the camera in its popup summary. Live Feed and Plate Database repeat result counts and
+  Previous/Next controls above and below their tables, with page-top and
+  page-bottom jumps in both rows.
 - Unified notifications now include migration preview, idempotent disabled
   copies, restricted disabled-rule editing, no-delivery simulation, shadow
   comparison, administrator approval evidence, atomic per-rule cutover, and
