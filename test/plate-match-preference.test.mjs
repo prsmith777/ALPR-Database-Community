@@ -3,7 +3,9 @@ import test from "node:test";
 
 import {
   normalizePlateMatchPreference,
+  plateMatchPreferenceCookieName,
   plateMatchPreferenceKey,
+  readPlateMatchCookiePreference,
   readPlateMatchPreference,
   writePlateMatchPreference,
 } from "../lib/plate-match-preference.mjs";
@@ -42,5 +44,28 @@ test("invalid stored choices safely fall back to Balanced", () => {
   assert.throws(
     () => plateMatchPreferenceKey("unknown"),
     /Unsupported plate-matching preference surface/
+  );
+});
+
+test("recognition-feed choices are mirrored to a server-readable cookie", () => {
+  const storage = memoryStorage();
+  const documentRef = { cookie: "" };
+
+  writePlateMatchPreference(
+    "recognition-feed",
+    "broad",
+    storage,
+    documentRef
+  );
+
+  assert.match(
+    documentRef.cookie,
+    new RegExp(`${plateMatchPreferenceCookieName("recognition-feed")}=broad`)
+  );
+  assert.equal(
+    readPlateMatchCookiePreference("recognition-feed", {
+      get: () => ({ value: "broad" }),
+    }),
+    "broad"
   );
 });

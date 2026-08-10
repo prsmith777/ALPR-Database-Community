@@ -18,7 +18,10 @@ import TitleNavbar from "@/components/layout/LiveFeedNav";
 
 import { Button } from "@/components/ui/button";
 import { unstable_noStore as noStore } from "next/cache";
+import { cookies } from "next/headers";
 import { requirePagePermission } from "@/lib/page-permission.mjs";
+import { readPlateMatchCookiePreference } from "@/lib/plate-match-preference.mjs";
+import { readTablePageSizeCookiePreference } from "@/lib/table-page-size-preference.mjs";
 import {
   DASHBOARD_FEED_METRIC_LABELS,
   DASHBOARD_TIME_FRAME_LABELS,
@@ -50,6 +53,15 @@ export default async function LivePlates(props) {
   noStore(); // Opt-out of data caching for this component and its data fetches
 
   const searchParams = await props.searchParams;
+  const cookieStore = await cookies();
+  const defaultMatchMode = readPlateMatchCookiePreference(
+    "recognition-feed",
+    cookieStore
+  );
+  const defaultPageSize = readTablePageSizeCookiePreference(
+    "live-feed",
+    cookieStore
+  );
   const dashboardTimestampRange = timestampRange(
     searchParams?.timestampFrom,
     searchParams?.timestampTo
@@ -64,11 +76,11 @@ export default async function LivePlates(props) {
 
   const params = {
     page: parseInt(searchParams?.page || "1"),
-    pageSize: parseInt(searchParams?.pageSize || "25"),
+    pageSize: parseInt(searchParams?.pageSize || String(defaultPageSize)),
     search: searchParams?.search || "",
     matchMode:
       searchParams?.matchMode ||
-      "balanced",
+      defaultMatchMode,
     tags: searchParamList(searchParams?.tag).filter((tag) => tag !== "all"),
     dateRange:
       searchParams?.dateFrom && searchParams?.dateTo
@@ -118,6 +130,8 @@ export default async function LivePlates(props) {
             matchingSettings={config?.plateMatching}
             dashboardTimeFrame={dashboardTimeFrame}
             dashboardMetric={dashboardMetric}
+            defaultMatchMode={defaultMatchMode}
+            defaultPageSize={defaultPageSize}
           />
         </Suspense>
       </TitleNavbar>

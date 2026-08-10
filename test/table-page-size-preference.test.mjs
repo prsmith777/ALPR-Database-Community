@@ -4,6 +4,8 @@ import test from "node:test";
 import {
   normalizeTablePageSize,
   readTablePageSizePreference,
+  readTablePageSizeCookiePreference,
+  tablePageSizePreferenceCookieName,
   tablePageSizePreferenceKey,
   writeTablePageSizePreference,
 } from "../lib/table-page-size-preference.mjs";
@@ -57,13 +59,30 @@ test("blocked browser storage safely falls back", () => {
   assert.equal(writeTablePageSizePreference("live-feed", 250, blockedStorage), 250);
 });
 
-test("Live Feed URL values override storage while selections update it", async () => {
+test("Live Feed preferences use a server-readable cookie without a hydration navigation", async () => {
   const wrapper = await readFile(
     new URL("../components/PlateTableWrapper.jsx", import.meta.url),
     "utf8"
   );
+  const page = await readFile(
+    new URL("../app/live_feed/page.jsx", import.meta.url),
+    "utf8"
+  );
+  const documentRef = { cookie: "" };
 
-  assert.match(wrapper, /if \(!params\.get\("pageSize"\)\)/);
-  assert.match(wrapper, /updates\.pageSize = String\(preferredPageSize\)/);
+  writeTablePageSizePreference("live-feed", 100, memoryStorage(), documentRef);
+
+  assert.match(
+    documentRef.cookie,
+    new RegExp(`${tablePageSizePreferenceCookieName("live-feed")}=100`)
+  );
+  assert.equal(
+    readTablePageSizeCookiePreference("live-feed", {
+      get: () => ({ value: "100" }),
+    }),
+    100
+  );
+  assert.match(page, /readTablePageSizeCookiePreference/);
+  assert.doesNotMatch(wrapper, /router\.replace\(/);
   assert.match(wrapper, /writeTablePageSizePreference\("live-feed"/);
 });

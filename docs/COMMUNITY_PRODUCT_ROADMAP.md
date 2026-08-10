@@ -41,8 +41,14 @@ reliable background processing.
   Live Feed result sets. Unique and new result sets show one latest read per
   corrected/effective plate identity while preserving the original OCR evidence.
   Top Plates quick-look previews use the newest available Vehicle View from the
-  same four recent reads in the bottom-right tile, while retaining four plate
-  captures when none of those reads has an overview.
+  same four recent reads in the bottom-right tile. That thumbnail is framed
+  around the stored vehicle detection while the original full-resolution overview
+  remains unchanged; four plate captures remain when none has an overview.
+  Live Feed now resolves saved page-size and matching preferences on the first
+  server response, reserves a stable two-line timestamp layout before hydration,
+  and pages inexpensive read identities before joining tags, direction, vehicle
+  attributes, and image presentation data. Initial loads and filter changes no
+  longer aggregate the complete read history before applying the page limit.
   Live Feed review identifies the camera in its popup summary. Live Feed and Plate Database repeat result counts and
   Previous/Next controls above and below their tables, with page-top and
   page-bottom jumps in both rows.
@@ -560,9 +566,22 @@ notes. Updates remain externally orchestrated.
   Clipboard exports. Recovery requires an exact local start date/time and a
   separate read-only preview before queuing. It requeues only pending, stuck,
   and allowlisted transient operational failures once per read; it cannot
-  silently reset itself forever. The export identity remains read-owned in this
-  corrective release, so paired Street LPR 1/2 reads may each create one export;
-  physical-passage sharing remains the next separately observed release.
+  silently reset itself forever. The export identity remains read-owned, so
+  paired Street LPR 1/2 reads may each create one export when both primary jobs
+  succeed. The paired-read phase is now implemented as a separately observable,
+  shadow-first fallback. It derives each read's Overview anchor from the stored
+  profile snapshot, then requires exact corrected plate identity, the same
+  validated Blue Iris direction, different Street LPR cameras, the same Overview
+  source, camera order, bounded anchor agreement, and unique one-to-one ownership.
+  Shadow mode records proposals and rejections without changing data. Active
+  mode may copy only an `overview_primary` image into a separate target-read file
+  after the companion terminally fails with `VEHICLE_NOT_VISIBLE` or
+  `RECORDING_UNAVAILABLE`; the final write rechecks both reads, the source path,
+  profile revisions, and claim state. Direct source-read provenance is retained.
+  This fallback cannot overwrite a ready image, chain from a shared image, or
+  fill ambiguity, multi-vehicle, nighttime, daylight, direction, profile, or
+  configuration outcomes. It intentionally does not delay or coalesce two fresh
+  primary exports.
   Street Overview requires no motion or web-request action.
   Monochrome plate reads remain terminal `Unavailable nighttime` and make no
   timeline requests. The former candidate tables and historical records remain
@@ -603,17 +622,19 @@ be restored. Monochrome nighttime captures do not receive a direction result.
   missing, shorthand, and unmapped trigger values on the ReID fallback path.
   Mapping revisions remain independent from ReID calibration, and validation
   totals and recent observations stay scoped to one camera.
-- Validate the corrected plate-anchored daytime overview pipeline with live
-  production traffic.
+- Continue validating the corrected plate-anchored daytime overview pipeline
+  with live production traffic.
   Confirm the signed Street Overview timing profiles for Street LPR 1 (normally
   within about one second) and Street LPR 2 (roughly four to five seconds).
-  Follow with a separate paired-Street-read sharing release that requires plate,
-  direction, camera-order, and derived-anchor agreement and never auto-fills an
-  ambiguous outcome. Then implement and validate the two explicitly allowlisted
-  Entry LPR driveway routes using asynchronous read-to-read matching and dual-
-  camera corroboration. Review every ambiguous or unmatched outcome before
-  changing tolerances; do not synthesize Street reads, enable nighttime
-  processing, or restore the retired clip-based direction analyzer.
+  Observe the implemented paired-Street-read sharing release in Shadow first;
+  manually verify its plate, direction, camera-order, derived-anchor, and
+  one-to-one decisions before enabling guarded writes. It never auto-fills an
+  ambiguous or multi-vehicle outcome. The remaining Vehicle View implementation
+  phase is the two explicitly allowlisted Entry LPR driveway routes using
+  asynchronous read-to-read matching and dual-camera corroboration. Review every
+  ambiguous or unmatched outcome before changing tolerances; do not synthesize
+  Street reads, enable nighttime processing, or restore the retired clip-based
+  direction analyzer.
 - Expand Vehicle ReID calibration with larger labeled local samples and
   camera-pair reporting before making stronger labels or applying thresholds.
 - Consider pgvector only when the bounded in-process cosine scan no longer

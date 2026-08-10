@@ -72,6 +72,7 @@ import {
   readDashboardFilterPreference,
   writeDashboardFilterPreference,
 } from "@/lib/dashboard-filter-preference.mjs";
+import { getVehiclePreviewCropStyle } from "@/lib/vehicle-image-preview.mjs";
 
 export function formatTimeRange(hour, timeFormat) {
   if (timeFormat === 24) {
@@ -161,33 +162,47 @@ const PlateImagePreviews = ({
 
   return (
     <div className="grid grid-cols-2 gap-2">
-      {quickLookImages.map((img, idx) => (
-        <div
-          key={idx}
-          className="relative aspect-video bg-muted rounded-sm overflow-hidden"
-        >
-          <Image
-            src={
-              img.isOverview
-                ? `/images/${img.vehicle_image_path}`
-                : img.thumbnail_path
-                ? `/images/${img.thumbnail_path}`
-                : img.image_data
-                ? `data:image/jpeg;base64,${img.image_data}`
-                : "/placeholder.jpg"
-            }
-            alt={`${img.isOverview ? "Vehicle overview" : "Plate capture"} from ${new Date(img.timestamp).toLocaleString()}`}
-            unoptimized
-            fill
-            className="object-cover"
-          />
-          <div className="absolute bottom-0 left-0 right-0 px-2 py-1 text-[10px] bg-black/50 text-white">
-            {img.isOverview
-              ? "Overview"
-              : new Date(img.timestamp).toLocaleTimeString()}
+      {quickLookImages.map((img, idx) => {
+        const overviewCropStyle = img.isOverview
+          ? getVehiclePreviewCropStyle(
+              img.vehicle_image_detection_box,
+              img.vehicle_image_width,
+              img.vehicle_image_height
+            )
+          : null;
+        return (
+          <div
+            key={idx}
+            className="relative aspect-video bg-muted rounded-sm overflow-hidden"
+          >
+            <div
+              className={overviewCropStyle ? undefined : "absolute inset-0"}
+              style={overviewCropStyle || undefined}
+            >
+              <Image
+                src={
+                  img.isOverview
+                    ? `/images/${img.vehicle_image_path}`
+                    : img.thumbnail_path
+                    ? `/images/${img.thumbnail_path}`
+                    : img.image_data
+                    ? `data:image/jpeg;base64,${img.image_data}`
+                    : "/placeholder.jpg"
+                }
+                alt={`${img.isOverview ? "Vehicle overview" : "Plate capture"} from ${new Date(img.timestamp).toLocaleString()}`}
+                unoptimized
+                fill
+                className={overviewCropStyle ? "object-fill" : "object-cover"}
+              />
+            </div>
+            <div className="absolute bottom-0 left-0 right-0 px-2 py-1 text-[10px] bg-black/50 text-white">
+              {img.isOverview
+                ? "Overview"
+                : new Date(img.timestamp).toLocaleTimeString()}
+            </div>
           </div>
-        </div>
-      ))}
+        );
+      })}
     </div>
   );
 };
