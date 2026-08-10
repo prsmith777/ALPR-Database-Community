@@ -291,6 +291,25 @@ function DirectionBadge({ plate }) {
   );
 }
 
+function PlateTimestamp({ timestamp, timeFormat }) {
+  const value = new Date(timestamp);
+  if (Number.isNaN(value.getTime())) {
+    return <span className="text-muted-foreground">—</span>;
+  }
+
+  return (
+    <time
+      dateTime={value.toISOString()}
+      className="block whitespace-nowrap leading-tight"
+    >
+      <span className="block">{value.toLocaleDateString("en-US")}</span>
+      <span className="mt-0.5 block">
+        {value.toLocaleTimeString("en-US", { hour12: timeFormat === 12 })}
+      </span>
+    </time>
+  );
+}
+
 export default function PlateTable({
   data,
   loading,
@@ -2434,9 +2453,10 @@ export default function PlateTable({
                         <DirectionBadge plate={plate} />
                       </TableCell>
                       <TableCell className="text-xs sm:text-sm">
-                        {new Date(plate.timestamp).toLocaleString("en-US", {
-                          hour12: timeFormat === 12,
-                        })}
+                        <PlateTimestamp
+                          timestamp={plate.timestamp}
+                          timeFormat={timeFormat}
+                        />
                       </TableCell>
 
                       <TableCell className="hidden w-px whitespace-nowrap px-2 sm:table-cell">

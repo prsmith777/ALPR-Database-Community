@@ -1947,6 +1947,31 @@ export async function deleteVehicleOverviewPairProfile(profileId) {
   }
 }
 
+export async function setVehicleOverviewPairSharingMode(mode) {
+  const principal = await requirePermission("system.manage_settings");
+  try {
+    const normalizedMode = String(mode || "").trim().toLowerCase();
+    if (!["off", "shadow", "active"].includes(normalizedMode)) {
+      throw new Error("Select Off, Shadow, or Active for Street pair sharing.");
+    }
+    const runtime = await getBlueIrisVehicleFrameRuntime();
+    const saved = await runtime.repository.setStreetPairSharingMode(normalizedMode, principal);
+    if (normalizedMode !== "off") runtime.worker.wake();
+    revalidatePath("/settings/vehicle-intelligence");
+    revalidatePath("/settings/vehicle-intelligence/vehicle-views");
+    return {
+      success: true,
+      data: {
+        mode: saved.mode,
+        observationStartedAt: saved.observation_started_at,
+        updatedAt: saved.updated_at,
+      },
+    };
+  } catch (error) {
+    return visualSearchFailure(error, "Unable to update Street pair sharing.");
+  }
+}
+
 export async function retryBlueIrisVehicleFrameForRead(readId) {
   await requirePermission("plate.review");
   try {

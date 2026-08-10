@@ -14,6 +14,7 @@ import {
   runVehicleDirectionBackfillBatch,
   saveVehicleDirectionProfile,
   saveVehicleOverviewPairProfile,
+  setVehicleOverviewPairSharingMode,
   deleteVehicleOverviewPairProfile,
   cancelBlueIrisVehicleFrameHistory,
   queueBlueIrisVehicleFrameHistory,
@@ -86,6 +87,9 @@ export default function VehicleIntelligenceSettings({
   const [overviewRecoveryPreview, setOverviewRecoveryPreview] = useState(null);
   const [cancelFrameHistoryOpen, setCancelFrameHistoryOpen] = useState(false);
   const [overviewSetup, setOverviewSetup] = useState(initialOverviewSetup);
+  const [pairSharingMode, setPairSharingMode] = useState(
+    initialOverviewSetup?.status?.pairSharing?.mode || "off"
+  );
   const [overviewDraft, setOverviewDraft] = useState(() => {
     const plateCamera = initialOverviewSetup?.plateCameras?.[0] || null;
     return {
@@ -114,6 +118,10 @@ export default function VehicleIntelligenceSettings({
     if (!profile) return;
     setDraft({ ...profile });
   }, [profile]);
+
+  useEffect(() => {
+    setPairSharingMode(overviewSetup?.status?.pairSharing?.mode || "off");
+  }, [overviewSetup?.status?.pairSharing?.mode]);
 
   useEffect(() => {
     const pending = Number(data.backfill?.pending || 0)
@@ -190,6 +198,22 @@ export default function VehicleIntelligenceSettings({
       if (!result.success) throw new Error(result.error);
       await reloadOverviewSetup();
       setMessage("Overview association removed.");
+    } catch (error) { setMessage(error.message); }
+    finally { setBusy(""); }
+  };
+
+  const savePairSharingMode = async () => {
+    setBusy("overview-pair-sharing");
+    setMessage("");
+    try {
+      const result = await setVehicleOverviewPairSharingMode(pairSharingMode);
+      if (!result.success) throw new Error(result.error);
+      await reloadOverviewSetup();
+      setMessage(pairSharingMode === "active"
+        ? "Companion overview sharing is active. Only one-to-one validated primary matches can fill safe companion failures."
+        : pairSharingMode === "shadow"
+          ? "Companion overview sharing is observing proposals only; no read or image is changed."
+          : "Companion overview sharing is paused.");
     } catch (error) { setMessage(error.message); }
     finally { setBusy(""); }
   };
@@ -595,6 +619,76 @@ export default function VehicleIntelligenceSettings({
                   </div>
                 </details>
               ) : null}
+
+              <div className="space-y-4 rounded-lg border p-4">
+                <div className="flex flex-wrap items-start justify-between gap-4">
+                  <div className="max-w-3xl">
+                    <div className="font-medium">Companion overview sharing</div>
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      When two configured plate cameras clearly captured the same plate and direction at the same derived Overview time, a validated primary image may fill one terminal companion failure. Matches require exact plate identity, different plate cameras, matching Blue Iris direction, profile timing agreement, and no competing read. Ambiguous, multi-vehicle, nighttime, configuration, and direction failures remain untouched.
+                    </p>
+                  </div>
+                  <Badge variant={overviewSetup?.status?.pairSharing?.mode === "active" ? "default" : "secondary"}>
+                    {overviewSetup?.status?.pairSharing?.mode === "active"
+                      ? "Active"
+                      : overviewSetup?.status?.pairSharing?.mode === "shadow"
+                        ? "Shadow only"
+                        : "Off"}
+                  </Badge>
+                </div>
+                <div className="grid grid-cols-2 gap-3 text-center sm:grid-cols-5">
+                  <div className="rounded-md border p-2"><div className="font-semibold">{Number(overviewSetup?.status?.pairSharing?.proposed || 0).toLocaleString()}</div><div className="text-xs text-muted-foreground">proposed</div></div>
+                  <div className="rounded-md border p-2"><div className="font-semibold">{Number(overviewSetup?.status?.pairSharing?.processing || 0).toLocaleString()}</div><div className="text-xs text-muted-foreground">processing</div></div>
+                  <div className="rounded-md border p-2"><div className="font-semibold">{Number(overviewSetup?.status?.pairSharing?.applied || 0).toLocaleString()}</div><div className="text-xs text-muted-foreground">shared</div></div>
+                  <div className="rounded-md border p-2"><div className="font-semibold">{Number(overviewSetup?.status?.pairSharing?.rejected || 0).toLocaleString()}</div><div className="text-xs text-muted-foreground">ambiguous rejected</div></div>
+                  <div className="rounded-md border p-2"><div className="font-semibold">{Number(overviewSetup?.status?.pairSharing?.failed || 0).toLocaleString()}</div><div className="text-xs text-muted-foreground">copy failures</div></div>
+                </div>
+                <div className="flex flex-wrap items-end gap-3">
+                  <div className="min-w-[15rem] space-y-2">
+                    <Label>Sharing mode</Label>
+                    <Select value={pairSharingMode} onValueChange={setPairSharingMode}>
+                      <SelectTrigger><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="off">Off</SelectItem>
+                        <SelectItem value="shadow">Shadow proposals only</SelectItem>
+                        <SelectItem value="active">Active guarded sharing</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <Button
+                    type="button"
+                    variant={pairSharingMode === "active" ? "default" : "secondary"}
+                    disabled={Boolean(busy) || pairSharingMode === overviewSetup?.status?.pairSharing?.mode}
+                    onClick={savePairSharingMode}
+                  >
+                    {busy === "overview-pair-sharing" ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
+                    Save sharing mode
+                  </Button>
+                </div>
+                {overviewSetup?.status?.pairSharing?.recent?.length ? (
+                  <details className="rounded-md border">
+                    <summary className="cursor-pointer px-3 py-2 text-sm font-medium">Recent pair decisions</summary>
+                    <div className="overflow-x-auto border-t">
+                      <table className="w-full min-w-[760px] text-left text-xs">
+                        <thead className="border-b text-muted-foreground">
+                          <tr><th className="px-3 py-2">Plate</th><th className="px-3 py-2">Source to target</th><th className="px-3 py-2">Direction</th><th className="px-3 py-2">Anchor delta</th><th className="px-3 py-2">Decision</th></tr>
+                        </thead>
+                        <tbody>
+                          {overviewSetup.status.pairSharing.recent.map((item) => (
+                            <tr key={item.id} className="border-b last:border-0">
+                              <td className="px-3 py-2 font-mono">{item.plateNumber || "Unknown"}</td>
+                              <td className="px-3 py-2">{item.sourceReadId ? `#${item.sourceReadId} ${item.sourceCameraName}` : "No unique source"} to #{item.targetReadId} {item.targetCameraName}</td>
+                              <td className="px-3 py-2">{item.directionLabel || "Unknown"}</td>
+                              <td className="px-3 py-2 font-mono">{item.anchorDeltaMs == null ? "n/a" : `${item.anchorDeltaMs} ms`}</td>
+                              <td className="px-3 py-2">{item.status}: {item.errorCode || item.reason}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </details>
+                ) : null}
+              </div>
 
               <div className="rounded-lg border p-4">
                 <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">

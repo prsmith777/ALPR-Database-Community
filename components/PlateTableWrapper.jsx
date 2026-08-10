@@ -4,11 +4,9 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import PlateTable from "./PlateTable";
 import { useEffect, useRef, useState, useCallback } from "react";
 import {
-  readPlateMatchPreference,
   writePlateMatchPreference,
 } from "@/lib/plate-match-preference.mjs";
 import {
-  readTablePageSizePreference,
   writeTablePageSizePreference,
 } from "@/lib/table-page-size-preference.mjs";
 import { scrollMainToTop } from "@/lib/page-scroll.mjs";
@@ -43,15 +41,15 @@ export default function PlateTableWrapper({
   matchingSettings,
   dashboardTimeFrame,
   dashboardMetric,
+  defaultMatchMode = "balanced",
+  defaultPageSize = 25,
 }) {
   const router = useRouter();
   const pathname = usePathname();
   const params = useSearchParams();
   const preferredMatchMode =
-    params.get("fuzzySearch") === "true"
-      ? "balanced"
-      : readPlateMatchPreference("recognition-feed");
-  const preferredPageSize = readTablePageSizePreference("live-feed");
+    params.get("fuzzySearch") === "true" ? "balanced" : defaultMatchMode;
+  const preferredPageSize = defaultPageSize;
 
   // State for live data, initially populated with server-rendered data
   // This will be updated by SSE.
@@ -294,41 +292,6 @@ export default function PlateTableWrapper({
     },
     [params]
   );
-
-  useEffect(() => {
-    const currentPage = parseInt(params.get("page") || "1");
-    const pageSize = parseInt(params.get("pageSize") || "25");
-    const adjacentPages = [];
-    if (currentPage > 1) adjacentPages.push(currentPage - 1);
-    if (currentPage * pageSize < total) adjacentPages.push(currentPage + 1);
-    adjacentPages.forEach((page) => {
-      router.prefetch(
-        `${pathname}?${createQueryString({ page: page.toString() })}`
-      );
-    });
-  }, [createQueryString, params, pathname, router, total]);
-
-  useEffect(() => {
-    const updates = {};
-    if (!params.get("matchMode")) {
-      updates.matchMode = preferredMatchMode;
-      updates.fuzzySearch = null;
-    }
-    if (!params.get("pageSize")) {
-      updates.pageSize = String(preferredPageSize);
-    }
-    if (Object.keys(updates).length > 0) {
-      const queryString = createQueryString(updates);
-      router.replace(`${pathname}?${queryString}`, { scroll: false });
-    }
-  }, [
-    createQueryString,
-    params,
-    pathname,
-    preferredMatchMode,
-    preferredPageSize,
-    router,
-  ]);
 
   const handleUpdateFilters = useCallback(
     (newParams) => {

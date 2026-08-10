@@ -187,11 +187,16 @@ test("Top Plates quick look uses an available overview only in its fourth tile",
   );
 
   assert.match(previewQuery, /vehicle_image_path/);
+  assert.match(previewQuery, /vehicle_image_detection_box/);
+  assert.match(previewQuery, /vehicle_image_width/);
+  assert.match(previewQuery, /vehicle_image_height/);
   assert.match(previewQuery, /ORDER BY timestamp DESC\s+LIMIT 4/);
   assert.match(dashboard, /const overviewImage = images\.find\(\(image\) => image\.vehicle_image_path\)/);
   assert.match(dashboard, /index === 3 && overviewImage/);
   assert.match(dashboard, /quickLookImages\.map/);
   assert.match(dashboard, /img\.isOverview\s+\? `\/images\/\$\{img\.vehicle_image_path\}`/);
+  assert.match(dashboard, /getVehiclePreviewCropStyle/);
+  assert.match(dashboard, /img\.vehicle_image_detection_box/);
   assert.match(dashboard, /img\.isOverview\s+\? "Overview"/);
 });
 

@@ -133,6 +133,45 @@ test("read-owned overview work resolves an exact direction profile and source ca
   assert.equal(servicesCreated, 2);
 });
 
+test("an active guarded pair share runs before another Blue Iris overview export", async () => {
+  let overviewClaimed = false;
+  let shared = false;
+  const queue = new BlueIrisVehicleFrameQueue({
+    repository: {
+      async getQueueStatus() { return { historicalPaused: true }; },
+      async claimNextOverviewRead() { overviewClaimed = true; return null; },
+      async claimNext() { assert.fail("pair sharing must finish before legacy work"); },
+    },
+    fileStorage: {},
+    loadConfig: async () => configured,
+    clientFactory: () => ({
+      async testConnection() { return { cameras: [] }; },
+    }),
+    timelineExportFactory: () => ({
+      async sweepLocalWorkspaces() {},
+      async reconcileRemoteExports() {},
+    }),
+    serviceFactory: () => ({}),
+    pairSharingFactory: () => ({
+      async processNext() {
+        shared = true;
+        return {
+          kind: "overview_pair_share",
+          status: "shared",
+          sourceReadId: 101,
+          targetReadId: 102,
+        };
+      },
+    }),
+  });
+  const result = await queue.processBatch({ limit: 1 });
+  assert.equal(shared, true);
+  assert.equal(overviewClaimed, false);
+  assert.equal(result.processed, 1);
+  assert.equal(result.succeeded, 1);
+  assert.equal(result.results[0].kind, "overview_pair_share");
+});
+
 test("persisted candidate rows are no longer claimed or associated into live overview reads", async () => {
   const queue = new BlueIrisVehicleFrameQueue({
     repository: {
@@ -587,6 +626,28 @@ test("overview status reports the active read queue and stable export ledger", a
       video_width: null,
       video_height: null,
     }] },
+    { rows: [{
+      mode: "shadow",
+      observation_started_at: "2026-08-10T12:00:00.000Z",
+      updated_at: "2026-08-10T12:00:00.000Z",
+      proposed: 2,
+      processing: 0,
+      applied: 0,
+      rejected: 1,
+      failed: 0,
+    }] },
+    { rows: [{
+      id: 5,
+      source_read_id: 39667,
+      target_read_id: 39668,
+      status: "proposed",
+      decision_reason: "UNIQUE_STREET_PAIR",
+      plate_number_snapshot: "ABC123",
+      direction_label_snapshot: "Eastbound",
+      source_camera_name_snapshot: "Street LPR 1",
+      target_camera_name_snapshot: "Street LPR 2",
+      anchor_delta_ms: 100,
+    }] },
   ];
   const repository = new BlueIrisVehicleFrameRepository({
     async query(sql) {
@@ -604,12 +665,18 @@ test("overview status reports the active read queue and stable export ledger", a
   assert.equal(status.recentJobs[0].readId, 39667);
   assert.equal(status.recentJobs[0].automaticStartCount, 1);
   assert.equal(status.recentJobs[0].remoteUriKnown, true);
+  assert.equal(status.pairSharing.mode, "shadow");
+  assert.equal(status.pairSharing.proposed, 2);
+  assert.equal(status.pairSharing.rejected, 1);
+  assert.equal(status.pairSharing.recent[0].targetReadId, 39668);
   assert.match(statements[0], /FROM public\.plate_reads/);
   assert.doesNotMatch(statements[0], /vehicle_overview_candidates/);
   assert.match(statements[1], /FROM public\.blue_iris_timeline_exports/);
   assert.match(statements[2], /source_role = 'primary'/);
   assert.match(statements[3], /LEFT JOIN LATERAL/);
   assert.match(statements[3], /LIMIT 25/);
+  assert.match(statements[4], /vehicle_overview_pair_sharing_settings/);
+  assert.match(statements[5], /vehicle_overview_read_shares/);
 });
 
 test("expired second-attempt overview claims are terminalized instead of remaining stuck", async () => {
