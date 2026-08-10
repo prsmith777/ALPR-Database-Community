@@ -690,9 +690,11 @@ export default function SettingsForm({
           </TabsTrigger>
           <TabsTrigger value="cleanup" className="gap-2 py-2">
             <Trash2 className="h-4 w-4" aria-hidden="true" />Cleanup
-            <span className="rounded-full bg-muted px-2 py-0.5 text-xs">
-              {initialStorageMaintenance?.hostMaintenance?.worker?.status === "healthy" ? "Ready" : "Unavailable"}
-            </span>
+            {initialStorageMaintenance ? (
+              <span className="rounded-full bg-muted px-2 py-0.5 text-xs">
+                {initialStorageMaintenance.hostMaintenance?.worker?.status === "healthy" ? "Ready" : "Unavailable"}
+              </span>
+            ) : null}
           </TabsTrigger>
           <TabsTrigger value="privacy" className="gap-2 py-2">
             <Shield className="h-4 w-4" aria-hidden="true" />Privacy

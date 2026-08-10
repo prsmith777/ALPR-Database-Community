@@ -4,5 +4,5 @@ export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
 export default function DataPrivacyMonitoringPage() {
-  return <SettingsSectionPage sectionId="privacy" />;
+  return <SettingsSectionPage sectionId="privacy" privacyView="monitoring" />;
 }
