@@ -122,6 +122,27 @@ test("dashboard metric links preserve their result mode, time window, and camera
   }
 });
 
+test("Tag Distribution links preserve the tag, time window, and cameras", () => {
+  const { startDate, endDate } = getDashboardTimeWindow("7d", NOW);
+  const href = buildDashboardFeedHref({
+    tags: ["Family", "Suspicious"],
+    timeFrame: "7d",
+    startDate,
+    endDate,
+    timeZone: "America/Denver",
+    cameras: ["Street LPR", "Driveway LPR"],
+  });
+  const url = new URL(href, "http://alpr.test");
+
+  assert.deepEqual(url.searchParams.getAll("tag"), ["Family", "Suspicious"]);
+  assert.equal(url.searchParams.get("timestampFrom"), startDate.toISOString());
+  assert.equal(url.searchParams.get("timestampTo"), endDate.toISOString());
+  assert.deepEqual(url.searchParams.getAll("camera"), [
+    "Street LPR",
+    "Driveway LPR",
+  ]);
+});
+
 test("vehicle dashboard metrics and drill-downs use corrected plate identities", async () => {
   const [database, reviewRepository] = await Promise.all([
     readFile(new URL("../lib/db.js", import.meta.url), "utf8"),
@@ -161,6 +182,22 @@ test("Top Plates quick look uses an available overview only in its fourth tile",
   assert.match(dashboard, /quickLookImages\.map/);
   assert.match(dashboard, /img\.isOverview\s+\? `\/images\/\$\{img\.vehicle_image_path\}`/);
   assert.match(dashboard, /img\.isOverview\s+\? "Overview"/);
+});
+
+test("Tag Distribution slices and legend entries link to Recognition Feed", async () => {
+  const [dashboard, tagDistribution] = await Promise.all([
+    readFile(new URL("../app/dashboard/DashboardMetrics.jsx", import.meta.url), "utf8"),
+    readFile(new URL("../app/dashboard/TagDistribution.jsx", import.meta.url), "utf8"),
+  ]);
+
+  assert.match(dashboard, /const tagHref = \(tag\) =>/);
+  assert.match(dashboard, /getTagHref=\{tagHref\}/);
+  assert.match(dashboard, /totalHref=\{tagDistributionTotalHref\}/);
+  assert.match(tagDistribution, /router\.push\(getTagHref\(category\)\)/);
+  assert.match(tagDistribution, /href=\{getTagHref\(item\.category\)\}/);
+  assert.match(tagDistribution, /View \$\{item\.category\} plate reads in Recognition Feed/);
+  assert.match(tagDistribution, /View all tagged plate reads in Recognition Feed/);
+  assert.match(tagDistribution, /event\.key === "Enter" \|\| event\.key === " "/);
 });
 
 test("Recognition Feed applies dashboard timestamps and the browser-local hour", async () => {

@@ -9,8 +9,11 @@ import { PieChart, Pie, Cell, Label, ResponsiveContainer } from "recharts";
 import { ChartContainer, ChartTooltip } from "@/components/ui/chart";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useEffect, useState } from "react";
+import Link from "next/link";
+import { useRouter } from "next/navigation";
 
-export function TagDistributionChart({ data, loading }) {
+export function TagDistributionChart({ data, loading, getTagHref, totalHref }) {
+  const router = useRouter();
   const total = data.reduce((sum, item) => sum + item.count, 0);
   const [windowWidth, setWindowWidth] = useState(
     typeof window !== "undefined" ? window.innerWidth : 1200
@@ -110,11 +113,16 @@ export function TagDistributionChart({ data, loading }) {
                   innerRadius={innerRadius}
                   outerRadius={outerRadius}
                   paddingAngle={2}
+                  onClick={(entry) => {
+                    const category = entry?.category || entry?.payload?.category;
+                    if (category) router.push(getTagHref(category));
+                  }}
                 >
                   {data.map((entry, index) => (
                     <Cell
                       key={entry.category}
                       fill={entry.color || `var(--chart-${(index % 12) + 1})`}
+                      className="cursor-pointer outline-none"
                     />
                   ))}
                   <Label
@@ -124,6 +132,24 @@ export function TagDistributionChart({ data, loading }) {
                         y={viewBox.cy}
                         textAnchor="middle"
                         dominantBaseline="middle"
+                        role={totalHref ? "link" : undefined}
+                        tabIndex={totalHref ? 0 : undefined}
+                        aria-label={
+                          totalHref
+                            ? "View all tagged plate reads in Recognition Feed"
+                            : undefined
+                        }
+                        className={totalHref ? "cursor-pointer outline-none" : undefined}
+                        onClick={() => totalHref && router.push(totalHref)}
+                        onKeyDown={(event) => {
+                          if (
+                            totalHref &&
+                            (event.key === "Enter" || event.key === " ")
+                          ) {
+                            event.preventDefault();
+                            router.push(totalHref);
+                          }
+                        }}
                       >
                         <tspan
                           x={viewBox.cx}
@@ -149,9 +175,11 @@ export function TagDistributionChart({ data, loading }) {
         )}
         <div className="mt-2 sm:mt-4 space-y-1 text-[10px] sm:text-sm">
           {data.map((item) => (
-            <div
+            <Link
               key={item.category}
-              className="flex items-center justify-between"
+              href={getTagHref(item.category)}
+              className="flex items-center justify-between rounded-sm hover:text-primary hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              aria-label={`View ${item.category} plate reads in Recognition Feed`}
             >
               <div className="flex items-center gap-1 sm:gap-2">
                 <div
@@ -161,7 +189,7 @@ export function TagDistributionChart({ data, loading }) {
                 <span>{item.category}</span>
               </div>
               <span className="font-medium">{item.percentage}%</span>
-            </div>
+            </Link>
           ))}
         </div>
       </CardContent>
