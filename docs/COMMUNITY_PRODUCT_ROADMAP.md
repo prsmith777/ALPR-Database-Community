@@ -547,9 +547,10 @@ notes. Updates remain externally orchestrated.
   Active Vehicle View diagnostics report the real plate-read queue and stable
   export ledger rather than the retired candidate queue, including started,
   active, downloaded, failed, and duplicate-start-violation totals. Every
-  idempotent queue-kind constraint also accepts existing `overview` work
-  before later migration blocks run, so an upgrade cannot fail merely because
-  plate-owned overview rows already exist. The
+  idempotent queue-kind constraint also accepts existing `overview` work, and
+  every intermediate status constraint accepts active `processing` rows,
+  before later migration blocks run. An upgrade therefore cannot fail merely
+  because plate-owned overview work already exists or is in flight. The
   selected JPEG is written directly to its originating read as an overview
   primary image. Work is claimed oldest first, refreshed by heartbeat, and bound
   by a non-extendable five-minute deadline; expired second attempts become an
