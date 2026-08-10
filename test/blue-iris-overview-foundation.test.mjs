@@ -33,6 +33,7 @@ function overviewProfile(overrides = {}) {
     source_camera_name: "Street Overview",
     expected_delta_ms: 4_500,
     tolerance_ms: 2_000,
+    revision: 7,
     updated_at: "2026-08-09T13:59:00.000Z",
     ...overrides,
   };
@@ -424,7 +425,7 @@ test("a stale claim cannot publish and deletes only its attempt-specific derived
   assert.match(saved[0], /11111111111141118111111111111111\.jpg$/);
   assert.deepEqual(deleted, [saved[0]]);
   assert.notEqual(deleted[0], oldPath);
-  assert.deepEqual(released, [{ id: 901, claimToken: CLAIM_TOKEN }]);
+  assert.deepEqual(released, []);
 });
 
 test("a deadline crossed during atomic save deletes only its attempt file and fails terminally", async () => {
@@ -513,7 +514,8 @@ test("repository completion and failure updates are guarded by the current claim
     sourceKind: "overview_primary",
   }, {
     claimToken: CLAIM_TOKEN,
-    profileSnapshot: { id: 42, updatedAt: "2026-08-09T13:59:00.000Z" },
+    exportToken: "22222222-2222-4222-8222-222222222222",
+    profileSnapshot: { id: 42, revision: 7 },
   });
   const failed = await repository.markFailed(901, {
     status: "failed",
@@ -522,7 +524,7 @@ test("repository completion and failure updates are guarded by the current claim
     claimToken: CLAIM_TOKEN,
     nextAttemptAt: new Date().toISOString(),
     selectionMetadata: { failure: { code: "RECORDING_UNAVAILABLE" } },
-    profileSnapshot: { id: 42, updatedAt: "2026-08-09T13:59:00.000Z" },
+    profileSnapshot: { id: 42, revision: 7 },
   });
   const released = await repository.releaseOverviewReadClaim(901, CLAIM_TOKEN);
 
@@ -531,15 +533,20 @@ test("repository completion and failure updates are guarded by the current claim
   assert.equal(released, null);
   assert.match(statements[0], /vehicle_image_claim_token = \$12::uuid/);
   assert.match(statements[0], /\$12::uuid IS NULL OR vehicle_image_hard_deadline_at > CURRENT_TIMESTAMP/);
+  assert.match(statements[0], /exports\.export_token = \$13::uuid/);
+  assert.match(statements[0], /exports\.pair_profile_id IS NOT DISTINCT FROM \$14::bigint/);
+  assert.match(statements[0], /exports\.profile_revision IS NOT DISTINCT FROM \$15::bigint/);
   assert.match(statements[1], /vehicle_image_claim_token = \$7::uuid/);
-  assert.match(statements[0], /profile\.id = \$13::bigint/);
-  assert.match(statements[0], /profile\.updated_at IS NOT DISTINCT FROM \$14::timestamptz/);
-  assert.match(statements[1], /profile\.id = \$8::bigint/);
-  assert.match(statements[1], /profile\.updated_at IS NOT DISTINCT FROM \$9::timestamptz/);
+  assert.doesNotMatch(statements[0], /profile\.updated_at/);
+  assert.doesNotMatch(statements[1], /profile\.updated_at/);
   assert.equal(values[0][11], CLAIM_TOKEN);
   assert.equal(values[1][6], CLAIM_TOKEN);
-  assert.deepEqual(values[0].slice(12), [42, "2026-08-09T13:59:00.000Z"]);
-  assert.deepEqual(values[1].slice(7), [42, "2026-08-09T13:59:00.000Z"]);
+  assert.deepEqual(values[0].slice(12), [
+    "22222222-2222-4222-8222-222222222222",
+    42,
+    7,
+  ]);
+  assert.equal(values[1].length, 7);
   assert.match(statements[2], /vehicle_image_claim_token = \$2::uuid/);
   assert.match(statements[2], /vehicle_image_hard_deadline_at > CURRENT_TIMESTAMP/);
 });
@@ -590,7 +597,25 @@ test("timeline export migration is read-owned, bounded, and leaves Clipboard ret
   assert.match(section, /hard_deadline_at TIMESTAMPTZ NOT NULL/);
   assert.match(section, /2026080902_blue_iris_timeline_exports/);
   assert.match(section, /2026080903_blue_iris_clipboard_retention/);
+  assert.match(section, /2026081001_overview_export_idempotency/);
+  assert.match(section, /revision BIGINT NOT NULL DEFAULT 1/);
+  assert.match(section, /export_key CHAR\(64\)/);
+  assert.match(section, /automatic_start_count SMALLINT NOT NULL DEFAULT 0/);
+  assert.match(section, /ON public\.blue_iris_timeline_exports \(export_key\)[\s\S]*?WHERE export_key IS NOT NULL/);
+  assert.match(section, /legacy_imported BOOLEAN NOT NULL DEFAULT FALSE/);
+  assert.match(section, /legacy_imported = TRUE/);
   assert.match(section, /WHERE status IN \('delete_pending', 'deleting'\)/);
   assert.match(section, /SET status = CASE WHEN downloaded_at IS NOT NULL THEN 'downloaded' ELSE 'failed' END/);
   assert.doesNotMatch(section, /ON DELETE RESTRICT/);
+});
+
+test("compose database startup fails closed on any migration error", async () => {
+  const composeFiles = await Promise.all([
+    fs.readFile(new URL("../docker-compose.yml", import.meta.url), "utf8"),
+    fs.readFile(new URL("../docker-compose-dbonly.yml", import.meta.url), "utf8"),
+  ]);
+  for (const compose of composeFiles) {
+    assert.match(compose, /set -e;/);
+    assert.match(compose, /psql -v ON_ERROR_STOP=1 -U postgres -d postgres -f \/migrations\.sql/);
+  }
 });

@@ -6,7 +6,10 @@ import { spawnSync } from "node:child_process";
 import test from "node:test";
 import sharp from "sharp";
 
-import { BlueIrisTimelineExportService } from "../lib/blue-iris-timeline-export.mjs";
+import {
+  BlueIrisTimelineExportService,
+  blueIrisTimelineExportInternals,
+} from "../lib/blue-iris-timeline-export.mjs";
 import { BlueIrisError } from "../lib/blue-iris.mjs";
 import {
   createTimelineExportWorkspace,
@@ -155,6 +158,7 @@ test("temporary export workspaces are bounded to their dedicated root and stale 
 
 function timelineHarness({ width = 3840, height = 2160 } = {}) {
   const events = [];
+  let ledger = null;
   const workspace = {
     root: "C:/safe-root",
     workspace: "C:/safe-root/job-1",
@@ -165,11 +169,46 @@ function timelineHarness({ width = 3840, height = 2160 } = {}) {
   const repository = {
     async beginTimelineExport(input) {
       events.push(["ledger", input]);
-      return { export_token: "11111111-1111-4111-8111-111111111111" };
+      ledger ||= {
+        export_token: "11111111-1111-4111-8111-111111111111",
+        export_key: input.exportKey,
+        automatic_start_count: 0,
+        requested_duration_ms: input.requestedDurationMs,
+      };
+      return ledger;
     },
-    async recordTimelineExportRemote(_token, remote) { events.push(["remote", remote]); },
+    async claimTimelineExportStart(_token, _claimToken, preexistingRemotePaths) {
+      events.push(["start_claim", preexistingRemotePaths]);
+      if (Number(ledger?.automatic_start_count || 0) >= 1 || ledger?.remote_uri) return null;
+      ledger = {
+        ...ledger,
+        automatic_start_count: 1,
+        preexisting_remote_paths: preexistingRemotePaths,
+        status: "starting",
+      };
+      return ledger;
+    },
+    async getTimelineExport() { return ledger; },
+    async recordTimelineExportRemote(_token, remote) {
+      events.push(["remote", remote]);
+      ledger = {
+        ...ledger,
+        remote_path: remote.remotePath || ledger?.remote_path || null,
+        remote_uri: remote.uri || ledger?.remote_uri || null,
+        remote_status: remote.status || ledger?.remote_status || null,
+        remote_utc_ms: remote.utc ?? ledger?.remote_utc_ms ?? null,
+        remote_duration_ms: remote.durationMs ?? ledger?.remote_duration_ms ?? null,
+        progress: remote.progress ?? ledger?.progress ?? null,
+        status: remote.complete ? "ready" : "exporting",
+      };
+      return ledger;
+    },
     async heartbeatOverviewRead() { events.push(["heartbeat"]); return { id: 42 }; },
-    async markTimelineExportDownloaded(_token, media) { events.push(["downloaded", media]); },
+    async markTimelineExportDownloaded(_token, media) {
+      events.push(["downloaded", media]);
+      ledger = { ...ledger, status: "downloaded" };
+      return ledger;
+    },
     async markTimelineExportFailed(_token, failure) { events.push(["failed", failure]); },
   };
   const client = {
@@ -215,7 +254,19 @@ function timelineHarness({ width = 3840, height = 2160 } = {}) {
     },
     async extractFinalFrame() { return Buffer.from([0xff, 0xd8, 0xff, 0xd9]); },
   };
-  return { client, repository, media, events };
+  const logger = {
+    info(_message, details) { events.push(["log", details]); },
+    warn(_message, details) { events.push(["log", details]); },
+  };
+  return {
+    client,
+    repository,
+    media,
+    logger,
+    events,
+    setLedger(value) { ledger = value; },
+    getLedger() { return ledger; },
+  };
 }
 
 test("timeline export downloads and validates while Blue Iris owns Clipboard retention", async () => {
@@ -243,7 +294,378 @@ test("timeline export downloads and validates while Blue Iris owns Clipboard ret
   assert.deepEqual(sleeps, [5_000]);
   assert.equal(harness.events.find(([name]) => name === "start")[1].substream, false);
   assert.equal(harness.events.find(([name]) => name === "start")[1].reencode, false);
+  assert.ok(harness.events.some(([name, details]) => (
+    name === "log" && details.event === "start_dispatched" && details.readId === 42
+  )));
+  assert.ok(harness.events.some(([name, details]) => (
+    name === "log" && details.event === "download_validated" && details.width === 3840
+  )));
   await acquired.cleanup();
+});
+
+test("a retry resumes the same stable export and never issues a second cmd:export", async () => {
+  const harness = timelineHarness();
+  const service = new BlueIrisTimelineExportService({
+    ...harness,
+    sleepImpl: async () => {},
+  });
+  const input = {
+    read: { id: 42 },
+    claimToken: "22222222-2222-4222-8222-222222222222",
+    camera: "Cam149",
+    sourceCameraName: "Street Overview",
+    intendedStartAt: "2026-08-09T13:00:00.000Z",
+    pairProfileId: 9,
+    profileRevision: 3,
+  };
+  const first = await service.acquire(input);
+  await first.cleanup();
+  const second = await service.acquire({
+    ...input,
+    claimToken: "33333333-3333-4333-8333-333333333333",
+  });
+  await second.cleanup();
+
+  assert.equal(harness.events.filter(([name]) => name === "start").length, 1);
+  assert.equal(harness.events.filter(([name]) => name === "start_claim").length, 1);
+  assert.equal(harness.getLedger().automatic_start_count, 1);
+});
+
+test("restart reconciliation cannot adopt a matching export that predates the request", async () => {
+  const harness = timelineHarness();
+  harness.setLedger({
+    export_token: "11111111-1111-4111-8111-111111111111",
+    automatic_start_count: 1,
+    requested_duration_ms: 8_000,
+    preexisting_remote_paths: ["@preexisting.mp4"],
+    status: "starting",
+  });
+  harness.client.listTimelineExports = async () => [{
+    remotePath: "@preexisting.mp4",
+    uri: "@preexisting.mp4",
+    utc: Date.parse("2026-08-09T12:59:59.000Z"),
+    durationMs: 8_000,
+    camera: "Cam149",
+  }];
+  const service = new BlueIrisTimelineExportService({
+    ...harness,
+    sleepImpl: async () => {},
+  });
+  await assert.rejects(
+    service.acquire({
+      read: { id: 42 },
+      claimToken: "22222222-2222-4222-8222-222222222222",
+      camera: "Cam149",
+      sourceCameraName: "Street Overview",
+      intendedStartAt: "2026-08-09T13:00:00.000Z",
+      pairProfileId: 9,
+      profileRevision: 3,
+    }),
+    (error) => error.code === "EXPORT_START_UNCERTAIN"
+  );
+  assert.equal(harness.events.some(([name]) => name === "start"), false);
+});
+
+test("legacy duplicate-storm recovery deterministically reuses one equivalent retained export", async () => {
+  const harness = timelineHarness();
+  harness.setLedger({
+    export_token: "11111111-1111-4111-8111-111111111111",
+    automatic_start_count: 1,
+    requested_duration_ms: 8_000,
+    preexisting_remote_paths: [],
+    status: "starting",
+    legacy_imported: true,
+  });
+  harness.client.listTimelineExports = async () => ["@duplicate-2.mp4", "@duplicate-1.mp4"].map((remotePath) => ({
+    remotePath,
+    uri: remotePath,
+    utc: Date.parse("2026-08-09T12:59:59.000Z"),
+    durationMs: 8_000,
+    camera: "Cam149",
+    complete: true,
+    progress: 100,
+  }));
+  const service = new BlueIrisTimelineExportService({
+    ...harness,
+    sleepImpl: async () => {},
+  });
+  const acquired = await service.acquire({
+    read: { id: 42 },
+    claimToken: "22222222-2222-4222-8222-222222222222",
+    camera: "Cam149",
+    sourceCameraName: "Street Overview",
+    intendedStartAt: "2026-08-09T13:00:00.000Z",
+    pairProfileId: 9,
+    profileRevision: 3,
+  });
+  assert.equal(harness.getLedger().remote_uri, "@duplicate-1.mp4");
+  assert.equal(harness.events.some(([name]) => name === "start"), false);
+  assert.ok(harness.events.some(([name, details]) => (
+    name === "log" && details.event === "legacy_duplicate_export_adopted"
+      && details.equivalentMatches === 2
+  )));
+  await acquired.cleanup();
+});
+
+test("stable export identity changes only when its semantic job changes", () => {
+  const base = {
+    readId: 42,
+    camera: "Cam149",
+    requestedStartMs: Date.parse("2026-08-09T12:59:59.000Z"),
+    requestedDurationMs: 8_000,
+    exportProfile: 0,
+    pairProfileId: 9,
+    profileRevision: 3,
+  };
+  const first = blueIrisTimelineExportInternals.stableTimelineExportKey(base);
+  assert.match(first, /^[0-9a-f]{64}$/);
+  assert.equal(
+    first,
+    blueIrisTimelineExportInternals.stableTimelineExportKey({ ...base, camera: " cam149 " })
+  );
+  assert.notEqual(
+    first,
+    blueIrisTimelineExportInternals.stableTimelineExportKey({ ...base, profileRevision: 4 })
+  );
+});
+
+test("a Blue Iris command rejection is reconciled when the accepted export appears later", async () => {
+  const harness = timelineHarness();
+  let listCount = 0;
+  harness.client.listTimelineExports = async () => {
+    listCount += 1;
+    if (listCount < 3) return [];
+    return [{
+      remotePath: "@accepted-after-rejection.mp4",
+      uri: "@accepted-after-rejection.mp4",
+      complete: true,
+      failed: false,
+      progress: 100,
+      utc: Date.parse("2026-08-09T12:59:59.000Z"),
+      durationMs: 8_000,
+      camera: "Cam149",
+    }];
+  };
+  let startCount = 0;
+  harness.client.startTimelineExport = async () => {
+    startCount += 1;
+    throw new BlueIrisError("COMMAND_FAILED", "Blue Iris rejected export");
+  };
+  const sleeps = [];
+  const service = new BlueIrisTimelineExportService({
+    ...harness,
+    sleepImpl: async (milliseconds) => { sleeps.push(milliseconds); },
+  });
+  const acquired = await service.acquire({
+    read: { id: 42 },
+    claimToken: "22222222-2222-4222-8222-222222222222",
+    camera: "Cam149",
+    sourceCameraName: "Street Overview",
+    intendedStartAt: "2026-08-09T13:00:00.000Z",
+    pairProfileId: 9,
+    profileRevision: 3,
+  });
+  assert.equal(startCount, 1);
+  assert.ok(sleeps.includes(5_000));
+  assert.equal(harness.getLedger().remote_uri, "@accepted-after-rejection.mp4");
+  await acquired.cleanup();
+});
+
+test("a queued owned path waits for its URI and exact timeline metadata", async () => {
+  const harness = timelineHarness();
+  let listCount = 0;
+  harness.client.listTimelineExports = async () => {
+    listCount += 1;
+    if (listCount === 1) return [];
+    if (listCount === 2) return [{
+      remotePath: "@queued-owned.mp4",
+      utc: Date.parse("2026-08-09T12:59:59.000Z"),
+      durationMs: 8_000,
+      camera: "Cam149",
+    }];
+    return [{
+      remotePath: "@queued-owned.mp4",
+      uri: "@queued-owned.mp4",
+      utc: Date.parse("2026-08-09T12:59:59.000Z"),
+      durationMs: 8_000,
+      camera: "Cam149",
+      complete: true,
+      progress: 100,
+    }];
+  };
+  harness.client.startTimelineExport = async (input) => {
+    harness.events.push(["start", input]);
+    return { remotePath: "@queued-owned.mp4", status: "queued" };
+  };
+  const sleeps = [];
+  const service = new BlueIrisTimelineExportService({
+    ...harness,
+    sleepImpl: async (milliseconds) => { sleeps.push(milliseconds); },
+  });
+  const acquired = await service.acquire({
+    read: { id: 42 },
+    claimToken: "22222222-2222-4222-8222-222222222222",
+    camera: "Cam149",
+    sourceCameraName: "Street Overview",
+    intendedStartAt: "2026-08-09T13:00:00.000Z",
+    pairProfileId: 9,
+    profileRevision: 3,
+  });
+  assert.equal(harness.getLedger().remote_uri, "@queued-owned.mp4");
+  assert.equal(harness.events.filter(([name]) => name === "start").length, 1);
+  assert.ok(sleeps.filter((value) => value === 5_000).length >= 2);
+  await acquired.cleanup();
+});
+
+test("an exact owned path with timeline metadata is directly downloadable without list visibility", async () => {
+  const harness = timelineHarness();
+  let listCount = 0;
+  harness.client.listTimelineExports = async () => {
+    listCount += 1;
+    return [];
+  };
+  harness.client.startTimelineExport = async (input) => {
+    harness.events.push(["start", input]);
+    return {
+      remotePath: "@direct-owned.mp4",
+      utc: Date.parse("2026-08-09T12:59:59.000Z"),
+      durationMs: 8_000,
+      camera: "Cam149",
+      status: "queued",
+    };
+  };
+  const service = new BlueIrisTimelineExportService({ ...harness, sleepImpl: async () => {} });
+  const acquired = await service.acquire({
+    read: { id: 42 },
+    claimToken: "22222222-2222-4222-8222-222222222222",
+    camera: "Cam149",
+    sourceCameraName: "Street Overview",
+    intendedStartAt: "2026-08-09T13:00:00.000Z",
+    pairProfileId: 9,
+    profileRevision: 3,
+  });
+  assert.equal(harness.getLedger().remote_uri, "@direct-owned.mp4");
+  assert.equal(harness.events.find(([name]) => name === "availability")[1], "@direct-owned.mp4");
+  assert.equal(listCount, 1);
+  assert.equal(harness.events.filter(([name]) => name === "start").length, 1);
+  await acquired.cleanup();
+});
+
+test("a resumed path-only ledger resolves the same path without another export", async () => {
+  const harness = timelineHarness();
+  harness.setLedger({
+    export_token: "11111111-1111-4111-8111-111111111111",
+    automatic_start_count: 1,
+    requested_duration_ms: 8_000,
+    remote_path: "@resumed-owned.mp4",
+    remote_uri: null,
+    status: "exporting",
+  });
+  harness.client.listTimelineExports = async () => [{
+    remotePath: "@resumed-owned.mp4",
+    uri: "@resumed-owned.mp4",
+    utc: Date.parse("2026-08-09T12:59:59.000Z"),
+    durationMs: 8_000,
+    camera: "Cam149",
+    complete: true,
+    progress: 100,
+  }];
+  const service = new BlueIrisTimelineExportService({ ...harness, sleepImpl: async () => {} });
+  const acquired = await service.acquire({
+    read: { id: 42 },
+    claimToken: "22222222-2222-4222-8222-222222222222",
+    camera: "Cam149",
+    sourceCameraName: "Street Overview",
+    intendedStartAt: "2026-08-09T13:00:00.000Z",
+    pairProfileId: 9,
+    profileRevision: 3,
+  });
+  assert.equal(harness.events.some(([name]) => name === "start"), false);
+  assert.equal(harness.getLedger().remote_uri, "@resumed-owned.mp4");
+  await acquired.cleanup();
+});
+
+test("legacy matches with different exact UTC identities remain quarantined", async () => {
+  const harness = timelineHarness();
+  harness.setLedger({
+    export_token: "11111111-1111-4111-8111-111111111111",
+    automatic_start_count: 1,
+    requested_duration_ms: 8_000,
+    preexisting_remote_paths: [],
+    status: "starting",
+    legacy_imported: true,
+  });
+  harness.client.listTimelineExports = async () => [0, 500].map((delta, index) => ({
+    remotePath: `@different-${index}.mp4`,
+    uri: `@different-${index}.mp4`,
+    utc: Date.parse("2026-08-09T12:59:59.000Z") + delta,
+    durationMs: 8_000,
+    camera: "Cam149",
+    complete: true,
+    progress: 100,
+  }));
+  const service = new BlueIrisTimelineExportService({ ...harness, sleepImpl: async () => {} });
+  await assert.rejects(
+    service.acquire({
+      read: { id: 42 },
+      claimToken: "22222222-2222-4222-8222-222222222222",
+      camera: "Cam149",
+      sourceCameraName: "Street Overview",
+      intendedStartAt: "2026-08-09T13:00:00.000Z",
+      pairProfileId: 9,
+      profileRevision: 3,
+    }),
+    (error) => error.code === "EXPORT_START_UNCERTAIN"
+  );
+  assert.equal(harness.events.some(([name]) => name === "start"), false);
+});
+
+test("the pre-dispatch snapshot retains a relevant old export beyond two thousand list rows", async () => {
+  const harness = timelineHarness();
+  const relevant = {
+    remotePath: "@relevant-old.mp4",
+    uri: "@relevant-old.mp4",
+    utc: Date.parse("2026-08-09T12:59:59.000Z"),
+    durationMs: 8_000,
+    camera: "Cam149",
+  };
+  let listCount = 0;
+  harness.client.listTimelineExports = async () => {
+    listCount += 1;
+    if (listCount === 1) {
+      return [
+        ...Array.from({ length: 2_100 }, (_, index) => ({
+          remotePath: `@irrelevant-${index}.mp4`,
+          uri: `@irrelevant-${index}.mp4`,
+          utc: Date.parse("2026-08-09T10:00:00.000Z") + index,
+          durationMs: 8_000,
+          camera: "Cam149",
+        })),
+        relevant,
+      ];
+    }
+    return [relevant];
+  };
+  harness.client.startTimelineExport = async () => {
+    harness.events.push(["start"]);
+    throw new BlueIrisError("COMMAND_FAILED", "Blue Iris rejected export");
+  };
+  const service = new BlueIrisTimelineExportService({ ...harness, sleepImpl: async () => {} });
+  await assert.rejects(
+    service.acquire({
+      read: { id: 42 },
+      claimToken: "22222222-2222-4222-8222-222222222222",
+      camera: "Cam149",
+      sourceCameraName: "Street Overview",
+      intendedStartAt: "2026-08-09T13:00:00.000Z",
+      pairProfileId: 9,
+      profileRevision: 3,
+    }),
+    (error) => error.code === "EXPORT_START_UNCERTAIN"
+  );
+  const snapshot = harness.events.find(([name]) => name === "start_claim")[1];
+  assert.deepEqual(snapshot, ["@relevant-old.mp4"]);
+  assert.equal(harness.events.filter(([name]) => name === "start").length, 1);
 });
 
 test("timeline export fails closed on low resolution without requesting remote deletion", async () => {
@@ -379,6 +801,7 @@ test("an unavailable exact export URI waits five seconds before checking again",
 test("ambiguous uncertain starts are not blindly resubmitted or deleted", async () => {
   const harness = timelineHarness();
   let listCount = 0;
+  let startCount = 0;
   harness.client.listTimelineExports = async () => {
     listCount += 1;
     if (listCount === 1) return [];
@@ -392,6 +815,7 @@ test("ambiguous uncertain starts are not blindly resubmitted or deleted", async 
     }));
   };
   harness.client.startTimelineExport = async () => {
+    startCount += 1;
     throw new BlueIrisError("TIMEOUT", "response lost");
   };
   const service = new BlueIrisTimelineExportService({
@@ -408,6 +832,7 @@ test("ambiguous uncertain starts are not blindly resubmitted or deleted", async 
     }),
     (error) => error.code === "EXPORT_START_UNCERTAIN" && error.details.matchingJobs === 2
   );
+  assert.equal(startCount, 1);
   assert.equal(harness.events.some(([name]) => name === "delete"), false);
 });
 

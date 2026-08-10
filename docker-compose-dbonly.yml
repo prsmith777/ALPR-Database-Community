@@ -14,9 +14,10 @@ services:
     # Make sure you download the migrations.sql file if you are updating your existing database. If you changed the user or database name, you will need to plug that in in the command below.
     command: >
       bash -c "
+        set -e;
         docker-entrypoint.sh postgres &
         until pg_isready; do sleep 1; done;
-        psql -U postgres -d postgres -f /migrations.sql;
+        psql -v ON_ERROR_STOP=1 -U postgres -d postgres -f /migrations.sql;
         wait
       "
     ports:

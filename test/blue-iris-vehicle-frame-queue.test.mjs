@@ -90,6 +90,7 @@ test("read-owned overview work resolves an exact direction profile and source ca
               overview_expected_delta_ms: 4_500,
               overview_tolerance_ms: 2_000,
               overview_profile_priority: 0,
+              overview_profile_revision: 7,
               overview_profile_updated_at: "2026-08-08T17:00:00Z",
             }
           : null;
@@ -118,6 +119,7 @@ test("read-owned overview work resolves an exact direction profile and source ca
           assert.equal(input.camera, "Cam149");
           assert.equal(input.read.id, 901);
           assert.equal(input.profile.expected_delta_ms, 4_500);
+          assert.equal(input.profile.revision, 7);
           return { kind: "overview_read", status: "ready", readId: input.read.id };
         },
       };
@@ -325,6 +327,10 @@ test("retrying a read-owned overview preserves the overview queue instead of usi
   assert.equal(result.vehicle_image_queue_kind, "overview");
   assert.match(statement, /WHEN vehicle_image_queue_kind = 'overview' THEN 'overview'/);
   assert.doesNotMatch(statement, /COALESCE\(vehicle_image_queue_kind, ''\) <> 'overview'/);
+  assert.match(statement, /'EXPORT_TIMEOUT'/);
+  assert.doesNotMatch(statement, /'EXPORT_START_UNCERTAIN'/);
+  assert.doesNotMatch(statement, /'NIGHTTIME_UNAVAILABLE','/);
+  assert.doesNotMatch(statement, /MULTIPLE_VEHICLES_VISIBLE/);
 });
 
 test("overview reads are claimed atomically only after validated Blue Iris direction is ready", async () => {
@@ -406,13 +412,84 @@ test("a downloaded timeline export becomes terminal without a remote-delete sche
   });
   const result = await repository.markTimelineExportDownloaded(
     "11111111-1111-4111-8111-111111111111",
-    { uri: "@owned.mp4", fileSize: 100, width: 2688, height: 1520, durationMs: 8000 }
+    { uri: "@owned.mp4", fileSize: 100, width: 2688, height: 1520, durationMs: 8000 },
+    { claimToken: "22222222-2222-4222-8222-222222222222" }
   );
   assert.equal(result.status, "downloaded");
-  assert.equal(parameters.length, 6);
+  assert.equal(parameters.length, 7);
+  assert.equal(parameters[6], "22222222-2222-4222-8222-222222222222");
   assert.match(statement, /status = 'downloaded'/);
   assert.match(statement, /next_delete_attempt_at = NULL/);
   assert.doesNotMatch(statement, /delete_pending/);
+});
+
+test("timeline export transitions are claim-owned and cannot regress a downloaded ledger", async () => {
+  const statements = [];
+  const values = [];
+  const repository = new BlueIrisVehicleFrameRepository({
+    async query(sql, parameters) {
+      statements.push(sql);
+      values.push(parameters);
+      return { rows: [] };
+    },
+  });
+  const exportToken = "11111111-1111-4111-8111-111111111111";
+  const claimToken = "22222222-2222-4222-8222-222222222222";
+  await repository.claimTimelineExportStart(exportToken, claimToken, ["@old.mp4", "@old.mp4"]);
+  await repository.recordTimelineExportRemote(exportToken, {
+    remotePath: "@new.mp4",
+    uri: "@new.mp4",
+    utc: Date.now(),
+    durationMs: 8_000,
+  }, { claimToken });
+  await repository.markTimelineExportFailed(exportToken, {
+    errorCode: "EXPORT_TIMEOUT",
+  }, { claimToken });
+
+  assert.match(statements[0], /automatic_start_count = 0/);
+  assert.match(statements[0], /JOIN public\.plate_reads reads ON reads\.id = exports\.read_id/);
+  assert.match(statements[0], /reads\.vehicle_image_claim_token = \$2::uuid/);
+  assert.match(statements[0], /reads\.vehicle_image_hard_deadline_at > CURRENT_TIMESTAMP/);
+  assert.match(statements[0], /FOR SHARE OF reads/);
+  assert.match(statements[0], /preexisting_remote_paths = \$3::jsonb/);
+  assert.equal(values[0][2], '["@old.mp4"]');
+  assert.match(statements[1], /claim_token = \$10::uuid/);
+  assert.match(statements[1], /status IN \('starting','exporting','ready','failed'\)/);
+  assert.equal(values[1][9], claimToken);
+  assert.match(statements[2], /claim_token = \$4::uuid/);
+  assert.match(statements[2], /status <> 'downloaded'/);
+  assert.equal(values[2][3], claimToken);
+});
+
+test("stable export-ledger ownership can transfer only from the active unexpired read claim", async () => {
+  const statements = [];
+  const repository = new BlueIrisVehicleFrameRepository({
+    async query(sql) {
+      statements.push(sql);
+      return { rows: [] };
+    },
+  });
+  const result = await repository.beginTimelineExport({
+    exportKey: "a".repeat(64),
+    readId: 39667,
+    claimToken: "22222222-2222-4222-8222-222222222222",
+    sourceCameraName: "Street Overview",
+    requestedStartAt: "2026-08-10T16:09:42.000Z",
+    requestedDurationMs: 8_000,
+    hardDeadlineAt: "2026-08-10T16:15:00.000Z",
+    pairProfileId: 9,
+    profileRevision: 4,
+    algorithmRevision: "overview-timeline-export-v2",
+  });
+  assert.equal(result, null);
+  assert.equal(statements.length, 3);
+  for (const statement of statements) {
+    assert.match(statement, /FROM public\.plate_reads/);
+    assert.match(statement, /vehicle_image_status = 'processing'/);
+    assert.match(statement, /vehicle_image_claim_token = .*::uuid/);
+    assert.match(statement, /vehicle_image_hard_deadline_at > CURRENT_TIMESTAMP/);
+    assert.match(statement, /FOR SHARE/);
+  }
 });
 
 test("incomplete overview recovery is bounded to transient errors and preserves scene decisions", async () => {
@@ -425,16 +502,114 @@ test("incomplete overview recovery is bounded to transient errors and preserves 
       return { rows: [{ id: 1 }], rowCount: 1 };
     },
   });
-  const result = await repository.recoverIncompleteOverviewReads({ sinceHours: 48 });
-  assert.deepEqual(result, { queued: 1, sinceHours: 48 });
-  assert.deepEqual(parameters, [48]);
+  const result = await repository.recoverIncompleteOverviewReads({
+    startAt: "2026-08-08T19:08:00.000Z",
+  });
+  assert.deepEqual(result, { queued: 1, startAt: "2026-08-08T19:08:00.000Z" });
+  assert.deepEqual(parameters, ["2026-08-08T19:08:00.000Z"]);
+  assert.match(statement, /"timestamp" >= \$1::timestamptz/);
   assert.match(statement, /vehicle_image_status = 'pending'/);
+  assert.match(statement, /vehicle_image_recovery_count = COALESCE\(vehicle_image_recovery_count, 0\) \+ 1/);
+  assert.match(statement, /COALESCE\(vehicle_image_recovery_count, 0\) = 0/);
   assert.match(statement, /vehicle_image_status = 'processing'[\s\S]*vehicle_image_hard_deadline_at/);
   assert.match(statement, /'EXPORT_TIMEOUT'/);
+  assert.match(statement, /'OVERVIEW_PROFILE_CHANGED'/);
   assert.match(statement, /'MEDIA_TOOL_FAILED'/);
   assert.doesNotMatch(statement, /VEHICLE_NOT_VISIBLE/);
   assert.doesNotMatch(statement, /MULTIPLE_VEHICLES_VISIBLE/);
   assert.doesNotMatch(statement, /EXPORT_RESOLUTION_TOO_LOW/);
+});
+
+test("incomplete overview recovery preview uses the identical exact-cutoff eligibility contract", async () => {
+  let statement = "";
+  let parameters = null;
+  const repository = new BlueIrisVehicleFrameRepository({
+    async query(sql, values) {
+      statement = sql;
+      parameters = values;
+      return { rows: [{
+        eligible: 12,
+        oldest_at: "2026-08-08T19:10:00.000Z",
+        newest_at: "2026-08-10T16:00:00.000Z",
+        pending: 3,
+        expired_processing: 2,
+        operational_failures: 7,
+      }] };
+    },
+  });
+  const result = await repository.previewIncompleteOverviewReads({
+    startAt: "2026-08-08T19:08:00.000Z",
+  });
+  assert.equal(result.eligible, 12);
+  assert.equal(result.pending, 3);
+  assert.deepEqual(parameters, ["2026-08-08T19:08:00.000Z"]);
+  assert.match(statement, /COUNT\(\*\)::integer AS eligible/);
+  assert.match(statement, /"timestamp" >= \$1::timestamptz/);
+  assert.doesNotMatch(statement, /UPDATE public\.plate_reads/);
+  assert.doesNotMatch(statement, /VEHICLE_NOT_VISIBLE/);
+  assert.doesNotMatch(statement, /NIGHTTIME_UNAVAILABLE/);
+});
+
+test("overview status reports the active read queue and stable export ledger", async () => {
+  const statements = [];
+  const responses = [
+    { rows: [{
+      pending: 3,
+      processing: 1,
+      ready: 8,
+      ambiguous: 2,
+      unavailable: 4,
+      nighttime_skipped: 5,
+      failed: 1,
+      oldest_outstanding_at: "2026-08-10T12:00:00.000Z",
+    }] },
+    { rows: [{
+      total: 12,
+      active: 1,
+      downloaded: 9,
+      failed: 2,
+      automatic_starts: 10,
+      duplicate_start_violations: 0,
+      last_transition_at: "2026-08-10T12:05:00.000Z",
+    }] },
+    { rows: [{ source_camera_name: "Street Overview" }] },
+    { rows: [{
+      read_id: 39667,
+      plate_number: "ABC123",
+      camera_name: "Street LPR 1",
+      vehicle_image_status: "processing",
+      vehicle_image_attempt_count: 1,
+      vehicle_image_recovery_count: 0,
+      export_key: "a".repeat(64),
+      export_status: "exporting",
+      automatic_start_count: 1,
+      remote_uri_known: true,
+      video_width: null,
+      video_height: null,
+    }] },
+  ];
+  const repository = new BlueIrisVehicleFrameRepository({
+    async query(sql) {
+      statements.push(sql);
+      return responses[statements.length - 1];
+    },
+  });
+  const status = await repository.getOverviewStatus();
+  assert.equal(status.pending, 3);
+  assert.equal(status.processing, 1);
+  assert.equal(status.ready, 8);
+  assert.equal(status.exports.automaticStarts, 10);
+  assert.equal(status.exports.duplicateStartViolations, 0);
+  assert.deepEqual(status.observedSources, ["Street Overview"]);
+  assert.equal(status.recentJobs[0].readId, 39667);
+  assert.equal(status.recentJobs[0].automaticStartCount, 1);
+  assert.equal(status.recentJobs[0].remoteUriKnown, true);
+  assert.match(statements[0], /FROM public\.plate_reads/);
+  assert.doesNotMatch(statements[0], /vehicle_overview_candidates/);
+  assert.match(statements[1], /FROM public\.blue_iris_timeline_exports/);
+  assert.match(statements[2], /source_role = 'primary'/);
+  assert.match(statements[3], /LEFT JOIN LATERAL/);
+  assert.match(statements[3], /LIMIT 25/);
 });
 
 test("expired second-attempt overview claims are terminalized instead of remaining stuck", async () => {
@@ -450,6 +625,44 @@ test("expired second-attempt overview claims are terminalized instead of remaini
   assert.match(statement, /vehicle_image_status = 'failed'/);
   assert.match(statement, /vehicle_image_retryable = FALSE/);
   assert.match(statement, /OVERVIEW_PROCESSING_DEADLINE/);
+});
+
+test("a no-op overview profile save preserves the integer export revision", async () => {
+  let upsert = "";
+  const repository = new BlueIrisVehicleFrameRepository({
+    async query(sql) {
+      if (/INSERT INTO public\.vehicle_overview_pair_profiles/.test(sql)) {
+        upsert = sql;
+        return { rows: [{
+          id: 9,
+          source_camera_name: "Street Overview",
+          plate_camera_name: "Street LPR 1",
+          direction_label: "Eastbound",
+          source_role: "primary",
+          expected_delta_ms: 0,
+          tolerance_ms: 1500,
+          priority: 0,
+          enabled: true,
+          revision: 4,
+        }] };
+      }
+      return { rows: [] };
+    },
+  });
+  await repository.saveOverviewPairProfile({
+    sourceCameraName: "Street Overview",
+    plateCameraName: "Street LPR 1",
+    directionLabel: "Eastbound",
+    sourceRole: "primary",
+    expectedDeltaMs: 0,
+    toleranceMs: 1500,
+    priority: 0,
+    enabled: true,
+  });
+  assert.match(upsert, /ROW\([\s\S]*\) IS DISTINCT FROM ROW\(/);
+  assert.match(upsert, /THEN vehicle_overview_pair_profiles\.revision \+ 1/);
+  assert.match(upsert, /ELSE vehicle_overview_pair_profiles\.revision END/);
+  assert.match(upsert, /ELSE vehicle_overview_pair_profiles\.updated_at END/);
 });
 
 test("primary overview profiles require an exact plate-camera and direction match", async () => {
