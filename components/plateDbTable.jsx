@@ -98,6 +98,7 @@ import {
   readTablePageSizePreference,
   writeTablePageSizePreference,
 } from "@/lib/table-page-size-preference.mjs";
+import ResultsPagination from "@/components/ResultsPagination";
 
 const formatDaysAgo = (days) => {
   if (days === 0) return "Today";
@@ -446,6 +447,15 @@ export default function PlateTable({ matchingSettings }) {
           onPageSizeChange={handlePageSizeChange}
           sortConfig={sortConfig}
           matchingSettings={matchingSettings}
+        />
+
+        <ResultsPagination
+          position="top"
+          page={page}
+          pageSize={pageSize}
+          total={totalCount}
+          onPreviousPage={handlePreviousPage}
+          onNextPage={handleNextPage}
         />
 
       {/* Desktop Table View */}
@@ -967,31 +977,14 @@ export default function PlateTable({ matchingSettings }) {
         </div>
       </div>
 
-      {/* Pagination - Mobile & Desktop */}
-      <div className="flex items-center justify-between">
-        <div className="text-xs sm:text-sm text-muted-foreground">
-          Showing {(page - 1) * pageSize + 1} to{" "}
-          {Math.min(page * pageSize, totalCount)} of {totalCount} results
-        </div>
-        <div className="flex gap-2">
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={handlePreviousPage}
-            disabled={page <= 1}
-          >
-            Previous
-          </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={handleNextPage}
-            disabled={page >= pageCount}
-          >
-            Next
-          </Button>
-        </div>
-      </div>
+      <ResultsPagination
+        position="bottom"
+        page={page}
+        pageSize={pageSize}
+        total={totalCount}
+        onPreviousPage={handlePreviousPage}
+        onNextPage={handleNextPage}
+      />
 
       {/* Dialogs */}
       <Dialog open={isAddKnownPlateOpen} onOpenChange={setIsAddKnownPlateOpen}>
