@@ -749,6 +749,7 @@ test("read-owned overview processing applies the signed profile delta and saves 
       source_camera_name: "Street Overview",
       expected_delta_ms: 4_500,
       tolerance_ms: 2_000,
+      revision: 7,
       updated_at: "2026-08-08T17:55:00.000Z",
     },
     camera: "Cam149",
@@ -776,7 +777,7 @@ test("read-owned overview processing applies the signed profile delta and saves 
   assert.equal(operations[1][3].claimToken, "11111111-1111-4111-8111-111111111111");
   assert.deepEqual(operations[1][3].profileSnapshot, {
     id: 42,
-    updatedAt: "2026-08-08T17:55:00.000Z",
+    revision: 7,
   });
   assert.match(operations[0][1], /blue_iris_vehicle_read_701_11111111111141118111111111111111\.jpg$/);
 });

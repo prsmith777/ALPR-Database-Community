@@ -21,7 +21,7 @@ jobs:
 
     services:
       postgres:
-        image: postgres:13
+        image: postgres:17.10
         env:
           POSTGRES_PASSWORD: fixture-test-password
           POSTGRES_USER: postgres
@@ -40,6 +40,15 @@ jobs:
         with:
           persist-credentials: false
 
+      - name: Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+          cache: yarn
+
+      - name: Install PostgreSQL integration-test dependencies
+        run: yarn install --frozen-lockfile --ignore-scripts --network-timeout 100000
+
       - name: Exercise load, no-op, guarded clear, and refusal paths
         shell: bash
         run: |
@@ -49,7 +58,7 @@ jobs:
             docker run --rm --network host \
               --volume "$PWD:/workspace:ro" \
               --env PGPASSWORD=fixture-test-password \
-              postgres:13 psql \
+              postgres:17.10 psql \
               --host 127.0.0.1 \
               --username postgres \
               --dbname fixture_test \
@@ -78,6 +87,10 @@ jobs:
 
           psql_fixture --file /workspace/schema.sql
           psql_fixture --file /workspace/migrations.sql
+          psql_fixture --file /workspace/migrations.sql
+
+          DATABASE_URL='postgresql://postgres:fixture-test-password@127.0.0.1:5432/fixture_test' \
+            yarn test:overview-export:postgres
 
           fixture status | grep -F 'fixture_state=absent'
           fixture load | grep -F 'fixture_state=loaded'

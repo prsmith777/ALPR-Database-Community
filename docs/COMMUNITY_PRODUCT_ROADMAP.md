@@ -527,13 +527,27 @@ notes. Updates remain externally orchestrated.
   extracted from the original verified export at the exact selected 10-fps slot
   and full exported resolution. ALPR explicitly disables re-encoding and requests
   the recorded main-stream video, while still enforcing a fail-closed minimum
-  output resolution. Claim-token and profile-
-  revision compare-and-set updates plus attempt-unique atomic files prevent a
-  reclaimed worker or mid-analysis profile edit from overwriting a winner. The
+  output resolution. Each semantic read, source window, and integer profile
+  revision now has a stable SHA-256 export identity. Before its single allowed
+  `cmd:export`, the ledger persists the pre-existing Blue Iris paths. Any
+  exception after dispatch, including the installed server's observed case of
+  reporting rejection while creating the MP4, is treated as acceptance-uncertain
+  and reconciled at five-second intervals without a blind resubmit. A normal job
+  adopts only one newly created exact camera/time/duration match; upgrade recovery
+  may deterministically reuse one of several equivalent retained legacy duplicate
+  exports without creating another. Claim-owned monotonic ledger transitions prevent a
+  stale worker from regressing a downloaded export, while the final read commit
+  verifies the downloaded export token and immutable profile ID/revision
+  snapshot. No-op profile saves preserve the integer revision and therefore do
+  not create a second semantic export identity. Attempt-unique atomic files prevent a reclaimed worker from
+  overwriting a winner. The
   additive constraints remain migration-safe for community installations:
   legacy primary tolerances above 3000 milliseconds and same-camera source rows
   are preserved but excluded from claims until corrected through settings.
-  Every idempotent queue-kind constraint also accepts existing `overview` work
+  Active Vehicle View diagnostics report the real plate-read queue and stable
+  export ledger rather than the retired candidate queue, including started,
+  active, downloaded, failed, and duplicate-start-violation totals. Every
+  idempotent queue-kind constraint also accepts existing `overview` work
   before later migration blocks run, so an upgrade cannot fail merely because
   plate-owned overview rows already exist. The
   selected JPEG is written directly to its originating read as an overview
@@ -542,9 +556,13 @@ notes. Updates remain externally orchestrated.
   explicit failed state rather than remaining Processing. A released claim
   retains its consumed attempt and waits before its one bounded retry; it can
   never reset the counter and create an unlimited series of duplicate Blue Iris
-  Clipboard exports. A deliberate 48-hour
-  recovery control requeues only pending, stuck, and allowlisted transient
-  operational failures. Street Overview requires no motion or web-request action.
+  Clipboard exports. Recovery requires an exact local start date/time and a
+  separate read-only preview before queuing. It requeues only pending, stuck,
+  and allowlisted transient operational failures once per read; it cannot
+  silently reset itself forever. The export identity remains read-owned in this
+  corrective release, so paired Street LPR 1/2 reads may each create one export;
+  physical-passage sharing remains the next separately observed release.
+  Street Overview requires no motion or web-request action.
   Monochrome plate reads remain terminal `Unavailable nighttime` and make no
   timeline requests. The former candidate tables and historical records remain
   intact for compatibility, but independent candidate ingestion no longer owns
