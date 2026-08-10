@@ -126,7 +126,10 @@ reliable background processing.
   overview-queue, processing, or calibration workload. The main Vehicle
   Intelligence workspace defers optional per-camera detector preview scans
   until after its primary controls paint and does not repeat those scans during
-  routine status polling.
+  routine status polling. Vehicle Profiles now requests only its paginated
+  profile results, and Needs Review requests only the selected review queue;
+  neither route waits for the other profile and review workloads before it can
+  render.
   Blue Iris integration can now correlate a plate-read timestamp with continuous
   BVR metadata and sample a fixed 17-frame, half-second timeline window through the
   read-only JPEG endpoint. Local vehicle detection selects one best overview

@@ -3274,13 +3274,19 @@ export async function setVehicleDirectionReevaluationPaused(paused) {
 export async function getVehicleClusterOverview(options = {}) {
   const principal = await requirePermission("plate.read");
   try {
+    const canManageSettings = hasPermission(principal, "system.manage_settings");
+    const scopedOptions = options?.view === "review"
+      && options?.reviewQueue === "setup"
+      && !canManageSettings
+      ? { ...options, reviewQueue: "vehicle" }
+      : options;
     return {
       success: true,
       data: {
-        ...(await (await getCaptureAssetService()).getVehicleClusterOverview(options)),
+        ...(await (await getCaptureAssetService()).getVehicleClusterOverview(scopedOptions)),
         canReview: hasPermission(principal, "plate.review"),
         canAnalyze: hasPermission(principal, "maintenance.manage"),
-        canManageSettings: hasPermission(principal, "system.manage_settings"),
+        canManageSettings,
       },
     };
   } catch (error) {

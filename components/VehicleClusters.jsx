@@ -131,6 +131,8 @@ export default function VehicleClusters({ initialResult, view = "profiles", init
   }, [initialResult]);
 
   const options = (overrides = {}) => ({
+    view,
+    reviewQueue: view === "review" ? activeQueue : undefined,
     profilePage: data?.pagination?.profiles?.page || 1,
     vehicleReviewPage: data?.pagination?.vehicleReviews?.page || 1,
     plateReviewPage: data?.pagination?.plateReviews?.page || 1,
