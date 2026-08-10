@@ -127,7 +127,10 @@ test("malicious plate-read sort values cannot enter SQL", () => {
 });
 
 test("database queries delegate sorting to the validated helper", async () => {
-  const source = await fs.readFile("lib/db.js", "utf8");
+  const [source, migrations] = await Promise.all([
+    fs.readFile("lib/db.js", "utf8"),
+    fs.readFile("migrations.sql", "utf8"),
+  ]);
 
   assert.match(source, /getPlateReadsOrderBy\(sort\)/);
   assert.match(
@@ -144,4 +147,10 @@ test("database queries delegate sorting to the validated helper", async () => {
   assert.equal(source.includes("LIMIT ${pageSize}"), false);
   assert.match(source, /LIMIT \$\$\{paramIndex\}/);
   assert.match(source, /normalizePagination\(page, pageSize\)/);
+  assert.match(source, /WITH paged_reads AS MATERIALIZED/);
+  assert.match(source, /FROM paged_reads page\s+JOIN plate_reads pr ON pr\.id = page\.id/);
+  assert.match(
+    migrations,
+    /CREATE INDEX IF NOT EXISTS idx_plate_reads_live_feed_timestamp\s+ON public\.plate_reads \("timestamp" DESC, id DESC\)/
+  );
 });

@@ -29,3 +29,19 @@ test("plate insights count distinct reads when tag joins multiply rows", async (
 
   assert.match(insightsQuery, /COUNT\(DISTINCT pr\.id\) as total_occurrences/);
 });
+
+test("Live Feed timestamps reserve their final two-line layout before hydration", async () => {
+  const source = await readFile(
+    new URL("../components/PlateTable.jsx", import.meta.url),
+    "utf8"
+  );
+
+  assert.match(source, /function PlateTimestamp/);
+  assert.match(source, /toLocaleDateString\("en-US"\)/);
+  assert.match(source, /toLocaleTimeString\("en-US"/);
+  assert.match(source, /className="block whitespace-nowrap leading-tight"/);
+  assert.doesNotMatch(
+    source,
+    /new Date\(plate\.timestamp\)\.toLocaleString\("en-US"/
+  );
+});
