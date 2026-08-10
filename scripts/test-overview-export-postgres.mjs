@@ -45,14 +45,16 @@ try {
   const read = await pool.query(
     `INSERT INTO public.plate_reads (
        plate_number, camera_name, "timestamp", bi_trigger_direction_status,
-       bi_trigger_direction_label, vehicle_image_queue_kind, vehicle_image_status,
+       bi_trigger_direction_label, bi_trigger_direction_profile_version,
+       bi_trigger_direction_algorithm, vehicle_image_queue_kind, vehicle_image_status,
        vehicle_image_attempt_count, vehicle_image_retryable,
        vehicle_image_claim_token, vehicle_image_heartbeat_at,
        vehicle_image_processing_deadline_at, vehicle_image_hard_deadline_at,
        vehicle_image_updated_at
      ) VALUES (
        'CXTEST', $2, CURRENT_TIMESTAMP - INTERVAL '1 minute',
-       'ready', 'Eastbound', 'overview', 'processing', 1, TRUE,
+       'ready', 'Eastbound', 1, 'blue-iris-zone-crossing-v1',
+       'overview', 'processing', 1, TRUE,
        $1::uuid, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP + INTERVAL '3 minutes',
        CURRENT_TIMESTAMP + INTERVAL '5 minutes', CURRENT_TIMESTAMP
      ) RETURNING id, vehicle_image_hard_deadline_at`,
