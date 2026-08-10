@@ -518,7 +518,10 @@ notes. Updates remain externally orchestrated.
   selected JPEG is written directly to its originating read as an overview
   primary image. Work is claimed oldest first, refreshed by heartbeat, and bound
   by a non-extendable five-minute deadline; expired second attempts become an
-  explicit failed state rather than remaining Processing. A deliberate 48-hour
+  explicit failed state rather than remaining Processing. A released claim
+  retains its consumed attempt and waits before its one bounded retry; it can
+  never reset the counter and create an unlimited series of duplicate Blue Iris
+  Clipboard exports. A deliberate 48-hour
   recovery control requeues only pending, stuck, and allowlisted transient
   operational failures. Street Overview requires no motion or web-request action.
   Monochrome plate reads remain terminal `Unavailable nighttime` and make no
