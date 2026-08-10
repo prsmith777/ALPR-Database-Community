@@ -1732,6 +1732,8 @@ export async function testBlueIrisConnection() {
 function blueIrisExportDiagnostic(config) {
   return new BlueIrisExportDiagnosticService({
     client: new BlueIrisClient(config.blueiris),
+    minimumWidth: config.blueiris.timeline_export_min_width,
+    minimumHeight: config.blueiris.timeline_export_min_height,
   });
 }
 
@@ -1771,6 +1773,20 @@ export async function checkBlueIrisExportDiagnostic(input = {}) {
   }
 }
 
+export async function downloadBlueIrisExportDiagnostic(input = {}) {
+  const principal = await requirePermission("system.manage_settings");
+  try {
+    const config = await getConfig();
+    const data = await blueIrisExportDiagnostic(config).download({
+      actor: principal,
+      token: input.token,
+    });
+    return { success: true, data };
+  } catch (error) {
+    return blueIrisExportDiagnosticFailure(error, "Unable to download the diagnostic export.");
+  }
+}
+
 export async function deleteBlueIrisExportDiagnostic(input = {}) {
   const principal = await requirePermission("system.manage_settings");
   try {
@@ -1782,6 +1798,20 @@ export async function deleteBlueIrisExportDiagnostic(input = {}) {
     return { success: true, data };
   } catch (error) {
     return blueIrisExportDiagnosticFailure(error, "Unable to delete the diagnostic export.");
+  }
+}
+
+export async function cleanupBlueIrisExportDiagnostic(input = {}) {
+  const principal = await requirePermission("system.manage_settings");
+  try {
+    const config = await getConfig();
+    const data = await blueIrisExportDiagnostic(config).cleanup({
+      actor: principal,
+      token: input.token,
+    });
+    return { success: true, data };
+  } catch (error) {
+    return blueIrisExportDiagnosticFailure(error, "Unable to remove the staging diagnostic copy.");
   }
 }
 
