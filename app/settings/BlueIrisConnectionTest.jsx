@@ -209,7 +209,7 @@ export default function BlueIrisConnectionTest() {
             <div>
               <h4 className="font-medium">Manual timeline-export diagnostic</h4>
               <p className="mt-1 text-sm text-muted-foreground">
-                This temporary diagnostic creates one eight-second main-stream MP4 with re-encoding disabled. Creation, exact-path status, download and validation, deletion request, deletion verification, and staging cleanup each require a separate click. Nothing polls, downloads, or deletes automatically.
+                This temporary diagnostic creates one eight-second main-stream MP4 with re-encoding disabled. Creation, exact-URI availability, download and validation, deletion request, deletion verification, and staging cleanup each require a separate click. Nothing polls, downloads, or deletes automatically.
               </p>
             </div>
             {!exportDiagnostic?.data && (
@@ -232,16 +232,14 @@ export default function BlueIrisConnectionTest() {
                 </p>
                 {!exportDiagnostic.data.deletedAt && !exportDiagnostic.data.checkedAt && (
                   <p className="font-medium text-amber-700 dark:text-amber-300">
-                    Paused after creation. Inspect the Blue Iris export queue and folders, then request one status check.
+                    Paused after creation. Inspect the Blue Iris Clipboard folder, then request one exact-URI availability check.
                   </p>
                 )}
                 {!exportDiagnostic.data.deletedAt && exportDiagnostic.data.checkedAt && !exportDiagnostic.data.downloadAttemptedAt && (
                   <p className="font-medium text-amber-700 dark:text-amber-300">
                     {exportDiagnostic.data.complete
-                      ? "Paused after one status request. The reserved export can now be downloaded once to staging and validated before any Blue Iris deletion."
-                      : exportDiagnostic.data.status === "status_unavailable"
-                        ? "The exact export status was unavailable. This does not prove completion. Do not download or delete it; request status again later."
-                        : "Paused after one exact-path status request. Blue Iris has not reported done; request status again later."}
+                      ? "The exact reserved URI is now downloadable. It can be downloaded once to staging and fully validated before any Blue Iris deletion."
+                      : "The exact reserved URI is not downloadable yet. Wait at least five seconds, then check availability again."}
                   </p>
                 )}
                 {exportDiagnostic.data.downloadError && !exportDiagnostic.data.deletedAt && (
@@ -281,7 +279,7 @@ export default function BlueIrisConnectionTest() {
                   {!exportDiagnostic.data.deletedAt && !exportDiagnostic.data.downloadValidated && (
                     <Button type="button" variant="outline" onClick={checkExportDiagnostic} disabled={pending}>
                       {pending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <RefreshCw className="mr-2 h-4 w-4" />}
-                      Check export status once
+                      Check exact export availability once
                     </Button>
                   )}
                   {!exportDiagnostic.data.deletedAt && !exportDiagnostic.data.downloadValidated && exportDiagnostic.data.checkedAt && exportDiagnostic.data.complete && (
