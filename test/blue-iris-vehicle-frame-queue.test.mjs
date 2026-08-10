@@ -358,10 +358,40 @@ test("overview reads are claimed atomically only after validated Blue Iris direc
   assert.match(statement, /ORDER BY reads\."timestamp" ASC, reads\.id ASC/);
   assert.match(statement, /vehicle_image_hard_deadline_at = CURRENT_TIMESTAMP \+ INTERVAL '5 minutes'/);
   assert.match(statement, /vehicle_image_attempt_count = COALESCE\(reads\.vehicle_image_attempt_count, 0\) \+ 1/);
+  assert.match(statement, /vehicle_image_status = 'pending'[\s\S]*vehicle_image_next_attempt_at/);
   assert.match(statement, /vehicle_image_claim_token = \$1::uuid/);
   assert.match(statement, /LOWER\(BTRIM\(source_camera_name\)\) <> LOWER\(BTRIM\(plate_camera_name\)\)/);
   assert.match(read.vehicle_image_claim_token || "", /^[0-9a-f-]{36}$/i);
   assert.equal(read.vehicle_image_claim_token, parameters[0]);
+});
+
+test("releasing an overview claim preserves its consumed attempt and caps profile-change retries", async () => {
+  let statement = "";
+  let parameters = null;
+  const repository = new BlueIrisVehicleFrameRepository({
+    async query(sql, values) {
+      statement = sql;
+      parameters = values;
+      return { rows: [{ id: 103 }] };
+    },
+  });
+
+  const released = await repository.releaseOverviewReadClaim(
+    103,
+    "11111111-1111-4111-8111-111111111111"
+  );
+
+  assert.equal(released.id, 103);
+  assert.deepEqual(parameters, [
+    103,
+    "11111111-1111-4111-8111-111111111111",
+    "OVERVIEW_PROFILE_CHANGED",
+  ]);
+  assert.doesNotMatch(statement, /vehicle_image_attempt_count\s*=/);
+  assert.match(statement, /vehicle_image_attempt_count, 0\) >= 2 THEN 'failed'/);
+  assert.match(statement, /vehicle_image_retryable = COALESCE\(vehicle_image_attempt_count, 0\) < 2/);
+  assert.match(statement, /CURRENT_TIMESTAMP \+ INTERVAL '30 seconds'/);
+  assert.match(statement, /vehicle_image_hard_deadline_at > CURRENT_TIMESTAMP/);
 });
 
 test("a downloaded timeline export becomes terminal without a remote-delete schedule", async () => {
