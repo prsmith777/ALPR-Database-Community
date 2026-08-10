@@ -68,6 +68,10 @@ import {
   DASHBOARD_TIME_FRAME_LABELS,
   getDashboardTimeWindow,
 } from "@/lib/dashboard-time-distribution.mjs";
+import {
+  readDashboardFilterPreference,
+  writeDashboardFilterPreference,
+} from "@/lib/dashboard-filter-preference.mjs";
 
 export function formatTimeRange(hour, timeFormat) {
   if (timeFormat === 24) {
@@ -250,13 +254,36 @@ export default function DashboardMetrics() {
   const [camerasLoading, setCamerasLoading] = useState(true);
   const [cameras, setCameras] = useState([]);
   const [queryContext, setQueryContext] = useState(null);
+  const [preferencesReady, setPreferencesReady] = useState(false);
+
+  useEffect(() => {
+    const preference = readDashboardFilterPreference();
+    setSelectedCameras(preference.cameras);
+    setTimeFrame(preference.timeFrame);
+    setPreferencesReady(true);
+  }, []);
+
+  useEffect(() => {
+    if (!preferencesReady) return;
+    writeDashboardFilterPreference({
+      cameras: selectedCameras,
+      timeFrame,
+    });
+  }, [preferencesReady, selectedCameras, timeFrame]);
 
   useEffect(() => {
     async function loadCameras() {
       try {
         setCamerasLoading(true);
         const cameraRes = await getCameraNames();
-        setCameras(cameraRes.success ? cameraRes.data : []);
+        const availableCameras = cameraRes.success ? cameraRes.data : [];
+        setCameras(availableCameras);
+        if (cameraRes.success) {
+          const availableCameraSet = new Set(availableCameras);
+          setSelectedCameras((current) =>
+            current.filter((camera) => availableCameraSet.has(camera))
+          );
+        }
       } catch (error) {
         console.error("Error loading cameras:", error);
         setCameras([]);
@@ -268,6 +295,7 @@ export default function DashboardMetrics() {
   }, []);
 
   useEffect(() => {
+    if (!preferencesReady) return undefined;
     let cancelled = false;
 
     async function fetchData() {
@@ -326,7 +354,7 @@ export default function DashboardMetrics() {
     return () => {
       cancelled = true;
     };
-  }, [timeFrame, selectedCameras]);
+  }, [preferencesReady, timeFrame, selectedCameras]);
 
   const timeDistributionData = metrics.time_distribution
     .filter((item) => item && typeof item.hour_block === "number")
@@ -360,6 +388,33 @@ export default function DashboardMetrics() {
     queryContext
       ? buildDashboardFeedHref({
           metric,
+          timeFrame: queryContext.timeFrame,
+          startDate: queryContext.startDate,
+          endDate: queryContext.endDate,
+          timeZone: queryContext.timeZone,
+          cameras: queryContext.cameras,
+        })
+      : undefined;
+
+  const tagHref = (tag) =>
+    queryContext
+      ? buildDashboardFeedHref({
+          tags: [tag],
+          timeFrame: queryContext.timeFrame,
+          startDate: queryContext.startDate,
+          endDate: queryContext.endDate,
+          timeZone: queryContext.timeZone,
+          cameras: queryContext.cameras,
+        })
+      : `/live_feed?tag=${encodeURIComponent(tag)}`;
+
+  const tagDistributionCategories = (metrics.tag_stats || []).map(
+    (tag) => tag.category
+  );
+  const tagDistributionTotalHref =
+    queryContext && tagDistributionCategories.length > 0
+      ? buildDashboardFeedHref({
+          tags: tagDistributionCategories,
           timeFrame: queryContext.timeFrame,
           startDate: queryContext.startDate,
           endDate: queryContext.endDate,
@@ -804,6 +859,8 @@ export default function DashboardMetrics() {
           <TagDistributionChart
             data={metrics.tag_stats || []}
             loading={false}
+            getTagHref={tagHref}
+            totalHref={tagDistributionTotalHref}
             className="h-full"
           />
         </div>
