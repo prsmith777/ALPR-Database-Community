@@ -9,6 +9,7 @@ import {
   findSimilarCaptures,
   findSimilarUploadedCaptures,
   getVisualSearchBootstrap,
+  getVisualSearchCameraSetup,
   indexCameraCaptureAssetsBatch,
   indexCaptureAssetsBatch,
   saveCameraVisualProfile,
@@ -385,13 +386,31 @@ export default function VisualSearch({ initialResult, initialReadId }) {
   const [uploadedQuery, setUploadedQuery] = useState(null);
   const [draggingUpload, setDraggingUpload] = useState(false);
   const [feedbackSaving, setFeedbackSaving] = useState(null);
+  const [cameraSetupLoading, setCameraSetupLoading] = useState(false);
   const initialSearchStarted = useRef(false);
   const uploadInputRef = useRef(null);
 
   const refreshBootstrap = async () => {
     const result = await getVisualSearchBootstrap();
-    if (result.success) setBootstrap(result.data);
+    if (result.success) {
+      setBootstrap((current) => ({
+        ...result.data,
+        ...(current?.cameraProfiles ? { cameraProfiles: current.cameraProfiles } : {}),
+      }));
+    }
     else setError(result.error);
+  };
+
+  const refreshCameraSetup = async () => {
+    setCameraSetupLoading(true);
+    try {
+      const result = await getVisualSearchCameraSetup();
+      if (result.success) {
+        setBootstrap((current) => current ? { ...current, cameraProfiles: result.data } : current);
+      }
+    } finally {
+      setCameraSetupLoading(false);
+    }
   };
 
   const runSearch = async (readId) => {
@@ -476,10 +495,25 @@ export default function VisualSearch({ initialResult, initialReadId }) {
   useEffect(() => {
     const interval = window.setInterval(async () => {
       const result = await getVisualSearchBootstrap();
-      if (result.success) setBootstrap(result.data);
+      if (result.success) {
+        setBootstrap((current) => ({
+          ...result.data,
+          ...(current?.cameraProfiles ? { cameraProfiles: current.cameraProfiles } : {}),
+        }));
+      }
     }, 15_000);
     return () => window.clearInterval(interval);
   }, []);
+
+  useEffect(() => {
+    if (!initialData?.canManageIndex || initialData.cameraProfiles) return undefined;
+    const timer = window.setTimeout(() => {
+      refreshCameraSetup();
+    }, 250);
+    return () => window.clearTimeout(timer);
+    // Detector setup is deliberately loaded after the primary workspace paints.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialData?.canManageIndex]);
 
   const runIndexBatch = async () => {
     setIndexing(true);
@@ -763,8 +797,14 @@ export default function VisualSearch({ initialResult, initialReadId }) {
         </div>
       </div>
 
+      {bootstrap?.canManageIndex && cameraSetupLoading && !bootstrap.cameraProfiles ? (
+        <div className="flex items-center gap-2 rounded-lg border p-4 text-sm text-muted-foreground">
+          <Loader2 className="h-4 w-4 animate-spin" /> Loading camera detector setup…
+        </div>
+      ) : null}
+
       {bootstrap?.canManageIndex && bootstrap.cameraProfiles?.length > 0 && (
-        <CameraDetectorSetup profiles={bootstrap.cameraProfiles} onSaved={refreshBootstrap} />
+        <CameraDetectorSetup profiles={bootstrap.cameraProfiles} onSaved={refreshCameraSetup} />
       )}
 
       {error && <div role="alert" className="rounded-lg border border-destructive/40 bg-destructive/10 p-4 text-sm text-destructive">{error}</div>}

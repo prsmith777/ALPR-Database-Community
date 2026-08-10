@@ -1843,7 +1843,11 @@ export async function getVehicleOverviewSetup() {
   try {
     const [runtime, directionSetup] = await Promise.all([
       getBlueIrisVehicleFrameRuntime(),
-      (await getCaptureAssetService()).getDirectionSetup(),
+      (await getCaptureAssetService()).getDirectionSetup(null, {
+        includeBackfill: false,
+        includeCaptures: false,
+        includeBlueIrisTriggerDirection: false,
+      }),
     ]);
     const [profiles, status, entryRouteProfiles, entryFallback] = await Promise.all([
       runtime.repository.listOverviewPairProfiles(),
@@ -2988,13 +2992,13 @@ function visualSearchFailure(error, fallback) {
   return { success: false, error: fallback };
 }
 
-export async function getVisualSearchBootstrap() {
+export async function getVisualSearchBootstrap(input = {}) {
   const principal = await requirePermission("plate.read");
   try {
     const canManageIndex = hasPermission(principal, "maintenance.manage");
     const [data, config] = await Promise.all([
       (await getCaptureAssetService()).getBootstrap({
-        includeCameraSetup: canManageIndex,
+        includeCameraSetup: canManageIndex && input?.includeCameraSetup === true,
       }),
       canManageIndex ? getConfig() : Promise.resolve(null),
     ]);
@@ -3018,6 +3022,18 @@ export async function getVisualSearchBootstrap() {
     };
   } catch (error) {
     return visualSearchFailure(error, "Unable to load visual search.");
+  }
+}
+
+export async function getVisualSearchCameraSetup() {
+  await requirePermission("maintenance.manage");
+  try {
+    return {
+      success: true,
+      data: await (await getCaptureAssetService()).getCameraSetup(),
+    };
+  } catch (error) {
+    return visualSearchFailure(error, "Unable to load camera detector setup.");
   }
 }
 
@@ -3136,12 +3152,16 @@ export async function submitVehicleMatchFeedback(input = {}) {
   }
 }
 
-export async function getVehicleDirectionSetup(cameraName = null) {
+export async function getVehicleDirectionSetup(cameraName = null, options = {}) {
   await requirePermission("system.manage_settings");
   try {
     return {
       success: true,
-      data: await (await getCaptureAssetService()).getDirectionSetup(cameraName),
+      data: await (await getCaptureAssetService()).getDirectionSetup(cameraName, {
+        includeBackfill: options?.includeBackfill !== false,
+        includeCaptures: options?.includeCaptures !== false,
+        includeBlueIrisTriggerDirection: options?.includeBlueIrisTriggerDirection !== false,
+      }),
     };
   } catch (error) {
     return visualSearchFailure(error, "Unable to load vehicle direction setup.");

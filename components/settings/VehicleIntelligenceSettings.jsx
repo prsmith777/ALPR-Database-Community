@@ -169,7 +169,11 @@ export default function VehicleIntelligenceSettings({
       + Number(data.backfill?.imagesAwaitingIndex || 0);
     if (!pending) return undefined;
     const timer = window.setInterval(async () => {
-      const result = await getVehicleDirectionSetup(cameraName);
+      const result = await getVehicleDirectionSetup(cameraName, {
+        includeBackfill: true,
+        includeCaptures: false,
+        includeBlueIrisTriggerDirection: false,
+      });
       if (result.success) setData(result.data);
     }, 5000);
     return () => window.clearInterval(timer);
@@ -185,7 +189,12 @@ export default function VehicleIntelligenceSettings({
   }, [frameQueue?.historicalOutstanding, frameQueue?.liveOutstanding, frameQueue?.pending]);
 
   const reload = async (selected = cameraName) => {
-    const result = await getVehicleDirectionSetup(selected);
+    const active = routeTab.active;
+    const result = await getVehicleDirectionSetup(selected, {
+      includeBackfill: active === "processing",
+      includeCaptures: active === "calibration",
+      includeBlueIrisTriggerDirection: active === "cameras",
+    });
     if (!result.success) throw new Error(result.error);
     setData(result.data);
     setCameraName(result.data.selectedCamera || selected);
@@ -193,6 +202,7 @@ export default function VehicleIntelligenceSettings({
 
   const selectCamera = async (value) => {
     setCameraName(value);
+    if (routeTab.active === "views") return;
     setBusy("loading");
     setMessage("");
     try { await reload(value); }

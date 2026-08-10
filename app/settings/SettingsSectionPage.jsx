@@ -20,8 +20,9 @@ const ADMIN_SECTIONS = new Set([
   "blueiris",
   "homeassistant",
 ]);
+const SETTINGS_FREE_SECTIONS = new Set(["security", "privacy", "release", "plateReview"]);
 
-export default async function SettingsSectionPage({ sectionId }) {
+export default async function SettingsSectionPage({ sectionId, privacyView = "storage" }) {
   const access = await getCurrentAccess();
   const mustChangePassword = access.currentUser.mustChangePassword === true;
   if (mustChangePassword && sectionId !== "security") {
@@ -45,16 +46,22 @@ export default async function SettingsSectionPage({ sectionId }) {
     currentUser: access.currentUser,
     canManageUsers: false,
   };
+  const needsSettings = canManageSettings
+    && !SETTINGS_FREE_SECTIONS.has(sectionId);
+  const needsSecurity = sectionId === "security";
+  const needsStorageMaintenance = canManageSettings
+    && sectionId === "privacy"
+    && privacyView !== "privacy";
   const [settings, authConfig, identityState, storageMaintenance] = await Promise.all([
-    canManageSettings ? getSettings() : Promise.resolve(null),
-    canManageSettings ? getAuthConfig() : Promise.resolve({ apiKey: "" }),
-    canManageUsers
+    needsSettings ? getSettings() : Promise.resolve(null),
+    canManageSettings && needsSecurity ? getAuthConfig() : Promise.resolve({ apiKey: "" }),
+    canManageUsers && needsSecurity
       ? getIdentityAdminState()
       : Promise.resolve(personalIdentityState),
-    canManageSettings ? getStorageMaintenanceOverview() : Promise.resolve(null),
+    needsStorageMaintenance ? getStorageMaintenanceOverview() : Promise.resolve(null),
   ]);
 
-  if (canManageSettings && !settings) {
+  if (needsSettings && !settings) {
     throw new Error("Failed to load settings");
   }
 
