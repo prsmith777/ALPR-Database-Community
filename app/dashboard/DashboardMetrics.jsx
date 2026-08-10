@@ -55,7 +55,7 @@ import {
 import { Skeleton } from "@/components/ui/skeleton";
 import Link from "next/link";
 import { TimeFrameSelector } from "./TimeSelect";
-import { TagDistributionChart } from "./TagDistribution";
+import { TagDistributionComparison } from "./TagDistribution";
 import { Separator } from "@/components/ui/separator";
 import Image from "next/image";
 import { FaRoad, FaGithub } from "react-icons/fa";
@@ -244,6 +244,10 @@ export default function DashboardMetrics() {
     unique_plates: 0,
     weekly_unique: 0,
     suspicious_count: 0,
+    tagged_vehicles_count: 0,
+    tagged_reads_count: 0,
+    tag_stats: [],
+    tag_read_stats: [],
     top_plates: [],
   });
 
@@ -324,6 +328,22 @@ export default function DashboardMetrics() {
           unique_plates: Number.parseInt(data?.unique_plates) || 0,
           weekly_unique: Number.parseInt(data?.weekly_unique) || 0,
           suspicious_count: Number.parseInt(data?.suspicious_count) || 0,
+          tagged_vehicles_count:
+            Number.parseInt(data?.tagged_vehicles_count, 10) || 0,
+          tagged_reads_count:
+            Number.parseInt(data?.tagged_reads_count, 10) || 0,
+          tag_stats: Array.isArray(data?.tag_stats)
+            ? data.tag_stats.map((tag) => ({
+                ...tag,
+                count: Number.parseInt(tag.count, 10) || 0,
+              }))
+            : [],
+          tag_read_stats: Array.isArray(data?.tag_read_stats)
+            ? data.tag_read_stats.map((tag) => ({
+                ...tag,
+                count: Number.parseInt(tag.count, 10) || 0,
+              }))
+            : [],
         };
         setMetrics(sanitizedData);
         setQueryContext({
@@ -343,6 +363,10 @@ export default function DashboardMetrics() {
           unique_plates: 0,
           weekly_unique: 0,
           suspicious_count: 0,
+          tagged_vehicles_count: 0,
+          tagged_reads_count: 0,
+          tag_stats: [],
+          tag_read_stats: [],
           top_plates: [],
         });
       } finally {
@@ -396,10 +420,11 @@ export default function DashboardMetrics() {
         })
       : undefined;
 
-  const tagHref = (tag) =>
+  const tagHref = (tag, metric) =>
     queryContext
       ? buildDashboardFeedHref({
           tags: [tag],
+          metric,
           timeFrame: queryContext.timeFrame,
           startDate: queryContext.startDate,
           endDate: queryContext.endDate,
@@ -408,13 +433,31 @@ export default function DashboardMetrics() {
         })
       : `/live_feed?tag=${encodeURIComponent(tag)}`;
 
-  const tagDistributionCategories = (metrics.tag_stats || []).map(
+  const tagVehicleHref = (tag) => tagHref(tag, "uniqueVehicles");
+  const tagReadHref = (tag) => tagHref(tag);
+
+  const tagVehicleCategories = (metrics.tag_stats || []).map(
     (tag) => tag.category
   );
-  const tagDistributionTotalHref =
-    queryContext && tagDistributionCategories.length > 0
+  const tagReadCategories = (metrics.tag_read_stats || []).map(
+    (tag) => tag.category
+  );
+  const taggedVehicleTotalHref =
+    queryContext && tagVehicleCategories.length > 0
       ? buildDashboardFeedHref({
-          tags: tagDistributionCategories,
+          tags: tagVehicleCategories,
+          metric: "uniqueVehicles",
+          timeFrame: queryContext.timeFrame,
+          startDate: queryContext.startDate,
+          endDate: queryContext.endDate,
+          timeZone: queryContext.timeZone,
+          cameras: queryContext.cameras,
+        })
+      : undefined;
+  const taggedReadTotalHref =
+    queryContext && tagReadCategories.length > 0
+      ? buildDashboardFeedHref({
+          tags: tagReadCategories,
           timeFrame: queryContext.timeFrame,
           startDate: queryContext.startDate,
           endDate: queryContext.endDate,
@@ -808,7 +851,7 @@ export default function DashboardMetrics() {
       {/* Bottom section - Made responsive */}
       <div className="grid grid-cols-1 xl:grid-cols-12 gap-4">
         {/* Metrics Grid */}
-        <div className="xl:col-span-8 grid grid-rows-auto gap-4">
+        <div className="xl:col-span-12 grid grid-rows-auto gap-4">
           <div className="grid grid-cols-1 xs:grid-cols-2 xl:grid-cols-4 gap-4">
             <MetricCard
               title="Total Unique Plates"
@@ -846,22 +889,27 @@ export default function DashboardMetrics() {
               loading={false}
             />
           </div>
-          <div className="w-full">
-            <CameraReadsChart
-              data={metrics.camera_counts || []}
-              loading={false}
-            />
-          </div>
         </div>
 
-        {/* Tag Distribution Chart */}
         <div className="xl:col-span-4">
-          <TagDistributionChart
-            data={metrics.tag_stats || []}
+          <CameraReadsChart
+            data={metrics.camera_counts || []}
             loading={false}
-            getTagHref={tagHref}
-            totalHref={tagDistributionTotalHref}
-            className="h-full"
+          />
+        </div>
+
+        {/* Tag distributions share one comparison card */}
+        <div className="xl:col-span-8">
+          <TagDistributionComparison
+            loading={false}
+            vehicleData={metrics.tag_stats || []}
+            vehicleTotal={metrics.tagged_vehicles_count}
+            getVehicleHref={tagVehicleHref}
+            vehicleTotalHref={taggedVehicleTotalHref}
+            readData={metrics.tag_read_stats || []}
+            readTotal={metrics.tagged_reads_count}
+            getReadHref={tagReadHref}
+            readTotalHref={taggedReadTotalHref}
           />
         </div>
       </div>

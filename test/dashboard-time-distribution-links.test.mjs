@@ -124,14 +124,15 @@ test("dashboard metric links preserve their result mode, time window, and camera
 
 test("Tag Distribution links preserve the tag, time window, and cameras", () => {
   const { startDate, endDate } = getDashboardTimeWindow("7d", NOW);
-  const href = buildDashboardFeedHref({
+  const filters = {
     tags: ["Family", "Suspicious"],
     timeFrame: "7d",
     startDate,
     endDate,
     timeZone: "America/Denver",
     cameras: ["Street LPR", "Driveway LPR"],
-  });
+  };
+  const href = buildDashboardFeedHref(filters);
   const url = new URL(href, "http://alpr.test");
 
   assert.deepEqual(url.searchParams.getAll("tag"), ["Family", "Suspicious"]);
@@ -140,6 +141,16 @@ test("Tag Distribution links preserve the tag, time window, and cameras", () => 
   assert.deepEqual(url.searchParams.getAll("camera"), [
     "Street LPR",
     "Driveway LPR",
+  ]);
+
+  const vehicleUrl = new URL(
+    buildDashboardFeedHref({ ...filters, metric: "uniqueVehicles" }),
+    "http://alpr.test"
+  );
+  assert.equal(vehicleUrl.searchParams.get("dashboardMetric"), "uniqueVehicles");
+  assert.deepEqual(vehicleUrl.searchParams.getAll("tag"), [
+    "Family",
+    "Suspicious",
   ]);
 });
 
@@ -184,20 +195,69 @@ test("Top Plates quick look uses an available overview only in its fourth tile",
   assert.match(dashboard, /img\.isOverview\s+\? "Overview"/);
 });
 
-test("Tag Distribution slices and legend entries link to Recognition Feed", async () => {
+test("both Tag Distribution views share one card and link to Recognition Feed", async () => {
   const [dashboard, tagDistribution] = await Promise.all([
     readFile(new URL("../app/dashboard/DashboardMetrics.jsx", import.meta.url), "utf8"),
     readFile(new URL("../app/dashboard/TagDistribution.jsx", import.meta.url), "utf8"),
   ]);
 
-  assert.match(dashboard, /const tagHref = \(tag\) =>/);
-  assert.match(dashboard, /getTagHref=\{tagHref\}/);
-  assert.match(dashboard, /totalHref=\{tagDistributionTotalHref\}/);
+  assert.match(dashboard, /const tagHref = \(tag, metric\) =>/);
+  assert.match(dashboard, /const tagVehicleHref = \(tag\) => tagHref\(tag, "uniqueVehicles"\)/);
+  assert.match(dashboard, /<TagDistributionComparison/);
+  assert.match(dashboard, /getVehicleHref=\{tagVehicleHref\}/);
+  assert.match(dashboard, /getReadHref=\{tagReadHref\}/);
   assert.match(tagDistribution, /router\.push\(getTagHref\(category\)\)/);
   assert.match(tagDistribution, /href=\{getTagHref\(item\.category\)\}/);
-  assert.match(tagDistribution, /View \$\{item\.category\} plate reads in Recognition Feed/);
-  assert.match(tagDistribution, /View all tagged plate reads in Recognition Feed/);
+  assert.match(tagDistribution, /TagDistributionComparison/);
+  assert.match(tagDistribution, /title="Tagged Vehicles"/);
+  assert.match(tagDistribution, /title="Tagged Plate Reads"/);
+  assert.match(tagDistribution, /md:grid-cols-2/);
+  assert.match(tagDistribution, /View \$\{item\.category\} \$\{resultLabel\} in Recognition Feed/);
+  assert.match(tagDistribution, /View all tagged \$\{resultLabel\} in Recognition Feed/);
   assert.match(tagDistribution, /event\.key === "Enter" \|\| event\.key === " "/);
+});
+
+test("Tag Distribution separately counts distinct vehicles and every read", async () => {
+  const [database, actions, dashboard, tagDistribution] = await Promise.all([
+    readFile(new URL("../lib/db.js", import.meta.url), "utf8"),
+    readFile(new URL("../app/actions.js", import.meta.url), "utf8"),
+    readFile(new URL("../app/dashboard/DashboardMetrics.jsx", import.meta.url), "utf8"),
+    readFile(new URL("../app/dashboard/TagDistribution.jsx", import.meta.url), "utf8"),
+  ]);
+  const metricsQuery = database.slice(
+    database.indexOf("export async function getMetrics"),
+    database.indexOf("export async function manageKnownPlate")
+  );
+
+  assert.match(
+    metricsQuery,
+    /tag_stats AS \([\s\S]*?COUNT\(DISTINCT pr\.plate_number\)::integer as count/
+  );
+  assert.match(
+    metricsQuery,
+    /tag_stats AS \([\s\S]*?cardinality\(\$3::text\[\]\) = 0 OR pr\.camera_name = ANY\(\$3::text\[\]\)/
+  );
+  assert.match(
+    metricsQuery,
+    /tag_read_stats AS \([\s\S]*?COUNT\(DISTINCT pr\.id\)::integer as count/
+  );
+  assert.match(
+    metricsQuery,
+    /tagged_vehicle_stats AS \([\s\S]*?COUNT\(DISTINCT pr\.plate_number\)::integer as tagged_vehicles_count/
+  );
+  assert.match(
+    metricsQuery,
+    /tagged_reads_stats AS \([\s\S]*?COUNT\(DISTINCT pr\.id\)::integer as tagged_reads_count/
+  );
+  assert.match(
+    metricsQuery,
+    /tagged_reads_stats AS \([\s\S]*?cardinality\(\$3::text\[\]\) = 0 OR pr\.camera_name = ANY\(\$3::text\[\]\)/
+  );
+  assert.match(actions, /const normalizeTagStats = \(stats\) =>/);
+  assert.match(dashboard, /vehicleTotal=\{metrics\.tagged_vehicles_count\}/);
+  assert.match(dashboard, /readTotal=\{metrics\.tagged_reads_count\}/);
+  assert.match(tagDistribution, /Tagged Vehicles/);
+  assert.match(tagDistribution, /Tagged Plate Reads/);
 });
 
 test("Recognition Feed applies dashboard timestamps and the browser-local hour", async () => {

@@ -278,8 +278,25 @@ export async function getDashboardMetrics(
     }));
 
     // Process tag stats
-    const tagStats = metrics.tag_stats || [];
-    const totalTaggedPlates = tagStats.reduce((sum, tag) => sum + tag.count, 0);
+    const normalizeTagStats = (stats) => {
+      const normalized = (stats || []).map((tag) => ({
+        ...tag,
+        count: Number.parseInt(tag.count, 10) || 0,
+      }));
+      const totalMatches = normalized.reduce(
+        (sum, tag) => sum + tag.count,
+        0
+      );
+      return normalized.map((tag) => ({
+        ...tag,
+        percentage:
+          totalMatches > 0
+            ? ((tag.count / totalMatches) * 100).toFixed(1)
+            : "0.0",
+      }));
+    };
+    const tagStats = normalizeTagStats(metrics.tag_stats);
+    const tagReadStats = normalizeTagStats(metrics.tag_read_stats);
 
     // Process camera stats
     const cameraData = metrics.camera_counts || [];
@@ -288,10 +305,11 @@ export async function getDashboardMetrics(
       ...metrics,
       time_distribution: timeDistribution,
       camera_counts: cameraData,
-      tag_stats: tagStats.map((tag) => ({
-        ...tag,
-        percentage: ((tag.count / totalTaggedPlates) * 100).toFixed(1),
-      })),
+      tagged_vehicles_count:
+        Number.parseInt(metrics.tagged_vehicles_count, 10) || 0,
+      tagged_reads_count: Number.parseInt(metrics.tagged_reads_count, 10) || 0,
+      tag_stats: tagStats,
+      tag_read_stats: tagReadStats,
     };
   } catch (error) {
     console.error("Error fetching dashboard metrics:", error);
@@ -303,8 +321,11 @@ export async function getDashboardMetrics(
       unique_plates: 0,
       new_plates_count: 0,
       suspicious_count: 0,
+      tagged_vehicles_count: 0,
+      tagged_reads_count: 0,
       top_plates: [],
       tag_stats: [],
+      tag_read_stats: [],
     };
   }
 }
