@@ -250,16 +250,24 @@ test("plate identifiers request a slashed-zero glyph throughout the interface", 
 });
 
 test("table pagination scrolls the application content to the top", async () => {
-  const [scrollHelper, liveFeed, database] = await Promise.all([
+  const [scrollHelper, liveFeed, liveFeedTable, database, pagination] = await Promise.all([
     source("lib/page-scroll.mjs"),
     source("components/PlateTableWrapper.jsx"),
+    source("components/PlateTable.jsx"),
     source("components/plateDbTable.jsx"),
+    source("components/ResultsPagination.jsx"),
   ]);
 
   assert.match(scrollHelper, /document\.querySelector\("main"\)/);
   assert.match(scrollHelper, /scrollTo\(\{ top: 0, left: 0, behavior: "auto" \}\)/);
   assert.match(liveFeed, /scrollMainToTop\(\)/);
   assert.match(database, /scrollMainToTop\(\)/);
+  assert.equal((liveFeedTable.match(/<ResultsPagination/g) || []).length, 2);
+  assert.equal((database.match(/<ResultsPagination/g) || []).length, 2);
+  assert.match(pagination, /Top of page/);
+  assert.match(pagination, /Bottom of page/);
+  assert.match(pagination, /Showing \$\{firstResult\} to \$\{lastResult\} of \$\{totalResults\} results/);
+  assert.match(scrollHelper, /top: main\.scrollHeight/);
 });
 
 test("live feed and plate database expose large and multi-select filters", async () => {
@@ -379,8 +387,9 @@ test("the image viewer summarizes known-plate and tag associations", async () =>
   assert.match(table, /selectedImage\.knownName \|\| "Not known"/);
   assert.match(
     table,
-    />Review status<\/div>[\s\S]*?>Occurrences<\/div>[\s\S]*?>Known plate<\/div>/
+    />Review status<\/div>[\s\S]*?>Occurrences<\/div>[\s\S]*?>Camera<\/div>[\s\S]*?>Known plate<\/div>/
   );
+  assert.match(table, /selectedImage\.cameraName \|\| "Unknown"/);
   assert.match(table, /occurrenceCount: plate\.occurrence_count \?\? null/);
   assert.match(table, /selectedImage\.occurrenceCount \?\? "—"/);
   assert.match(table, />Tags</);

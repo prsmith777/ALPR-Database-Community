@@ -125,6 +125,11 @@ import {
   SheetTrigger,
   SheetFooter,
 } from "@/components/ui/sheet";
+import ResultsPagination from "@/components/ResultsPagination";
+import {
+  DASHBOARD_FEED_METRIC_LABELS,
+  DASHBOARD_TIME_FRAME_LABELS,
+} from "@/lib/dashboard-time-distribution.mjs";
 
 const SortButton = ({ label, field, sort, onSort }) => {
   const isActive = sort.field === field;
@@ -1236,6 +1241,10 @@ export default function PlateTable({
     onUpdateFilters({
       dateFrom: range.from ? range.from.toDateString() : null,
       dateTo: range.to ? range.to.toDateString() : null,
+      timestampFrom: null,
+      timestampTo: null,
+      timeZone: null,
+      timeFrame: null,
     });
   };
 
@@ -1401,8 +1410,13 @@ export default function PlateTable({
       tag: null,
       dateFrom: null,
       dateTo: null,
+      timestampFrom: null,
+      timestampTo: null,
       hourFrom: null,
       hourTo: null,
+      timeZone: null,
+      timeFrame: null,
+      dashboardMetric: null,
       camera: null,
       reviewStatus: null,
       direction: null,
@@ -1661,6 +1675,10 @@ export default function PlateTable({
             onUpdateFilters({
               dateFrom: range?.from ? range.from.toDateString() : null,
               dateTo: range?.to ? range.to.toDateString() : null,
+              timestampFrom: null,
+              timestampTo: null,
+              timeZone: null,
+              timeFrame: null,
             });
           }}
           className="rounded-md border"
@@ -1982,6 +2000,10 @@ export default function PlateTable({
                       onUpdateFilters({
                         dateFrom: range.from ? range.from.toDateString() : null,
                         dateTo: range.to ? range.to.toDateString() : null,
+                        timestampFrom: null,
+                        timestampTo: null,
+                        timeZone: null,
+                        timeFrame: null,
                       });
                     }}
                     numberOfMonths={2}
@@ -2009,6 +2031,8 @@ export default function PlateTable({
               {(filters.search ||
                 selectedTags.length > 0 ||
                 selectedDirections.length > 0 ||
+                filters.dashboardTimeFrame ||
+                filters.dashboardMetric ||
                 filters.dateRange.from ||
                 (filters.hourRange?.from !== undefined &&
                   filters.hourRange?.to !== undefined)) && (
@@ -2052,16 +2076,27 @@ export default function PlateTable({
             )}
           </div>
 
-        {/* Active filters display on mobile */}
+          <ResultsPagination
+            position="top"
+            page={pagination.page}
+            pageSize={pagination.pageSize}
+            total={pagination.total}
+            onPreviousPage={pagination.onPreviousPage}
+            onNextPage={pagination.onNextPage}
+          />
+
+        {/* Active filters display */}
         {(filters.search ||
           selectedTags.length > 0 ||
           filters.dateRange.from ||
           selectedCameras.length > 0 ||
           selectedReviewStatuses.length > 0 ||
           selectedDirections.length > 0 ||
+          filters.dashboardTimeFrame ||
+          filters.dashboardMetric ||
           (filters.hourRange?.from !== undefined &&
             filters.hourRange?.to !== undefined)) && (
-          <div className="flex sm:hidden items-center gap-2 mb-4 overflow-x-auto pb-2">
+          <div className="flex items-center gap-2 overflow-x-auto pb-2">
             <span className="text-xs text-muted-foreground whitespace-nowrap">
               Active filters:
             </span>
@@ -2072,6 +2107,24 @@ export default function PlateTable({
                 className="text-xs h-6 whitespace-nowrap"
               >
                 Search: {filters.search}
+              </Badge>
+            )}
+
+            {filters.dashboardTimeFrame && (
+              <Badge
+                variant="outline"
+                className="h-6 whitespace-nowrap text-xs"
+              >
+                Dashboard: {DASHBOARD_TIME_FRAME_LABELS[filters.dashboardTimeFrame]}
+              </Badge>
+            )}
+
+            {filters.dashboardMetric && (
+              <Badge
+                variant="outline"
+                className="h-6 whitespace-nowrap text-xs"
+              >
+                Results: {DASHBOARD_FEED_METRIC_LABELS[filters.dashboardMetric]}
               </Badge>
             )}
 
@@ -2748,44 +2801,14 @@ export default function PlateTable({
           </div>
         </div>
 
-        {/* Pagination - Mobile & Desktop */}
-        <div className="flex items-center justify-between pt-4">
-          <div className="text-xs sm:text-sm text-muted-foreground">
-            {pagination.total > 0 ? (
-              <>
-                Showing {(pagination.page - 1) * pagination.pageSize + 1} to{" "}
-                {Math.min(
-                  pagination.page * pagination.pageSize,
-                  pagination.total
-                )}{" "}
-                of {pagination.total} results
-              </>
-            ) : (
-              "No results"
-            )}
-          </div>
-          <div className="flex gap-2">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={pagination.onPreviousPage}
-              disabled={pagination.page <= 1}
-            >
-              Previous
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              className="dark:bg-[#161618]"
-              onClick={pagination.onNextPage}
-              disabled={
-                pagination.page * pagination.pageSize >= pagination.total
-              }
-            >
-              Next
-            </Button>
-          </div>
-        </div>
+        <ResultsPagination
+          position="bottom"
+          page={pagination.page}
+          pageSize={pagination.pageSize}
+          total={pagination.total}
+          onPreviousPage={pagination.onPreviousPage}
+          onNextPage={pagination.onNextPage}
+        />
 
         {/* Modals - These work on both mobile and desktop */}
         <Dialog
@@ -2818,7 +2841,7 @@ export default function PlateTable({
             {selectedImage && (
               <div className="contents">
                 <div className="grid min-h-0 grid-rows-[auto_minmax(0,1fr)] gap-3 lg:col-start-1 lg:row-start-1">
-                  <div className="grid gap-3 rounded-lg border p-3 text-sm sm:grid-cols-2 md:grid-cols-4 lg:grid-cols-7">
+                  <div className="grid gap-3 rounded-lg border p-3 text-sm sm:grid-cols-2 md:grid-cols-4 lg:grid-cols-8">
                 <div>
                   <div className="text-xs uppercase text-muted-foreground">Observed</div>
                   <div className="font-mono text-lg font-semibold leading-tight">{selectedImage.observedPlate}</div>
@@ -2834,6 +2857,12 @@ export default function PlateTable({
                 <div>
                   <div className="text-xs uppercase text-muted-foreground">Occurrences</div>
                   <div>{selectedImage.occurrenceCount ?? "—"}</div>
+                </div>
+                <div>
+                  <div className="text-xs uppercase text-muted-foreground">Camera</div>
+                  <div className={selectedImage.cameraName ? "" : "text-muted-foreground"}>
+                    {selectedImage.cameraName || "Unknown"}
+                  </div>
                 </div>
                 <div>
                   <div className="text-xs uppercase text-muted-foreground">Known plate</div>
