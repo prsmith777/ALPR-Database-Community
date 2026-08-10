@@ -485,10 +485,14 @@ notes. Updates remain externally orchestrated.
   temporary timeline export from the continuous Street Overview recording.
   Claims wait for the calculated source window, one second of export padding,
   and a short Blue Iris finalization grace. ALPR validates the returned UTC,
-  duration, and configured minimum resolution, immediately sends `delete:true`
-  for the exact returned export path, and reconciles only ledger-owned cleanup
-  failures with bounded backoff. The local MP4 and working frames are deleted
-  after each read.
+  duration, and configured minimum resolution. The worker polls only the exact
+  returned export locator at five-second intervals and downloads only after an
+  explicit `done` response; a missing global-list entry is not completion.
+  After validation it sends `delete:true` for the exact returned export path,
+  then requires both the exact export record and its download URI to be absent
+  before recording cleanup success. Still-present Clipboard exports remain in
+  the read-owned cleanup ledger for bounded backoff instead of being reported
+  deleted. The local MP4 and working frames are deleted after each read.
   FFmpeg normalizes source timestamps and extracts exactly 61 local analysis
   frames over the profile-derived six-second window at 100-millisecond spacing.
   Frame selection follows the continuous vehicle track nearest the calculated
