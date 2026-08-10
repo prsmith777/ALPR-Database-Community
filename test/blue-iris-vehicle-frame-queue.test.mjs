@@ -172,6 +172,50 @@ test("an active guarded pair share runs before another Blue Iris overview export
   assert.equal(result.results[0].kind, "overview_pair_share");
 });
 
+test("an active Entry LPR fallback runs after Street sharing and before another overview export", async () => {
+  let overviewClaimed = false;
+  let pairChecked = false;
+  let fallbackChecked = false;
+  const queue = new BlueIrisVehicleFrameQueue({
+    repository: {
+      async getQueueStatus() { return { historicalPaused: true }; },
+      async claimNextOverviewRead() { overviewClaimed = true; return null; },
+      async claimNext() { assert.fail("Entry fallback must finish before legacy work"); },
+    },
+    fileStorage: {},
+    loadConfig: async () => configured,
+    clientFactory: () => ({
+      async testConnection() { return { cameras: [] }; },
+    }),
+    timelineExportFactory: () => ({
+      async sweepLocalWorkspaces() {},
+      async reconcileRemoteExports() {},
+    }),
+    serviceFactory: () => ({}),
+    pairSharingFactory: () => ({
+      async processNext() { pairChecked = true; return null; },
+    }),
+    entryFallbackFactory: () => ({
+      async processNext() {
+        fallbackChecked = true;
+        return {
+          kind: "entry_lpr_fallback",
+          status: "shared",
+          sourceReadId: 201,
+          targetReadId: 202,
+        };
+      },
+    }),
+  });
+  const result = await queue.processBatch({ limit: 1 });
+  assert.equal(pairChecked, true);
+  assert.equal(fallbackChecked, true);
+  assert.equal(overviewClaimed, false);
+  assert.equal(result.processed, 1);
+  assert.equal(result.succeeded, 1);
+  assert.equal(result.results[0].kind, "entry_lpr_fallback");
+});
+
 test("persisted candidate rows are no longer claimed or associated into live overview reads", async () => {
   const queue = new BlueIrisVehicleFrameQueue({
     repository: {
