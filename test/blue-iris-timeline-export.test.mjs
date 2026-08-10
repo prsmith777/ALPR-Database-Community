@@ -197,7 +197,7 @@ function timelineHarness({ width = 3840, height = 2160 } = {}) {
       };
     },
     async downloadTimelineExport() { events.push(["download"]); },
-    async deleteTimelineExport() { events.push(["delete"]); },
+    async deleteTimelineExport(remotePath, options) { events.push(["delete", remotePath, options]); },
   };
   const frames = Array.from({ length: 61 }, (_, index) => ({
     index,
@@ -223,9 +223,10 @@ function timelineHarness({ width = 3840, height = 2160 } = {}) {
 
 test("timeline export downloads and validates before immediate delete:true cleanup", async () => {
   const harness = timelineHarness();
+  const sleeps = [];
   const service = new BlueIrisTimelineExportService({
     ...harness,
-    sleepImpl: async () => {},
+    sleepImpl: async (milliseconds) => { sleeps.push(milliseconds); },
   });
   const acquired = await service.acquire({
     read: { id: 42 },
@@ -241,6 +242,12 @@ test("timeline export downloads and validates before immediate delete:true clean
   assert.ok(names.indexOf("download") < names.indexOf("probe"));
   assert.ok(names.indexOf("probe") < names.indexOf("delete"));
   assert.ok(names.indexOf("delete") < names.indexOf("extract"));
+  assert.deepEqual(sleeps, [5_000]);
+  assert.deepEqual(harness.events.find(([name]) => name === "delete"), [
+    "delete",
+    "@owned.mp4",
+    { uri: "@owned.mp4" },
+  ]);
   assert.equal(harness.events.find(([name]) => name === "start")[1].substream, false);
   await acquired.cleanup();
 });
@@ -332,7 +339,7 @@ test("one exact export-list match is adopted after an uncertain start response",
   await acquired.cleanup();
 });
 
-test("a completed export that disappears from the queue is downloaded only from its verified reserved URI", async () => {
+test("an unavailable exact export status fails closed without attempting a download", async () => {
   const harness = timelineHarness();
   harness.client.startTimelineExport = async (input) => {
     harness.events.push(["start", input]);
@@ -356,20 +363,18 @@ test("a completed export that disappears from the queue is downloaded only from 
     ...harness,
     sleepImpl: async () => {},
   });
-  const acquired = await service.acquire({
-    read: { id: 42 },
-    claimToken: "22222222-2222-4222-8222-222222222222",
-    camera: "Cam149",
-    sourceCameraName: "Street Overview",
-    intendedStartAt: "2026-08-09T13:00:00.000Z",
-  });
-  assert.equal(acquired.frames.length, 61);
+  await assert.rejects(
+    service.acquire({
+      read: { id: 42 },
+      claimToken: "22222222-2222-4222-8222-222222222222",
+      camera: "Cam149",
+      sourceCameraName: "Street Overview",
+      intendedStartAt: "2026-08-09T13:00:00.000Z",
+    }),
+    (error) => error.code === "EXPORT_UNAVAILABLE"
+  );
   assert.ok(harness.events.some(([name]) => name === "poll-disappeared"));
-  assert.ok(harness.events.some(([name]) => name === "download"));
-  assert.ok(harness.events.some(([name, remote]) =>
-    name === "remote" && remote.status === "disappeared_after_export"
-  ));
-  await acquired.cleanup();
+  assert.equal(harness.events.some(([name]) => name === "download"), false);
 });
 
 test("ambiguous uncertain starts are not blindly resubmitted or deleted", async () => {

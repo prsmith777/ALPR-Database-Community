@@ -29,9 +29,9 @@ function harness() {
         fileSize: null,
       };
     },
-    async listTimelineExports() {
-      calls.push(["list"]);
-      return [{
+    async getTimelineExport(path) {
+      calls.push(["exact-status", path]);
+      return {
         remotePath,
         uri: remotePath,
         utc: Date.parse("2026-08-09T23:29:30.000Z"),
@@ -40,15 +40,25 @@ function harness() {
         progress: 100,
         complete: true,
         fileSize: 12_345,
-      }];
+      };
     },
     async downloadTimelineExport(input) {
       calls.push(["download", input]);
       return { bytes: 2_500_000 };
     },
-    async deleteTimelineExport(path) {
-      calls.push(["delete", path]);
-      return { remotePath: path, deleted: true };
+    async requestTimelineExportDeletion(path) {
+      calls.push(["delete-request", path]);
+      return { remotePath: path, deleteRequested: true };
+    },
+    async verifyTimelineExportDeletion(input) {
+      calls.push(["delete-verify", input]);
+      return {
+        ...input,
+        deleted: true,
+        recordAvailable: false,
+        downloadAvailable: false,
+        downloadStatus: 404,
+      };
     },
   };
   const state = {
@@ -124,13 +134,23 @@ test("manual export diagnostic pauses after every explicit direct-copy phase", a
     state.calls.find(([name]) => name === "download"),
     ["download", { uri: "@202073", destinationPath: "/tmp/alpr-blue-iris-timeline/job-test/export.mp4" }]
   );
-  assert.equal(state.calls.some(([name]) => name === "delete"), false);
+  assert.equal(state.calls.some(([name]) => name === "delete-request"), false);
 
   state.advance(2_000);
   const removed = await service.remove({ actor, token: created.token });
-  assert.equal(removed.status, "remote_deleted");
-  assert.ok(removed.deletedAt);
-  assert.deepEqual(state.calls.at(-1), ["delete", "@202073"]);
+  assert.equal(removed.status, "delete_requested");
+  assert.ok(removed.deleteRequestedAt);
+  assert.equal(removed.deletedAt, null);
+  assert.deepEqual(state.calls.at(-1), ["delete-request", "@202073"]);
+
+  state.advance(2_000);
+  const verified = await service.verifyRemoval({ actor, token: created.token });
+  assert.equal(verified.status, "remote_deleted");
+  assert.ok(verified.deletedAt);
+  assert.deepEqual(state.calls.at(-1), ["delete-verify", {
+    remotePath: "@202073",
+    uri: "@202073",
+  }]);
 
   state.advance(2_000);
   const cleaned = await service.cleanup({ actor, token: created.token });
@@ -140,11 +160,13 @@ test("manual export diagnostic pauses after every explicit direct-copy phase", a
   assert.equal(state.registry.size, 0);
 });
 
-test("a disappeared queue record remains eligible for its one verified exact download", async () => {
+test("an unavailable exact status never becomes permission to download or delete", async () => {
   const state = harness();
-  state.client.listTimelineExports = async () => {
-    state.calls.push(["list"]);
-    return [];
+  state.client.getTimelineExport = async (path) => {
+    state.calls.push(["exact-status", path]);
+    const error = new Error("export not found");
+    error.code = "EXPORT_UNAVAILABLE";
+    throw error;
   };
   const service = new BlueIrisExportDiagnosticService(state);
   const actor = { id: 7 };
@@ -155,14 +177,16 @@ test("a disappeared queue record remains eligible for its one verified exact dow
   });
   const checked = await service.check({ actor, token: created.token });
 
-  assert.equal(checked.status, "not_listed");
+  assert.equal(checked.status, "status_unavailable");
   assert.equal(checked.listed, false);
   assert.equal(checked.complete, false);
 
-  const downloaded = await service.download({ actor, token: created.token });
-  assert.equal(downloaded.downloadValidated, true);
-  assert.equal(state.calls.filter(([name]) => name === "download").length, 1);
-  assert.equal(state.calls.some(([name]) => name === "delete"), false);
+  await assert.rejects(
+    service.download({ actor, token: created.token }),
+    /has not completed/i
+  );
+  assert.equal(state.calls.some(([name]) => name === "download"), false);
+  assert.equal(state.calls.some(([name]) => name === "delete-request"), false);
 });
 
 test("manual export diagnostic cannot download before an explicit status check", async () => {
@@ -197,7 +221,7 @@ test("manual export diagnostic cannot delete before a validated download", async
     service.remove({ actor, token: created.token }),
     /download and validate/i
   );
-  assert.equal(state.calls.some(([name]) => name === "delete"), false);
+  assert.equal(state.calls.some(([name]) => name === "delete-request"), false);
 });
 
 test("download validation failure removes only the staging copy and permits an explicit retry", async () => {
@@ -224,7 +248,7 @@ test("download validation failure removes only the staging copy and permits an e
   assert.equal(failed.downloadValidated, false);
   assert.match(failed.downloadError, /1280x720/);
   assert.equal(state.calls.filter(([name]) => name === "workspace-remove").length, 1);
-  assert.equal(state.calls.some(([name]) => name === "delete"), false);
+  assert.equal(state.calls.some(([name]) => name === "delete-request"), false);
 
   const retried = await service.download({ actor, token: created.token });
   assert.equal(retried.downloadValidated, true);
@@ -246,14 +270,56 @@ test("mismatched reserved start metadata fails closed before download", async ()
     camera: "Cam149",
     start: "2026-08-09T23:29:30.000Z",
   });
-  state.client.listTimelineExports = async () => [];
+  state.client.getTimelineExport = async () => ({
+    remotePath: "@202073",
+    uri: "@202073",
+    utc: Date.parse("2026-08-09T23:29:32.000Z"),
+    durationMs: 8_000,
+    status: "complete",
+    progress: 100,
+    complete: true,
+  });
   await service.check({ actor, token: created.token });
 
   const failed = await service.download({ actor, token: created.token });
   assert.equal(failed.downloadValidated, false);
   assert.match(failed.downloadError, /requested export start time/i);
   assert.equal(state.calls.some(([name]) => name === "download"), false);
-  assert.equal(state.calls.some(([name]) => name === "delete"), false);
+  assert.equal(state.calls.some(([name]) => name === "delete-request"), false);
+});
+
+test("manual cleanup stays locked while the Blue Iris Clipboard export is still present", async () => {
+  const state = harness();
+  state.client.verifyTimelineExportDeletion = async (input) => {
+    state.calls.push(["delete-verify", input]);
+    return {
+      ...input,
+      deleted: false,
+      recordAvailable: false,
+      downloadAvailable: true,
+      downloadStatus: 200,
+    };
+  };
+  const service = new BlueIrisExportDiagnosticService(state);
+  const actor = { id: 7 };
+  const created = await service.create({
+    actor,
+    camera: "Cam149",
+    start: "2026-08-09T23:29:30.000Z",
+  });
+  await service.check({ actor, token: created.token });
+  await service.download({ actor, token: created.token });
+  await service.remove({ actor, token: created.token });
+
+  const pending = await service.verifyRemoval({ actor, token: created.token });
+  assert.equal(pending.status, "delete_pending");
+  assert.equal(pending.deletedAt, null);
+  assert.match(pending.deletionError, /still serves/i);
+  await assert.rejects(
+    service.cleanup({ actor, token: created.token }),
+    /delete the exact Blue Iris export/i
+  );
+  assert.equal(state.calls.some(([name]) => name === "workspace-remove"), false);
 });
 
 test("manual export diagnostic cannot operate on another administrator's path", async () => {
@@ -270,7 +336,7 @@ test("manual export diagnostic cannot operate on another administrator's path", 
     /unavailable or has expired/i
   );
   assert.equal(state.calls.some(([name]) => name === "download"), false);
-  assert.equal(state.calls.some(([name]) => name === "delete"), false);
+  assert.equal(state.calls.some(([name]) => name === "delete-request"), false);
 });
 
 test("repeating Create recovers the existing owned diagnostic without another export", async () => {

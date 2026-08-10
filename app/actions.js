@@ -1801,6 +1801,20 @@ export async function deleteBlueIrisExportDiagnostic(input = {}) {
   }
 }
 
+export async function verifyBlueIrisExportDiagnosticDeletion(input = {}) {
+  const principal = await requirePermission("system.manage_settings");
+  try {
+    const config = await getConfig();
+    const data = await blueIrisExportDiagnostic(config).verifyRemoval({
+      actor: principal,
+      token: input.token,
+    });
+    return { success: true, data };
+  } catch (error) {
+    return blueIrisExportDiagnosticFailure(error, "Unable to verify diagnostic export deletion.");
+  }
+}
+
 export async function cleanupBlueIrisExportDiagnostic(input = {}) {
   const principal = await requirePermission("system.manage_settings");
   try {

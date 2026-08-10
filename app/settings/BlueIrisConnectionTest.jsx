@@ -11,6 +11,7 @@ import {
   previewBlueIrisAlertMatch,
   selectBlueIrisVehicleFrame,
   testBlueIrisConnection,
+  verifyBlueIrisExportDiagnosticDeletion,
 } from "@/app/actions";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -125,6 +126,14 @@ export default function BlueIrisConnectionTest() {
     });
   };
 
+  const verifyExportDiagnosticDeletion = () => {
+    const token = exportDiagnostic?.data?.token;
+    if (!token) return;
+    startTransition(async () => {
+      applyExportDiagnosticResult(await verifyBlueIrisExportDiagnosticDeletion({ token }));
+    });
+  };
+
   return (
     <div className="space-y-4 rounded-lg border border-border p-4">
       <div>
@@ -200,7 +209,7 @@ export default function BlueIrisConnectionTest() {
             <div>
               <h4 className="font-medium">Manual timeline-export diagnostic</h4>
               <p className="mt-1 text-sm text-muted-foreground">
-                This temporary diagnostic creates one eight-second main-stream MP4 with re-encoding disabled. Creation, one status request, download and validation, Blue Iris deletion, and staging cleanup each require a separate click. Nothing polls, downloads, or deletes automatically.
+                This temporary diagnostic creates one eight-second main-stream MP4 with re-encoding disabled. Creation, exact-path status, download and validation, deletion request, deletion verification, and staging cleanup each require a separate click. Nothing polls, downloads, or deletes automatically.
               </p>
             </div>
             {!exportDiagnostic?.data && (
@@ -228,9 +237,11 @@ export default function BlueIrisConnectionTest() {
                 )}
                 {!exportDiagnostic.data.deletedAt && exportDiagnostic.data.checkedAt && !exportDiagnostic.data.downloadAttemptedAt && (
                   <p className="font-medium text-amber-700 dark:text-amber-300">
-                    {exportDiagnostic.data.complete || exportDiagnostic.data.status === "not_listed"
+                    {exportDiagnostic.data.complete
                       ? "Paused after one status request. The reserved export can now be downloaded once to staging and validated before any Blue Iris deletion."
-                      : "Paused after one status request. Blue Iris still lists the export as unfinished; inspect the queue and request status again later."}
+                      : exportDiagnostic.data.status === "status_unavailable"
+                        ? "The exact export status was unavailable. This does not prove completion. Do not download or delete it; request status again later."
+                        : "Paused after one exact-path status request. Blue Iris has not reported done; request status again later."}
                   </p>
                 )}
                 {exportDiagnostic.data.downloadError && !exportDiagnostic.data.deletedAt && (
@@ -249,14 +260,21 @@ export default function BlueIrisConnectionTest() {
                     )}
                   </div>
                 )}
+                {exportDiagnostic.data.deleteRequestedAt && !exportDiagnostic.data.deletedAt && (
+                  <p className={`font-medium ${exportDiagnostic.data.deletionError ? "text-destructive" : "text-amber-700 dark:text-amber-300"}`}>
+                    {exportDiagnostic.data.deletionError
+                      ? `${exportDiagnostic.data.deletionError} Staging cleanup remains locked. Retry the exact delete request or verify again later.`
+                      : "Blue Iris accepted the exact deletion request, but deletion is not yet verified. Inspect Clipboard, then verify deletion."}
+                  </p>
+                )}
                 {exportDiagnostic.data.deletedAt && !exportDiagnostic.data.localRemovedAt && (
                   <p className="font-medium text-green-700 dark:text-green-300">
-                    Blue Iris accepted deletion of the exact diagnostic path. Paused so you can inspect the queue and folders before removing the staging temporary copy.
+                    Blue Iris no longer reports the exact export and no longer serves its download URI. Confirm the physical Clipboard file is gone, then remove the staging temporary copy.
                   </p>
                 )}
                 {exportDiagnostic.data.localRemovedAt && (
                   <p className="font-medium text-green-700 dark:text-green-300">
-                    Diagnostic finished. The exact Blue Iris export and the staging temporary copy were removed in separate verified phases.
+                    Diagnostic finished after API deletion verification and your Clipboard-folder confirmation.
                   </p>
                 )}
                 <div className="flex flex-wrap gap-2">
@@ -266,20 +284,32 @@ export default function BlueIrisConnectionTest() {
                       Check export status once
                     </Button>
                   )}
-                  {!exportDiagnostic.data.deletedAt && !exportDiagnostic.data.downloadValidated && exportDiagnostic.data.checkedAt && (exportDiagnostic.data.complete || exportDiagnostic.data.status === "not_listed") && (
+                  {!exportDiagnostic.data.deletedAt && !exportDiagnostic.data.downloadValidated && exportDiagnostic.data.checkedAt && exportDiagnostic.data.complete && (
                     <Button type="button" variant="outline" onClick={downloadExportDiagnostic} disabled={pending}>
                       {pending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Download className="mr-2 h-4 w-4" />}
                       {exportDiagnostic.data.downloadError ? "Retry exact download and validation" : "Download and validate exact export"}
                     </Button>
                   )}
-                  {!exportDiagnostic.data.deletedAt && exportDiagnostic.data.downloadValidated && (
+                  {!exportDiagnostic.data.deletedAt && exportDiagnostic.data.downloadValidated && !exportDiagnostic.data.deleteRequestedAt && (
                     <Button type="button" variant="destructive" onClick={deleteExportDiagnostic} disabled={pending}>
-                      <Trash2 className="mr-2 h-4 w-4" /> Delete exact Blue Iris export
+                      <Trash2 className="mr-2 h-4 w-4" /> Request exact Blue Iris deletion
                     </Button>
+                  )}
+                  {!exportDiagnostic.data.deletedAt && exportDiagnostic.data.downloadValidated && exportDiagnostic.data.deleteRequestedAt && (
+                    <>
+                      <Button type="button" variant="outline" onClick={verifyExportDiagnosticDeletion} disabled={pending}>
+                        <RefreshCw className="mr-2 h-4 w-4" /> Verify Blue Iris deletion
+                      </Button>
+                      {exportDiagnostic.data.deletionError && (
+                        <Button type="button" variant="destructive" onClick={deleteExportDiagnostic} disabled={pending}>
+                          <Trash2 className="mr-2 h-4 w-4" /> Retry exact deletion request
+                        </Button>
+                      )}
+                    </>
                   )}
                   {exportDiagnostic.data.deletedAt && !exportDiagnostic.data.localRemovedAt && (
                     <Button type="button" variant="outline" onClick={cleanupExportDiagnostic} disabled={pending}>
-                      <Trash2 className="mr-2 h-4 w-4" /> Remove staging temporary copy
+                      <Trash2 className="mr-2 h-4 w-4" /> Confirm Clipboard deletion and remove staging copy
                     </Button>
                   )}
                   {exportDiagnostic.data.localRemovedAt && (
