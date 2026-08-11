@@ -287,7 +287,12 @@ test("latest Entry history run includes bounded progress counts", async () => {
 test("Entry history claim is oldest-first and globally yields to live work", async () => {
   const pool = mockPool((text, params) => {
     assert.match(text, /ORDER BY jobs\.read_timestamp, jobs\.id/);
-    assert.match(text, /COALESCE\(live\.vehicle_image_queue_kind, 'live'\) IN \('live','manual','overview'\)/);
+    assert.match(text, /live\.vehicle_image_path IS NULL/);
+    assert.match(text, /COALESCE\(live\.vehicle_image_queue_kind, 'live'\) IN \('live','manual'\)/);
+    assert.match(text, /live\.vehicle_image_queue_kind = 'overview'/);
+    assert.match(text, /live\.bi_trigger_direction_status = 'ready'/);
+    assert.match(text, /COALESCE\(live\.vehicle_image_attempt_count, 0\) < 3/);
+    assert.match(text, /COALESCE\(live\.vehicle_image_attempt_count, 0\) < 2/);
     assert.match(text, /source_camera_short_name AS overview_source_camera_short_name/);
     assert.match(text, /daylight_status AS entry_overview_daylight_status/);
     assert.match(text, /vehicle_overview_candidate_id IS NOT DISTINCT FROM jobs\.prior_overview_candidate_id/);

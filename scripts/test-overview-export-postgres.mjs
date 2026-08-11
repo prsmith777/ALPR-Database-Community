@@ -29,6 +29,16 @@ const historyProfileIds = [];
 const historyCandidateIds = [];
 const clients = [];
 
+function connectedSession(client) {
+  return {
+    query: (...args) => client.query(...args),
+  };
+}
+
+function fixturePlate(prefix) {
+  return `${prefix}${suffix}`.slice(0, 10);
+}
+
 try {
   // The production compose runner applies this same file with ON_ERROR_STOP.
   // Running it twice around an active processing row proves additive migration
@@ -54,7 +64,7 @@ try {
        source_camera_name, source_camera_short_name, plate_camera_name,
        direction_label, source_role, overview_context, expected_delta_ms,
        tolerance_ms, priority, enabled
-     ) VALUES ($1, 'Cam143', $2, 'Entering', 'primary', 'entry', 0, 1500, 199, TRUE)
+     ) VALUES ($1, 'Cam143', $2, 'Entering', 'primary', 'entry', 0, 1500, 90, TRUE)
      RETURNING id`,
     [`Migration Entry Overview ${suffix}`, `Migration Entry LPR ${suffix}`]
   );
@@ -73,8 +83,8 @@ try {
          source_camera_name, plate_camera_name, direction_label, source_role,
          overview_context, expected_delta_ms, tolerance_ms, priority, enabled
        ) VALUES
-         ($1, $2, $3, 'primary', 'street', 0, 1500, 200, TRUE),
-         (LOWER($1), LOWER($2), LOWER($3), 'primary', 'street', 0, 1500, 201, TRUE)`,
+         ($1, $2, $3, 'primary', 'street', 0, 1500, 91, TRUE),
+         (LOWER($1), LOWER($2), LOWER($3), 'primary', 'street', 0, 1500, 92, TRUE)`,
       [`Duplicate Overview ${suffix}`, `Duplicate LPR ${suffix}`, `Duplicate Direction ${suffix}`]
     );
     await assert.rejects(
@@ -136,9 +146,9 @@ try {
     pool.connect(),
   ]);
   clients.push(clientA, clientB, recoveryClient);
-  const repositoryA = new BlueIrisVehicleFrameRepository(clientA);
-  const repositoryB = new BlueIrisVehicleFrameRepository(clientB);
-  const recoveryRepository = new BlueIrisVehicleFrameRepository(recoveryClient);
+  const repositoryA = new BlueIrisVehicleFrameRepository(connectedSession(clientA));
+  const repositoryB = new BlueIrisVehicleFrameRepository(connectedSession(clientB));
+  const recoveryRepository = new BlueIrisVehicleFrameRepository(connectedSession(recoveryClient));
 
   // Two independent sessions saving case variants serialize on the normalized
   // advisory key and converge on one database-enforced primary identity.
@@ -150,7 +160,7 @@ try {
     overviewContext: "street",
     expectedDeltaMs: 0,
     toleranceMs: 1500,
-    priority: 202,
+    priority: 93,
     enabled: true,
   };
   const canonicalProfiles = await Promise.all([
@@ -341,7 +351,7 @@ try {
     return id;
   };
   const legacyHistoryReadId = await insertHistoryRead({
-    plate: `HLEG${suffix}`,
+    plate: fixturePlate("HLEG"),
     offsetMs: 0,
     path: `images/history-${suffix}-legacy.jpg`,
     status: "ready",
@@ -351,20 +361,30 @@ try {
     sourceReadId: readId,
   });
   const missingHistoryReadId = await insertHistoryRead({
-    plate: `HMIS${suffix}`,
+    plate: fixturePlate("HMIS"),
     offsetMs: 1_000,
   });
   const protectedHistoryReadId = await insertHistoryRead({
-    plate: `HPRO${suffix}`,
+    plate: fixturePlate("HPRO"),
     offsetMs: 2_000,
     path: `derived/history-${suffix}-protected.jpg`,
     status: "failed",
     sourceKind: "entry_overview_primary",
   });
   const nightHistoryReadId = await insertHistoryRead({
-    plate: `HNIT${suffix}`,
+    plate: fixturePlate("HNIT"),
     offsetMs: 3_000,
   });
+  const exhaustedLiveRead = await pool.query(
+    `INSERT INTO public.plate_reads (
+       plate_number, camera_name, "timestamp", vehicle_image_status,
+       vehicle_image_queue_kind, vehicle_image_attempt_count, vehicle_image_retryable
+     ) VALUES ($1, $2, $3::timestamptz, 'failed', 'live', 3, TRUE)
+     RETURNING id`,
+    [fixturePlate("XLIV"), `Exhausted Live ${suffix}`,
+      new Date(historyBase.getTime() + 4_000).toISOString()],
+  );
+  historyReadIds.push(Number(exhaustedLiveRead.rows[0].id));
   for (const id of [legacyHistoryReadId, protectedHistoryReadId]) {
     await pool.query(
       `INSERT INTO public.vehicle_attribute_observations (
@@ -450,7 +470,8 @@ try {
   assert.equal(protectedView.rows[0].vehicle_image_queue_kind, null);
   assert.equal(protectedView.rows[0].vehicle_image_backfill_job_id, null);
 
-  // The history queue yields while any live/primary work is outstanding.
+  // The history queue yields while claimable live/primary work is outstanding.
+  // A protected saved-image row and exhausted failures cannot block it forever.
   assert.equal(await repositoryA.claimNextEntryOverviewBackfillJob(), null);
   await pool.query(
     `UPDATE public.plate_reads
@@ -628,7 +649,7 @@ try {
   // active-scope uniqueness, and a new run reuses the same semantic job key.
   const restartBase = new Date(historyBase.getTime() + 30_000);
   const restartReadId = await insertHistoryRead({
-    plate: `HRST${suffix}`,
+    plate: fixturePlate("HRST"),
     offsetMs: 30_000,
     path: `images/history-${suffix}-restart-prior.jpg`,
     status: "ready",
@@ -702,7 +723,7 @@ try {
   // A terminal failure never removes or relabels the prior view and restores
   // candidate/source provenance exactly.
   const preservedFailureReadId = await insertHistoryRead({
-    plate: `HFAIL${suffix}`,
+    plate: fixturePlate("HFAIL"),
     offsetMs: 40_000,
     path: `images/history-${suffix}-failure-prior.jpg`,
     status: "ready",
@@ -757,7 +778,7 @@ try {
   // A pathless preflight failure remains visibly terminal after the campaign
   // claim is released.
   const unverifiedReadId = await insertHistoryRead({
-    plate: `HUVR${suffix}`,
+    plate: fixturePlate("HUVR"),
     offsetMs: 50_000,
   });
   const unverifiedPreview = await repositoryA.previewEntryOverviewBackfillRun({
@@ -802,7 +823,7 @@ try {
   // A crashed second attempt is terminalized with no third claim and the run
   // becomes idle/completed.
   const expiredReadId = await insertHistoryRead({
-    plate: `HEXP${suffix}`,
+    plate: fixturePlate("HEXP"),
     offsetMs: 60_000,
   });
   const expiredPreview = await repositoryA.previewEntryOverviewBackfillRun({
