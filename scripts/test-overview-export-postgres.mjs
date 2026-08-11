@@ -16,6 +16,7 @@ const claimA = "11111111-1111-4111-8111-111111111111";
 const claimB = "22222222-2222-4222-8222-222222222222";
 const exportKey = crypto.randomBytes(32).toString("hex");
 const suffix = crypto.randomUUID().slice(0, 8);
+const plateSuffix = suffix.slice(0, 6);
 const overviewCamera = `Codex Overview ${suffix}`;
 const plateCamera = `Codex LPR ${suffix}`;
 let readId = null;
@@ -347,7 +348,7 @@ try {
     return id;
   };
   const legacyHistoryReadId = await insertHistoryRead({
-    plate: `HLEG${suffix}`,
+    plate: `HLEG${plateSuffix}`,
     offsetMs: 0,
     path: `images/history-${suffix}-legacy.jpg`,
     status: "ready",
@@ -357,18 +358,18 @@ try {
     sourceReadId: readId,
   });
   const missingHistoryReadId = await insertHistoryRead({
-    plate: `HMIS${suffix}`,
+    plate: `HMIS${plateSuffix}`,
     offsetMs: 1_000,
   });
   const protectedHistoryReadId = await insertHistoryRead({
-    plate: `HPRO${suffix}`,
+    plate: `HPRO${plateSuffix}`,
     offsetMs: 2_000,
     path: `derived/history-${suffix}-protected.jpg`,
     status: "failed",
     sourceKind: "entry_overview_primary",
   });
   const nightHistoryReadId = await insertHistoryRead({
-    plate: `HNIT${suffix}`,
+    plate: `HNIT${plateSuffix}`,
     offsetMs: 3_000,
   });
   for (const id of [legacyHistoryReadId, protectedHistoryReadId]) {
