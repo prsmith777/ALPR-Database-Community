@@ -32,11 +32,118 @@ test("Entry history migration is preview-first, bounded, restartable, and adds n
   assert.match(section, /vehicle_image_backfill_job_id/);
   assert.match(section, /prior_overview_candidate_id BIGINT/);
   assert.match(section, /prior_source_read_id INTEGER/);
+  assert.match(section, /operator_retry_count SMALLINT NOT NULL DEFAULT 0/);
+  assert.match(section, /operator_retry_count BETWEEN 0 AND 1/);
+  assert.match(section, /operator_retry_at TIMESTAMPTZ/);
+  assert.match(section, /operator_retry_error_code VARCHAR\(80\)/);
   assert.match(section, /entry_overview_history/);
   assert.match(section, /overview_backfill/);
   assert.match(section, /Disabled Entry Overview history profile snapshots cannot be revived/);
   assert.match(section, /2026081006_entry_overview_history_backfill/);
+  assert.match(section, /2026081101_entry_overview_history_retry/);
   assert.doesNotMatch(section, /UPDATE public\.plate_reads\s+SET vehicle_image_status = 'pending'/);
+});
+
+test("Entry history exposes only exact terminal transient failures for one manual retry", async () => {
+  const pool = mockPool((text, params) => {
+    assert.match(text, /jobs\.status = 'failed'/);
+    assert.match(text, /jobs\.retryable = FALSE/);
+    assert.match(text, /jobs\.attempt_count >= 2/);
+    assert.match(text, /jobs\.operator_retry_count < \$1/);
+    assert.match(text, /jobs\.error_code = ANY\(\$2::text\[\]\)/);
+    assert.match(text, /reads\.vehicle_image_backfill_job_id IS NULL/);
+    assert.match(text, /reads\.vehicle_image_path IS NOT DISTINCT FROM jobs\.prior_image_path/);
+    assert.equal(params[0], 1);
+    assert.ok(params[1].includes("EXPORT_TIMEOUT"));
+    assert.ok(params[1].includes("ENTRY_HISTORY_PROCESSING_DEADLINE"));
+    assert.ok(!params[1].includes("VEHICLE_NOT_VISIBLE"));
+    return { rows: [{ id: 31, read_id: 39624, error_code: "EXPORT_TIMEOUT" }], rowCount: 1 };
+  });
+  const repository = new BlueIrisVehicleFrameRepository(pool);
+  const candidates = await repository.listEntryOverviewBackfillRetryCandidates({ limit: 5 });
+  assert.deepEqual(candidates, [{ id: 31, read_id: 39624, error_code: "EXPORT_TIMEOUT" }]);
+});
+
+test("Entry history manual retry reuses the original job and preserves current image state", async () => {
+  const pool = mockPool((text) => {
+    if (/FROM public\.vehicle_entry_overview_backfill_jobs jobs[\s\S]*FOR UPDATE OF jobs, runs/.test(text)) {
+      return { rows: [{
+        id: 31,
+        run_id: 3,
+        read_id: 39624,
+        status: "failed",
+        retryable: false,
+        attempt_count: 2,
+        operator_retry_count: 0,
+        error_code: "EXPORT_TIMEOUT",
+        prior_image_path: null,
+      }], rowCount: 1 };
+    }
+    if (/AS has_active_history/.test(text)) {
+      return { rows: [{ has_active_history: false }], rowCount: 1 };
+    }
+    if (/UPDATE public\.plate_reads reads[\s\S]*vehicle_image_backfill_job_id = jobs\.id/.test(text)) {
+      assert.match(text, /vehicle_image_status = 'pending'/);
+      assert.match(text, /vehicle_image_queue_kind = 'overview_backfill'/);
+      assert.match(text, /vehicle_image_attempt_count = 0/);
+      assert.match(text, /vehicle_image_path IS NOT DISTINCT FROM jobs\.prior_image_path/);
+      assert.doesNotMatch(text, /SET[\s\S]*vehicle_image_path =/);
+      return { rows: [{ id: 39624 }], rowCount: 1 };
+    }
+    if (/UPDATE public\.vehicle_entry_overview_backfill_jobs[\s\S]*operator_retry_count = operator_retry_count \+ 1/.test(text)) {
+      assert.match(text, /SET status = 'queued', attempt_count = 0, retryable = TRUE/);
+      assert.match(text, /operator_retry_error_code = error_code/);
+      return { rows: [{
+        id: 31,
+        run_id: 3,
+        status: "queued",
+        operator_retry_count: 1,
+      }], rowCount: 1 };
+    }
+    if (/UPDATE public\.vehicle_entry_overview_backfill_runs[\s\S]*SET status = 'running'/.test(text)) {
+      return { rows: [], rowCount: 1 };
+    }
+    if (/UPDATE public\.vehicle_entry_overview_backfill_runs runs[\s\S]*status = 'completed'/.test(text)) {
+      return { rows: [], rowCount: 0 };
+    }
+    throw new Error(`Unexpected SQL: ${text}`);
+  });
+  const repository = new BlueIrisVehicleFrameRepository(pool);
+  const retried = await repository.retryEntryOverviewBackfillJob(31);
+  assert.equal(retried.id, 31);
+  assert.equal(retried.run_id, 3);
+  assert.equal(retried.status, "queued");
+  assert.equal(retried.operator_retry_count, 1);
+  assert.equal(pool.calls.filter(({ text }) => text === "COMMIT").length, 1);
+});
+
+test("Entry history manual retry rejects semantic failures and a consumed retry budget", async () => {
+  for (const job of [
+    { error_code: "VEHICLE_NOT_VISIBLE", operator_retry_count: 0 },
+    { error_code: "EXPORT_TIMEOUT", operator_retry_count: 1 },
+  ]) {
+    const pool = mockPool((text) => {
+      if (/FROM public\.vehicle_entry_overview_backfill_jobs jobs[\s\S]*FOR UPDATE OF jobs, runs/.test(text)) {
+        return { rows: [{
+          id: 32,
+          run_id: 3,
+          read_id: 39624,
+          status: "failed",
+          retryable: false,
+          attempt_count: 2,
+          ...job,
+        }], rowCount: 1 };
+      }
+      throw new Error(`Unexpected SQL: ${text}`);
+    });
+    const repository = new BlueIrisVehicleFrameRepository(pool);
+    await assert.rejects(
+      repository.retryEntryOverviewBackfillJob(32),
+      job.operator_retry_count ? /already used its one manual retry cycle/ : /not a retry-safe/,
+    );
+    assert.equal(pool.calls.filter(({ text }) => text === "ROLLBACK").length, 1);
+    assert.equal(pool.calls.some(({ text }) => /UPDATE public\.plate_reads/.test(text)), false);
+  }
 });
 
 test("Entry history profile persistence fixes Cam143 identity and versions timing changes", async () => {
