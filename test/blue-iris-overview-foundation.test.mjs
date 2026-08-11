@@ -331,6 +331,168 @@ test("the third exact-timestamp refetch can succeed without changing frame owner
   assert.equal(readyFrame.selectionMetadata.finalImage.fallbackErrorCode, null);
 });
 
+test("Entry Overview publishes distinct Cam143 provenance through the primary pipeline", async () => {
+  let readyFrame = null;
+  let savedBuffer = null;
+  const service = new BlueIrisVehicleFrameService({
+    client: {},
+    repository: {
+      async markReady(id, frame) {
+        readyFrame = frame;
+        return { id };
+      },
+      async markFailed() { assert.fail("a valid Entry Overview frame must not fail"); },
+    },
+    fileStorage: {
+      async saveDerivedImageAtomic(_framePath, buffer) { savedBuffer = buffer; },
+      async deleteImage() {},
+    },
+  });
+  service.selectBestFrame = async () => selectedOverview();
+  service.refetchOverviewFrame = async ({ selected }) => ({
+    buffer: Buffer.from("entry-overview-maximum"),
+    timestamp: selected.timestamp,
+    width: 2688,
+    height: 1520,
+    identitySimilarity: 0.99,
+    detectionOverlap: 0.98,
+    detectionContinuity: 0.97,
+    mode: "maximum_resolution",
+  });
+
+  const result = await service.processOverviewRead({
+    read: overviewRead({ camera_name: "Entry LPR 1", bi_trigger_direction_label: "Entering" }),
+    profile: overviewProfile({
+      source_camera_name: "Entry Overview",
+      source_camera_short_name: "Cam143",
+      overview_context: "entry",
+      expected_delta_ms: 0,
+      tolerance_ms: 1_500,
+    }),
+    camera: "Cam143",
+    alreadyClaimed: true,
+  });
+
+  assert.equal(result.status, "ready");
+  assert.equal(result.finalImageMode, "maximum_resolution");
+  assert.equal(savedBuffer.toString(), "entry-overview-maximum");
+  assert.equal(readyFrame.sourceKind, "entry_overview_primary");
+  assert.equal(readyFrame.imageWidth, 2688);
+  assert.equal(readyFrame.imageHeight, 1520);
+  assert.equal(readyFrame.sampledCount, 61);
+  assert.equal(readyFrame.selectionMetadata.overviewContext, "entry");
+  assert.equal(readyFrame.selectionMetadata.sourceCameraName, "Entry Overview");
+  assert.equal(readyFrame.selectionMetadata.sourceCameraId, "Cam143");
+  assert.equal(readyFrame.selectionMetadata.sourceCameraShortName, "Cam143");
+});
+
+test("direction-independent Entry history reuses the overview selector with a symmetric six-second anchor", async () => {
+  let readyFrame = null;
+  let selectionInput = null;
+  let acquisitionInput = null;
+  const service = new BlueIrisVehicleFrameService({
+    client: {},
+    repository: {
+      async markReady() { assert.fail("historical completion must use its campaign lifecycle"); },
+      async markFailed() { assert.fail("a valid historical Entry frame must not fail"); },
+    },
+    fileStorage: {
+      async saveDerivedImageAtomic() {},
+      async deleteImage() {},
+    },
+    timelineExportService: {
+      async acquire(input) {
+        acquisitionInput = input;
+        return {
+          exportToken: "10000000-0000-4000-8000-000000000081",
+          requestedStartMs: Date.parse("2026-08-10T12:00:00.000Z"),
+          remoteStartMs: Date.parse("2026-08-10T12:00:00.000Z"),
+          trimStartMs: 1_000,
+          utcVerified: true,
+          remoteRetentionManaged: true,
+          probe: {
+            width: 2688,
+            height: 1520,
+            durationMs: 8_000,
+            codec: "h264",
+            fileSize: 40_000_000,
+          },
+          frames: Array.from({ length: 61 }, (_, index) => ({
+            buffer: Buffer.from(`entry-history-analysis-${index}`),
+          })),
+          async extractFinalFrame() { return Buffer.from("entry-history-maximum"); },
+          async cleanup() {},
+        };
+      },
+    },
+  });
+  service.selectBestFrame = async (input) => {
+    selectionInput = input;
+    return selectedOverview();
+  };
+  service.validateOverviewFinalFrame = async ({ timestamp }) => ({
+    buffer: Buffer.from("entry-history-maximum"),
+    timestamp,
+    width: 2688,
+    height: 1520,
+    identitySimilarity: 0.99,
+    detectionOverlap: 0.98,
+    detectionContinuity: 0.97,
+    mode: "maximum_resolution",
+  });
+
+  const result = await service.processOverviewRead({
+    read: overviewRead({
+      camera_name: "Entry LPR 2",
+      bi_trigger_direction_label: null,
+      entry_history_run_id: 8,
+      entry_history_job_id: 81,
+      entry_overview_daylight_evidence: { evaluated: true, monochrome: false },
+    }),
+    profile: overviewProfile({
+      source_camera_name: "Entry Overview",
+      source_camera_short_name: "Cam143",
+      overview_context: "entry",
+      profile_kind: "entry_history",
+      profile_key: "f".repeat(64),
+      source_kind: "entry_overview_history",
+      expected_delta_ms: 0,
+      tolerance_ms: 3_000,
+    }),
+    camera: "Cam143",
+    alreadyClaimed: true,
+    lifecycle: {
+      kind: "entry_overview_backfill",
+      async heartbeat() { return { id: 901 }; },
+      async markReady({ frame }) {
+        readyFrame = frame;
+        return { id: 901 };
+      },
+      async markFailed() { assert.fail("a valid historical Entry frame must not fail"); },
+    },
+  });
+
+  assert.equal(result.kind, "entry_overview_backfill");
+  assert.equal(result.status, "ready");
+  assert.equal(selectionInput.anchorToleranceMs, 3_000);
+  assert.equal(selectionInput.sampleOffsetsMs.length, 61);
+  assert.equal(selectionInput.sampleOffsetsMs[0], -3_000);
+  assert.equal(selectionInput.sampleOffsetsMs.at(-1), 3_000);
+  assert.equal(acquisitionInput.profileKind, "entry_history");
+  assert.equal(acquisitionInput.profileIdentity, "f".repeat(64));
+  assert.equal(acquisitionInput.algorithmRevision, "entry-overview-history-timeline-v1");
+  assert.equal(readyFrame.sourceKind, "entry_overview_history");
+  assert.equal(readyFrame.selectionMetadata.directionLabel, null);
+  assert.equal(readyFrame.selectionMetadata.anchorMode, "entry_lpr_timestamp");
+  assert.equal(readyFrame.selectionMetadata.profileKind, "entry_history");
+  assert.equal(readyFrame.selectionMetadata.backfillRunId, 8);
+  assert.equal(readyFrame.selectionMetadata.backfillJobId, 81);
+  assert.deepEqual(readyFrame.selectionMetadata.daylightEvidence, {
+    evaluated: true,
+    monochrome: false,
+  });
+});
+
 test("three failed exact-timestamp validations fall back only to the selected analysis frame", async () => {
   const saved = [];
   let readyFrame = null;
@@ -577,6 +739,16 @@ test("the additive migration enforces primary tolerance and claim safety", async
   assert.match(migrations, /vehicle_overview_primary_tolerance_ms_check[\s\S]*?\) NOT VALID;/);
   assert.match(migrations, /vehicle_overview_distinct_camera_check[\s\S]*?\) NOT VALID;/);
   assert.match(migrations, /2026080901_overview_primary_claim_safety/);
+  assert.match(migrations, /2026081005_entry_overview_primary/);
+  assert.match(migrations, /overview_context VARCHAR\(16\) NOT NULL DEFAULT 'street'/);
+  assert.match(migrations, /source_camera_short_name VARCHAR\(80\)/);
+  assert.match(migrations, /idx_vehicle_overview_primary_profile_identity/);
+  assert.match(migrations, /Duplicate enabled primary overview profiles/);
+  const sourceKindConstraints = [...migrations.matchAll(
+    /ADD CONSTRAINT plate_reads_vehicle_image_source_kind_check CHECK \([\s\S]*?\)(?: NOT VALID)?;/g
+  )];
+  assert.ok(sourceKindConstraints.length >= 3);
+  assert.ok(sourceKindConstraints.every((match) => match[0].includes("'entry_overview_primary'")));
 
   const statusConstraints = [...migrations.matchAll(
     /ADD CONSTRAINT plate_reads_vehicle_image_status_check\s+CHECK \(vehicle_image_status IS NULL OR vehicle_image_status IN \(([^)]+)\)\)/g
@@ -594,6 +766,7 @@ test("the additive migration enforces primary tolerance and claim safety", async
 test("timeline export migration is read-owned, bounded, and leaves Clipboard retention to Blue Iris", async () => {
   const migrations = await fs.readFile(new URL("../migrations.sql", import.meta.url), "utf8");
   const section = migrations.slice(migrations.indexOf("-- Timeline exports replace"));
+  const timelineTable = section.slice(0, section.indexOf("CREATE INDEX IF NOT EXISTS idx_blue_iris_timeline_exports_cleanup"));
   assert.match(section, /blue_iris_timeline_exports/);
   assert.match(section, /REFERENCES public\.plate_reads\(id\) ON DELETE CASCADE/);
   assert.match(section, /vehicle_image_hard_deadline_at TIMESTAMPTZ/);
@@ -612,7 +785,7 @@ test("timeline export migration is read-owned, bounded, and leaves Clipboard ret
   assert.match(section, /legacy_imported = TRUE/);
   assert.match(section, /WHERE status IN \('delete_pending', 'deleting'\)/);
   assert.match(section, /SET status = CASE WHEN downloaded_at IS NOT NULL THEN 'downloaded' ELSE 'failed' END/);
-  assert.doesNotMatch(section, /ON DELETE RESTRICT/);
+  assert.doesNotMatch(timelineTable, /ON DELETE RESTRICT/);
 });
 
 test("compose database startup fails closed on any migration error", async () => {

@@ -1920,6 +1920,14 @@ export default function PlateTable({
   );
 
   const selectedVehicleImageAttemptLimit = selectedImage?.vehicleImageQueueKind === "overview" ? 2 : 3;
+  const selectedVehicleImageManualRetryEligible = Boolean(selectedImage?.vehicleImageRetryable)
+    || [
+      "OVERVIEW_PROFILE_NOT_CONFIGURED",
+      "OVERVIEW_PROFILE_AMBIGUOUS",
+      "OVERVIEW_CAMERA_BINDING_INVALID",
+      "OVERVIEW_CAMERA_BINDING_MISMATCH",
+      "CAMERA_NOT_MAPPED",
+    ].includes(selectedImage?.vehicleImageErrorCode);
 
   return (
     <TooltipProvider delayDuration={200}>
@@ -3034,6 +3042,10 @@ export default function PlateTable({
                               RECORDING_UNAVAILABLE: "Recording unavailable or expired",
                               VEHICLE_NOT_VISIBLE: "Legacy plate-camera view did not contain a complete vehicle",
                               CAMERA_NOT_MAPPED: "Camera not mapped in Blue Iris",
+                              OVERVIEW_PROFILE_NOT_CONFIGURED: "No overview profile was configured for this camera and direction",
+                              OVERVIEW_PROFILE_AMBIGUOUS: "Multiple overview profiles match this camera and direction",
+                              OVERVIEW_CAMERA_BINDING_INVALID: "The overview profile is missing its Blue Iris short-name binding",
+                              OVERVIEW_CAMERA_BINDING_MISMATCH: "The overview camera does not match its reviewed Blue Iris binding",
                               NIGHTTIME_UNAVAILABLE: "Unavailable nighttime",
                               DAYLIGHT_UNVERIFIED: "Unavailable because daylight could not be verified",
                               OVERVIEW_DIRECTION_UNAVAILABLE: "Unavailable because Blue Iris did not provide a validated direction",
@@ -3050,7 +3062,7 @@ export default function PlateTable({
                           }[selectedImage.vehicleImageStatus] || selectedImage.vehicleImageStatus}
                         </div>
                         {canReview
-                          && selectedImage.vehicleImageRetryable
+                          && selectedVehicleImageManualRetryEligible
                           && selectedImage.vehicleImageAttemptCount < selectedVehicleImageAttemptLimit
                           && ["failed", "unavailable"].includes(selectedImage.vehicleImageStatus) ? (
                           <Button

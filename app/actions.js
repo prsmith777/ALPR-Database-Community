@@ -1822,15 +1822,114 @@ export async function selectBlueIrisVehicleFrame(input = {}) {
   }
 }
 
-export async function getBlueIrisVehicleFrameQueueStatus() {
+const ENTRY_OVERVIEW_HISTORY_PLATE_CAMERAS = Object.freeze([
+  "Entry LPR 1",
+  "Entry LPR 2",
+]);
+const ENTRY_OVERVIEW_HISTORY_BATCH_SIZES = new Set([1, 5, 25]);
+
+function entryOverviewHistoryProfileData(profile) {
+  return {
+    id: Number(profile.id),
+    profileKey: profile.profile_key,
+    revision: Number(profile.revision || 1),
+    profileKind: profile.profile_kind,
+    sourceKind: profile.source_kind,
+    overviewContext: profile.overview_context,
+    sourceCameraName: profile.source_camera_name,
+    sourceCameraShortName: profile.source_camera_short_name,
+    plateCameraName: profile.plate_camera_name,
+    expectedDeltaMs: Number(profile.expected_delta_ms),
+    toleranceMs: Number(profile.tolerance_ms),
+    algorithmRevision: profile.algorithm_revision,
+    enabled: profile.enabled === true,
+  };
+}
+
+function entryOverviewHistoryRunData(run) {
+  if (!run) return null;
+  const counts = run.counts || {};
+  const count = (key) => Number(counts[key] || 0);
+  const instant = (value) => {
+    if (!value) return null;
+    const date = new Date(value);
+    return Number.isFinite(date.getTime()) ? date.toISOString() : null;
+  };
+  return {
+    id: Number(run.id),
+    status: run.status,
+    previewFingerprint: run.preview_fingerprint,
+    startAt: instant(run.start_at),
+    endAt: instant(run.end_at),
+    batchSize: Number(run.batch_size || 25),
+    oldestAt: instant(run.oldest_at),
+    newestAt: instant(run.newest_at),
+    confirmedAt: instant(run.confirmed_at),
+    pausedAt: instant(run.paused_at),
+    cancelledAt: instant(run.cancelled_at),
+    completedAt: instant(run.completed_at),
+    updatedAt: instant(run.updated_at),
+    counts: {
+      total: count("total"),
+      eligible: count("eligible"),
+      needsPreflight: count("needs_preflight"),
+      nighttime: count("nighttime"),
+      unverified: count("unverified"),
+      liveBusy: count("live_busy"),
+      preserved: count("preserved"),
+      missingCandidates: count("missing_candidates"),
+      upgradeCandidates: count("upgrade_candidates"),
+      previewed: count("previewed"),
+      previewableRemaining: count("previewable_remaining"),
+      queued: count("queued"),
+      processing: count("processing"),
+      ready: count("ready"),
+      failed: count("failed"),
+      unavailable: count("unavailable"),
+      superseded: count("superseded"),
+      cancelled: count("cancelled"),
+    },
+  };
+}
+
+function normalizedEntryOverviewHistoryRunId(value) {
+  if (value == null || value === "") return null;
+  const runId = Number.parseInt(String(value), 10);
+  if (!Number.isSafeInteger(runId) || runId <= 0) {
+    throw new Error("A valid Entry Overview history run is required.");
+  }
+  return runId;
+}
+
+function requiredEntryOverviewHistoryRunId(value) {
+  const runId = normalizedEntryOverviewHistoryRunId(value);
+  if (!runId) throw new Error("A valid Entry Overview history run is required.");
+  return runId;
+}
+
+function normalizedEntryOverviewHistoryDate(value, label) {
+  const date = new Date(String(value || ""));
+  if (!Number.isFinite(date.getTime())) throw new Error(`${label} is required.`);
+  return date.toISOString();
+}
+
+export async function getBlueIrisVehicleFrameQueueStatus(input = {}) {
   await requirePermission("system.manage_settings");
   try {
     const runtime = await getBlueIrisVehicleFrameRuntime();
+    const runId = normalizedEntryOverviewHistoryRunId(input.entryOverviewHistoryRunId);
+    const [status, entryOverviewHistoryRun] = await Promise.all([
+      runtime.queue.getStatus(),
+      runId
+        ? runtime.repository.getEntryOverviewBackfillRun(runId, { jobLimit: 1 })
+        : Promise.resolve(null),
+    ]);
     return {
       success: true,
       data: {
-        ...await runtime.queue.getStatus(),
+        ...status,
         worker: runtime.worker.snapshot(),
+        entryOverviewHistoryRun: entryOverviewHistoryRunData(entryOverviewHistoryRun),
       },
     };
   } catch (error) {
@@ -1849,11 +1948,20 @@ export async function getVehicleOverviewSetup() {
         includeBlueIrisTriggerDirection: false,
       }),
     ]);
-    const [profiles, status, entryRouteProfiles, entryFallback] = await Promise.all([
+    const [
+      profiles,
+      status,
+      entryRouteProfiles,
+      entryFallback,
+      entryHistoryProfiles,
+      latestEntryHistoryRun,
+    ] = await Promise.all([
       runtime.repository.listOverviewPairProfiles(),
       runtime.repository.getOverviewStatus(),
       runtime.repository.listEntryRouteProfiles(),
       runtime.repository.getEntryFallbackStatus(),
+      runtime.repository.listEntryOverviewHistoryProfiles({ enabledOnly: true }),
+      runtime.repository.getLatestEntryOverviewBackfillRun({ jobLimit: 1 }),
     ]);
     return {
       success: true,
@@ -1861,13 +1969,16 @@ export async function getVehicleOverviewSetup() {
         profiles: profiles.map((profile) => ({
           id: Number(profile.id),
           sourceCameraName: profile.source_camera_name,
+          sourceCameraShortName: profile.source_camera_short_name || "",
           plateCameraName: profile.plate_camera_name,
           directionLabel: profile.direction_label,
           sourceRole: profile.source_role,
+          overviewContext: profile.overview_context || "street",
           expectedDeltaMs: Number(profile.expected_delta_ms),
           toleranceMs: Number(profile.tolerance_ms),
           priority: Number(profile.priority),
           enabled: profile.enabled === true,
+          revision: Number(profile.revision || 1),
         })),
         plateCameras: directionSetup.profiles.map((profile) => ({
           cameraName: profile.cameraName,
@@ -1888,6 +1999,14 @@ export async function getVehicleOverviewSetup() {
           enabled: profile.enabled === true,
           revision: Number(profile.revision || 1),
         })),
+        entryOverviewHistory: {
+          sourceCameraName: "Entry Overview",
+          sourceCameraShortName: "Cam143",
+          plateCameraNames: ENTRY_OVERVIEW_HISTORY_PLATE_CAMERAS,
+          toleranceMs: 3000,
+          profiles: entryHistoryProfiles.map(entryOverviewHistoryProfileData),
+          latestRun: entryOverviewHistoryRunData(latestEntryHistoryRun),
+        },
         entryFallback,
         status,
       },
@@ -1897,13 +2016,145 @@ export async function getVehicleOverviewSetup() {
   }
 }
 
+export async function saveVehicleEntryOverviewHistoryProfiles(input = {}) {
+  await requirePermission("system.manage_settings");
+  try {
+    const requestedProfiles = new Map(
+      (Array.isArray(input.profiles) ? input.profiles : []).map((profile) => [
+        String(profile?.plateCameraName || "").trim(),
+        profile,
+      ])
+    );
+    const normalized = ENTRY_OVERVIEW_HISTORY_PLATE_CAMERAS.map((plateCameraName) => {
+      const profile = requestedProfiles.get(plateCameraName);
+      const expectedDeltaMs = Number.parseInt(String(profile?.expectedDeltaMs ?? ""), 10);
+      if (!Number.isSafeInteger(expectedDeltaMs) || Math.abs(expectedDeltaMs) > 30_000) {
+        throw new Error(`${plateCameraName} expected delta must be between -30000 and 30000 ms.`);
+      }
+      return { plateCameraName, expectedDeltaMs };
+    });
+    const runtime = await getBlueIrisVehicleFrameRuntime();
+    for (const profile of normalized) {
+      await runtime.repository.saveEntryOverviewHistoryProfile({
+        ...profile,
+        algorithmRevision: "entry-overview-history-v1",
+      });
+    }
+    const profiles = await runtime.repository.listEntryOverviewHistoryProfiles({ enabledOnly: true });
+    revalidatePath("/settings/vehicle-intelligence/vehicle-views");
+    return {
+      success: true,
+      data: {
+        sourceCameraName: "Entry Overview",
+        sourceCameraShortName: "Cam143",
+        plateCameraNames: ENTRY_OVERVIEW_HISTORY_PLATE_CAMERAS,
+        toleranceMs: 3000,
+        profiles: profiles.map(entryOverviewHistoryProfileData),
+      },
+    };
+  } catch (error) {
+    return visualSearchFailure(error, "Unable to save Entry Overview history anchors.");
+  }
+}
+
+export async function previewVehicleEntryOverviewHistory(input = {}) {
+  await requirePermission("maintenance.manage");
+  try {
+    const startAt = normalizedEntryOverviewHistoryDate(input.startAt, "History start");
+    const endAt = normalizedEntryOverviewHistoryDate(input.endAt, "History end");
+    if (new Date(endAt).getTime() <= new Date(startAt).getTime()) {
+      throw new Error("History end must be after history start.");
+    }
+    const runtime = await getBlueIrisVehicleFrameRuntime();
+    const run = await runtime.repository.previewEntryOverviewBackfillRun({
+      startAt,
+      endAt,
+      plateCameraNames: ENTRY_OVERVIEW_HISTORY_PLATE_CAMERAS,
+      batchSize: 25,
+    });
+    return { success: true, data: { run: entryOverviewHistoryRunData(run) } };
+  } catch (error) {
+    return visualSearchFailure(error, "Unable to preview Entry Overview history.");
+  }
+}
+
+export async function confirmVehicleEntryOverviewHistory(input = {}) {
+  await requirePermission("maintenance.manage");
+  try {
+    const runId = requiredEntryOverviewHistoryRunId(input.runId);
+    const limit = Number.parseInt(String(input.limit), 10);
+    if (!ENTRY_OVERVIEW_HISTORY_BATCH_SIZES.has(limit)) {
+      throw new Error("Entry Overview history batches must contain 1, 5, or 25 reads.");
+    }
+    const runtime = await getBlueIrisVehicleFrameRuntime();
+    const currentRun = await runtime.repository.getEntryOverviewBackfillRun(runId, { jobLimit: 1 });
+    if (!currentRun) throw new Error("This Entry Overview history run was not found.");
+    if (currentRun.status === "paused") {
+      throw new Error("Resume Entry Overview history before queuing its next batch.");
+    }
+    if (Number(currentRun.counts?.queued || 0) + Number(currentRun.counts?.processing || 0) > 0) {
+      throw new Error("Wait for the current Entry Overview history batch to finish before queuing another.");
+    }
+    const confirmation = await runtime.repository.confirmEntryOverviewBackfillRun({
+      runId,
+      previewFingerprint: input.previewFingerprint,
+      limit,
+    });
+    if (confirmation.queued > 0) wakeBlueIrisVehicleFrameWorker();
+    const run = await runtime.repository.getEntryOverviewBackfillRun(runId, { jobLimit: 1 });
+    revalidatePath("/settings/vehicle-intelligence/vehicle-views");
+    revalidatePath("/live_feed");
+    return { success: true, data: { confirmation, run: entryOverviewHistoryRunData(run) } };
+  } catch (error) {
+    return visualSearchFailure(error, "Unable to confirm this Entry Overview history batch.");
+  }
+}
+
+export async function setVehicleEntryOverviewHistoryPaused(input = {}) {
+  await requirePermission("maintenance.manage");
+  try {
+    const runId = requiredEntryOverviewHistoryRunId(input.runId);
+    const paused = input.paused === true;
+    const runtime = await getBlueIrisVehicleFrameRuntime();
+    const updated = await runtime.repository.setEntryOverviewBackfillRunState(
+      runId,
+      paused ? "paused" : "running"
+    );
+    if (!updated) throw new Error("This Entry Overview history run is no longer active.");
+    if (!paused) wakeBlueIrisVehicleFrameWorker();
+    const run = await runtime.repository.getEntryOverviewBackfillRun(runId, { jobLimit: 1 });
+    revalidatePath("/settings/vehicle-intelligence/vehicle-views");
+    return { success: true, data: { run: entryOverviewHistoryRunData(run) } };
+  } catch (error) {
+    return visualSearchFailure(error, "Unable to update Entry Overview history processing.");
+  }
+}
+
+export async function cancelVehicleEntryOverviewHistory(input = {}) {
+  await requirePermission("maintenance.manage");
+  try {
+    const runId = requiredEntryOverviewHistoryRunId(input.runId);
+    const runtime = await getBlueIrisVehicleFrameRuntime();
+    const cancellation = await runtime.repository.cancelEntryOverviewBackfillRun(runId);
+    if (!cancellation) throw new Error("This Entry Overview history run is no longer active.");
+    const run = await runtime.repository.getEntryOverviewBackfillRun(runId, { jobLimit: 1 });
+    revalidatePath("/settings/vehicle-intelligence/vehicle-views");
+    revalidatePath("/live_feed");
+    return { success: true, data: { cancellation, run: entryOverviewHistoryRunData(run) } };
+  } catch (error) {
+    return visualSearchFailure(error, "Unable to cancel Entry Overview history processing.");
+  }
+}
+
 export async function saveVehicleOverviewPairProfile(input = {}) {
   const principal = await requirePermission("system.manage_settings");
   try {
     const sourceCameraName = String(input.sourceCameraName || "").trim();
+    const sourceCameraShortName = String(input.sourceCameraShortName || "").trim();
     const plateCameraName = String(input.plateCameraName || "").trim();
     const directionLabel = String(input.directionLabel || "").trim();
     const sourceRole = String(input.sourceRole || "primary").toLowerCase();
+    const overviewContext = String(input.overviewContext || "street").toLowerCase();
     const expectedDeltaMs = Number.parseInt(String(input.expectedDeltaMs ?? 0), 10);
     const toleranceMs = Number.parseInt(String(input.toleranceMs ?? 1500), 10);
     const priority = Number.parseInt(String(input.priority ?? 0), 10);
@@ -1915,6 +2166,12 @@ export async function saveVehicleOverviewPairProfile(input = {}) {
     }
     if (!["primary", "fallback"].includes(sourceRole)) {
       throw new Error("Overview source role must be primary or fallback.");
+    }
+    if (!["street", "entry"].includes(overviewContext)) {
+      throw new Error("Overview use must be Street or Entry.");
+    }
+    if (sourceRole === "primary" && overviewContext === "entry" && !sourceCameraShortName) {
+      throw new Error("Entry Overview requires its Blue Iris short name, such as Cam143.");
     }
     if (!Number.isInteger(expectedDeltaMs) || expectedDeltaMs < -30_000 || expectedDeltaMs > 30_000) {
       throw new Error("Expected timing delta must be between -30000 and 30000 milliseconds.");
@@ -1932,11 +2189,34 @@ export async function saveVehicleOverviewPairProfile(input = {}) {
       throw new Error("Select a configured direction from the chosen plate camera.");
     }
     const runtime = await getBlueIrisVehicleFrameRuntime();
+    let persistedSourceCameraName = sourceCameraName;
+    if (sourceRole === "primary" && input.enabled !== false) {
+      const existingProfiles = await runtime.repository.listPrimaryOverviewProfilesForRead({
+        plateCameraName,
+        directionLabel,
+      });
+      const conflictingProfile = existingProfiles.find((profile) => (
+        String(profile.source_camera_name || "").trim().toLowerCase()
+          !== sourceCameraName.toLowerCase()
+      ));
+      if (conflictingProfile) {
+        throw new Error(
+          `Disable the existing ${conflictingProfile.source_camera_name} primary profile for this camera and direction first.`
+        );
+      }
+      const sameProfile = existingProfiles.find((profile) => (
+        String(profile.source_camera_name || "").trim().toLowerCase()
+          === sourceCameraName.toLowerCase()
+      ));
+      if (sameProfile) persistedSourceCameraName = sameProfile.source_camera_name;
+    }
     const saved = await runtime.repository.saveOverviewPairProfile({
-      sourceCameraName,
+      sourceCameraName: persistedSourceCameraName,
+      sourceCameraShortName,
       plateCameraName,
       directionLabel,
       sourceRole,
+      overviewContext,
       expectedDeltaMs,
       toleranceMs,
       priority,
