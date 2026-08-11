@@ -21,12 +21,15 @@ function reviewQueue(value, canManageSettings) {
 export default async function VehicleReviewPage({ searchParams }) {
   await requirePagePermission("plate.read");
   const parameters = await searchParams;
+  const requestedQueue = reviewQueue(parameters?.queue, true);
   const result = await getVehicleClusterOverview({
+    view: "review",
+    reviewQueue: requestedQueue,
     vehicleReviewPage: positivePage(parameters?.vehicleReviewPage),
     plateReviewPage: positivePage(parameters?.plateReviewPage),
     directionReviewPage: positivePage(parameters?.directionReviewPage),
   });
-  const queue = reviewQueue(parameters?.queue, result?.success && result.data.canManageSettings);
+  const queue = reviewQueue(requestedQueue, result?.success && result.data.canManageSettings);
   return (
     <DashboardLayout>
       <TitleNavbar title="Vehicle Intelligence" navigation={VEHICLE_INTELLIGENCE_NAVIGATION}>

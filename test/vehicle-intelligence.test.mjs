@@ -433,6 +433,101 @@ test("vehicle profile and review queues paginate independently", async () => {
   assert.equal(result.pagination.plateReviews.page, 4);
 });
 
+test("vehicle intelligence routes query only the visible profile or review queue", async () => {
+  const queryNames = async (options) => {
+    const calls = [];
+    const repository = new CaptureAssetRepository({
+      executor: {
+        async query(text) {
+          calls.push(text);
+          if (text.includes("total_clusters")) return { rows: [{}] };
+          return { rows: [] };
+        },
+      },
+    });
+    await repository.listVehicleClusterOverview({
+      ...options,
+      embeddingModel: "vehicle-model",
+      directionClassifierVersion: "direction-model",
+    });
+    return calls;
+  };
+
+  const profiles = await queryNames({ view: "profiles" });
+  assert.equal(profiles.length, 2);
+  assert.match(profiles[0], /FROM public\.vehicle_clusters clusters/i);
+  assert.match(profiles[1], /total_clusters/i);
+
+  const vehicleReviews = await queryNames({ view: "review", reviewQueue: "vehicle" });
+  assert.equal(vehicleReviews.length, 2);
+  assert.match(vehicleReviews[0], /assignment\.assignment_status = 'suggested'/i);
+  assert.match(vehicleReviews[1], /total_clusters/i);
+
+  const plateReviews = await queryNames({ view: "review", reviewQueue: "plates" });
+  assert.equal(plateReviews.length, 2);
+  assert.match(plateReviews[0], /FROM public\.vehicle_plate_associations association/i);
+
+  const directionReviews = await queryNames({ view: "review", reviewQueue: "direction" });
+  assert.equal(directionReviews.length, 2);
+  assert.match(directionReviews[0], /ROW_NUMBER\(\) OVER/i);
+
+  const setup = await queryNames({ view: "review", reviewQueue: "setup" });
+  assert.equal(setup.length, 1);
+  assert.match(setup[0], /total_clusters/i);
+});
+
+test("vehicle intelligence skips setup-only service work outside setup attention", async () => {
+  const calls = [];
+  const emptyOverview = {
+    clusters: [], suggestions: [], associations: [], directionReviews: [],
+    stats: {},
+    pagination: {
+      profiles: { page: 1, pageSize: 50 },
+      vehicleReviews: { page: 1, pageSize: 20 },
+      plateReviews: { page: 1, pageSize: 20 },
+      directionReviews: { page: 1, pageSize: 20 },
+    },
+    filters: { profileStatus: null, profileSearch: null, profileCamera: null },
+  };
+  const repository = {
+    async listVehicleClusterOverview(options) { calls.push(["overview", options.view, options.reviewQueue]); return emptyOverview; },
+    async listDirectionProfiles() { calls.push(["directions"]); return []; },
+    async listCameraProfiles() { calls.push(["profiles"]); return []; },
+    async listCameraDetectionStats() { calls.push(["detections"]); return []; },
+  };
+  const service = new CaptureAssetService({ repository, fileStorage: {} });
+  service.getCalibrationSummary = async () => { calls.push(["calibration"]); return null; };
+
+  await service.getVehicleClusterOverview({ view: "review", reviewQueue: "vehicle" });
+  assert.deepEqual(calls, [["overview", "review", "vehicle"]]);
+
+  calls.length = 0;
+  await service.getVehicleClusterOverview({ view: "profiles" });
+  assert.deepEqual(calls, [["overview", "profiles", "all"], ["directions"]]);
+
+  calls.length = 0;
+  await service.getVehicleClusterOverview({ view: "review", reviewQueue: "setup" });
+  assert.deepEqual(calls, [
+    ["overview", "review", "setup"],
+    ["directions"],
+    ["profiles"],
+    ["detections"],
+    ["calibration"],
+  ]);
+});
+
+test("vehicle profile and review pages request route-scoped data", async () => {
+  const [profilesPage, reviewPage, component] = await Promise.all([
+    source("app/visual_search/vehicles/page.jsx"),
+    source("app/visual_search/vehicles/review/page.jsx"),
+    source("components/VehicleClusters.jsx"),
+  ]);
+  assert.match(profilesPage, /view: "profiles"/);
+  assert.match(reviewPage, /view: "review"/);
+  assert.match(reviewPage, /reviewQueue: requestedQueue/);
+  assert.match(component, /reviewQueue: view === "review" \? activeQueue : undefined/);
+});
+
 test("vehicle cluster review explicitly types the shared status parameter", async () => {
   const calls = [];
   const client = {
