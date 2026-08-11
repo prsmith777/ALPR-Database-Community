@@ -54,7 +54,7 @@ try {
        source_camera_name, source_camera_short_name, plate_camera_name,
        direction_label, source_role, overview_context, expected_delta_ms,
        tolerance_ms, priority, enabled
-     ) VALUES ($1, 'Cam143', $2, 'Entering', 'primary', 'entry', 0, 1500, 199, TRUE)
+     ) VALUES ($1, 'Cam143', $2, 'Entering', 'primary', 'entry', 0, 1500, 90, TRUE)
      RETURNING id`,
     [`Migration Entry Overview ${suffix}`, `Migration Entry LPR ${suffix}`]
   );
@@ -73,8 +73,8 @@ try {
          source_camera_name, plate_camera_name, direction_label, source_role,
          overview_context, expected_delta_ms, tolerance_ms, priority, enabled
        ) VALUES
-         ($1, $2, $3, 'primary', 'street', 0, 1500, 200, TRUE),
-         (LOWER($1), LOWER($2), LOWER($3), 'primary', 'street', 0, 1500, 201, TRUE)`,
+         ($1, $2, $3, 'primary', 'street', 0, 1500, 91, TRUE),
+         (LOWER($1), LOWER($2), LOWER($3), 'primary', 'street', 0, 1500, 92, TRUE)`,
       [`Duplicate Overview ${suffix}`, `Duplicate LPR ${suffix}`, `Duplicate Direction ${suffix}`]
     );
     await assert.rejects(
@@ -150,7 +150,7 @@ try {
     overviewContext: "street",
     expectedDeltaMs: 0,
     toleranceMs: 1500,
-    priority: 202,
+    priority: 93,
     enabled: true,
   };
   const canonicalProfiles = await Promise.all([
