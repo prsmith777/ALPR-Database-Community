@@ -372,6 +372,16 @@ try {
     plate: `HNIT${plateSuffix}`,
     offsetMs: 3_000,
   });
+  const exhaustedLiveRead = await pool.query(
+    `INSERT INTO public.plate_reads (
+       plate_number, camera_name, "timestamp", vehicle_image_status,
+       vehicle_image_queue_kind, vehicle_image_attempt_count, vehicle_image_retryable
+     ) VALUES ($1, $2, $3::timestamptz, 'failed', 'live', 3, TRUE)
+     RETURNING id`,
+    [`XLIV${plateSuffix}`, `Exhausted Live ${suffix}`,
+      new Date(historyBase.getTime() + 4_000).toISOString()],
+  );
+  historyReadIds.push(Number(exhaustedLiveRead.rows[0].id));
   for (const id of [legacyHistoryReadId, protectedHistoryReadId]) {
     await pool.query(
       `INSERT INTO public.vehicle_attribute_observations (
@@ -457,7 +467,8 @@ try {
   assert.equal(protectedView.rows[0].vehicle_image_queue_kind, null);
   assert.equal(protectedView.rows[0].vehicle_image_backfill_job_id, null);
 
-  // The history queue yields while any live/primary work is outstanding.
+  // The history queue yields while claimable live/primary work is outstanding.
+  // A protected saved-image row and exhausted failures cannot block it forever.
   assert.equal(await repositoryA.claimNextEntryOverviewBackfillJob(), null);
   await pool.query(
     `UPDATE public.plate_reads
