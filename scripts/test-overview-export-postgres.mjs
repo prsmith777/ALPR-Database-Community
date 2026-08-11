@@ -16,7 +16,6 @@ const claimA = "11111111-1111-4111-8111-111111111111";
 const claimB = "22222222-2222-4222-8222-222222222222";
 const exportKey = crypto.randomBytes(32).toString("hex");
 const suffix = crypto.randomUUID().slice(0, 8);
-const plateSuffix = suffix.slice(0, 6);
 const overviewCamera = `Codex Overview ${suffix}`;
 const plateCamera = `Codex LPR ${suffix}`;
 let readId = null;
@@ -34,6 +33,10 @@ function connectedSession(client) {
   return {
     query: (...args) => client.query(...args),
   };
+}
+
+function fixturePlate(prefix) {
+  return `${prefix}${suffix}`.slice(0, 10);
 }
 
 try {
@@ -348,7 +351,7 @@ try {
     return id;
   };
   const legacyHistoryReadId = await insertHistoryRead({
-    plate: `HLEG${plateSuffix}`,
+    plate: fixturePlate("HLEG"),
     offsetMs: 0,
     path: `images/history-${suffix}-legacy.jpg`,
     status: "ready",
@@ -358,18 +361,18 @@ try {
     sourceReadId: readId,
   });
   const missingHistoryReadId = await insertHistoryRead({
-    plate: `HMIS${plateSuffix}`,
+    plate: fixturePlate("HMIS"),
     offsetMs: 1_000,
   });
   const protectedHistoryReadId = await insertHistoryRead({
-    plate: `HPRO${plateSuffix}`,
+    plate: fixturePlate("HPRO"),
     offsetMs: 2_000,
     path: `derived/history-${suffix}-protected.jpg`,
     status: "failed",
     sourceKind: "entry_overview_primary",
   });
   const nightHistoryReadId = await insertHistoryRead({
-    plate: `HNIT${plateSuffix}`,
+    plate: fixturePlate("HNIT"),
     offsetMs: 3_000,
   });
   const exhaustedLiveRead = await pool.query(
@@ -378,7 +381,7 @@ try {
        vehicle_image_queue_kind, vehicle_image_attempt_count, vehicle_image_retryable
      ) VALUES ($1, $2, $3::timestamptz, 'failed', 'live', 3, TRUE)
      RETURNING id`,
-    [`XLIV${plateSuffix}`, `Exhausted Live ${suffix}`,
+    [fixturePlate("XLIV"), `Exhausted Live ${suffix}`,
       new Date(historyBase.getTime() + 4_000).toISOString()],
   );
   historyReadIds.push(Number(exhaustedLiveRead.rows[0].id));
@@ -646,7 +649,7 @@ try {
   // active-scope uniqueness, and a new run reuses the same semantic job key.
   const restartBase = new Date(historyBase.getTime() + 30_000);
   const restartReadId = await insertHistoryRead({
-    plate: `HRST${suffix}`,
+    plate: fixturePlate("HRST"),
     offsetMs: 30_000,
     path: `images/history-${suffix}-restart-prior.jpg`,
     status: "ready",
@@ -720,7 +723,7 @@ try {
   // A terminal failure never removes or relabels the prior view and restores
   // candidate/source provenance exactly.
   const preservedFailureReadId = await insertHistoryRead({
-    plate: `HFAIL${suffix}`,
+    plate: fixturePlate("HFAIL"),
     offsetMs: 40_000,
     path: `images/history-${suffix}-failure-prior.jpg`,
     status: "ready",
@@ -775,7 +778,7 @@ try {
   // A pathless preflight failure remains visibly terminal after the campaign
   // claim is released.
   const unverifiedReadId = await insertHistoryRead({
-    plate: `HUVR${suffix}`,
+    plate: fixturePlate("HUVR"),
     offsetMs: 50_000,
   });
   const unverifiedPreview = await repositoryA.previewEntryOverviewBackfillRun({
@@ -820,7 +823,7 @@ try {
   // A crashed second attempt is terminalized with no third claim and the run
   // becomes idle/completed.
   const expiredReadId = await insertHistoryRead({
-    plate: `HEXP${suffix}`,
+    plate: fixturePlate("HEXP"),
     offsetMs: 60_000,
   });
   const expiredPreview = await repositoryA.previewEntryOverviewBackfillRun({
