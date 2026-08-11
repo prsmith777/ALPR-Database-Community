@@ -29,6 +29,12 @@ const historyProfileIds = [];
 const historyCandidateIds = [];
 const clients = [];
 
+function connectedSession(client) {
+  return {
+    query: (...args) => client.query(...args),
+  };
+}
+
 try {
   // The production compose runner applies this same file with ON_ERROR_STOP.
   // Running it twice around an active processing row proves additive migration
@@ -136,9 +142,9 @@ try {
     pool.connect(),
   ]);
   clients.push(clientA, clientB, recoveryClient);
-  const repositoryA = new BlueIrisVehicleFrameRepository(clientA);
-  const repositoryB = new BlueIrisVehicleFrameRepository(clientB);
-  const recoveryRepository = new BlueIrisVehicleFrameRepository(recoveryClient);
+  const repositoryA = new BlueIrisVehicleFrameRepository(connectedSession(clientA));
+  const repositoryB = new BlueIrisVehicleFrameRepository(connectedSession(clientB));
+  const recoveryRepository = new BlueIrisVehicleFrameRepository(connectedSession(recoveryClient));
 
   // Two independent sessions saving case variants serialize on the normalized
   // advisory key and converge on one database-enforced primary identity.
