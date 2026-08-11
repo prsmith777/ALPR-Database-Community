@@ -58,6 +58,7 @@ test("ingestion and migrations preserve Blue Iris pointers without storing BVR c
   assert.doesNotMatch(overviewRoute, /createOverviewCandidate|vehicle_overview_candidates/);
   assert.match(migrations, /2026080801_daytime_overview_vehicle_views/);
   assert.match(route, /wakeBlueIrisVehicleFrameWorker/);
+  assert.match(route, /if \(overviewWorkQueued\) wakeBlueIrisVehicleFrameWorker\(\)/);
   assert.doesNotMatch(route, /readFile\([^)]*ALERT_CLIP/);
 });
 
@@ -94,14 +95,19 @@ test("Blue Iris vehicle frames are bounded, read-owned, and exposed as a two-vie
   assert.match(vehicleSettings, /Cameras/);
   assert.match(vehicleSettings, /Vehicle Views/);
   assert.match(vehicleSettings, /Daytime overview retrieval/);
-  assert.match(vehicleSettings, /No Street Overview alert action required/);
+  assert.match(vehicleSettings, /No overview-camera alert action required/);
+  assert.match(vehicleSettings, /Entry Overview/);
+  assert.match(vehicleSettings, /Cam143/);
   assert.doesNotMatch(vehicleSettings, /vehicle-overview-candidates/);
   assert.match(vehicleSettings, /Processing/);
-  assert.match(vehicleSettings, /Camera for vehicle-view history/);
+  assert.match(vehicleSettings, /Non-Entry camera for legacy vehicle-view history/);
   assert.match(vehicleSettings, /Optional date range/);
-  assert.match(vehicleSettings, /Queue \{cameraName \|\| "selected camera"\} history/);
+  assert.match(vehicleSettings, /Queue \{genericFrameHistoryCameraAllowed \? cameraName : "selected camera"\} history/);
+  assert.match(vehicleSettings, /Entry LPR 1 and Entry LPR 2 are intentionally excluded/);
+  assert.match(vehicleSettings, /Preview frozen range/);
+  assert.match(vehicleSettings, /Queue next batch/);
   assert.match(vehicleSettings, /Pause history/);
-  assert.match(vehicleSettings, /Cancel pending \{cameraName \|\| "camera"\} history/);
+  assert.match(vehicleSettings, /Cancel pending \{genericFrameHistoryCameraAllowed \? cameraName : "camera"\} history/);
   assert.match(repository, /cancelHistorical/);
   assert.match(repository, /vehicle_image_status IN \('pending', 'failed'\)/);
 });

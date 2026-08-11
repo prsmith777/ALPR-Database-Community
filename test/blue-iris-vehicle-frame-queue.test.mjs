@@ -6,7 +6,10 @@ import {
   blueIrisVehicleFrameQueueInternals,
 } from "../lib/blue-iris-vehicle-frame-queue.mjs";
 import { BlueIrisVehicleFrameRepository } from "../lib/blue-iris-vehicle-frame-repository.mjs";
-import { BlueIrisVehicleFrameWorker } from "../lib/blue-iris-vehicle-frame-worker.mjs";
+import {
+  BlueIrisVehicleFrameWorker,
+  blueIrisVehicleFrameWorkerInternals,
+} from "../lib/blue-iris-vehicle-frame-worker.mjs";
 import { startBlueIrisVehicleFrameRuntimeWithRetry } from "../lib/blue-iris-vehicle-frame-startup.mjs";
 
 const configured = {
@@ -131,6 +134,556 @@ test("read-owned overview work resolves an exact direction profile and source ca
   assert.equal(result.succeeded, 1);
   assert.deepEqual(claims, ["overview_read"]);
   assert.equal(servicesCreated, 2);
+});
+
+test("Entry Overview resolves its reviewed Cam143 binding and preserves Entry context", async () => {
+  const claims = [{
+    id: 902,
+    camera_name: "Entry LPR 1",
+    timestamp: "2026-08-10T18:00:00Z",
+    bi_trigger_direction_label: "Entering",
+    vehicle_image_claim_token: "11111111-1111-4111-8111-111111111111",
+    vehicle_image_attempt_count: 1,
+    vehicle_image_queue_kind: "overview",
+    overview_profile_id: 43,
+    overview_source_camera_name: "Entry Overview",
+    overview_source_camera_short_name: "Cam143",
+    overview_context: "entry",
+    overview_profile_match_count: 1,
+    overview_expected_delta_ms: 0,
+    overview_tolerance_ms: 1_500,
+    overview_profile_priority: 0,
+    overview_profile_revision: 2,
+  }];
+  let processed = null;
+  let connectionCount = 0;
+  const queue = new BlueIrisVehicleFrameQueue({
+    repository: {
+      async getQueueStatus() { return { historicalPaused: true }; },
+      async claimNextOverviewRead() { return claims.shift() || null; },
+      async claimNext() { return null; },
+      async markFailed() { assert.fail("a reviewed Cam143 binding must not fail"); },
+    },
+    fileStorage: {},
+    loadConfig: async () => configured,
+    clientFactory: () => ({
+      async testConnection() {
+        connectionCount += 1;
+        return { cameras: [{ id: "Cam143", name: "Entry Overview" }] };
+      },
+    }),
+    timelineExportFactory: () => ({
+      async sweepLocalWorkspaces() {},
+      async reconcileRemoteExports() {},
+    }),
+    serviceFactory: () => ({
+      async processOverviewRead(input) {
+        processed = input;
+        return { kind: "overview_read", status: "ready", readId: input.read.id };
+      },
+    }),
+    pairSharingFactory: () => ({ async processNext() { return null; } }),
+    entryFallbackFactory: () => ({ async processNext() { return null; } }),
+  });
+
+  const result = await queue.processBatch({ limit: 1 });
+  assert.equal(result.succeeded, 1);
+  assert.equal(connectionCount, 1);
+  assert.equal(processed.camera, "Cam143");
+  assert.equal(processed.profile.overview_context, "entry");
+  assert.equal(processed.profile.source_camera_short_name, "Cam143");
+});
+
+test("Entry Overview rejects a blank short-camera binding before Blue Iris initialization", async () => {
+  const claims = [{
+    id: 904,
+    camera_name: "Entry LPR 1",
+    timestamp: "2026-08-10T18:00:00Z",
+    bi_trigger_direction_label: "Entering",
+    vehicle_image_claim_token: "11111111-1111-4111-8111-111111111111",
+    vehicle_image_attempt_count: 1,
+    vehicle_image_queue_kind: "overview",
+    overview_profile_id: 43,
+    overview_source_camera_name: "Entry Overview",
+    overview_source_camera_short_name: "   ",
+    overview_context: "entry",
+    overview_profile_match_count: 1,
+    overview_expected_delta_ms: 0,
+    overview_tolerance_ms: 1_500,
+    overview_profile_priority: 0,
+    overview_profile_revision: 2,
+  }];
+  let failure = null;
+  const queue = new BlueIrisVehicleFrameQueue({
+    repository: {
+      async getQueueStatus() { return { historicalPaused: true }; },
+      async claimNextOverviewRead() { return claims.shift() || null; },
+      async claimNext() { return null; },
+      async markFailed(id, input) { failure = { id, ...input }; return { id }; },
+    },
+    fileStorage: {},
+    loadConfig: async () => configured,
+    clientFactory: () => { assert.fail("a blank Entry binding must make zero Blue Iris calls"); },
+    pairSharingFactory: () => ({ async processNext() { return null; } }),
+    entryFallbackFactory: () => ({ async processNext() { return null; } }),
+  });
+
+  const result = await queue.processBatch({ limit: 1 });
+  assert.equal(result.results[0].errorCode, "OVERVIEW_CAMERA_BINDING_INVALID");
+  assert.equal(failure.retryable, false);
+  assert.equal(failure.selectionMetadata.overviewContext, "entry");
+});
+
+test("Entry Overview rejects a display-name and Cam143 mismatch without exporting", async () => {
+  const claims = [{
+    id: 905,
+    camera_name: "Entry LPR 2",
+    timestamp: "2026-08-10T18:00:00Z",
+    bi_trigger_direction_label: "Exiting",
+    vehicle_image_claim_token: "11111111-1111-4111-8111-111111111111",
+    vehicle_image_attempt_count: 1,
+    vehicle_image_queue_kind: "overview",
+    overview_profile_id: 44,
+    overview_source_camera_name: "Entry Overview",
+    overview_source_camera_short_name: "Cam143",
+    overview_context: "entry",
+    overview_profile_match_count: 1,
+    overview_expected_delta_ms: 0,
+    overview_tolerance_ms: 1_500,
+    overview_profile_priority: 0,
+    overview_profile_revision: 1,
+  }];
+  let failure = null;
+  let exportCalls = 0;
+  const queue = new BlueIrisVehicleFrameQueue({
+    repository: {
+      async getQueueStatus() { return { historicalPaused: true }; },
+      async claimNextOverviewRead() { return claims.shift() || null; },
+      async claimNext() { return null; },
+      async markFailed(id, input) { failure = { id, ...input }; return { id }; },
+    },
+    fileStorage: {},
+    loadConfig: async () => configured,
+    clientFactory: () => ({
+      async testConnection() {
+        return { cameras: [
+          { id: "Cam149", name: "Entry Overview" },
+          { id: "Cam143", name: "Different Camera" },
+        ] };
+      },
+      async startTimelineExport() { exportCalls += 1; },
+    }),
+    timelineExportFactory: () => ({
+      async sweepLocalWorkspaces() {},
+      async reconcileRemoteExports() {},
+    }),
+    serviceFactory: () => ({
+      async processOverviewRead() { assert.fail("a mismatched binding must not be processed"); },
+    }),
+    pairSharingFactory: () => ({ async processNext() { return null; } }),
+    entryFallbackFactory: () => ({ async processNext() { return null; } }),
+  });
+
+  const result = await queue.processBatch({ limit: 1 });
+  assert.equal(result.results[0].errorCode, "OVERVIEW_CAMERA_BINDING_MISMATCH");
+  assert.equal(exportCalls, 0);
+  assert.equal(failure.retryable, false);
+  assert.equal(failure.selectionMetadata.sourceCameraShortName, "Cam143");
+});
+
+test("Entry Overview rejects a missing display-name alias even when Cam143 exists", async () => {
+  const claims = [{
+    id: 906,
+    camera_name: "Entry LPR 2",
+    timestamp: "2026-08-10T18:00:00Z",
+    bi_trigger_direction_label: "Exiting",
+    vehicle_image_claim_token: "11111111-1111-4111-8111-111111111111",
+    vehicle_image_attempt_count: 1,
+    vehicle_image_queue_kind: "overview",
+    overview_profile_id: 44,
+    overview_source_camera_name: "Entry Overveiw",
+    overview_source_camera_short_name: "Cam143",
+    overview_context: "entry",
+    overview_profile_match_count: 1,
+    overview_expected_delta_ms: 0,
+    overview_tolerance_ms: 1_500,
+    overview_profile_priority: 0,
+    overview_profile_revision: 1,
+  }];
+  let failure = null;
+  let exportCalls = 0;
+  const queue = new BlueIrisVehicleFrameQueue({
+    repository: {
+      async getQueueStatus() { return { historicalPaused: true }; },
+      async claimNextOverviewRead() { return claims.shift() || null; },
+      async claimNext() { return null; },
+      async markFailed(id, input) { failure = { id, ...input }; return { id }; },
+    },
+    fileStorage: {},
+    loadConfig: async () => configured,
+    clientFactory: () => ({
+      async testConnection() {
+        return { cameras: [{ id: "Cam143", name: "Entry Overview" }] };
+      },
+      async startTimelineExport() { exportCalls += 1; },
+    }),
+    timelineExportFactory: () => ({
+      async sweepLocalWorkspaces() {},
+      async reconcileRemoteExports() {},
+    }),
+    serviceFactory: () => ({
+      async processOverviewRead() { assert.fail("a missing display alias must not be processed"); },
+    }),
+    pairSharingFactory: () => ({ async processNext() { return null; } }),
+    entryFallbackFactory: () => ({ async processNext() { return null; } }),
+  });
+
+  const result = await queue.processBatch({ limit: 1 });
+  assert.equal(result.results[0].errorCode, "OVERVIEW_CAMERA_BINDING_MISMATCH");
+  assert.equal(exportCalls, 0);
+  assert.equal(failure.retryable, false);
+});
+
+test("ambiguous Entry profiles fail closed before creating a Blue Iris client", async () => {
+  const claims = [{
+    id: 903,
+    camera_name: "Entry LPR 2",
+    timestamp: "2026-08-10T18:00:00Z",
+    bi_trigger_direction_label: "Exiting",
+    vehicle_image_claim_token: "11111111-1111-4111-8111-111111111111",
+    vehicle_image_attempt_count: 1,
+    vehicle_image_queue_kind: "overview",
+    overview_profile_id: 44,
+    overview_source_camera_name: "Entry Overview",
+    overview_source_camera_short_name: "Cam143",
+    overview_context: "entry",
+    overview_profile_match_count: 2,
+    overview_expected_delta_ms: 0,
+    overview_tolerance_ms: 1_500,
+    overview_profile_priority: 0,
+    overview_profile_revision: 1,
+  }];
+  let failure = null;
+  const queue = new BlueIrisVehicleFrameQueue({
+    repository: {
+      async getQueueStatus() { return { historicalPaused: true }; },
+      async claimNextOverviewRead() { return claims.shift() || null; },
+      async claimNext() { return null; },
+      async markFailed(id, input) { failure = { id, ...input }; return { id }; },
+    },
+    fileStorage: {},
+    loadConfig: async () => configured,
+    clientFactory: () => { assert.fail("ambiguous profiles must make zero Blue Iris calls"); },
+    pairSharingFactory: () => ({ async processNext() { return null; } }),
+    entryFallbackFactory: () => ({ async processNext() { return null; } }),
+  });
+
+  const result = await queue.processBatch({ limit: 5 });
+  assert.equal(result.processed, 1);
+  assert.equal(result.results[0].errorCode, "OVERVIEW_PROFILE_AMBIGUOUS");
+  assert.equal(failure.selectionMetadata.overviewContext, "entry");
+  assert.equal(failure.selectionMetadata.sourceCameraId, "Cam143");
+});
+
+test("an idle or night-only queue makes zero Blue Iris calls", async () => {
+  let factoryCalls = 0;
+  const queue = new BlueIrisVehicleFrameQueue({
+    repository: {
+      async getQueueStatus() { return { historicalPaused: true }; },
+      async claimNextOverviewRead() { return null; },
+      async claimNext() { return null; },
+    },
+    fileStorage: {},
+    loadConfig: async () => configured,
+    clientFactory: () => { factoryCalls += 1; return {}; },
+    pairSharingFactory: () => ({ async processNext() { return null; } }),
+    entryFallbackFactory: () => ({ async processNext() { return null; } }),
+  });
+
+  const result = await queue.processBatch({ limit: 5 });
+  assert.equal(result.processed, 0);
+  assert.equal(factoryCalls, 0);
+});
+
+function claimedEntryHistoryRead(overrides = {}) {
+  return {
+    id: 9_001,
+    camera_name: "Entry LPR 1",
+    timestamp: "2026-05-19T18:00:00Z",
+    image_path: "plates/9001.jpg",
+    image_data: null,
+    vehicle_image_path: "derived/legacy-entry-view.jpg",
+    vehicle_image_claim_token: "90010000-0000-4000-8000-000000009001",
+    vehicle_image_attempt_count: 1,
+    vehicle_image_queue_kind: "overview_backfill",
+    vehicle_image_hard_deadline_at: "2099-01-01T00:00:00Z",
+    entry_history_job_id: 501,
+    entry_history_run_id: 51,
+    entry_history_profile_id: 31,
+    entry_history_profile_key: "a".repeat(64),
+    entry_history_profile_revision: 2,
+    entry_history_profile_kind: "entry_history",
+    entry_history_algorithm_revision: "entry-overview-history-v1",
+    entry_overview_source_kind: "entry_overview_history",
+    overview_context: "entry",
+    overview_source_camera_name: "Entry Overview",
+    overview_source_camera_short_name: "Cam143",
+    overview_expected_delta_ms: 250,
+    overview_tolerance_ms: 3_000,
+    ...overrides,
+  };
+}
+
+test("historical monochrome Entry evidence terminates before any Blue Iris call", async () => {
+  const read = claimedEntryHistoryRead();
+  let clientCalls = 0;
+  let recorded = null;
+  let failed = null;
+  const queue = new BlueIrisVehicleFrameQueue({
+    repository: {
+      async getQueueStatus() { return { historicalPaused: true }; },
+      async claimNextOverviewRead() { return null; },
+      async claimNext() { return null; },
+      async claimNextEntryOverviewBackfillJob() { return read; },
+      async recordEntryOverviewBackfillDaylight(jobId, claimToken, input) {
+        recorded = { jobId, claimToken, ...input };
+        return { id: jobId };
+      },
+      async markEntryOverviewBackfillFailed(jobId, input) {
+        failed = { jobId, ...input };
+        return { id: read.id, status: "unavailable", retryable: false };
+      },
+    },
+    fileStorage: {},
+    loadConfig: async () => configured,
+    clientFactory: () => { clientCalls += 1; return {}; },
+    historyDaylightAssessor: async () => ({
+      status: "nighttime",
+      errorCode: "NIGHTTIME_UNAVAILABLE",
+      evidence: { evaluated: true, eligible: false, monochrome: true },
+    }),
+    pairSharingFactory: () => ({ async processNext() { return null; } }),
+    entryFallbackFactory: () => ({ async processNext() { return null; } }),
+  });
+
+  const result = await queue.processBatch({ limit: 1 });
+  assert.equal(clientCalls, 0);
+  assert.equal(recorded.status, "nighttime");
+  assert.equal(recorded.jobId, 501);
+  assert.equal(failed.errorCode, "NIGHTTIME_UNAVAILABLE");
+  assert.equal(failed.unavailable, true);
+  assert.equal(result.results[0].kind, "entry_overview_backfill");
+  assert.equal(result.results[0].status, "unavailable");
+});
+
+test("historical Entry work uses the exact Cam143 binding after live queues are empty", async () => {
+  const read = claimedEntryHistoryRead();
+  const claimOrder = [];
+  let processed = null;
+  const queue = new BlueIrisVehicleFrameQueue({
+    repository: {
+      async getQueueStatus() { return { historicalPaused: false }; },
+      async claimNextOverviewRead() { claimOrder.push("live_overview"); return null; },
+      async claimNext({ includeHistorical }) {
+        claimOrder.push(includeHistorical ? "legacy_history" : "live");
+        return null;
+      },
+      async claimNextEntryOverviewBackfillJob() {
+        claimOrder.push("entry_history");
+        return read;
+      },
+      async recordEntryOverviewBackfillDaylight() { return { id: 501 }; },
+      async heartbeatEntryOverviewBackfillJob() { return { id: 501 }; },
+      async markEntryOverviewBackfillReady() { return { id: read.id }; },
+      async markEntryOverviewBackfillFailed() { assert.fail("a valid history canary must not fail"); },
+    },
+    fileStorage: {},
+    loadConfig: async () => configured,
+    clientFactory: () => ({
+      async testConnection() {
+        return { cameras: [{ id: "Cam143", name: "Entry Overview" }] };
+      },
+    }),
+    timelineExportFactory: () => ({
+      async sweepLocalWorkspaces() {},
+      async reconcileRemoteExports() {},
+    }),
+    serviceFactory: () => ({
+      async processOverviewRead(input) {
+        processed = input;
+        return { kind: "entry_overview_backfill", status: "ready", readId: input.read.id };
+      },
+    }),
+    historyDaylightAssessor: async () => ({
+      status: "eligible",
+      errorCode: null,
+      evidence: { evaluated: true, eligible: true, monochrome: false },
+    }),
+    pairSharingFactory: () => ({ async processNext() { return null; } }),
+    entryFallbackFactory: () => ({ async processNext() { return null; } }),
+  });
+
+  const result = await queue.processBatch({ limit: 1 });
+  assert.deepEqual(claimOrder, ["live_overview", "live", "entry_history"]);
+  assert.equal(result.succeeded, 1);
+  assert.equal(processed.camera, "Cam143");
+  assert.equal(processed.profile.profile_kind, "entry_history");
+  assert.equal(processed.profile.direction_label, null);
+  assert.equal(processed.profile.tolerance_ms, 3_000);
+  assert.equal(processed.read.entry_overview_daylight_evidence.eligible, true);
+  assert.equal(typeof processed.lifecycle.markReady, "function");
+});
+
+test("historical Entry binding mismatch fails closed without timeline processing", async () => {
+  const read = claimedEntryHistoryRead();
+  let failed = null;
+  let processed = false;
+  const queue = new BlueIrisVehicleFrameQueue({
+    repository: {
+      async getQueueStatus() { return { historicalPaused: true }; },
+      async claimNextOverviewRead() { return null; },
+      async claimNext() { return null; },
+      async claimNextEntryOverviewBackfillJob() { return read; },
+      async recordEntryOverviewBackfillDaylight() { return { id: 501 }; },
+      async markEntryOverviewBackfillFailed(jobId, input) {
+        failed = { jobId, ...input };
+        return { id: read.id, status: "unavailable" };
+      },
+    },
+    fileStorage: {},
+    loadConfig: async () => configured,
+    clientFactory: () => ({
+      async testConnection() {
+        return { cameras: [
+          { id: "Cam149", name: "Entry Overview" },
+          { id: "Cam143", name: "Wrong Camera" },
+        ] };
+      },
+    }),
+    timelineExportFactory: () => ({
+      async sweepLocalWorkspaces() {},
+      async reconcileRemoteExports() {},
+    }),
+    serviceFactory: () => ({
+      async processOverviewRead() { processed = true; },
+    }),
+    historyDaylightAssessor: async () => ({
+      status: "eligible",
+      errorCode: null,
+      evidence: { evaluated: true, eligible: true, monochrome: false },
+    }),
+    pairSharingFactory: () => ({ async processNext() { return null; } }),
+    entryFallbackFactory: () => ({ async processNext() { return null; } }),
+  });
+
+  const result = await queue.processBatch({ limit: 1 });
+  assert.equal(processed, false);
+  assert.equal(failed.errorCode, "OVERVIEW_CAMERA_BINDING_MISMATCH");
+  assert.equal(failed.unavailable, true);
+  assert.equal(result.results[0].status, "unavailable");
+});
+
+test("historical Entry initialization failure releases the job into bounded backoff", async () => {
+  const read = claimedEntryHistoryRead();
+  let failed = null;
+  const queue = new BlueIrisVehicleFrameQueue({
+    repository: {
+      async getQueueStatus() { return { historicalPaused: true }; },
+      async claimNextOverviewRead() { return null; },
+      async claimNext() { return null; },
+      async claimNextEntryOverviewBackfillJob() { return read; },
+      async recordEntryOverviewBackfillDaylight() { return { id: 501 }; },
+      async markEntryOverviewBackfillFailed(jobId, input) {
+        failed = { jobId, ...input };
+        return { id: read.id, status: "failed", retryable: true };
+      },
+    },
+    fileStorage: {},
+    loadConfig: async () => configured,
+    clientFactory: () => ({
+      async testConnection() { throw new Error("Blue Iris is restarting"); },
+    }),
+    timelineExportFactory: () => ({
+      async sweepLocalWorkspaces() {},
+      async reconcileRemoteExports() {},
+    }),
+    historyDaylightAssessor: async () => ({
+      status: "eligible",
+      errorCode: null,
+      evidence: { evaluated: true, eligible: true, monochrome: false },
+    }),
+    pairSharingFactory: () => ({ async processNext() { return null; } }),
+    entryFallbackFactory: () => ({ async processNext() { return null; } }),
+    logger: { error() {} },
+  });
+
+  const result = await queue.processBatch({ limit: 5 });
+  assert.equal(result.processed, 1);
+  assert.equal(result.backoff, true);
+  assert.equal(result.backoffMs, 30_000);
+  assert.equal(failed.errorCode, "BLUE_IRIS_INITIALIZATION_FAILED");
+  assert.equal(failed.retryable, true);
+  assert.ok(Date.parse(failed.nextAttemptAt) > Date.now());
+  assert.equal(result.results[0].status, "retry_scheduled");
+});
+
+test("Blue Iris initialization failure releases one claimed read into bounded backoff", async () => {
+  const claims = Array.from({ length: 10 }, (_, index) => ({
+    id: 1_000 + index,
+    camera_name: "Entry LPR 1",
+    timestamp: "2026-08-10T18:00:00Z",
+    bi_trigger_direction_label: "Entering",
+    vehicle_image_claim_token: "11111111-1111-4111-8111-111111111111",
+    vehicle_image_attempt_count: 1,
+    vehicle_image_queue_kind: "overview",
+    overview_profile_id: 43,
+    overview_source_camera_name: "Entry Overview",
+    overview_source_camera_short_name: "Cam143",
+    overview_context: "entry",
+    overview_profile_match_count: 1,
+    overview_expected_delta_ms: 0,
+    overview_tolerance_ms: 1_500,
+    overview_profile_priority: 0,
+    overview_profile_revision: 2,
+  }));
+  let claimCount = 0;
+  let connectionCount = 0;
+  let failure = null;
+  const queue = new BlueIrisVehicleFrameQueue({
+    repository: {
+      async getQueueStatus() { return { historicalPaused: true }; },
+      async claimNextOverviewRead() { claimCount += 1; return claims.shift() || null; },
+      async claimNext() { return null; },
+      async markFailed(id, input) { failure = { id, ...input }; return { id }; },
+    },
+    fileStorage: {},
+    loadConfig: async () => configured,
+    clientFactory: () => ({
+      async testConnection() {
+        connectionCount += 1;
+        throw new Error("Blue Iris is restarting");
+      },
+    }),
+    timelineExportFactory: () => ({
+      async sweepLocalWorkspaces() {},
+      async reconcileRemoteExports() {},
+    }),
+    pairSharingFactory: () => ({ async processNext() { return null; } }),
+    entryFallbackFactory: () => ({ async processNext() { return null; } }),
+    logger: { error() {} },
+  });
+
+  const result = await queue.processBatch({ limit: 5 });
+  assert.equal(result.processed, 1);
+  assert.equal(result.backoff, true);
+  assert.equal(result.backoffMs, 30_000);
+  assert.ok(Date.parse(result.backoffUntil) > Date.now());
+  assert.equal(claimCount, 1);
+  assert.equal(connectionCount, 1);
+  assert.equal(failure.errorCode, "BLUE_IRIS_INITIALIZATION_FAILED");
+  assert.equal(failure.retryable, true);
+  assert.ok(Date.parse(failure.nextAttemptAt) > Date.now());
+  assert.equal(failure.selectionMetadata.overviewContext, "entry");
 });
 
 test("an active guarded pair share runs before another Blue Iris overview export", async () => {
@@ -275,6 +828,59 @@ test("worker drains queued reads quickly and sleeps when idle", async () => {
   assert.equal(worker.phase, "sleeping");
   assert.equal((await worker.runOnce()).processed, 0);
   assert.equal(worker.phase, "idle");
+  assert.equal(
+    blueIrisVehicleFrameWorkerInternals.nextWorkerDelay({ processed: 1, backoff: true }, 5_000),
+    30_000
+  );
+  assert.equal(
+    blueIrisVehicleFrameWorkerInternals.nextWorkerDelay({ processed: 1 }, 5_000),
+    1_000
+  );
+});
+
+test("worker-wide Blue Iris backoff blocks backlog cycling and ordinary wakeups", async () => {
+  let now = Date.parse("2026-08-10T18:00:00Z");
+  let calls = 0;
+  const worker = new BlueIrisVehicleFrameWorker({
+    queue: {
+      async processBatch() {
+        calls += 1;
+        if (calls === 1) {
+          return {
+            configured: true,
+            processed: 1,
+            succeeded: 0,
+            failed: 1,
+            backoff: true,
+            backoffMs: 30_000,
+          };
+        }
+        return { configured: true, processed: 0, succeeded: 0, failed: 0 };
+      },
+    },
+    intervalMs: 5_000,
+    now: () => now,
+  });
+
+  const failedBatch = await worker.runOnce();
+  assert.equal(failedBatch.backoff, true);
+  assert.equal(worker.phase, "backoff");
+  assert.equal(calls, 1);
+  worker.waitController = new AbortController();
+  assert.equal(worker.wake(), false);
+  assert.equal(worker.waitController.signal.aborted, false);
+
+  const blockedBatch = await worker.runOnce();
+  assert.equal(blockedBatch.processed, 0);
+  assert.equal(blockedBatch.backoff, true);
+  assert.equal(calls, 1);
+
+  now += 30_001;
+  const recoveredBatch = await worker.runOnce();
+  assert.equal(recoveredBatch.processed, 0);
+  assert.equal(calls, 2);
+  assert.equal(worker.wake({ force: true }), true);
+  assert.equal(worker.waitController.signal.aborted, true);
 });
 
 test("camera matching and configured checks normalize safely", () => {
@@ -644,6 +1250,8 @@ test("overview status reports the active read queue and stable export ledger", a
       unavailable: 4,
       nighttime_skipped: 5,
       failed: 1,
+      street_ready: 7,
+      entry_ready: 1,
       oldest_outstanding_at: "2026-08-10T12:00:00.000Z",
     }] },
     { rows: [{
@@ -655,14 +1263,21 @@ test("overview status reports the active read queue and stable export ledger", a
       duplicate_start_violations: 0,
       last_transition_at: "2026-08-10T12:05:00.000Z",
     }] },
-    { rows: [{ source_camera_name: "Street Overview" }] },
+    { rows: [{ source_camera_name: "Entry Overview" }, { source_camera_name: "Street Overview" }] },
     { rows: [{
       read_id: 39667,
       plate_number: "ABC123",
-      camera_name: "Street LPR 1",
+      camera_name: "Entry LPR 1",
       vehicle_image_status: "processing",
       vehicle_image_attempt_count: 1,
       vehicle_image_recovery_count: 0,
+      vehicle_image_source_kind: "entry_overview_primary",
+      vehicle_image_selection_metadata: {
+        overviewContext: "entry",
+        sourceCameraName: "Entry Overview",
+        sourceCameraId: "Cam143",
+        profileRevision: 2,
+      },
       export_key: "a".repeat(64),
       export_status: "exporting",
       automatic_start_count: 1,
@@ -705,8 +1320,14 @@ test("overview status reports the active read queue and stable export ledger", a
   assert.equal(status.ready, 8);
   assert.equal(status.exports.automaticStarts, 10);
   assert.equal(status.exports.duplicateStartViolations, 0);
-  assert.deepEqual(status.observedSources, ["Street Overview"]);
+  assert.equal(status.byContext.streetReady, 7);
+  assert.equal(status.byContext.entryReady, 1);
+  assert.deepEqual(status.observedSources, ["Entry Overview", "Street Overview"]);
   assert.equal(status.recentJobs[0].readId, 39667);
+  assert.equal(status.recentJobs[0].overviewContext, "entry");
+  assert.equal(status.recentJobs[0].sourceCameraName, "Entry Overview");
+  assert.equal(status.recentJobs[0].sourceCameraId, "Cam143");
+  assert.equal(status.recentJobs[0].profileRevision, 2);
   assert.equal(status.recentJobs[0].automaticStartCount, 1);
   assert.equal(status.recentJobs[0].remoteUriKnown, true);
   assert.equal(status.pairSharing.mode, "shadow");
@@ -740,16 +1361,20 @@ test("expired second-attempt overview claims are terminalized instead of remaini
 
 test("a no-op overview profile save preserves the integer export revision", async () => {
   let upsert = "";
+  let upsertParameters = null;
   const repository = new BlueIrisVehicleFrameRepository({
-    async query(sql) {
+    async query(sql, parameters) {
       if (/INSERT INTO public\.vehicle_overview_pair_profiles/.test(sql)) {
         upsert = sql;
+        upsertParameters = parameters;
         return { rows: [{
           id: 9,
           source_camera_name: "Street Overview",
           plate_camera_name: "Street LPR 1",
           direction_label: "Eastbound",
           source_role: "primary",
+          overview_context: "street",
+          source_camera_short_name: null,
           expected_delta_ms: 0,
           tolerance_ms: 1500,
           priority: 0,
@@ -774,6 +1399,76 @@ test("a no-op overview profile save preserves the integer export revision", asyn
   assert.match(upsert, /THEN vehicle_overview_pair_profiles\.revision \+ 1/);
   assert.match(upsert, /ELSE vehicle_overview_pair_profiles\.revision END/);
   assert.match(upsert, /ELSE vehicle_overview_pair_profiles\.updated_at END/);
+  assert.equal(upsertParameters[4], "street");
+  assert.equal(upsertParameters[5], null);
+});
+
+test("profile persistence canonicalizes case variants under a normalized primary lock", async () => {
+  const statements = [];
+  let upsertParameters = null;
+  const repository = new BlueIrisVehicleFrameRepository({
+    async query(sql, parameters) {
+      statements.push(sql);
+      if (/SELECT id, source_camera_name, plate_camera_name, direction_label[\s\S]*FOR UPDATE/.test(sql)) {
+        return { rows: [{
+          id: 43,
+          source_camera_name: "Entry Overview",
+          plate_camera_name: "Entry LPR 1",
+          direction_label: "Entering",
+        }] };
+      }
+      if (/INSERT INTO public\.vehicle_overview_pair_profiles/.test(sql)) {
+        upsertParameters = parameters;
+        return { rows: [{
+          id: 43,
+          source_camera_name: "Entry Overview",
+          source_camera_short_name: "Cam143",
+          plate_camera_name: "Entry LPR 1",
+          direction_label: "Entering",
+          source_role: "primary",
+          overview_context: "entry",
+          expected_delta_ms: 0,
+          tolerance_ms: 1500,
+          priority: 0,
+          enabled: true,
+          revision: 2,
+        }] };
+      }
+      return { rows: [] };
+    },
+  });
+
+  const saved = await repository.saveOverviewPairProfile({
+    sourceCameraName: " entry overview ",
+    sourceCameraShortName: "Cam143",
+    plateCameraName: " entry lpr 1 ",
+    directionLabel: " entering ",
+    sourceRole: "primary",
+    overviewContext: "entry",
+    expectedDeltaMs: 0,
+    toleranceMs: 1500,
+    priority: 0,
+    enabled: true,
+  });
+  assert.equal(saved.source_camera_name, "Entry Overview");
+  assert.ok(statements.some((sql) => /pg_advisory_xact_lock\(hashtext\(\$1\)\)/.test(sql)));
+  assert.equal(upsertParameters[0], "Entry Overview");
+  assert.equal(upsertParameters[1], "Entry LPR 1");
+  assert.equal(upsertParameters[2], "Entering");
+  assert.equal(upsertParameters[4], "entry");
+  assert.equal(upsertParameters[5], "Cam143");
+});
+
+test("camera alias indexing rejects duplicate display names while retaining unique short IDs", () => {
+  const index = new Map();
+  const first = { id: "Cam143", name: "Entry Overview" };
+  const second = { id: "Cam144", name: "Entry Overview" };
+  blueIrisVehicleFrameQueueInternals.addCameraAlias(index, first.id, first);
+  blueIrisVehicleFrameQueueInternals.addCameraAlias(index, first.name, first);
+  blueIrisVehicleFrameQueueInternals.addCameraAlias(index, second.id, second);
+  blueIrisVehicleFrameQueueInternals.addCameraAlias(index, second.name, second);
+  assert.equal(blueIrisVehicleFrameQueueInternals.uniqueCamera(index, "Entry Overview"), null);
+  assert.equal(blueIrisVehicleFrameQueueInternals.uniqueCamera(index, "Cam143")?.id, "Cam143");
 });
 
 test("primary overview profiles require an exact plate-camera and direction match", async () => {

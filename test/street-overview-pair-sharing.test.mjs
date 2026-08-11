@@ -81,6 +81,33 @@ test("Street pair sharing fails closed for identity, direction, camera, timing, 
   }
 });
 
+test("Entry Overview results cannot become Street pair-sharing sources", () => {
+  const entrySource = readyRead({
+    camera_name: "Entry LPR 1",
+    vehicle_image_source_kind: "entry_overview_primary",
+    vehicle_image_selection_metadata: {
+      ...metadata({ id: 43, expectedDeltaMs: 0 }),
+      overviewContext: "entry",
+      sourceCameraName: "Entry Overview",
+      sourceCameraId: "Cam143",
+    },
+  });
+  assert.deepEqual(buildStreetOverviewPairDecisions([entrySource, failedRead()]), []);
+});
+
+test("Entry Overview failures cannot become Street pair-sharing targets", () => {
+  const entryTarget = failedRead({
+    camera_name: "Entry LPR 2",
+    vehicle_image_selection_metadata: {
+      ...metadata({ id: 44, expectedDeltaMs: 4_000 }),
+      overviewContext: "entry",
+      sourceCameraName: "Street Overview",
+      sourceCameraId: "Cam143",
+    },
+  });
+  assert.deepEqual(buildStreetOverviewPairDecisions([readyRead(), entryTarget]), []);
+});
+
 test("Street pair sharing rejects multiple eligible sources instead of choosing nearest", () => {
   const secondSource = readyRead({
     id: 103,
@@ -211,10 +238,13 @@ test("repository discovery and commit SQL keep pair sharing fail-closed", async 
   assert.match(statements[0], /vehicle_image_error_code IN \('VEHICLE_NOT_VISIBLE','RECORDING_UNAVAILABLE'\)/);
   assert.match(statements[0], /vehicle_image_retryable = FALSE/);
   assert.match(statements[0], /vehicle_image_source_kind = 'overview_primary'/);
+  assert.match(statements[0], /overviewContext[\s\S]+street/);
   assert.match(statements[1], /vehicle_image_source_kind = 'overview_pair_share'/);
   assert.match(statements[1], /vehicle_image_source_read_id = source\.id/);
   assert.match(statements[1], /target\.vehicle_image_path IS NULL/);
   assert.match(statements[1], /sharing\.claim_token = \$2::uuid/);
   assert.match(statements[1], /source\.vehicle_image_path = sharing\.source_image_path_snapshot/);
+  assert.match(statements[1], /source\.vehicle_image_selection_metadata->>'overviewContext'/);
+  assert.match(statements[1], /target\.vehicle_image_selection_metadata->>'overviewContext'/);
   assert.doesNotMatch(statements[1], /MULTIPLE_VEHICLES_VISIBLE|NIGHTTIME_UNAVAILABLE/);
 });

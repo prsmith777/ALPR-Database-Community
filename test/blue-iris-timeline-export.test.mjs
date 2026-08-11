@@ -423,9 +423,52 @@ test("stable export identity changes only when its semantic job changes", () => 
     first,
     blueIrisTimelineExportInternals.stableTimelineExportKey({ ...base, camera: " cam149 " })
   );
+  assert.equal(
+    first,
+    blueIrisTimelineExportInternals.stableTimelineExportKey({
+      ...base,
+      profileKind: null,
+      profileIdentity: null,
+    })
+  );
   assert.notEqual(
     first,
     blueIrisTimelineExportInternals.stableTimelineExportKey({ ...base, profileRevision: 4 })
+  );
+  const entryBase = {
+    ...base,
+    camera: "Cam143",
+    pairProfileId: 43,
+    profileRevision: 2,
+  };
+  const entryReadOne = blueIrisTimelineExportInternals.stableTimelineExportKey({
+    ...entryBase,
+    readId: 901,
+  });
+  const entryReadTwo = blueIrisTimelineExportInternals.stableTimelineExportKey({
+    ...entryBase,
+    readId: 902,
+  });
+  assert.notEqual(entryReadOne, entryReadTwo);
+  assert.equal(
+    entryReadOne,
+    blueIrisTimelineExportInternals.stableTimelineExportKey({ ...entryBase, readId: 901 })
+  );
+  const entryHistory = blueIrisTimelineExportInternals.stableTimelineExportKey({
+    ...entryBase,
+    readId: 901,
+    profileKind: "entry_history",
+    profileIdentity: "a".repeat(64),
+  });
+  assert.notEqual(entryHistory, entryReadOne);
+  assert.notEqual(
+    entryHistory,
+    blueIrisTimelineExportInternals.stableTimelineExportKey({
+      ...entryBase,
+      readId: 901,
+      profileKind: "entry_history",
+      profileIdentity: "b".repeat(64),
+    })
   );
 });
 
