@@ -1892,6 +1892,28 @@ function entryOverviewHistoryRunData(run) {
   };
 }
 
+function entryOverviewHistoryRetryCandidateData(candidate) {
+  if (!candidate) return null;
+  const readTimestamp = candidate.read_timestamp ? new Date(candidate.read_timestamp) : null;
+  return {
+    jobId: Number(candidate.id),
+    runId: Number(candidate.run_id),
+    readId: Number(candidate.read_id),
+    plateNumber: candidate.plate_number || null,
+    plateCameraName: candidate.plate_camera_name,
+    readTimestamp: readTimestamp && Number.isFinite(readTimestamp.getTime())
+      ? readTimestamp.toISOString()
+      : null,
+    errorCode: candidate.error_code,
+    attemptCount: Number(candidate.attempt_count || 0),
+    operatorRetryCount: Number(candidate.operator_retry_count || 0),
+    operatorRetryAt: candidate.operator_retry_at
+      ? new Date(candidate.operator_retry_at).toISOString()
+      : null,
+    preservesExistingImage: Boolean(String(candidate.prior_image_path || "").trim()),
+  };
+}
+
 function normalizedEntryOverviewHistoryRunId(value) {
   if (value == null || value === "") return null;
   const runId = Number.parseInt(String(value), 10);
@@ -1907,6 +1929,14 @@ function requiredEntryOverviewHistoryRunId(value) {
   return runId;
 }
 
+function requiredEntryOverviewHistoryJobId(value) {
+  const jobId = Number.parseInt(String(value), 10);
+  if (!Number.isSafeInteger(jobId) || jobId <= 0) {
+    throw new Error("A valid failed Entry Overview import is required.");
+  }
+  return jobId;
+}
+
 function normalizedEntryOverviewHistoryDate(value, label) {
   const date = new Date(String(value || ""));
   if (!Number.isFinite(date.getTime())) throw new Error(`${label} is required.`);
@@ -1918,11 +1948,12 @@ export async function getBlueIrisVehicleFrameQueueStatus(input = {}) {
   try {
     const runtime = await getBlueIrisVehicleFrameRuntime();
     const runId = normalizedEntryOverviewHistoryRunId(input.entryOverviewHistoryRunId);
-    const [status, entryOverviewHistoryRun] = await Promise.all([
+    const [status, entryOverviewHistoryRun, entryOverviewHistoryRetryCandidates] = await Promise.all([
       runtime.queue.getStatus(),
       runId
         ? runtime.repository.getEntryOverviewBackfillRun(runId, { jobLimit: 1 })
         : Promise.resolve(null),
+      runtime.repository.listEntryOverviewBackfillRetryCandidates({ limit: 25 }),
     ]);
     return {
       success: true,
@@ -1930,6 +1961,8 @@ export async function getBlueIrisVehicleFrameQueueStatus(input = {}) {
         ...status,
         worker: runtime.worker.snapshot(),
         entryOverviewHistoryRun: entryOverviewHistoryRunData(entryOverviewHistoryRun),
+        entryOverviewHistoryRetryCandidates: entryOverviewHistoryRetryCandidates
+          .map(entryOverviewHistoryRetryCandidateData),
       },
     };
   } catch (error) {
@@ -1955,6 +1988,7 @@ export async function getVehicleOverviewSetup() {
       entryFallback,
       entryHistoryProfiles,
       latestEntryHistoryRun,
+      entryHistoryRetryCandidates,
     ] = await Promise.all([
       runtime.repository.listOverviewPairProfiles(),
       runtime.repository.getOverviewStatus(),
@@ -1962,6 +1996,7 @@ export async function getVehicleOverviewSetup() {
       runtime.repository.getEntryFallbackStatus(),
       runtime.repository.listEntryOverviewHistoryProfiles({ enabledOnly: true }),
       runtime.repository.getLatestEntryOverviewBackfillRun({ jobLimit: 1 }),
+      runtime.repository.listEntryOverviewBackfillRetryCandidates({ limit: 25 }),
     ]);
     return {
       success: true,
@@ -2006,6 +2041,7 @@ export async function getVehicleOverviewSetup() {
           toleranceMs: 3000,
           profiles: entryHistoryProfiles.map(entryOverviewHistoryProfileData),
           latestRun: entryOverviewHistoryRunData(latestEntryHistoryRun),
+          retryCandidates: entryHistoryRetryCandidates.map(entryOverviewHistoryRetryCandidateData),
         },
         entryFallback,
         status,
@@ -2143,6 +2179,37 @@ export async function cancelVehicleEntryOverviewHistory(input = {}) {
     return { success: true, data: { cancellation, run: entryOverviewHistoryRunData(run) } };
   } catch (error) {
     return visualSearchFailure(error, "Unable to cancel Entry Overview history processing.");
+  }
+}
+
+export async function retryVehicleEntryOverviewHistoryImport(input = {}) {
+  await requirePermission("maintenance.manage");
+  try {
+    const jobId = requiredEntryOverviewHistoryJobId(input.jobId);
+    const runtime = await getBlueIrisVehicleFrameRuntime();
+    const retry = await runtime.repository.retryEntryOverviewBackfillJob(jobId);
+    wakeBlueIrisVehicleFrameWorker();
+    const [run, retryCandidates] = await Promise.all([
+      runtime.repository.getEntryOverviewBackfillRun(retry.run_id, { jobLimit: 1 }),
+      runtime.repository.listEntryOverviewBackfillRetryCandidates({ limit: 25 }),
+    ]);
+    revalidatePath("/settings/vehicle-intelligence/vehicle-views");
+    revalidatePath("/live_feed");
+    return {
+      success: true,
+      data: {
+        retry: {
+          jobId: Number(retry.id),
+          runId: Number(retry.run_id),
+          status: retry.status,
+          operatorRetryCount: Number(retry.operator_retry_count || 0),
+        },
+        run: entryOverviewHistoryRunData(run),
+        retryCandidates: retryCandidates.map(entryOverviewHistoryRetryCandidateData),
+      },
+    };
+  } catch (error) {
+    return visualSearchFailure(error, "Unable to retry this failed Entry Overview import.");
   }
 }
 

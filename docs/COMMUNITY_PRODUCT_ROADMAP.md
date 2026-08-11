@@ -638,6 +638,13 @@ notes. Updates remain externally orchestrated.
   replaced by the campaign. Pause, resume, cancellation, deadlines, bounded
   retries, stable export identity, and run progress survive worker restarts.
   Blue Iris continues to own Clipboard retention.
+- Terminal transient Entry Overview history import failures now expose one
+  explicit operator retry cycle in Vehicle Views. The retry reopens the same
+  immutable job, retains its stable Blue Iris export identity, resets only its
+  bounded processing-attempt budget, and preserves any current Vehicle View
+  until a validated Cam143 replacement wins the exact database transition.
+  Successful, nighttime, vehicle-not-visible, and multi-vehicle outcomes are
+  excluded, and a job cannot receive a second operator retry.
 - Per-read vehicle color observations and reviewable vehicle profiles are
   implemented as an evidence-gathering phase. Color is stored with confidence
   and local algorithm provenance against the individual read, never copied onto

@@ -27,6 +27,7 @@ import {
   confirmVehicleEntryOverviewHistory,
   setVehicleEntryOverviewHistoryPaused,
   cancelVehicleEntryOverviewHistory,
+  retryVehicleEntryOverviewHistoryImport,
   runBlueIrisVehicleFrameBatch,
   setBlueIrisVehicleFrameHistoryPaused,
   setVehicleDirectionReevaluationPaused,
@@ -133,6 +134,11 @@ export default function VehicleIntelligenceSettings({
       || initialFrameQueue?.entryOverviewHistoryRun
       || null
   );
+  const [entryHistoryRetryCandidates, setEntryHistoryRetryCandidates] = useState(
+    initialOverviewSetup?.entryOverviewHistory?.retryCandidates
+      || initialFrameQueue?.entryOverviewHistoryRetryCandidates
+      || []
+  );
   const [entryHistoryMessage, setEntryHistoryMessage] = useState("");
   const [pairSharingMode, setPairSharingMode] = useState(
     initialOverviewSetup?.status?.pairSharing?.mode || "off"
@@ -235,6 +241,9 @@ export default function VehicleIntelligenceSettings({
       });
       if (result.success) {
         setFrameQueue(result.data);
+        if (Array.isArray(result.data.entryOverviewHistoryRetryCandidates)) {
+          setEntryHistoryRetryCandidates(result.data.entryOverviewHistoryRetryCandidates);
+        }
         if (result.data.entryOverviewHistoryRun) {
           setEntryHistoryRun(result.data.entryOverviewHistoryRun);
         }
@@ -289,6 +298,7 @@ export default function VehicleIntelligenceSettings({
     const result = await getVehicleOverviewSetup();
     if (!result.success) throw new Error(result.error);
     setOverviewSetup(result.data);
+    setEntryHistoryRetryCandidates(result.data.entryOverviewHistory?.retryCandidates || []);
     return result.data;
   };
 
@@ -408,6 +418,21 @@ export default function VehicleIntelligenceSettings({
       setEntryHistoryRun(result.data.run);
       setEntryHistoryMessage(
         `Cancelled ${Number(result.data.cancellation.cancelled || 0).toLocaleString()} pending read${result.data.cancellation.cancelled === 1 ? "" : "s"}; prior images were preserved or restored.`
+      );
+    } catch (error) { setEntryHistoryMessage(error.message); }
+    finally { setBusy(""); }
+  };
+
+  const retryEntryHistoryImport = async (jobId) => {
+    setBusy(`entry-history-retry-${jobId}`);
+    setEntryHistoryMessage("");
+    try {
+      const result = await retryVehicleEntryOverviewHistoryImport({ jobId });
+      if (!result.success) throw new Error(result.error);
+      if (result.data.run) setEntryHistoryRun(result.data.run);
+      setEntryHistoryRetryCandidates(result.data.retryCandidates || []);
+      setEntryHistoryMessage(
+        "The failed import was queued for one bounded retry cycle. Its existing image, if any, remains in place until a validated replacement is ready."
       );
     } catch (error) { setEntryHistoryMessage(error.message); }
     finally { setBusy(""); }
@@ -1512,6 +1537,44 @@ export default function VehicleIntelligenceSettings({
                   Save both timing anchors and preview an exact range before any historical read can be queued.
                 </p>
               )}
+
+              {entryHistoryRetryCandidates.length ? (
+                <div className="space-y-3 rounded-lg border border-amber-500/40 bg-amber-500/5 p-4">
+                  <div>
+                    <div className="font-medium">Failed imports eligible for retry</div>
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      Only terminal transient import or processing failures appear here. Each failed import receives one manual retry cycle, reuses its existing Blue Iris export identity, and never replaces an existing image before a new one is validated.
+                    </p>
+                  </div>
+                  <div className="space-y-2">
+                    {entryHistoryRetryCandidates.map((candidate) => (
+                      <div key={candidate.jobId} className="flex flex-wrap items-center justify-between gap-3 rounded-md border bg-background p-3 text-sm">
+                        <div>
+                          <div className="font-medium">
+                            {candidate.readTimestamp ? new Date(candidate.readTimestamp).toLocaleString() : "Timestamp unavailable"}
+                            {candidate.plateNumber ? ` · ${candidate.plateNumber}` : ""}
+                          </div>
+                          <div className="text-xs text-muted-foreground">
+                            {candidate.plateCameraName} · {candidate.errorCode || "Import failed"} · {candidate.attemptCount} attempts
+                            {candidate.preservesExistingImage ? " · current image preserved" : ""}
+                          </div>
+                        </div>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          disabled={Boolean(busy) || entryHistoryBatchActive}
+                          onClick={() => retryEntryHistoryImport(candidate.jobId)}
+                        >
+                          {busy === `entry-history-retry-${candidate.jobId}`
+                            ? <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                            : <RotateCcw className="mr-2 h-4 w-4" />}
+                          Retry failed import
+                        </Button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ) : null}
 
               {entryHistoryMessage ? (
                 <p className="rounded-md border p-3 text-sm" role="status">{entryHistoryMessage}</p>
