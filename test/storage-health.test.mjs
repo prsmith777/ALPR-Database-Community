@@ -132,7 +132,7 @@ test("storage measurement stays read-only while maintenance controls are separat
     readFile(new URL("../app/actions.js", import.meta.url), "utf8"),
   ]);
 
-  assert.match(page, /canManageSettings \? getStorageMaintenanceOverview\(\)/);
+  assert.match(page, /needsStorageMaintenance \? getStorageMaintenanceOverview\(\)/);
   assert.match(settings, /<StorageHealthCard snapshot=\{initialStorageHealth\} view="storage" \/>/);
   assert.match(settings, /<StorageHealthCard snapshot=\{initialStorageHealth\} view="monitoring" \/>/);
   assert.match(card, /view === "monitoring" \? "Maintenance previews" : "Storage health"/);

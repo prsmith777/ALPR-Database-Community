@@ -120,7 +120,16 @@ reliable background processing.
   and re-evaluation controls include their own selectors and name the selected
   camera instead of depending on a selection hidden in another section. The
   Settings navigation collapses to an icon rail on desktop so future setup
-  pages do not consume the working area.
+  pages do not consume the working area. Settings pages now load only the
+  configuration, identity, or storage-maintenance inventory used by the active
+  section. Each Vehicle Setup route likewise loads only its own direction,
+  overview-queue, processing, or calibration workload. The main Vehicle
+  Intelligence workspace defers optional per-camera detector preview scans
+  until after its primary controls paint and does not repeat those scans during
+  routine status polling. Vehicle Profiles now selects its requested page
+  before aggregating capture, plate, and attribute details for those profiles,
+  and Needs Review requests only the selected review queue; neither route waits
+  for the other profile and review workloads before it can render.
   Blue Iris integration can now correlate a plate-read timestamp with continuous
   BVR metadata and sample a fixed 17-frame, half-second timeline window through the
   read-only JPEG endpoint. Local vehicle detection selects one best overview

@@ -16,6 +16,7 @@ export default async function VehicleClustersPage({ searchParams }) {
   await requirePagePermission("plate.read");
   const parameters = await searchParams;
   const result = await getVehicleClusterOverview({
+    view: "profiles",
     profilePage: positivePage(parameters?.profilesPage),
     vehicleReviewPage: positivePage(parameters?.vehicleReviewPage),
     plateReviewPage: positivePage(parameters?.plateReviewPage),
