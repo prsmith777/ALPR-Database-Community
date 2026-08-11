@@ -3909,6 +3909,9 @@ CREATE TABLE IF NOT EXISTS public.vehicle_entry_overview_backfill_jobs (
   next_attempt_at TIMESTAMPTZ,
   error_code VARCHAR(80),
   error_details JSONB,
+  operator_retry_count SMALLINT NOT NULL DEFAULT 0 CHECK (operator_retry_count BETWEEN 0 AND 1),
+  operator_retry_at TIMESTAMPTZ,
+  operator_retry_error_code VARCHAR(80),
   prior_state_fingerprint CHAR(64) NOT NULL,
   prior_image_path TEXT,
   prior_image_status VARCHAR(20),
@@ -3942,7 +3945,17 @@ CREATE TABLE IF NOT EXISTS public.vehicle_entry_overview_backfill_jobs (
 -- before the complete provenance snapshot was added.
 ALTER TABLE public.vehicle_entry_overview_backfill_jobs
   ADD COLUMN IF NOT EXISTS prior_overview_candidate_id BIGINT,
-  ADD COLUMN IF NOT EXISTS prior_source_read_id INTEGER;
+  ADD COLUMN IF NOT EXISTS prior_source_read_id INTEGER,
+  ADD COLUMN IF NOT EXISTS operator_retry_count SMALLINT NOT NULL DEFAULT 0,
+  ADD COLUMN IF NOT EXISTS operator_retry_at TIMESTAMPTZ,
+  ADD COLUMN IF NOT EXISTS operator_retry_error_code VARCHAR(80);
+
+ALTER TABLE public.vehicle_entry_overview_backfill_jobs
+  DROP CONSTRAINT IF EXISTS vehicle_entry_overview_backfill_jobs_operator_retry_count_check;
+ALTER TABLE public.vehicle_entry_overview_backfill_jobs
+  ADD CONSTRAINT vehicle_entry_overview_backfill_jobs_operator_retry_count_check CHECK (
+    operator_retry_count BETWEEN 0 AND 1
+  ) NOT VALID;
 
 CREATE INDEX IF NOT EXISTS idx_entry_overview_backfill_jobs_claim
   ON public.vehicle_entry_overview_backfill_jobs (read_timestamp, id)
@@ -4025,4 +4038,8 @@ ALTER TABLE public.plate_reads
 
 INSERT INTO public.schema_migrations(version,description) VALUES
  ('2026081006_entry_overview_history_backfill','Add immutable direction-independent Entry Overview history profiles and preview-first, bounded, resumable backfill runs without auto-queueing reads.')
+ON CONFLICT(version) DO NOTHING;
+
+INSERT INTO public.schema_migrations(version,description) VALUES
+ ('2026081101_entry_overview_history_retry','Allow one audited, operator-authorized retry cycle for terminal transient Entry Overview history import failures while preserving existing views and export identity.')
 ON CONFLICT(version) DO NOTHING;

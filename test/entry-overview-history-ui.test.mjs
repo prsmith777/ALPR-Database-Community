@@ -24,6 +24,10 @@ test("Entry Overview history actions use the dedicated preview and bounded-run A
   assert.match(section, /confirmEntryOverviewBackfillRun\(\{/);
   assert.match(section, /setEntryOverviewBackfillRunState\(/);
   assert.match(section, /cancelEntryOverviewBackfillRun\(runId\)/);
+  assert.match(section, /listEntryOverviewBackfillRetryCandidates\(\{ limit: 25 \}\)/);
+  assert.match(section, /retryEntryOverviewBackfillJob\(jobId\)/);
+  assert.match(section, /retryVehicleEntryOverviewHistoryImport/);
+  assert.match(section, /wakeBlueIrisVehicleFrameWorker\(\)/);
   assert.match(section, /previewableRemaining: count\("previewable_remaining"\)/);
   assert.match(section, /previewed: count\("previewed"\)/);
   assert.match(section, /return date\.toISOString\(\)/);
@@ -56,6 +60,12 @@ test("Vehicle Views renders a blank, preview-first Entry Overview history workfl
   assert.match(section, /Pause history/);
   assert.match(section, /Resume history/);
   assert.match(section, /Cancel remaining/);
+  assert.match(section, /Failed imports eligible for retry/);
+  assert.match(section, /Retry failed import/);
+  assert.match(section, /one manual retry cycle/);
+  assert.match(section, /reuses its existing Blue Iris export identity/);
+  assert.match(section, /entryHistoryRetryCandidates\.map/);
+  assert.match(section, /retryVehicleEntryOverviewHistoryImport\(\{ jobId \}\)/);
   assert.match(section, /<Progress value=\{entryHistoryProgress\}/);
   assert.doesNotMatch(section, /2026-05-19/);
 });

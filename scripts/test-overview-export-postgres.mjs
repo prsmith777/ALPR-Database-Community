@@ -887,6 +887,50 @@ try {
   assert.equal(expiredState.rows[0].job_status, "failed");
   assert.equal(expiredState.rows[0].retryable, false);
   assert.equal(expiredState.rows[0].run_status, "completed");
+
+  // An operator may grant exactly one bounded retry cycle to the same
+  // terminal transient history job. The plate read is reattached without
+  // changing its image payload, and the original job/export identity is
+  // reused rather than materializing another history job.
+  const expiredRetryCandidates = await repositoryA.listEntryOverviewBackfillRetryCandidates({
+    limit: 25,
+  });
+  const expiredRetryCandidate = expiredRetryCandidates.find(
+    (candidate) => Number(candidate.read_id) === expiredReadId,
+  );
+  assert.ok(expiredRetryCandidate);
+  const retriedExpiredJob = await repositoryA.retryEntryOverviewBackfillJob(
+    expiredRetryCandidate.id,
+  );
+  assert.equal(Number(retriedExpiredJob.id), Number(expiredRetryCandidate.id));
+  assert.equal(retriedExpiredJob.status, "queued");
+  assert.equal(Number(retriedExpiredJob.attempt_count), 0);
+  assert.equal(Number(retriedExpiredJob.operator_retry_count), 1);
+  assert.equal(retriedExpiredJob.operator_retry_error_code, "ENTRY_HISTORY_PROCESSING_DEADLINE");
+  const retriedExpiredState = await pool.query(
+    `SELECT reads.vehicle_image_path, reads.vehicle_image_status,
+            reads.vehicle_image_queue_kind, reads.vehicle_image_attempt_count,
+            reads.vehicle_image_retryable, reads.vehicle_image_backfill_job_id,
+            jobs.status AS job_status, jobs.operator_retry_count,
+            runs.status AS run_status
+     FROM public.plate_reads reads
+     JOIN public.vehicle_entry_overview_backfill_jobs jobs ON jobs.read_id = reads.id
+     JOIN public.vehicle_entry_overview_backfill_runs runs ON runs.id = jobs.run_id
+     WHERE reads.id = $1 AND jobs.run_id = $2`,
+    [expiredReadId, expiredPreview.id],
+  );
+  assert.equal(retriedExpiredState.rows[0].vehicle_image_path, null);
+  assert.equal(retriedExpiredState.rows[0].vehicle_image_status, "pending");
+  assert.equal(retriedExpiredState.rows[0].vehicle_image_queue_kind, "overview_backfill");
+  assert.equal(Number(retriedExpiredState.rows[0].vehicle_image_attempt_count), 0);
+  assert.equal(retriedExpiredState.rows[0].vehicle_image_retryable, true);
+  assert.equal(
+    Number(retriedExpiredState.rows[0].vehicle_image_backfill_job_id),
+    Number(expiredRetryCandidate.id),
+  );
+  assert.equal(retriedExpiredState.rows[0].job_status, "queued");
+  assert.equal(Number(retriedExpiredState.rows[0].operator_retry_count), 1);
+  assert.equal(retriedExpiredState.rows[0].run_status, "running");
   console.log("overview_export_postgres_gate=passed");
 } finally {
   for (const client of clients) client.release();
