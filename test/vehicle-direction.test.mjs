@@ -551,7 +551,12 @@ test("direction schema and administrator setup are durable and camera driven", a
   assert.match(plateTable, /Unavailable nighttime/);
   assert.match(database, /MONOCHROME_NIGHT_DIRECTION_UNAVAILABLE/);
   assert.match(database, /direction_unavailable_reason/);
-  assert.doesNotMatch(settings, /Street LPR|Entry LPR/);
+  const camerasTab = settings.slice(
+    settings.indexOf('<TabsContent value="cameras"'),
+    settings.indexOf('<TabsContent value="views"'),
+  );
+  assert.ok(camerasTab.length > 0, "camera setup tab should be present");
+  assert.doesNotMatch(camerasTab, /Street LPR|Entry LPR/);
   assert.match(actions, /saveVehicleDirectionProfile[\s\S]*?requirePermission\("system\.manage_settings"\)/);
   assert.match(actions, /labelVehicleOrientation[\s\S]*?requirePermission\("system\.manage_settings"\)/);
   assert.match(migration, /2026072601_vehicle_direction_notifications/i);

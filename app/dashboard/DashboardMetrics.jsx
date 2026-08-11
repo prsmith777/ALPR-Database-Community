@@ -72,7 +72,10 @@ import {
   readDashboardFilterPreference,
   writeDashboardFilterPreference,
 } from "@/lib/dashboard-filter-preference.mjs";
-import { getVehiclePreviewCropStyle } from "@/lib/vehicle-image-preview.mjs";
+import {
+  buildQuickLookImages,
+  selectQuickLookOverview,
+} from "@/lib/vehicle-image-preview.mjs";
 
 export function formatTimeRange(hour, timeFormat) {
   if (timeFormat === 24) {
@@ -94,6 +97,7 @@ const PlateImagePreviews = ({
   const [images, setImages] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [failedOverviewPaths, setFailedOverviewPaths] = useState(() => new Set());
 
   useEffect(() => {
     let mounted = true;
@@ -110,6 +114,7 @@ const PlateImagePreviews = ({
         );
         if (mounted) {
           setImages(fetchedImages || []);
+          setFailedOverviewPaths(new Set());
         }
       } catch (err) {
         if (mounted) {
@@ -153,23 +158,15 @@ const PlateImagePreviews = ({
     );
   }
 
-  const overviewImage = images.find((image) => image.vehicle_image_path);
-  const quickLookImages = images.map((image, index) =>
-    index === 3 && overviewImage
-      ? { ...overviewImage, isOverview: true }
-      : image
-  );
+  const overviewSelection = selectQuickLookOverview(images, {
+    failedPaths: failedOverviewPaths,
+  });
+  const quickLookImages = buildQuickLookImages(images, overviewSelection);
 
   return (
     <div className="grid grid-cols-2 gap-2">
       {quickLookImages.map((img, idx) => {
-        const overviewCropStyle = img.isOverview
-          ? getVehiclePreviewCropStyle(
-              img.vehicle_image_detection_box,
-              img.vehicle_image_width,
-              img.vehicle_image_height
-            )
-          : null;
+        const overviewCropStyle = img.isOverview ? img.overviewCropStyle : null;
         return (
           <div
             key={idx}
@@ -193,9 +190,16 @@ const PlateImagePreviews = ({
                 unoptimized
                 fill
                 className={overviewCropStyle ? "object-fill" : "object-cover"}
+                onError={img.isOverview ? () => {
+                  setFailedOverviewPaths((current) => {
+                    const next = new Set(current);
+                    next.add(img.vehicle_image_path);
+                    return next;
+                  });
+                } : undefined}
               />
             </div>
-            <div className="absolute bottom-0 left-0 right-0 px-2 py-1 text-[10px] bg-black/50 text-white">
+            <div className="absolute bottom-1 right-1 max-w-[calc(100%_-_0.5rem)] rounded bg-black/60 px-1.5 py-0.5 text-right text-[10px] text-white">
               {img.isOverview
                 ? "Overview"
                 : new Date(img.timestamp).toLocaleTimeString()}

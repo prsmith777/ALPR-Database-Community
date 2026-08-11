@@ -304,6 +304,7 @@ async function processPlateRead(data) {
     const duplicatePlates = [];
     const ignoredPlates = [];
     const pendingEffects = [];
+    let overviewWorkQueued = false;
     const blueIrisAlert = parseBlueIrisAlertPointer({
       clip: data.ALERT_CLIP,
       path: data.ALERT_PATH,
@@ -475,6 +476,7 @@ async function processPlateRead(data) {
           id: readId,
           aliasApplied: Boolean(alias),
         });
+        if (overviewVehicleView.queueKind === "overview") overviewWorkQueued = true;
 
         const acceptedRead = {
           ...effectivePlateData,
@@ -527,7 +529,7 @@ async function processPlateRead(data) {
 
     await dbClient.query("COMMIT");
     transactionOpen = false;
-    if (processedPlates.length > 0) wakeBlueIrisVehicleFrameWorker();
+    if (overviewWorkQueued) wakeBlueIrisVehicleFrameWorker();
 
     // Unified MQTT and Pushover handoffs committed with each read. The legacy
     // Pushover path remains post-commit until every migrated rule is cut over.

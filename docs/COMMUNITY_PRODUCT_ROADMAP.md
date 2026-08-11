@@ -20,7 +20,7 @@ reliable background processing.
 
 ## Release candidate baseline — August 10, 2026
 
-- Application `0.1.18` candidate includes named users and roles, evidence-preserving plate
+- Application `0.1.19` candidate includes named users and roles, evidence-preserving plate
   review, filter-respecting exports, the searchable help center, local privacy
   controls, and viewport-safe date/help navigation. Monitored Plates now lives
   inside Known Plates with reason, priority, monitoring-since, and read-history
@@ -606,6 +606,38 @@ notes. Updates remain externally orchestrated.
   capture into a separate target-read file with direct provenance. It never
   synthesizes a missing Street read, overwrites a ready image, processes night,
   or fills ambiguity, direction, profile, and configuration outcomes.
+- Plate-anchored daytime Entry Overview Vehicle Views now reuse the same stable,
+  read-owned timeline-export lifecycle as Street Overview. Administrators can
+  configure Entry LPR 1 and Entry LPR 2 independently for Entering and Exiting,
+  with measured signed deltas and tolerances. Entry Overview is explicitly bound
+  to the Blue Iris short name `Cam143`; a blank, duplicate, or mismatched binding
+  fails closed before an export starts. Successful frames are stored as
+  `entry_overview_primary` with source context, display name, short camera ID,
+  profile revision, and export provenance. This distinct source kind is excluded
+  from Street companion sharing at discovery, claim, decision, and write time.
+  Known monochrome nighttime reads are not queued and do not initialize or call
+  Blue Iris. Blue Iris initialization occurs only after an eligible read is
+  claimed; initialization failures release that exact claim into the bounded
+  retry policy and back off the worker instead of cycling through the backlog.
+  No Entry Overview motion action, camera clone, or second export worker is
+  required. The existing Entry route fallback remains read-to-read and continues
+  using corroborating Entry LPR captures in this release; borrowing an already
+  validated Cam143 Vehicle View is reserved for the next separately reviewed
+  fallback enhancement.
+- A separate, direction-independent Entry Overview history campaign can upgrade
+  retained Entry LPR 1/2 reads from an administrator-selected time range,
+  including reads that predate reliable direction metadata. It uses immutable
+  Cam143 anchor profiles instead of inventing a direction, previews a frozen
+  high-water set before changing data, and admits work only in explicit batches
+  of 1, 5, or 25 behind all live processing. Retained plate images provide the
+  authoritative color/night preflight before Blue Iris is initialized; known
+  monochrome or unreadable evidence therefore creates no export. Legacy
+  plate-camera Vehicle Views are eligible for upgrade, but remain visible until
+  a new full-resolution Cam143 frame has validated and won an exact atomic
+  replacement check. Existing Entry Overview primary/history views are never
+  replaced by the campaign. Pause, resume, cancellation, deadlines, bounded
+  retries, stable export identity, and run progress survive worker restarts.
+  Blue Iris continues to own Clipboard retention.
 - Per-read vehicle color observations and reviewable vehicle profiles are
   implemented as an evidence-gathering phase. Color is stored with confidence
   and local algorithm provenance against the individual read, never copied onto
@@ -620,9 +652,10 @@ notes. Updates remain externally orchestrated.
   Recognition Feed shows assignment, direction, and color evidence in its image
   dialog. Confirmed associations are a baseline only; mismatch labels and alerts
   remain disabled.
-Street LPR 1 and Street Overview are installed. Street Overview supplies strong
-daytime vehicle images but is monochrome at night and is not expected to read a
-plate. Street LPR 1/2 direction will use Blue Iris's existing motion tracker and
+Street LPR 1, Street Overview, and Entry Overview are installed. Street Overview
+and Entry Overview supply strong daytime vehicle images but are monochrome at
+night and are not expected to read a plate. Entry Overview is Blue Iris `Cam143`.
+Street LPR 1/2 direction will use Blue Iris's existing motion tracker and
 ordered `&TYPE` crossing rather than ALPR vehicle detection. Camera-specific
 zone maps and direction meanings were validated with live traffic before
 promotion. Vehicle ReID remains the automatic fallback if Blue Iris does not
@@ -644,6 +677,10 @@ be restored. Monochrome nighttime captures do not receive a direction result.
   with live production traffic.
   Confirm the signed Street Overview timing profiles for Street LPR 1 (normally
   within about one second) and Street LPR 2 (roughly four to five seconds).
+  Measure and validate four Entry Overview primary mappings for Entry LPR 1/2
+  Entering and Exiting rather than guessing deltas from sparse traffic. Confirm
+  Cam143 provenance, full-resolution saved frames, zero nighttime Blue Iris
+  calls, and strict exclusion from Street companion sharing.
   Continue observing guarded paired-Street-read sharing and the implemented
   Entry LPR route fallback. Start Entry fallback in Shadow, configure only the
   two approved driveway routes, and manually verify plate evidence, signed
@@ -651,6 +688,11 @@ be restored. Monochrome nighttime captures do not receive a direction result.
   writes. Review every ambiguous or unmatched outcome before changing
   tolerances; do not synthesize Street reads, enable nighttime processing, or
   restore the retired clip-based direction analyzer.
+- After Entry Overview primary mappings have been validated, upgrade the Entry
+  route fallback so its existing dual-Entry-LPR plate/timing corroboration may
+  select a ready `entry_overview_primary` Cam143 image as the payload. Preserve
+  the current one-to-one, daytime-only, fail-closed association rules; never let
+  the overview image establish identity or synthesize a missing Street read.
 - Expand Vehicle ReID calibration with larger labeled local samples and
   camera-pair reporting before making stronger labels or applying thresholds.
 - Consider pgvector only when the bounded in-process cosine scan no longer

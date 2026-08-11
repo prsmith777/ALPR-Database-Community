@@ -14,6 +14,7 @@ import {
   runVehicleDirectionBackfillBatch,
   saveVehicleDirectionProfile,
   saveVehicleOverviewPairProfile,
+  saveVehicleEntryOverviewHistoryProfiles,
   saveVehicleEntryRouteProfile,
   setVehicleOverviewPairSharingMode,
   setVehicleEntryFallbackMode,
@@ -22,6 +23,10 @@ import {
   cancelBlueIrisVehicleFrameHistory,
   queueBlueIrisVehicleFrameHistory,
   recoverIncompleteBlueIrisOverviewReads,
+  previewVehicleEntryOverviewHistory,
+  confirmVehicleEntryOverviewHistory,
+  setVehicleEntryOverviewHistoryPaused,
+  cancelVehicleEntryOverviewHistory,
   runBlueIrisVehicleFrameBatch,
   setBlueIrisVehicleFrameHistoryPaused,
   setVehicleDirectionReevaluationPaused,
@@ -54,6 +59,24 @@ const VEHICLE_SETUP_ROUTES = Object.freeze({
   processing: "/settings/vehicle-intelligence/processing",
   calibration: "/settings/vehicle-intelligence/calibration",
 });
+
+const ENTRY_OVERVIEW_HISTORY_CAMERAS = Object.freeze([
+  "Entry LPR 1",
+  "Entry LPR 2",
+]);
+
+function entryOverviewHistoryDeltas(profiles = []) {
+  return Object.fromEntries(ENTRY_OVERVIEW_HISTORY_CAMERAS.map((plateCameraName) => {
+    const profile = profiles.find((item) => item.plateCameraName === plateCameraName);
+    return [plateCameraName, profile ? String(profile.expectedDeltaMs) : ""];
+  }));
+}
+
+function validEntryOverviewHistoryDelta(value) {
+  if (String(value ?? "").trim() === "") return false;
+  const number = Number(value);
+  return Number.isSafeInteger(number) && Math.abs(number) <= 30_000;
+}
 
 function statusText(profile, minimum) {
   if (!profile.configured) return "Needs direction meanings";
@@ -99,6 +122,18 @@ export default function VehicleIntelligenceSettings({
   const [overviewRecoveryPreview, setOverviewRecoveryPreview] = useState(null);
   const [cancelFrameHistoryOpen, setCancelFrameHistoryOpen] = useState(false);
   const [overviewSetup, setOverviewSetup] = useState(initialOverviewSetup);
+  const [entryHistoryDeltas, setEntryHistoryDeltas] = useState(() => (
+    entryOverviewHistoryDeltas(initialOverviewSetup?.entryOverviewHistory?.profiles)
+  ));
+  const [entryHistoryStart, setEntryHistoryStart] = useState("");
+  const [entryHistoryEnd, setEntryHistoryEnd] = useState("");
+  const [entryHistoryBatchSize, setEntryHistoryBatchSize] = useState("5");
+  const [entryHistoryRun, setEntryHistoryRun] = useState(
+    initialOverviewSetup?.entryOverviewHistory?.latestRun
+      || initialFrameQueue?.entryOverviewHistoryRun
+      || null
+  );
+  const [entryHistoryMessage, setEntryHistoryMessage] = useState("");
   const [pairSharingMode, setPairSharingMode] = useState(
     initialOverviewSetup?.status?.pairSharing?.mode || "off"
   );
@@ -130,9 +165,11 @@ export default function VehicleIntelligenceSettings({
     const plateCamera = initialOverviewSetup?.plateCameras?.[0] || null;
     return {
       sourceCameraName: initialOverviewSetup?.status?.observedSources?.[0] || "",
+      sourceCameraShortName: "",
       plateCameraName: plateCamera?.cameraName || "",
       directionLabel: plateCamera?.directions?.[0] || "",
       sourceRole: "primary",
+      overviewContext: "street",
       expectedDeltaMs: 0,
       toleranceMs: 1500,
       priority: 0,
@@ -165,6 +202,10 @@ export default function VehicleIntelligenceSettings({
   }, [overviewSetup?.entryFallback?.mode, overviewSetup?.entryFallback?.observationStartedAt]);
 
   useEffect(() => {
+    setEntryHistoryDeltas(entryOverviewHistoryDeltas(overviewSetup?.entryOverviewHistory?.profiles));
+  }, [overviewSetup?.entryOverviewHistory?.profiles]);
+
+  useEffect(() => {
     const pending = Number(data.backfill?.pending || 0)
       + Number(data.backfill?.imagesAwaitingIndex || 0);
     if (!pending) return undefined;
@@ -180,13 +221,35 @@ export default function VehicleIntelligenceSettings({
   }, [cameraName, data.backfill?.imagesAwaitingIndex, data.backfill?.pending]);
 
   useEffect(() => {
-    if (!frameQueue?.pending && !frameQueue?.liveOutstanding && !frameQueue?.historicalOutstanding) return undefined;
+    const entryHistoryActiveJobs = Number(entryHistoryRun?.counts?.queued || 0)
+      + Number(entryHistoryRun?.counts?.processing || 0);
+    const entryHistoryPolling = ["running", "paused"].includes(entryHistoryRun?.status)
+      && entryHistoryActiveJobs > 0;
+    if (!frameQueue?.pending
+      && !frameQueue?.liveOutstanding
+      && !frameQueue?.historicalOutstanding
+      && !entryHistoryPolling) return undefined;
     const timer = window.setInterval(async () => {
-      const result = await getBlueIrisVehicleFrameQueueStatus();
-      if (result.success) setFrameQueue(result.data);
+      const result = await getBlueIrisVehicleFrameQueueStatus({
+        entryOverviewHistoryRunId: entryHistoryRun?.id || null,
+      });
+      if (result.success) {
+        setFrameQueue(result.data);
+        if (result.data.entryOverviewHistoryRun) {
+          setEntryHistoryRun(result.data.entryOverviewHistoryRun);
+        }
+      }
     }, 5000);
     return () => window.clearInterval(timer);
-  }, [frameQueue?.historicalOutstanding, frameQueue?.liveOutstanding, frameQueue?.pending]);
+  }, [
+    entryHistoryRun?.counts?.processing,
+    entryHistoryRun?.counts?.queued,
+    entryHistoryRun?.id,
+    entryHistoryRun?.status,
+    frameQueue?.historicalOutstanding,
+    frameQueue?.liveOutstanding,
+    frameQueue?.pending,
+  ]);
 
   const reload = async (selected = cameraName) => {
     const active = routeTab.active;
@@ -250,6 +313,103 @@ export default function VehicleIntelligenceSettings({
       await reloadOverviewSetup();
       setMessage("Overview association removed.");
     } catch (error) { setMessage(error.message); }
+    finally { setBusy(""); }
+  };
+
+  const saveEntryHistoryProfiles = async () => {
+    setBusy("entry-history-profiles");
+    setEntryHistoryMessage("");
+    try {
+      const result = await saveVehicleEntryOverviewHistoryProfiles({
+        profiles: ENTRY_OVERVIEW_HISTORY_CAMERAS.map((plateCameraName) => ({
+          plateCameraName,
+          expectedDeltaMs: Number(entryHistoryDeltas[plateCameraName]),
+        })),
+      });
+      if (!result.success) throw new Error(result.error);
+      setOverviewSetup((current) => ({
+        ...current,
+        entryOverviewHistory: {
+          ...current?.entryOverviewHistory,
+          ...result.data,
+        },
+      }));
+      setEntryHistoryRun(null);
+      setEntryHistoryMessage("Entry Overview timeline anchors saved. Preview the exact date range before confirming any work.");
+    } catch (error) { setEntryHistoryMessage(error.message); }
+    finally { setBusy(""); }
+  };
+
+  const previewEntryHistory = async () => {
+    setBusy("entry-history-preview");
+    setEntryHistoryMessage("");
+    try {
+      const startAt = new Date(entryHistoryStart);
+      const endAt = new Date(entryHistoryEnd);
+      if (!Number.isFinite(startAt.getTime()) || !Number.isFinite(endAt.getTime())) {
+        throw new Error("Choose both an Entry Overview history start and end.");
+      }
+      const result = await previewVehicleEntryOverviewHistory({
+        startAt: startAt.toISOString(),
+        endAt: endAt.toISOString(),
+      });
+      if (!result.success) throw new Error(result.error);
+      setEntryHistoryRun(result.data.run);
+      setEntryHistoryMessage("Preview complete. No reads were queued or changed.");
+    } catch (error) { setEntryHistoryMessage(error.message); }
+    finally { setBusy(""); }
+  };
+
+  const confirmEntryHistory = async () => {
+    if (!entryHistoryRun) return;
+    setBusy("entry-history-confirm");
+    setEntryHistoryMessage("");
+    try {
+      const result = await confirmVehicleEntryOverviewHistory({
+        runId: entryHistoryRun.id,
+        previewFingerprint: entryHistoryRun.previewFingerprint,
+        limit: Number(entryHistoryBatchSize),
+      });
+      if (!result.success) throw new Error(result.error);
+      setEntryHistoryRun(result.data.run);
+      setEntryHistoryMessage(
+        `Confirmed ${Number(result.data.confirmation.queued || 0).toLocaleString()} read${result.data.confirmation.queued === 1 ? "" : "s"}. Live Vehicle Views remain first in line.`
+      );
+    } catch (error) { setEntryHistoryMessage(error.message); }
+    finally { setBusy(""); }
+  };
+
+  const toggleEntryHistoryPaused = async () => {
+    if (!entryHistoryRun) return;
+    const paused = entryHistoryRun.status !== "paused";
+    setBusy("entry-history-pause");
+    setEntryHistoryMessage("");
+    try {
+      const result = await setVehicleEntryOverviewHistoryPaused({
+        runId: entryHistoryRun.id,
+        paused,
+      });
+      if (!result.success) throw new Error(result.error);
+      setEntryHistoryRun(result.data.run);
+      setEntryHistoryMessage(paused
+        ? "Entry Overview history paused. Live work continues normally."
+        : "Entry Overview history resumed behind live work.");
+    } catch (error) { setEntryHistoryMessage(error.message); }
+    finally { setBusy(""); }
+  };
+
+  const cancelEntryHistory = async () => {
+    if (!entryHistoryRun) return;
+    setBusy("entry-history-cancel");
+    setEntryHistoryMessage("");
+    try {
+      const result = await cancelVehicleEntryOverviewHistory({ runId: entryHistoryRun.id });
+      if (!result.success) throw new Error(result.error);
+      setEntryHistoryRun(result.data.run);
+      setEntryHistoryMessage(
+        `Cancelled ${Number(result.data.cancellation.cancelled || 0).toLocaleString()} pending read${result.data.cancellation.cancelled === 1 ? "" : "s"}; prior images were preserved or restored.`
+      );
+    } catch (error) { setEntryHistoryMessage(error.message); }
     finally { setBusy(""); }
   };
 
@@ -403,11 +563,52 @@ export default function VehicleIntelligenceSettings({
   const backfillCompletion = backfill.eligible
     ? Math.round(backfill.completed / backfill.eligible * 100)
     : 100;
+  const entryHistoryProfiles = overviewSetup?.entryOverviewHistory?.profiles || [];
+  const entryHistoryProfilesConfigured = ENTRY_OVERVIEW_HISTORY_CAMERAS.every(
+    (plateCameraName) => entryHistoryProfiles.some((item) => (
+      item.plateCameraName === plateCameraName && item.enabled === true
+    ))
+  );
+  const entryHistoryDeltasValid = ENTRY_OVERVIEW_HISTORY_CAMERAS.every(
+    (plateCameraName) => validEntryOverviewHistoryDelta(entryHistoryDeltas[plateCameraName])
+  );
+  const entryHistoryProfilesDirty = ENTRY_OVERVIEW_HISTORY_CAMERAS.some((plateCameraName) => {
+    const saved = entryHistoryProfiles.find((item) => item.plateCameraName === plateCameraName);
+    return !saved || Number(saved.expectedDeltaMs) !== Number(entryHistoryDeltas[plateCameraName]);
+  });
+  const entryHistoryRangeValid = Boolean(entryHistoryStart && entryHistoryEnd)
+    && new Date(entryHistoryEnd).getTime() > new Date(entryHistoryStart).getTime();
+  const entryHistoryCounts = entryHistoryRun?.counts || {};
+  const entryHistoryBatchActive = Number(entryHistoryCounts.queued || 0)
+    + Number(entryHistoryCounts.processing || 0) > 0;
+  const entryHistoryConfirmable = Number(entryHistoryCounts.eligible || 0)
+    + Number(entryHistoryCounts.needsPreflight || 0);
+  const entryHistoryRemaining = Number(entryHistoryCounts.previewableRemaining || 0);
+  const entryHistoryFinished = Number(entryHistoryCounts.ready || 0)
+    + Number(entryHistoryCounts.failed || 0)
+    + Number(entryHistoryCounts.unavailable || 0)
+    + Number(entryHistoryCounts.superseded || 0)
+    + Number(entryHistoryCounts.cancelled || 0);
+  const entryHistoryProgress = entryHistoryConfirmable
+    ? Math.min(100, Math.round(entryHistoryFinished / entryHistoryConfirmable * 100))
+    : 0;
+  const genericFrameHistoryProfiles = (data.profiles || []).filter(
+    (profile) => !ENTRY_OVERVIEW_HISTORY_CAMERAS.includes(profile.cameraName)
+  );
+  const genericFrameHistoryCameraAllowed = genericFrameHistoryProfiles.some(
+    (profile) => profile.cameraName === cameraName
+  );
 
   const queueFrameHistory = async (allCameras = false, replaceExisting = false) => {
     setBusy(replaceExisting ? "frame-history-reevaluate" : allCameras ? "frame-history-all" : "frame-history-camera");
     setFrameMessage("");
     try {
+      if (allCameras && entryHistoryProfilesConfigured) {
+        throw new Error("All-camera history is disabled while Entry Overview history is configured. Use the previewed Entry Overview batches and a specific non-Entry camera instead.");
+      }
+      if (!allCameras && !genericFrameHistoryCameraAllowed) {
+        throw new Error("Select a non-Entry camera. Entry LPR history uses the previewed Entry Overview workflow above.");
+      }
       const result = await queueBlueIrisVehicleFrameHistory({
         cameraName: allCameras ? null : cameraName,
         startDate: frameStartDate ? new Date(`${frameStartDate}T00:00:00`).toISOString() : null,
@@ -672,7 +873,7 @@ export default function VehicleIntelligenceSettings({
             <CardHeader>
               <CardTitle>Daytime overview retrieval</CardTitle>
               <CardDescription>
-                Each daytime plate read uses its validated direction and camera-pair timing profile to retrieve Street Overview directly. Monochrome nighttime reads are skipped.
+                Each daytime plate read uses its validated direction and timing profile to retrieve the configured Street or Entry overview camera directly. Monochrome nighttime reads are skipped.
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-5">
@@ -691,15 +892,20 @@ export default function VehicleIntelligenceSettings({
                 <details className="rounded-md border p-3 text-sm">
                   <summary className="cursor-pointer font-medium">Recent overview pipeline diagnostics</summary>
                   <div className="mt-3 overflow-x-auto">
-                    <table className="w-full min-w-[900px] text-left text-xs">
+                    <table className="w-full min-w-[1050px] text-left text-xs">
                       <thead className="border-b text-muted-foreground">
-                        <tr><th className="px-2 py-2">Read</th><th className="px-2 py-2">Camera</th><th className="px-2 py-2">Read state</th><th className="px-2 py-2">Attempts</th><th className="px-2 py-2">Export state</th><th className="px-2 py-2">BI starts</th><th className="px-2 py-2">Media</th><th className="px-2 py-2">Error</th></tr>
+                        <tr><th className="px-2 py-2">Read</th><th className="px-2 py-2">Plate camera</th><th className="px-2 py-2">View source</th><th className="px-2 py-2">Read state</th><th className="px-2 py-2">Attempts</th><th className="px-2 py-2">Export state</th><th className="px-2 py-2">BI starts</th><th className="px-2 py-2">Media</th><th className="px-2 py-2">Error</th></tr>
                       </thead>
                       <tbody>
                         {overviewSetup.status.recentJobs.map((job) => (
                           <tr key={job.readId} className="border-b last:border-0">
                             <td className="px-2 py-2 font-mono">#{job.readId} {job.plateNumber || ""}</td>
                             <td className="px-2 py-2">{job.cameraName || "Unknown"}</td>
+                            <td className="px-2 py-2">
+                              {job.sourceCameraName || (job.overviewContext === "entry" ? "Entry overview" : "Street overview")}
+                              {job.sourceCameraId ? <span className="ml-1 text-muted-foreground">({job.sourceCameraId})</span> : null}
+                              {job.profileRevision ? <span className="block text-muted-foreground">profile r{job.profileRevision}</span> : null}
+                            </td>
                             <td className="px-2 py-2">{job.readStatus || "Not queued"}</td>
                             <td className="px-2 py-2">{job.attemptCount} / recovery {job.recoveryCount}</td>
                             <td className="px-2 py-2">{job.exportStatus || "No export"}</td>
@@ -963,6 +1169,16 @@ export default function VehicleIntelligenceSettings({
 
               <div className="rounded-lg border p-4">
                 <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+                  <div className="space-y-2">
+                    <Label>Overview use</Label>
+                    <Select value={overviewDraft.overviewContext} onValueChange={(overviewContext) => setOverviewDraft({ ...overviewDraft, overviewContext })}>
+                      <SelectTrigger><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="street">Street overview</SelectItem>
+                        <SelectItem value="entry">Entry overview</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
                   <div className="space-y-2 lg:col-span-2">
                     <Label htmlFor="overview-source-camera">Overview source camera</Label>
                     <Input
@@ -970,11 +1186,22 @@ export default function VehicleIntelligenceSettings({
                       list="overview-source-cameras"
                       value={overviewDraft.sourceCameraName}
                       onChange={(event) => setOverviewDraft({ ...overviewDraft, sourceCameraName: event.target.value })}
-                      placeholder="Example: Street Overview"
+                      placeholder="Example: Street Overview or Entry Overview"
                     />
                     <datalist id="overview-source-cameras">
                       {(overviewSetup?.status?.observedSources || []).map((source) => <option key={source} value={source} />)}
                     </datalist>
+                    <p className="text-xs text-muted-foreground">Use the Blue Iris display name. Entry Overview is bound separately to its reviewed short name.</p>
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="overview-source-camera-short-name">Blue Iris short name</Label>
+                    <Input
+                      id="overview-source-camera-short-name"
+                      value={overviewDraft.sourceCameraShortName || ""}
+                      onChange={(event) => setOverviewDraft({ ...overviewDraft, sourceCameraShortName: event.target.value })}
+                      placeholder={overviewDraft.overviewContext === "entry" ? "Required, for example Cam143" : "Optional, for example Cam149"}
+                    />
+                    <p className="text-xs text-muted-foreground">Required for Entry so ALPR verifies the exact Blue Iris camera before exporting.</p>
                   </div>
                   <div className="space-y-2">
                     <Label>Plate camera</Label>
@@ -1035,7 +1262,7 @@ export default function VehicleIntelligenceSettings({
                     <Switch checked={overviewDraft.enabled} onCheckedChange={(enabled) => setOverviewDraft({ ...overviewDraft, enabled })} />
                   </div>
                 </div>
-                <Button className="mt-4" onClick={saveOverviewProfile} disabled={Boolean(busy) || !overviewDraft.sourceCameraName || !overviewDraft.plateCameraName || !overviewDraft.directionLabel || overviewDraft.sourceCameraName.trim().toLowerCase() === overviewDraft.plateCameraName.trim().toLowerCase()}>
+                <Button className="mt-4" onClick={saveOverviewProfile} disabled={Boolean(busy) || !overviewDraft.sourceCameraName || !overviewDraft.plateCameraName || !overviewDraft.directionLabel || (overviewDraft.overviewContext === "entry" && !overviewDraft.sourceCameraShortName?.trim()) || overviewDraft.sourceCameraName.trim().toLowerCase() === overviewDraft.plateCameraName.trim().toLowerCase()}>
                   {busy === "overview-profile" ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
                   Save overview association
                 </Button>
@@ -1043,14 +1270,15 @@ export default function VehicleIntelligenceSettings({
 
               {overviewSetup?.profiles?.length ? (
                 <div className="overflow-x-auto rounded-md border">
-                  <table className="w-full min-w-[900px] text-left text-sm">
+                  <table className="w-full min-w-[1050px] text-left text-sm">
                     <thead className="border-b bg-muted/40 text-xs text-muted-foreground">
-                      <tr><th className="px-3 py-2">Source</th><th className="px-3 py-2">Plate camera</th><th className="px-3 py-2">Direction</th><th className="px-3 py-2">Role</th><th className="px-3 py-2">Expected / tolerance</th><th className="px-3 py-2">State</th><th className="px-3 py-2">Action</th></tr>
+                      <tr><th className="px-3 py-2">Use</th><th className="px-3 py-2">Source</th><th className="px-3 py-2">Plate camera</th><th className="px-3 py-2">Direction</th><th className="px-3 py-2">Role</th><th className="px-3 py-2">Expected / tolerance</th><th className="px-3 py-2">State</th><th className="px-3 py-2">Action</th></tr>
                     </thead>
                     <tbody>
                       {overviewSetup.profiles.map((item) => (
                         <tr key={item.id} className="border-b last:border-0">
-                          <td className="px-3 py-2">{item.sourceCameraName}</td>
+                          <td className="px-3 py-2 capitalize">{item.overviewContext || "street"}</td>
+                          <td className="px-3 py-2">{item.sourceCameraName}{item.sourceCameraShortName ? <span className="ml-1 text-xs text-muted-foreground">({item.sourceCameraShortName})</span> : null}</td>
                           <td className="px-3 py-2">{item.plateCameraName}</td>
                           <td className="px-3 py-2">{item.directionLabel}</td>
                           <td className="px-3 py-2 capitalize">{item.sourceRole}</td>
@@ -1080,16 +1308,222 @@ export default function VehicleIntelligenceSettings({
               ) : <p className="text-sm text-muted-foreground">No overview timing profiles are configured yet.</p>}
 
               <div className="rounded-md border p-3 text-sm">
-                <div className="font-medium">No Street Overview alert action required</div>
-                <p className="mt-1 text-xs text-muted-foreground">ALPR retrieves the configured Street Overview timeline directly after a daytime plate read. Do not add a separate Blue Iris motion web request for this feature.</p>
+                <div className="font-medium">No overview-camera alert action required</div>
+                <p className="mt-1 text-xs text-muted-foreground">ALPR retrieves the configured Street Overview or Entry Overview timeline directly after a daytime plate read. Do not add a separate Blue Iris motion web request for this feature.</p>
               </div>
             </CardContent>
           </Card>
+
+          <Card className="mt-6">
+            <CardHeader>
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <CardTitle className="flex items-center gap-2"><History className="h-5 w-5" /> Entry Overview history</CardTitle>
+                  <CardDescription className="mt-1 max-w-3xl">
+                    Preview a frozen daytime range, then queue small batches that retrieve Entry Overview for existing Entry LPR reads. Live Vehicle Views always remain first in line.
+                  </CardDescription>
+                </div>
+                <Badge variant={entryHistoryProfilesConfigured ? "default" : "secondary"}>
+                  {entryHistoryProfilesConfigured ? "Anchors ready" : "Set both anchors"}
+                </Badge>
+              </div>
+            </CardHeader>
+            <CardContent className="space-y-5">
+              <div className="grid gap-3 rounded-lg border p-4 text-sm md:grid-cols-3">
+                <div>
+                  <div className="text-xs text-muted-foreground">Fixed overview source</div>
+                  <div className="font-medium">Entry Overview <span className="text-muted-foreground">(Cam143)</span></div>
+                </div>
+                <div className="md:col-span-2">
+                  <div className="text-xs text-muted-foreground">Existing plate reads</div>
+                  <div className="font-medium">Entry LPR 1 and Entry LPR 2</div>
+                </div>
+              </div>
+
+              <div className="grid gap-4 md:grid-cols-2">
+                {ENTRY_OVERVIEW_HISTORY_CAMERAS.map((plateCameraName) => (
+                  <div key={plateCameraName} className="space-y-2">
+                    <Label htmlFor={`entry-history-delta-${plateCameraName.replaceAll(" ", "-").toLowerCase()}`}>
+                      {plateCameraName} expected delta (ms)
+                    </Label>
+                    <Input
+                      id={`entry-history-delta-${plateCameraName.replaceAll(" ", "-").toLowerCase()}`}
+                      type="number"
+                      min="-30000"
+                      max="30000"
+                      step="50"
+                      value={entryHistoryDeltas[plateCameraName] ?? ""}
+                      onChange={(event) => setEntryHistoryDeltas((current) => ({
+                        ...current,
+                        [plateCameraName]: event.target.value,
+                      }))}
+                      placeholder="Overview time minus plate-read time"
+                    />
+                  </div>
+                ))}
+              </div>
+              <div className="flex flex-wrap items-center gap-3">
+                <Button
+                  type="button"
+                  variant="outline"
+                  disabled={Boolean(busy) || !entryHistoryDeltasValid || !entryHistoryProfilesDirty}
+                  onClick={saveEntryHistoryProfiles}
+                >
+                  {busy === "entry-history-profiles" ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
+                  Save Entry anchors
+                </Button>
+                <p className="text-xs text-muted-foreground">
+                  Delta means Entry Overview time minus plate-read time. Each anchor uses a fixed ±3,000 ms tolerance.
+                </p>
+              </div>
+
+              <div className="grid gap-4 rounded-lg border p-4 md:grid-cols-2">
+                <div className="space-y-2">
+                  <Label htmlFor="entry-history-start">History start</Label>
+                  <Input
+                    id="entry-history-start"
+                    type="datetime-local"
+                    value={entryHistoryStart}
+                    onChange={(event) => {
+                      setEntryHistoryStart(event.target.value);
+                      setEntryHistoryRun(null);
+                      setEntryHistoryMessage("");
+                    }}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="entry-history-end">History end</Label>
+                  <Input
+                    id="entry-history-end"
+                    type="datetime-local"
+                    value={entryHistoryEnd}
+                    onChange={(event) => {
+                      setEntryHistoryEnd(event.target.value);
+                      setEntryHistoryRun(null);
+                      setEntryHistoryMessage("");
+                    }}
+                  />
+                </div>
+                <div className="flex flex-wrap items-center gap-3 md:col-span-2">
+                  <Button
+                    type="button"
+                    disabled={Boolean(busy)
+                      || !frameQueue?.configured
+                      || !entryHistoryProfilesConfigured
+                      || entryHistoryProfilesDirty
+                      || !entryHistoryRangeValid}
+                    onClick={previewEntryHistory}
+                  >
+                    {busy === "entry-history-preview" ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <ScanSearch className="mr-2 h-4 w-4" />}
+                    Preview frozen range
+                  </Button>
+                  <p className="text-xs text-muted-foreground">
+                    Times are entered in this browser&apos;s local timezone and sent as explicit instants. The end is exclusive and both boundaries are frozen by the preview.
+                  </p>
+                </div>
+              </div>
+
+              {entryHistoryRun ? (
+                <div className="space-y-4 rounded-lg border p-4">
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div>
+                      <div className="font-medium">Run #{entryHistoryRun.id}</div>
+                      <div className="text-xs text-muted-foreground">
+                        Frozen {entryHistoryRun.startAt ? new Date(entryHistoryRun.startAt).toLocaleString() : "start unavailable"}
+                        {" through "}
+                        {entryHistoryRun.endAt ? new Date(entryHistoryRun.endAt).toLocaleString() : "end unavailable"} (exclusive)
+                      </div>
+                    </div>
+                    <Badge variant={entryHistoryRun.status === "completed" ? "default" : "secondary"} className="capitalize">
+                      {entryHistoryRun.status}
+                    </Badge>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-3 text-center sm:grid-cols-4 lg:grid-cols-8">
+                    <div className="rounded-md border p-2"><div className="font-semibold">{Number(entryHistoryCounts.total || 0).toLocaleString()}</div><div className="text-xs text-muted-foreground">in scope</div></div>
+                    <div className="rounded-md border p-2"><div className="font-semibold">{Number(entryHistoryCounts.previewed || 0).toLocaleString()}</div><div className="text-xs text-muted-foreground">still previewed</div></div>
+                    <div className="rounded-md border p-2"><div className="font-semibold">{entryHistoryRemaining.toLocaleString()}</div><div className="text-xs text-muted-foreground">queueable next</div></div>
+                    <div className="rounded-md border p-2"><div className="font-semibold">{Number(entryHistoryCounts.missingCandidates || 0).toLocaleString()}</div><div className="text-xs text-muted-foreground">missing views</div></div>
+                    <div className="rounded-md border p-2"><div className="font-semibold">{Number(entryHistoryCounts.upgradeCandidates || 0).toLocaleString()}</div><div className="text-xs text-muted-foreground">upgrade candidates</div></div>
+                    <div className="rounded-md border p-2"><div className="font-semibold">{Number(entryHistoryCounts.preserved || 0).toLocaleString()}</div><div className="text-xs text-muted-foreground">preserved</div></div>
+                    <div className="rounded-md border p-2"><div className="font-semibold">{Number(entryHistoryCounts.nighttime || 0).toLocaleString()}</div><div className="text-xs text-muted-foreground">nighttime skipped</div></div>
+                    <div className="rounded-md border p-2"><div className="font-semibold">{Number(entryHistoryCounts.liveBusy || 0).toLocaleString()}</div><div className="text-xs text-muted-foreground">live work protected</div></div>
+                  </div>
+
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between gap-3 text-xs text-muted-foreground">
+                      <span>{entryHistoryFinished.toLocaleString()} terminal of {entryHistoryConfirmable.toLocaleString()} eligible</span>
+                      <span>{entryHistoryProgress}%</span>
+                    </div>
+                    <Progress value={entryHistoryProgress} />
+                    <div className="grid grid-cols-3 gap-2 text-center text-xs sm:grid-cols-6">
+                      <div><span className="font-medium">{Number(entryHistoryCounts.queued || 0).toLocaleString()}</span> queued</div>
+                      <div><span className="font-medium">{Number(entryHistoryCounts.processing || 0).toLocaleString()}</span> processing</div>
+                      <div><span className="font-medium">{Number(entryHistoryCounts.ready || 0).toLocaleString()}</span> ready</div>
+                      <div><span className="font-medium">{Number(entryHistoryCounts.failed || 0).toLocaleString()}</span> failed</div>
+                      <div><span className="font-medium">{Number(entryHistoryCounts.unavailable || 0).toLocaleString()}</span> unavailable</div>
+                      <div><span className="font-medium">{(Number(entryHistoryCounts.superseded || 0) + Number(entryHistoryCounts.cancelled || 0)).toLocaleString()}</span> skipped</div>
+                    </div>
+                  </div>
+
+                  <div className="flex flex-wrap items-end gap-3">
+                    <div className="min-w-[9rem] space-y-2">
+                      <Label>Next batch</Label>
+                      <Select value={entryHistoryBatchSize} onValueChange={setEntryHistoryBatchSize}>
+                        <SelectTrigger><SelectValue /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="1">1 read</SelectItem>
+                          <SelectItem value="5">5 reads</SelectItem>
+                          <SelectItem value="25">25 reads</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <Button
+                      type="button"
+                      disabled={Boolean(busy)
+                        || !entryHistoryRun.previewFingerprint
+                        || entryHistoryRemaining < 1
+                        || entryHistoryBatchActive
+                        || ["paused", "cancelled", "completed"].includes(entryHistoryRun.status)}
+                      onClick={confirmEntryHistory}
+                    >
+                      {busy === "entry-history-confirm" ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Play className="mr-2 h-4 w-4" />}
+                      Queue next batch ({Math.min(Number(entryHistoryBatchSize), entryHistoryRemaining)})
+                    </Button>
+                    {["running", "paused"].includes(entryHistoryRun.status) ? (
+                      <Button type="button" variant="secondary" disabled={Boolean(busy)} onClick={toggleEntryHistoryPaused}>
+                        {busy === "entry-history-pause" ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : entryHistoryRun.status === "paused" ? <Play className="mr-2 h-4 w-4" /> : <Pause className="mr-2 h-4 w-4" />}
+                        {entryHistoryRun.status === "paused" ? "Resume history" : "Pause history"}
+                      </Button>
+                    ) : null}
+                    {["previewed", "running", "paused"].includes(entryHistoryRun.status) ? (
+                      <Button type="button" variant="destructive" disabled={Boolean(busy)} onClick={cancelEntryHistory}>
+                        {busy === "entry-history-cancel" ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <XCircle className="mr-2 h-4 w-4" />}
+                        Cancel remaining
+                      </Button>
+                    ) : null}
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    Wait for queued and processing to return to zero, then queue the next bounded batch. Repeat until “queueable next” reaches zero. A batch does not displace a live read, and successful existing images are never replaced before a new image is validated.
+                  </p>
+                </div>
+              ) : (
+                <p className="rounded-md border border-dashed p-3 text-sm text-muted-foreground">
+                  Save both timing anchors and preview an exact range before any historical read can be queued.
+                </p>
+              )}
+
+              {entryHistoryMessage ? (
+                <p className="rounded-md border p-3 text-sm" role="status">{entryHistoryMessage}</p>
+              ) : null}
+            </CardContent>
+          </Card>
+
           <Card className="mt-6">
           <CardHeader>
             <CardTitle className="flex items-center gap-2"><Images className="h-5 w-5" /> Blue Iris vehicle views</CardTitle>
             <CardDescription>
-              New daytime reads export one temporary Street Overview timeline segment, analyze 61 local frames at 100 ms intervals, and retain the exact selected full-resolution frame. ALPR removes its local workspace; Blue Iris removes Clipboard exports according to your configured retention. The older plate-camera selector remains only for historical jobs and deliberate manual recovery.
+              New daytime reads export one temporary configured overview-camera timeline segment, analyze 61 local frames at 100 ms intervals, and retain the exact selected full-resolution frame. ALPR removes its local workspace; Blue Iris removes Clipboard exports according to your configured retention. The older plate-camera selector remains only for historical jobs and deliberate manual recovery.
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
@@ -1134,14 +1568,14 @@ export default function VehicleIntelligenceSettings({
             </div>
             <div className="grid gap-3 rounded-lg border p-4 sm:grid-cols-2">
               <div className="space-y-2 sm:col-span-2">
-                <Label>Camera for vehicle-view history</Label>
-                <Select value={cameraName} onValueChange={selectCamera}>
+                <Label>Non-Entry camera for legacy vehicle-view history</Label>
+                <Select value={genericFrameHistoryCameraAllowed ? cameraName : ""} onValueChange={selectCamera}>
                   <SelectTrigger><SelectValue placeholder="Select a camera" /></SelectTrigger>
                   <SelectContent>
-                    {data.profiles.map((item) => <SelectItem key={item.cameraName} value={item.cameraName}>{item.cameraName}</SelectItem>)}
+                    {genericFrameHistoryProfiles.map((item) => <SelectItem key={item.cameraName} value={item.cameraName}>{item.cameraName}</SelectItem>)}
                   </SelectContent>
                 </Select>
-                <p className="text-xs text-muted-foreground">This camera is used only by the camera-specific history button below. New live reads are processed automatically for every configured camera.</p>
+                <p className="text-xs text-muted-foreground">Entry LPR 1 and Entry LPR 2 are intentionally excluded. Their history must use the previewed Entry Overview batches above.</p>
               </div>
               <details className="rounded-md border sm:col-span-2">
                 <summary className="cursor-pointer px-3 py-2 text-sm font-medium">Optional date range</summary>
@@ -1151,11 +1585,11 @@ export default function VehicleIntelligenceSettings({
                 </div>
               </details>
               <div className="flex flex-wrap gap-2 sm:col-span-2">
-                <Button variant="outline" disabled={Boolean(busy) || !cameraName || !frameQueue?.configured} onClick={() => queueFrameHistory(false)}>{busy === "frame-history-camera" ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}Queue {cameraName || "selected camera"} history</Button>
-                <Button variant="outline" disabled={Boolean(busy) || !frameQueue?.configured} onClick={() => queueFrameHistory(true)}>{busy === "frame-history-all" ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}Queue all camera history</Button>
-                <Button variant="outline" disabled={Boolean(busy) || !frameQueue?.configured} onClick={() => queueFrameHistory(true, true)}>{busy === "frame-history-reevaluate" ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}Reevaluate existing views</Button>
+                <Button variant="outline" disabled={Boolean(busy) || !genericFrameHistoryCameraAllowed || !frameQueue?.configured} onClick={() => queueFrameHistory(false)}>{busy === "frame-history-camera" ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}Queue {genericFrameHistoryCameraAllowed ? cameraName : "selected camera"} history</Button>
+                <Button variant="outline" disabled={Boolean(busy) || !frameQueue?.configured || entryHistoryProfilesConfigured} onClick={() => queueFrameHistory(true)}>{busy === "frame-history-all" ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}Queue all camera history</Button>
+                <Button variant="outline" disabled={Boolean(busy) || !frameQueue?.configured || entryHistoryProfilesConfigured} onClick={() => queueFrameHistory(true, true)}>{busy === "frame-history-reevaluate" ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}Reevaluate existing views</Button>
                 <Button variant="secondary" disabled={Boolean(busy) || !frameQueue?.configured} onClick={toggleFrameHistory}>{frameQueue?.historicalPaused ? <Play className="mr-2 h-4 w-4" /> : <Pause className="mr-2 h-4 w-4" />}{frameQueue?.historicalPaused ? "Resume history" : "Pause history"}</Button>
-                <Button variant="destructive" disabled={Boolean(busy) || !cameraName || !frameQueue?.historicalOutstanding} onClick={() => setCancelFrameHistoryOpen(true)}><XCircle className="mr-2 h-4 w-4" />Cancel pending {cameraName || "camera"} history</Button>
+                <Button variant="destructive" disabled={Boolean(busy) || !genericFrameHistoryCameraAllowed || !frameQueue?.historicalOutstanding} onClick={() => setCancelFrameHistoryOpen(true)}><XCircle className="mr-2 h-4 w-4" />Cancel pending {genericFrameHistoryCameraAllowed ? cameraName : "camera"} history</Button>
                 <Button variant="secondary" disabled={Boolean(busy) || !frameQueue?.configured} onClick={runFrameBatch}>{busy === "frame-batch" ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Play className="mr-2 h-4 w-4" />}Run one frame now</Button>
                 <div className="flex min-w-[18rem] flex-col gap-1">
                   <Label htmlFor="overview-recovery-start">Incomplete overview recovery start</Label>
