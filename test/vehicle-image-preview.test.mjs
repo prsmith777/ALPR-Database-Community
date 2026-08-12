@@ -82,6 +82,7 @@ test("vehicle preview crop safely falls back for missing or invalid metadata", (
 for (const sourceKind of [
   "overview_primary",
   "entry_overview_primary",
+  "entry_overview_route_fallback",
   "entry_overview_history",
   "overview_pair_share",
   "overview_fallback",
