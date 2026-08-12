@@ -88,7 +88,6 @@ try {
   // The additive migration must discover it from catalog column identity, drop
   // it, preserve the v1 decision, and permit a v2 decision for the same route.
   const legacyFallbackClient = await pool.connect();
-  clients.push(legacyFallbackClient);
   await legacyFallbackClient.query("BEGIN");
   try {
     const legacyRoute = await legacyFallbackClient.query(
@@ -161,12 +160,12 @@ try {
     );
   } finally {
     await legacyFallbackClient.query("ROLLBACK").catch(() => {});
+    legacyFallbackClient.release();
   }
 
   // A legacy case-variant duplicate must stop the migration with a clear,
   // non-destructive diagnostic rather than choosing a profile silently.
   const duplicateClient = await pool.connect();
-  clients.push(duplicateClient);
   await duplicateClient.query("BEGIN");
   try {
     await duplicateClient.query("DROP INDEX public.idx_vehicle_overview_primary_profile_identity");
@@ -185,6 +184,7 @@ try {
     );
   } finally {
     await duplicateClient.query("ROLLBACK").catch(() => {});
+    duplicateClient.release();
   }
 
   const profile = await pool.query(
