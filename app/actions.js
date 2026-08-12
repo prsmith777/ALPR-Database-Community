@@ -1826,7 +1826,7 @@ const ENTRY_OVERVIEW_HISTORY_PLATE_CAMERAS = Object.freeze([
   "Entry LPR 1",
   "Entry LPR 2",
 ]);
-const ENTRY_OVERVIEW_HISTORY_BATCH_SIZES = new Set([1, 5, 25]);
+const ENTRY_OVERVIEW_HISTORY_BATCH_SIZES = new Set([1, 5, 25, 250]);
 
 function entryOverviewHistoryProfileData(profile) {
   return {
@@ -2120,7 +2120,7 @@ export async function confirmVehicleEntryOverviewHistory(input = {}) {
     const runId = requiredEntryOverviewHistoryRunId(input.runId);
     const limit = Number.parseInt(String(input.limit), 10);
     if (!ENTRY_OVERVIEW_HISTORY_BATCH_SIZES.has(limit)) {
-      throw new Error("Entry Overview history batches must contain 1, 5, or 25 reads.");
+      throw new Error("Entry Overview history batches must contain 1, 5, 25, or 250 reads.");
     }
     const runtime = await getBlueIrisVehicleFrameRuntime();
     const currentRun = await runtime.repository.getEntryOverviewBackfillRun(runId, { jobLimit: 1 });

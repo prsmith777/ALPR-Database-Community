@@ -1500,6 +1500,7 @@ export default function VehicleIntelligenceSettings({
                           <SelectItem value="1">1 read</SelectItem>
                           <SelectItem value="5">5 reads</SelectItem>
                           <SelectItem value="25">25 reads</SelectItem>
+                          <SelectItem value="250">250 reads</SelectItem>
                         </SelectContent>
                       </Select>
                     </div>

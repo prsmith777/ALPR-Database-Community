@@ -18,7 +18,7 @@ reliable background processing.
 6. Audit sensitive searches, exports, corrections, rule changes, and
    destructive maintenance.
 
-## Release candidate baseline — August 10, 2026
+## Release candidate baseline — August 11, 2026
 
 - Application `0.1.19` candidate includes named users and roles, evidence-preserving plate
   review, filter-respecting exports, the searchable help center, local privacy
@@ -629,7 +629,10 @@ notes. Updates remain externally orchestrated.
   including reads that predate reliable direction metadata. It uses immutable
   Cam143 anchor profiles instead of inventing a direction, previews a frozen
   high-water set before changing data, and admits work only in explicit batches
-  of 1, 5, or 25 behind all live processing. Retained plate images provide the
+  of 1, 5, 25, or 250 behind all live processing. The 250-read option changes
+  only how much reviewed work is admitted; the worker remains sequential and
+  pause, cancellation, bounded retry, and live-read priority remain in force.
+  Retained plate images provide the
   authoritative color/night preflight before Blue Iris is initialized; known
   monochrome or unreadable evidence therefore creates no export. Legacy
   plate-camera Vehicle Views are eligible for upgrade, but remain visible until
