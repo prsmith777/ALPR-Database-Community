@@ -15,7 +15,7 @@ test("Entry Overview history actions use the dedicated preview and bounded-run A
   assert.match(section, /"Entry LPR 1"[\s\S]*"Entry LPR 2"/);
   assert.match(section, /sourceCameraName: "Entry Overview"/);
   assert.match(section, /sourceCameraShortName: "Cam143"/);
-  assert.match(section, /ENTRY_OVERVIEW_HISTORY_BATCH_SIZES = new Set\(\[1, 5, 25\]\)/);
+  assert.match(section, /ENTRY_OVERVIEW_HISTORY_BATCH_SIZES = new Set\(\[1, 5, 25, 250\]\)/);
   assert.match(section, /listEntryOverviewHistoryProfiles\(\{ enabledOnly: true \}\)/);
   assert.match(section, /saveEntryOverviewHistoryProfile\(/);
   assert.match(section, /previewEntryOverviewBackfillRun\(\{/);
@@ -55,6 +55,7 @@ test("Vehicle Views renders a blank, preview-first Entry Overview history workfl
   assert.match(section, /<SelectItem value="1">1 read<\/SelectItem>/);
   assert.match(section, /<SelectItem value="5">5 reads<\/SelectItem>/);
   assert.match(section, /<SelectItem value="25">25 reads<\/SelectItem>/);
+  assert.match(section, /<SelectItem value="250">250 reads<\/SelectItem>/);
   assert.match(section, /Queue next batch/);
   assert.match(section, /entryHistoryBatchActive/);
   assert.match(section, /Pause history/);
