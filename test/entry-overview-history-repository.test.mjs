@@ -335,6 +335,42 @@ test("Entry history confirmation rejects a second active batch under the run loc
   );
 });
 
+test("an existing Entry history run can widen its next batch to 250 reads", async () => {
+  const pool = mockPool((text, params) => {
+    if (/FROM public\.vehicle_entry_overview_backfill_runs[\s\S]*FOR UPDATE/.test(text)) {
+      return { rows: [{
+        id: 10,
+        preview_fingerprint: "d".repeat(64),
+        status: "running",
+        batch_size: 25,
+      }], rowCount: 1 };
+    }
+    if (/AS has_active_batch/.test(text)) {
+      return { rows: [{ has_active_batch: false }], rowCount: 1 };
+    }
+    if (/SELECT \* FROM public\.vehicle_entry_overview_backfill_jobs/.test(text)) {
+      assert.equal(params[1], 250);
+      return { rows: [], rowCount: 0 };
+    }
+    if (/SET status = CASE WHEN status = 'paused'/.test(text)) {
+      assert.match(text, /batch_size = \$2/);
+      assert.deepEqual(params, [10, 250]);
+      return { rows: [], rowCount: 1 };
+    }
+    if (/SET status = 'completed'/.test(text)) {
+      return { rows: [], rowCount: 0 };
+    }
+    throw new Error(`Unexpected SQL: ${text}`);
+  });
+  const repository = new BlueIrisVehicleFrameRepository(pool);
+  const result = await repository.confirmEntryOverviewBackfillRun({
+    runId: 10,
+    previewFingerprint: "d".repeat(64),
+    limit: 250,
+  });
+  assert.deepEqual(result, { runId: 10, queued: 0, superseded: 0, limit: 250 });
+});
+
 test("Entry history cancellation restores exact ownership and cancels previewed jobs", async () => {
   const pool = mockPool((text) => {
     if (/UPDATE public\.vehicle_entry_overview_backfill_runs/.test(text)) {
