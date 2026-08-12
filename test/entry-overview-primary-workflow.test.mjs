@@ -40,8 +40,10 @@ test("Cam143 route payload has an independent shadow-first activation control", 
   assert.match(component, /entryFallbackPayloadMode/);
   assert.match(component, /Cam143 payload mode/);
   assert.match(component, /Shadow validation only/);
-  assert.match(component, /Two Entry LPR reads prove identity/);
-  assert.match(component, /Cam143 never establishes plate identity/);
+  assert.match(component, /Two-camera evidence is preferred/);
+  assert.match(component, /One Entry read may qualify only when it has authoritative matching Blue Iris direction/);
+  assert.match(component, /one confusion-normalized OCR edit on a plate of at least five characters/);
+  assert.match(component, /Cam143 supplies the image but never establishes plate identity/);
   assert.match(actions, /overviewPayloadMode/);
   assert.match(actions, /Select Off, Shadow, or Active for the Entry Overview payload/);
 });
