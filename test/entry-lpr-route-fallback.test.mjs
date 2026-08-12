@@ -96,11 +96,11 @@ test("BZGJ52 entering route uses two Entry cameras and permits one corroborating
   assert.equal(decisions.length, 1);
   assert.equal(decisions[0].status, "proposed");
   assert.equal(decisions[0].reason, "UNIQUE_ENTRY_ROUTE_EVENT");
-  assert.equal(decisions[0].sourceReadId, 39382, "image quality wins after identity is established");
+  assert.equal(decisions[0].sourceReadId, 39381, "the selected Cam143 payload owner is the copy source");
   assert.equal(decisions[0].payloadReadId, 39381, "equal Cam143 payloads use a stable read-id tie break");
   assert.equal(decisions[0].metadata.payloadSourceKind, "entry_overview_primary");
   assert.equal(decisions[0].metadata.payloadSelectionMetadata.sourceCameraShortName, "Cam143");
-  assert.deepEqual(decisions[0].corroboratingReadIds, [39381]);
+  assert.deepEqual(decisions[0].corroboratingReadIds, [39382]);
   assert.equal(decisions[0].metadata.plateEvidenceClass, "exact_with_dual_camera_fuzzy_corroboration");
   assert.match(decisions[0].sourceEventKey, /^[0-9a-f]{64}$/);
 });
@@ -130,31 +130,122 @@ test("approved exiting route supports an earlier dual-camera Entry event", () =>
   assert.equal(decision.metadata.sourceDirectionLabel, "Exiting");
 });
 
-test("one Entry camera, nighttime source, wrong direction, and unsupported target do not propose", () => {
-  const cases = [
-    [target({ id: 1 }), [source(10, "Entry LPR 1", 10_000, "BZGJ52")]],
-    [target({ id: 2 }), [
-      source(20, "Entry LPR 1", 10_000, "BZGJ52", { color_reason: "monochrome_capture" }),
-      source(21, "Entry LPR 2", 11_000, "BZGJ52"),
-    ]],
-    [target({ id: 3 }), [
-      source(30, "Entry LPR 1", 10_000, "BZGJ52", { bi_trigger_direction_label: "Exiting" }),
-      source(31, "Entry LPR 2", 11_000, "BZGJ52", { bi_trigger_direction_label: "Exiting" }),
-    ]],
-    [target({ id: 4, camera_name: "Street LPR 2", bi_trigger_direction_label: "Westbound" }), [
-      source(40, "Entry LPR 1", 10_000, "BZGJ52"),
-      source(41, "Entry LPR 2", 11_000, "BZGJ52"),
-    ]],
-  ];
-  for (const [currentTarget, sources] of cases) {
-    const decisions = buildEntryLprFallbackDecisions({
-      targets: [currentTarget],
-      sourcesByTarget: new Map([[currentTarget.id, sources]]),
-      now: BASE + 30_000,
-    });
-    if (currentTarget.id === 4) assert.equal(decisions.length, 0);
-    else assert.equal(decisions[0].status, "rejected");
-  }
+test("one direction-authoritative Entry read may safely establish exact or guarded fuzzy identity", () => {
+  const exactTarget = target({ id: 1 });
+  const [exact] = buildEntryLprFallbackDecisions({
+    targets: [exactTarget],
+    sourcesByTarget: new Map([[exactTarget.id, [source(10, "Entry LPR 1", 10_000, "BZGJ52")]]]),
+    now: BASE + 30_000,
+  });
+  assert.equal(exact.status, "proposed");
+  assert.equal(exact.metadata.plateEvidenceClass, "single_camera_exact");
+  assert.equal(exact.metadata.directionEvidenceCount, 1);
+
+  const fuzzyTarget = target({ id: 2, plate_number: "ERIA47" });
+  const [fuzzy] = buildEntryLprFallbackDecisions({
+    targets: [fuzzyTarget],
+    sourcesByTarget: new Map([[fuzzyTarget.id, [source(20, "Entry LPR 2", 10_000, "ER1A47")]]]),
+    now: BASE + 30_000,
+  });
+  assert.equal(fuzzy.status, "proposed");
+  assert.equal(fuzzy.metadata.plateEvidenceClass, "single_camera_fuzzy");
+  assert.equal(fuzzy.sourceReadId, 20);
+});
+
+test("single-read relaxation remains fail closed for night, direction conflicts, short fuzzy plates, and unsupported targets", () => {
+  const nightTarget = target({ id: 21 });
+  assert.equal(buildEntryLprFallbackDecisions({
+    targets: [nightTarget],
+    sourcesByTarget: new Map([[nightTarget.id, [
+      source(210, "Entry LPR 1", 10_000, "BZGJ52", { color_reason: "monochrome_capture" }),
+    ]]]),
+    now: BASE + 30_000,
+  })[0].status, "rejected");
+
+  const wrongDirectionTarget = target({ id: 22 });
+  assert.equal(buildEntryLprFallbackDecisions({
+    targets: [wrongDirectionTarget],
+    sourcesByTarget: new Map([[wrongDirectionTarget.id, [
+      source(220, "Entry LPR 1", 10_000, "BZGJ52", { bi_trigger_direction_label: "Exiting" }),
+    ]]]),
+    now: BASE + 30_000,
+  })[0].status, "rejected");
+
+  const shortFuzzyTarget = target({ id: 23, plate_number: "AB12" });
+  assert.equal(buildEntryLprFallbackDecisions({
+    targets: [shortFuzzyTarget],
+    sourcesByTarget: new Map([[shortFuzzyTarget.id, [source(230, "Entry LPR 1", 10_000, "AB13")]]]),
+    now: BASE + 30_000,
+  })[0].status, "rejected");
+
+  const unsupportedTarget = target({ id: 24, bi_trigger_direction_label: "Westbound" });
+  assert.deepEqual(buildEntryLprFallbackDecisions({
+    targets: [unsupportedTarget],
+    sourcesByTarget: new Map([[unsupportedTarget.id, [source(240, "Entry LPR 1", 10_000, "BZGJ52")]]]),
+    now: BASE + 30_000,
+  }), []);
+});
+
+test("ERIA47 succeeds with one missing Entry direction when the other exact read owns authoritative Cam143 evidence", () => {
+  const currentTarget = target({
+    id: 43000,
+    plate_number: "ERIA47",
+    route_expected_delta_ms: 6_500,
+  });
+  const [decision] = buildEntryLprFallbackDecisions({
+    targets: [currentTarget],
+    sourcesByTarget: new Map([[currentTarget.id, [
+      source(43001, "Entry LPR 1", 6_000, "ERIA47", {
+        bi_trigger_direction_status: null,
+        bi_trigger_direction_label: null,
+        overview_status: "failed",
+        overview_image_path: null,
+      }),
+      source(43002, "Entry LPR 2", 7_000, "ERIA47"),
+    ]]]),
+    now: BASE + 30_000,
+  });
+  assert.equal(decision.status, "proposed");
+  assert.equal(decision.sourceReadId, 43002);
+  assert.equal(decision.payloadReadId, 43002);
+  assert.equal(decision.metadata.sourceEvidenceCount, 2);
+  assert.equal(decision.metadata.directionEvidenceCount, 1);
+  assert.equal(decision.metadata.plateEvidenceClass, "exact");
+  assert.equal(decision.metadata.identityReads[0].directionStatus, "");
+});
+
+test("a missing-direction singleton waits for direction-authoritative Cam143 evidence", () => {
+  const currentTarget = target({ id: 43010, plate_number: "ERIA47" });
+  const decisions = buildEntryLprFallbackDecisions({
+    targets: [currentTarget],
+    sourcesByTarget: new Map([[currentTarget.id, [
+      source(43011, "Entry LPR 1", 10_000, "ERIA47", {
+        bi_trigger_direction_status: null,
+        bi_trigger_direction_label: null,
+      }),
+    ]]]),
+    now: BASE + 30_000,
+  });
+  assert.deepEqual(decisions, []);
+});
+
+test("two competing single-camera events remain ambiguous", () => {
+  const currentTarget = target({
+    id: 43020,
+    route_expected_delta_ms: 10_600,
+    route_tolerance_ms: 3_000,
+    route_event_window_ms: 3_000,
+  });
+  const [decision] = buildEntryLprFallbackDecisions({
+    targets: [currentTarget],
+    sourcesByTarget: new Map([[currentTarget.id, [
+      source(43021, "Entry LPR 1", 8_000, "BZGJ52"),
+      source(43022, "Entry LPR 1", 13_200, "BZGJ52"),
+    ]]]),
+    now: BASE + 30_000,
+  });
+  assert.equal(decision.status, "rejected");
+  assert.equal(decision.reason, "ENTRY_FALLBACK_AMBIGUOUS");
 });
 
 test("two plausible Entry events fail closed and one event cannot serve two Street targets", () => {
@@ -311,7 +402,7 @@ test("when both corroborating reads own Cam143 views, the strongest overview pay
     ]]]),
     now: BASE + 30_000,
   });
-  assert.equal(decision.sourceReadId, 42001, "identity source rank remains independent");
+  assert.equal(decision.sourceReadId, 42002, "the selected payload owner is the immutable copy source");
   assert.equal(decision.payloadReadId, 42002, "stronger Cam143 detection wins the copied payload");
 });
 
@@ -385,11 +476,11 @@ test("entry fallback Shadow status excludes legacy raw-image decisions", async (
   assert.equal(status.overviewPayloadMode, "shadow");
   assert.match(
     statements[0],
-    /decision\.algorithm_revision = 'entry-lpr-route-fallback-v2-entry-overview'/,
+    /decision\.algorithm_revision = 'entry-lpr-route-fallback-v3-guarded-entry-overview'/,
   );
   assert.match(
     statements[1],
-    /WHERE algorithm_revision = 'entry-lpr-route-fallback-v2-entry-overview'/,
+    /WHERE algorithm_revision = 'entry-lpr-route-fallback-v3-guarded-entry-overview'/,
   );
 });
 
@@ -411,7 +502,7 @@ test("claim and apply require immutable Cam143 payload evidence and both active 
   for (const sql of [claim, apply]) {
     assert.match(sql, /settings\.mode = 'active'/);
     assert.match(sql, /settings\.overview_payload_mode = 'active'/);
-    assert.match(sql, /entry-lpr-route-fallback-v2-entry-overview/);
+    assert.match(sql, /entry-lpr-route-fallback-v3-guarded-entry-overview/);
     assert.match(sql, /payload\.vehicle_image_source_kind =/);
     assert.match(sql, /payload\.vehicle_image_path = decision\.payload_image_path_snapshot/);
     assert.match(sql, /payload\.vehicle_image_selection_metadata IS NOT DISTINCT FROM decision\.payload_selection_metadata/);
@@ -426,6 +517,7 @@ test("claim and apply require immutable Cam143 payload evidence and both active 
   assert.match(apply, /target\.plate_number[^]*decision\.target_plate_snapshot/);
   assert.match(apply, /vehicle_image_source_kind = 'entry_overview_route_fallback'/);
   assert.match(apply, /vehicle_image_source_read_id = decision\.payload_read_id/);
+  assert.match(apply, /decision\.payload_read_id = decision\.source_read_id/);
   assert.match(apply, /target\.vehicle_image_path IS NULL/);
 });
 

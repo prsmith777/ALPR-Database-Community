@@ -81,7 +81,7 @@ test("Blue Iris vehicle frames are bounded, read-owned, and exposed as a two-vie
   assert.match(reconciliation, /vehicle_image_path/);
   assert.match(table, /Vehicle view:/);
   assert.match(table, /Recording unavailable/);
-  assert.match(table, /Legacy plate-camera view/);
+  assert.match(table, /No complete vehicle was found in the available Vehicle View window/);
   assert.match(table, /Unavailable nighttime/);
   assert.match(table, /Blue Iris did not provide a validated direction/);
   assert.match(table, /Queued for daytime overview/);

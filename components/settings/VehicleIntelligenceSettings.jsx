@@ -472,9 +472,9 @@ export default function VehicleIntelligenceSettings({
       if (!result.success) throw new Error(result.error);
       await reloadOverviewSetup();
       setMessage(entryFallbackMode === "active" && entryFallbackPayloadMode === "active"
-        ? "Paired-camera fallback is active. Two Entry LPR reads prove identity; only a validated Entry Overview (Cam143) image may be copied."
+        ? "Guarded driveway fallback is active. Dual Entry LPR evidence is preferred; a single direction-authoritative read may qualify only under the strict identity, timing, and ambiguity checks."
         : entryFallbackMode === "shadow"
-          ? "Paired-camera fallback is observing route matches only; no image is changed."
+          ? "Guarded driveway fallback is observing route matches only; no image is changed."
           : entryFallbackPayloadMode !== "active"
             ? "Route matching was saved, but Cam143 payload copying remains guarded in Off or Shadow mode."
           : "Paired-camera fallback is paused.");
@@ -1027,9 +1027,9 @@ export default function VehicleIntelligenceSettings({
               <div className="space-y-4 rounded-lg border p-4">
                 <div className="flex flex-wrap items-start justify-between gap-4">
                   <div className="max-w-3xl">
-                    <div className="font-medium">Paired-camera route fallback</div>
+                    <div className="font-medium">Guarded Entry route fallback</div>
                     <p className="mt-1 text-xs text-muted-foreground">
-                      If the primary overview and companion sharing both fail, two configured Entry LPR reads must first prove camera order, direction, timing, and plate identity. A validated daytime Entry Overview (Cam143) view belonging to one of those exact reads may then supply the image. Cam143 never establishes plate identity, and a source-only trigger never creates a target read.
+                      If the primary overview and companion sharing both fail, Entry LPR evidence must prove route timing and plate identity. Two-camera evidence is preferred. One Entry read may qualify only when it has authoritative matching Blue Iris direction, a ready daytime Entry Overview (Cam143) view, an exact plate or one confusion-normalized OCR edit on a plate of at least five characters, and no competing plausible event. Conflicting direction, short fuzzy plates, nighttime evidence, and ambiguity fail closed. Cam143 supplies the image but never establishes plate identity, and a source-only trigger never creates a target read.
                     </p>
                   </div>
                   <Badge variant={overviewSetup?.entryFallback?.mode === "active" && overviewSetup?.entryFallback?.overviewPayloadMode === "active" ? "default" : "secondary"}>
@@ -1229,7 +1229,7 @@ export default function VehicleIntelligenceSettings({
                 <div className="mb-4 max-w-4xl">
                   <div className="font-medium">Direct plate-camera overview mappings</div>
                   <p className="mt-1 text-xs text-muted-foreground">
-                    These mappings create the normal Vehicle View for every eligible plate read. For Entry LPR 1 and Entry LPR 2, select Entry overview so each read retrieves its own image from Entry Overview (Cam143). This is separate from the paired-camera route fallback above, which starts with an existing Street LPR read and uses two Entry LPR reads only to corroborate a rare driveway turn.
+                    These mappings create the normal Vehicle View for every eligible plate read. For Entry LPR 1 and Entry LPR 2, select Entry overview so each read retrieves its own image from Entry Overview (Cam143). This is separate from the guarded route fallback above, which starts with an existing Street LPR read, prefers two corroborating Entry reads, and permits one only under strict direction, timing, identity, payload, and ambiguity safeguards.
                   </p>
                 </div>
                 <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">

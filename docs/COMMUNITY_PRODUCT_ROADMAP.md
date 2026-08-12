@@ -598,12 +598,16 @@ notes. Updates remain externally orchestrated.
   the live path. Entry LPR driveway fallback is implemented as the final
   shadow-first read-to-read layer after primary retrieval and Street companion
   sharing. Administrators configure explicit routes from an existing Street
-  camera and direction to two Entry LPR cameras, one Entry direction, a signed
-  expected delta, tolerance, and inter-camera event window. Both Entry cameras
-  must corroborate one unique daytime event. Exact corrected plate identity is
-  preferred; one confusion-normalized edit is allowed only with dual-camera
-  consensus and a clear timing margin. Active mode copies the chosen full Entry
-  capture into a separate target-read file with direct provenance. It never
+  camera and direction to two configured Entry LPR camera slots, one Entry
+  direction, a signed expected delta, tolerance, and inter-camera event window.
+  Evidence from both Entry cameras is preferred, but a single Entry read may
+  qualify when it has authoritative matching Blue Iris direction, bounded route
+  timing, a ready daytime Cam143 Vehicle View, acceptable plate identity, and no
+  competing plausible event. Exact corrected plate identity is preferred. One
+  confusion-normalized edit is permitted only for plates of at least five
+  characters under the stricter single-read safeguards. Active mode copies the
+  selected validated Cam143 image into a separate target-read file with direct
+  provenance. It never
   synthesizes a missing Street read, overwrites a ready image, processes night,
   or fills ambiguity, direction, profile, and configuration outcomes.
 - Plate-anchored daytime Entry Overview Vehicle Views now reuse the same stable,
@@ -622,11 +626,14 @@ notes. Updates remain externally orchestrated.
   No Entry Overview motion action, camera clone, or second export worker is
   required. Direct Entry mappings and the rare Street-to-driveway route are
   deliberately separate: each eligible Entry LPR read retrieves its own Cam143
-  primary view, while an existing Street read may be considered only after two
-  exact Entry LPR reads corroborate one configured route. The paired Entry reads
-  continue to establish identity and timing. A separately gated Cam143 payload
-  may supply only a ready daytime `entry_overview_primary` image owned by one of
-  those exact reads; Cam143 never creates or identifies the Street event. Route
+  primary view, while an existing Street read may be considered only under one
+  configured route. Two matching Entry reads provide stronger corroboration and
+  are preferred. A single Entry read may be used only when it supplies the
+  authoritative matching direction and passes the stricter identity, timing,
+  payload, and ambiguity checks. A separately gated Cam143 payload may supply
+  only a ready daytime `entry_overview_primary` image owned by that selected
+  direction-authoritative read; Cam143 never creates or identifies the Street
+  event. Route
   matching and payload use each start Off/Shadow and must both be Active before
   a validated payload can be copied to a distinct target-read file.
 - A separate, direction-independent Entry Overview history campaign can upgrade
@@ -703,12 +710,15 @@ be restored. Monochrome nighttime captures do not receive a direction result.
   writes. Review every ambiguous or unmatched outcome before changing
   tolerances; do not synthesize Street reads, enable nighttime processing, or
   restore the retired clip-based direction analyzer.
-- Validate Cam143 fallback payload proposals in Shadow against the existing
-  dual-Entry-LPR plate/timing decisions before enabling writes. Confirm that
-  every proposed payload belongs to one of the two exact corroborating reads,
-  carries ready daytime `entry_overview_primary` provenance, and leaves missing,
-  stale, nighttime, processing, or ambiguous payloads unchanged. Never let the
-  overview image establish identity or synthesize a missing Street read.
+- Validate Cam143 fallback payload proposals in Shadow against the guarded
+  Entry-LPR plate, direction, and timing decisions before enabling writes.
+  Confirm that dual-camera evidence is preferred and that every single-read
+  proposal has authoritative matching Blue Iris direction, an exact or guarded
+  one-edit plate match, bounded timing, a clear ambiguity margin, and a ready
+  daytime `entry_overview_primary` payload owned by that same read. Leave
+  missing, stale, nighttime, processing, conflicting-direction, short-fuzzy, or
+  ambiguous evidence unchanged. Never let the overview image establish identity
+  or synthesize a missing Street read.
 - Expand Vehicle ReID calibration with larger labeled local samples and
   camera-pair reporting before making stronger labels or applying thresholds.
 - Consider pgvector only when the bounded in-process cosine scan no longer
