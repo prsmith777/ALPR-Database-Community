@@ -3040,7 +3040,7 @@ export default function PlateTable({
                                   || `Failed after ${selectedImage.vehicleImageAttemptCount || selectedVehicleImageAttemptLimit} attempts`),
                             unavailable: {
                               RECORDING_UNAVAILABLE: "Recording unavailable or expired",
-                              VEHICLE_NOT_VISIBLE: "Legacy plate-camera view did not contain a complete vehicle",
+                              VEHICLE_NOT_VISIBLE: "No complete vehicle was found in the available Vehicle View window",
                               CAMERA_NOT_MAPPED: "Camera not mapped in Blue Iris",
                               OVERVIEW_PROFILE_NOT_CONFIGURED: "No overview profile was configured for this camera and direction",
                               OVERVIEW_PROFILE_AMBIGUOUS: "Multiple overview profiles match this camera and direction",
