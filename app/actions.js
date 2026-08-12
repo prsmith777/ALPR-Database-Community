@@ -1826,6 +1826,8 @@ const ENTRY_OVERVIEW_HISTORY_PLATE_CAMERAS = Object.freeze([
   "Entry LPR 1",
   "Entry LPR 2",
 ]);
+const ENTRY_OVERVIEW_SOURCE_CAMERA = "Entry Overview";
+const ENTRY_OVERVIEW_SOURCE_SHORT_NAME = "Cam143";
 const ENTRY_OVERVIEW_HISTORY_BATCH_SIZES = new Set([1, 5, 25, 250]);
 
 function entryOverviewHistoryProfileData(profile) {
@@ -2237,8 +2239,22 @@ export async function saveVehicleOverviewPairProfile(input = {}) {
     if (!["street", "entry"].includes(overviewContext)) {
       throw new Error("Overview use must be Street or Entry.");
     }
-    if (sourceRole === "primary" && overviewContext === "entry" && !sourceCameraShortName) {
-      throw new Error("Entry Overview requires its Blue Iris short name, such as Cam143.");
+    const isEntryPlateCamera = ENTRY_OVERVIEW_HISTORY_PLATE_CAMERAS.includes(plateCameraName);
+    if (overviewContext === "entry") {
+      if (sourceRole !== "primary") {
+        throw new Error("Entry Overview mappings must use the Primary overview role.");
+      }
+      if (!isEntryPlateCamera) {
+        throw new Error("Entry Overview mappings are limited to Entry LPR 1 and Entry LPR 2.");
+      }
+      if (
+        sourceCameraName.toLowerCase() !== ENTRY_OVERVIEW_SOURCE_CAMERA.toLowerCase()
+        || sourceCameraShortName.toLowerCase() !== ENTRY_OVERVIEW_SOURCE_SHORT_NAME.toLowerCase()
+      ) {
+        throw new Error("Entry Overview must use the Blue Iris display name Entry Overview and short name Cam143.");
+      }
+    } else if (sourceRole === "primary" && isEntryPlateCamera) {
+      throw new Error("Entry LPR primary Vehicle Views must use the Entry overview setting.");
     }
     if (!Number.isInteger(expectedDeltaMs) || expectedDeltaMs < -30_000 || expectedDeltaMs > 30_000) {
       throw new Error("Expected timing delta must be between -30000 and 30000 milliseconds.");
@@ -2256,7 +2272,12 @@ export async function saveVehicleOverviewPairProfile(input = {}) {
       throw new Error("Select a configured direction from the chosen plate camera.");
     }
     const runtime = await getBlueIrisVehicleFrameRuntime();
-    let persistedSourceCameraName = sourceCameraName;
+    let persistedSourceCameraName = overviewContext === "entry"
+      ? ENTRY_OVERVIEW_SOURCE_CAMERA
+      : sourceCameraName;
+    const persistedSourceCameraShortName = overviewContext === "entry"
+      ? ENTRY_OVERVIEW_SOURCE_SHORT_NAME
+      : sourceCameraShortName;
     if (sourceRole === "primary" && input.enabled !== false) {
       const existingProfiles = await runtime.repository.listPrimaryOverviewProfilesForRead({
         plateCameraName,
@@ -2279,7 +2300,7 @@ export async function saveVehicleOverviewPairProfile(input = {}) {
     }
     const saved = await runtime.repository.saveOverviewPairProfile({
       sourceCameraName: persistedSourceCameraName,
-      sourceCameraShortName,
+      sourceCameraShortName: persistedSourceCameraShortName,
       plateCameraName,
       directionLabel,
       sourceRole,
@@ -2348,6 +2369,10 @@ export async function setVehicleEntryFallbackMode(input = {}) {
     if (!["off", "shadow", "active"].includes(mode)) {
       throw new Error("Select Off, Shadow, or Active for Entry LPR fallback.");
     }
+    const overviewPayloadMode = String(input.overviewPayloadMode || "shadow").trim().toLowerCase();
+    if (!["off", "shadow", "active"].includes(overviewPayloadMode)) {
+      throw new Error("Select Off, Shadow, or Active for the Entry Overview payload.");
+    }
     const observationStartedAt = input.observationStartedAt
       ? new Date(input.observationStartedAt)
       : null;
@@ -2356,6 +2381,7 @@ export async function setVehicleEntryFallbackMode(input = {}) {
     }
     const runtime = await getBlueIrisVehicleFrameRuntime();
     const saved = await runtime.repository.setEntryFallbackMode(mode, {
+      overviewPayloadMode,
       observationStartedAt: observationStartedAt?.toISOString() || null,
       actor: principal,
     });
@@ -2366,6 +2392,7 @@ export async function setVehicleEntryFallbackMode(input = {}) {
       success: true,
       data: {
         mode: saved.mode,
+        overviewPayloadMode: saved.overview_payload_mode || "shadow",
         observationStartedAt: saved.observation_started_at,
         updatedAt: saved.updated_at,
       },

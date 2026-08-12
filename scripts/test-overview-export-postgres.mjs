@@ -54,7 +54,7 @@ try {
      ) VALUES (
        'MIGTEST', $1, CURRENT_TIMESTAMP - INTERVAL '1 minute',
        'ready', 'Eastbound', 1, 'blue-iris-zone-crossing-v1',
-       'overview', 'processing', 1, TRUE, 'entry_overview_primary'
+       'overview', 'processing', 1, TRUE, 'entry_overview_route_fallback'
      ) RETURNING id`,
     [plateCamera]
   );
@@ -70,11 +70,102 @@ try {
   );
   migrationCompatibilityProfileId = Number(migrationCompatibilityProfile.rows[0].id);
   await pool.query(migrations);
+  const widenedSourceKind = await pool.query(
+    `SELECT vehicle_image_source_kind,
+            character_maximum_length
+     FROM public.plate_reads
+     CROSS JOIN information_schema.columns
+     WHERE plate_reads.id = $1
+       AND table_schema = 'public'
+       AND table_name = 'plate_reads'
+       AND column_name = 'vehicle_image_source_kind'`,
+    [migrationCompatibilityReadId],
+  );
+  assert.equal(widenedSourceKind.rows[0].vehicle_image_source_kind, "entry_overview_route_fallback");
+  assert.equal(Number(widenedSourceKind.rows[0].character_maximum_length), 40);
+
+  // Recreate the exact legacy three-column uniqueness with an arbitrary name.
+  // The additive migration must discover it from catalog column identity, drop
+  // it, preserve the v1 decision, and permit a v2 decision for the same route.
+  const legacyFallbackClient = await pool.connect();
+  await legacyFallbackClient.query("BEGIN");
+  try {
+    const legacyRoute = await legacyFallbackClient.query(
+      `INSERT INTO public.vehicle_entry_route_profiles (
+         route_name, target_camera_name, target_direction_label,
+         source_direction_label, source_camera_names, expected_delta_ms,
+         tolerance_ms, event_window_ms, minimum_source_count, priority, enabled
+       ) VALUES (
+         $1, $2, 'Eastbound', 'Entering', ARRAY[$3,$4]::text[],
+         10000, 3000, 3000, 2, 99, TRUE
+       ) RETURNING id, revision`,
+      [
+        `Legacy route ${suffix}`,
+        plateCamera,
+        `Legacy Entry LPR 1 ${suffix}`,
+        `Legacy Entry LPR 2 ${suffix}`,
+      ],
+    );
+    const legacyRouteId = Number(legacyRoute.rows[0].id);
+    const legacyRouteRevision = Number(legacyRoute.rows[0].revision);
+    await legacyFallbackClient.query(
+      "DROP INDEX public.idx_vehicle_entry_fallback_algorithm_route_target",
+    );
+    await legacyFallbackClient.query(
+      `ALTER TABLE public.vehicle_entry_fallback_decisions
+       ADD CONSTRAINT codex_arbitrary_legacy_fallback_unique
+       UNIQUE (target_read_id, route_profile_id, route_profile_revision)`,
+    );
+    await legacyFallbackClient.query(
+      `INSERT INTO public.vehicle_entry_fallback_decisions (
+         decision_identity, route_profile_id, route_profile_revision,
+         target_read_id, status, decision_reason, route_name_snapshot,
+         algorithm_revision
+       ) VALUES ($1, $2, $3, $4, 'rejected', 'legacy_fixture', $5,
+                 'entry-lpr-route-fallback-v1')`,
+      [
+        crypto.randomBytes(32).toString("hex"),
+        legacyRouteId,
+        legacyRouteRevision,
+        migrationCompatibilityReadId,
+        `Legacy route ${suffix}`,
+      ],
+    );
+    await legacyFallbackClient.query(migrations);
+    await legacyFallbackClient.query(
+      `INSERT INTO public.vehicle_entry_fallback_decisions (
+         decision_identity, route_profile_id, route_profile_revision,
+         target_read_id, status, decision_reason, route_name_snapshot,
+         algorithm_revision
+       ) VALUES ($1, $2, $3, $4, 'rejected', 'v2_fixture', $5,
+                 'entry-lpr-route-fallback-v2-entry-overview')`,
+      [
+        crypto.randomBytes(32).toString("hex"),
+        legacyRouteId,
+        legacyRouteRevision,
+        migrationCompatibilityReadId,
+        `Legacy route ${suffix}`,
+      ],
+    );
+    const fallbackVersions = await legacyFallbackClient.query(
+      `SELECT algorithm_revision
+       FROM public.vehicle_entry_fallback_decisions
+       WHERE target_read_id = $1 AND route_profile_id = $2
+       ORDER BY algorithm_revision`,
+      [migrationCompatibilityReadId, legacyRouteId],
+    );
+    assert.deepEqual(
+      fallbackVersions.rows.map((row) => row.algorithm_revision),
+      ["entry-lpr-route-fallback-v1", "entry-lpr-route-fallback-v2-entry-overview"],
+    );
+  } finally {
+    await legacyFallbackClient.query("ROLLBACK").catch(() => {});
+    legacyFallbackClient.release();
+  }
 
   // A legacy case-variant duplicate must stop the migration with a clear,
   // non-destructive diagnostic rather than choosing a profile silently.
   const duplicateClient = await pool.connect();
-  clients.push(duplicateClient);
   await duplicateClient.query("BEGIN");
   try {
     await duplicateClient.query("DROP INDEX public.idx_vehicle_overview_primary_profile_identity");
@@ -93,6 +184,7 @@ try {
     );
   } finally {
     await duplicateClient.query("ROLLBACK").catch(() => {});
+    duplicateClient.release();
   }
 
   const profile = await pool.query(

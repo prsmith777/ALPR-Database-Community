@@ -65,6 +65,8 @@ const ENTRY_OVERVIEW_HISTORY_CAMERAS = Object.freeze([
   "Entry LPR 1",
   "Entry LPR 2",
 ]);
+const ENTRY_OVERVIEW_SOURCE_CAMERA = "Entry Overview";
+const ENTRY_OVERVIEW_SOURCE_SHORT_NAME = "Cam143";
 
 function entryOverviewHistoryDeltas(profiles = []) {
   return Object.fromEntries(ENTRY_OVERVIEW_HISTORY_CAMERAS.map((plateCameraName) => {
@@ -146,6 +148,9 @@ export default function VehicleIntelligenceSettings({
   const [entryFallbackMode, setEntryFallbackMode] = useState(
     initialOverviewSetup?.entryFallback?.mode || "off"
   );
+  const [entryFallbackPayloadMode, setEntryFallbackPayloadMode] = useState(
+    initialOverviewSetup?.entryFallback?.overviewPayloadMode || "shadow"
+  );
   const [entryFallbackStart, setEntryFallbackStart] = useState(
     localDateTimeInput(initialOverviewSetup?.entryFallback?.observationStartedAt)
   );
@@ -204,8 +209,9 @@ export default function VehicleIntelligenceSettings({
 
   useEffect(() => {
     setEntryFallbackMode(overviewSetup?.entryFallback?.mode || "off");
+    setEntryFallbackPayloadMode(overviewSetup?.entryFallback?.overviewPayloadMode || "shadow");
     setEntryFallbackStart(localDateTimeInput(overviewSetup?.entryFallback?.observationStartedAt));
-  }, [overviewSetup?.entryFallback?.mode, overviewSetup?.entryFallback?.observationStartedAt]);
+  }, [overviewSetup?.entryFallback?.mode, overviewSetup?.entryFallback?.observationStartedAt, overviewSetup?.entryFallback?.overviewPayloadMode]);
 
   useEffect(() => {
     setEntryHistoryDeltas(entryOverviewHistoryDeltas(overviewSetup?.entryOverviewHistory?.profiles));
@@ -460,14 +466,17 @@ export default function VehicleIntelligenceSettings({
     try {
       const result = await setVehicleEntryFallbackMode({
         mode: entryFallbackMode,
+        overviewPayloadMode: entryFallbackPayloadMode,
         observationStartedAt: entryFallbackStart || null,
       });
       if (!result.success) throw new Error(result.error);
       await reloadOverviewSetup();
-      setMessage(entryFallbackMode === "active"
-        ? "Paired-camera fallback is active for uniquely corroborated configured routes."
+      setMessage(entryFallbackMode === "active" && entryFallbackPayloadMode === "active"
+        ? "Paired-camera fallback is active. Two Entry LPR reads prove identity; only a validated Entry Overview (Cam143) image may be copied."
         : entryFallbackMode === "shadow"
           ? "Paired-camera fallback is observing route matches only; no image is changed."
+          : entryFallbackPayloadMode !== "active"
+            ? "Route matching was saved, but Cam143 payload copying remains guarded in Off or Shadow mode."
           : "Paired-camera fallback is paused.");
     } catch (error) { setMessage(error.message); }
     finally { setBusy(""); }
@@ -1020,13 +1029,13 @@ export default function VehicleIntelligenceSettings({
                   <div className="max-w-3xl">
                     <div className="font-medium">Paired-camera route fallback</div>
                     <p className="mt-1 text-xs text-muted-foreground">
-                      If the primary overview and companion sharing both fail, two configured source-camera reads may supply a daytime vehicle image for an existing target read. The route must match camera order, directions, timing, and plate identity. It never creates a target read from a source-only trigger.
+                      If the primary overview and companion sharing both fail, two configured Entry LPR reads must first prove camera order, direction, timing, and plate identity. A validated daytime Entry Overview (Cam143) view belonging to one of those exact reads may then supply the image. Cam143 never establishes plate identity, and a source-only trigger never creates a target read.
                     </p>
                   </div>
-                  <Badge variant={overviewSetup?.entryFallback?.mode === "active" ? "default" : "secondary"}>
-                    {overviewSetup?.entryFallback?.mode === "active"
+                  <Badge variant={overviewSetup?.entryFallback?.mode === "active" && overviewSetup?.entryFallback?.overviewPayloadMode === "active" ? "default" : "secondary"}>
+                    {overviewSetup?.entryFallback?.mode === "active" && overviewSetup?.entryFallback?.overviewPayloadMode === "active"
                       ? "Active"
-                      : overviewSetup?.entryFallback?.mode === "shadow"
+                      : overviewSetup?.entryFallback?.mode === "shadow" || overviewSetup?.entryFallback?.overviewPayloadMode === "shadow"
                         ? "Shadow only"
                         : "Off"}
                   </Badge>
@@ -1038,7 +1047,7 @@ export default function VehicleIntelligenceSettings({
                   <div className="rounded-md border p-2"><div className="font-semibold">{Number(overviewSetup?.entryFallback?.rejected || 0).toLocaleString()}</div><div className="text-xs text-muted-foreground">rejected</div></div>
                   <div className="rounded-md border p-2"><div className="font-semibold">{Number(overviewSetup?.entryFallback?.failed || 0).toLocaleString()}</div><div className="text-xs text-muted-foreground">copy failures</div></div>
                 </div>
-                <div className="grid gap-3 md:grid-cols-[15rem_18rem_auto] md:items-end">
+                <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-[15rem_15rem_18rem_auto] lg:items-end">
                   <div className="space-y-2">
                     <Label>Fallback mode</Label>
                     <Select value={entryFallbackMode} onValueChange={setEntryFallbackMode}>
@@ -1051,20 +1060,33 @@ export default function VehicleIntelligenceSettings({
                     </Select>
                   </div>
                   <div className="space-y-2">
+                    <Label>Cam143 payload mode</Label>
+                    <Select value={entryFallbackPayloadMode} onValueChange={setEntryFallbackPayloadMode}>
+                      <SelectTrigger><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="off">Off</SelectItem>
+                        <SelectItem value="shadow">Shadow validation only</SelectItem>
+                        <SelectItem value="active">Active validated payload</SelectItem>
+                      </SelectContent>
+                    </Select>
+                    <p className="text-xs text-muted-foreground">Keep Shadow until proposed Entry Overview payloads have been reviewed.</p>
+                  </div>
+                  <div className="space-y-2">
                     <Label htmlFor="entry-fallback-start">Observe reads after</Label>
                     <Input id="entry-fallback-start" type="datetime-local" value={entryFallbackStart} onChange={(event) => setEntryFallbackStart(event.target.value)} />
                   </div>
                   <Button
                     type="button"
-                    variant={entryFallbackMode === "active" ? "default" : "secondary"}
+                    variant={entryFallbackMode === "active" && entryFallbackPayloadMode === "active" ? "default" : "secondary"}
                     disabled={Boolean(busy) || (
                       entryFallbackMode === overviewSetup?.entryFallback?.mode
+                      && entryFallbackPayloadMode === (overviewSetup?.entryFallback?.overviewPayloadMode || "shadow")
                       && entryFallbackStart === localDateTimeInput(overviewSetup?.entryFallback?.observationStartedAt)
                     )}
                     onClick={saveEntryFallbackMode}
                   >
                     {busy === "entry-fallback-mode" ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
-                    Save fallback mode
+                    Save guarded fallback
                   </Button>
                 </div>
 
@@ -1173,14 +1195,25 @@ export default function VehicleIntelligenceSettings({
                     <div className="overflow-x-auto border-t">
                       <table className="w-full min-w-[760px] text-left text-xs">
                         <thead className="border-b text-muted-foreground">
-                          <tr><th className="px-3 py-2">Plate</th><th className="px-3 py-2">Route</th><th className="px-3 py-2">Reads</th><th className="px-3 py-2">Timing</th><th className="px-3 py-2">Decision</th></tr>
+                          <tr><th className="px-3 py-2">Plate</th><th className="px-3 py-2">Route</th><th className="px-3 py-2">Identity reads</th><th className="px-3 py-2">Cam143 payload</th><th className="px-3 py-2">Timing</th><th className="px-3 py-2">Decision</th></tr>
                         </thead>
                         <tbody>
                           {overviewSetup.entryFallback.recent.map((item) => (
                             <tr key={item.id} className="border-b last:border-0">
                               <td className="px-3 py-2 font-mono">{item.targetPlate || "Unknown"}</td>
                               <td className="px-3 py-2">{item.routeName}</td>
-                              <td className="px-3 py-2">{item.sourceReadId ? `#${item.sourceReadId}` : "No source"} to #{item.targetReadId}</td>
+                              <td className="px-3 py-2">
+                                {[item.sourceReadId, ...(item.corroboratingReadIds || [])]
+                                  .filter(Boolean)
+                                  .map((readId) => `#${readId}`)
+                                  .join(" + ") || "No corroborated pair"}
+                                {` to Street #${item.targetReadId}`}
+                              </td>
+                              <td className="px-3 py-2">
+                                {item.payloadReadId
+                                  ? `Entry Overview from #${item.payloadReadId}${item.payloadImageWidth && item.payloadImageHeight ? ` (${item.payloadImageWidth}x${item.payloadImageHeight})` : ""}`
+                                  : "Waiting for validated Entry Overview"}
+                              </td>
                               <td className="px-3 py-2 font-mono">{item.actualDeltaMs == null ? "n/a" : `${item.actualDeltaMs} ms`}</td>
                               <td className="px-3 py-2">{item.status}: {item.errorCode || item.reason}</td>
                             </tr>
@@ -1193,10 +1226,39 @@ export default function VehicleIntelligenceSettings({
               </div>
 
               <div className="rounded-lg border p-4">
+                <div className="mb-4 max-w-4xl">
+                  <div className="font-medium">Direct plate-camera overview mappings</div>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    These mappings create the normal Vehicle View for every eligible plate read. For Entry LPR 1 and Entry LPR 2, select Entry overview so each read retrieves its own image from Entry Overview (Cam143). This is separate from the paired-camera route fallback above, which starts with an existing Street LPR read and uses two Entry LPR reads only to corroborate a rare driveway turn.
+                  </p>
+                </div>
                 <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
                   <div className="space-y-2">
                     <Label>Overview use</Label>
-                    <Select value={overviewDraft.overviewContext} onValueChange={(overviewContext) => setOverviewDraft({ ...overviewDraft, overviewContext })}>
+                    <Select
+                      value={overviewDraft.overviewContext}
+                      onValueChange={(overviewContext) => {
+                        if (overviewContext !== "entry") {
+                          setOverviewDraft({ ...overviewDraft, overviewContext });
+                          return;
+                        }
+                        const entryPlateCamera = (overviewSetup?.plateCameras || [])
+                          .find((item) => ENTRY_OVERVIEW_HISTORY_CAMERAS.includes(item.cameraName));
+                        const plateCameraName = ENTRY_OVERVIEW_HISTORY_CAMERAS.includes(overviewDraft.plateCameraName)
+                          ? overviewDraft.plateCameraName
+                          : entryPlateCamera?.cameraName || overviewDraft.plateCameraName;
+                        const selected = overviewSetup?.plateCameras?.find((item) => item.cameraName === plateCameraName);
+                        setOverviewDraft({
+                          ...overviewDraft,
+                          overviewContext,
+                          sourceCameraName: ENTRY_OVERVIEW_SOURCE_CAMERA,
+                          sourceCameraShortName: ENTRY_OVERVIEW_SOURCE_SHORT_NAME,
+                          sourceRole: "primary",
+                          plateCameraName,
+                          directionLabel: selected?.directions?.[0] || overviewDraft.directionLabel,
+                        });
+                      }}
+                    >
                       <SelectTrigger><SelectValue /></SelectTrigger>
                       <SelectContent>
                         <SelectItem value="street">Street overview</SelectItem>
@@ -1210,13 +1272,22 @@ export default function VehicleIntelligenceSettings({
                       id="overview-source-camera"
                       list="overview-source-cameras"
                       value={overviewDraft.sourceCameraName}
-                      onChange={(event) => setOverviewDraft({ ...overviewDraft, sourceCameraName: event.target.value })}
+                      onChange={(event) => {
+                        const sourceCameraName = event.target.value;
+                        setOverviewDraft({
+                          ...overviewDraft,
+                          sourceCameraName,
+                          sourceCameraShortName: overviewDraft.overviewContext === "entry" && sourceCameraName.trim().toLowerCase() === ENTRY_OVERVIEW_SOURCE_CAMERA.toLowerCase()
+                            ? ENTRY_OVERVIEW_SOURCE_SHORT_NAME
+                            : overviewDraft.sourceCameraShortName,
+                        });
+                      }}
                       placeholder="Example: Street Overview or Entry Overview"
                     />
                     <datalist id="overview-source-cameras">
-                      {(overviewSetup?.status?.observedSources || []).map((source) => <option key={source} value={source} />)}
+                      {[...new Set([...(overviewSetup?.status?.observedSources || []), ENTRY_OVERVIEW_SOURCE_CAMERA])].map((source) => <option key={source} value={source} />)}
                     </datalist>
-                    <p className="text-xs text-muted-foreground">Use the Blue Iris display name. Entry Overview is bound separately to its reviewed short name.</p>
+                    <p className="text-xs text-muted-foreground">This is an editable field, not a restricted list. Use the Blue Iris display name; Entry Overview is bound separately to Cam143.</p>
                   </div>
                   <div className="space-y-2">
                     <Label htmlFor="overview-source-camera-short-name">Blue Iris short name</Label>
@@ -1243,7 +1314,9 @@ export default function VehicleIntelligenceSettings({
                     >
                       <SelectTrigger><SelectValue placeholder="Select a plate camera" /></SelectTrigger>
                       <SelectContent>
-                        {(overviewSetup?.plateCameras || []).map((item) => <SelectItem key={item.cameraName} value={item.cameraName}>{item.cameraName}</SelectItem>)}
+                        {(overviewSetup?.plateCameras || [])
+                          .filter((item) => overviewDraft.overviewContext !== "entry" || ENTRY_OVERVIEW_HISTORY_CAMERAS.includes(item.cameraName))
+                          .map((item) => <SelectItem key={item.cameraName} value={item.cameraName}>{item.cameraName}</SelectItem>)}
                       </SelectContent>
                     </Select>
                   </div>
@@ -1258,13 +1331,22 @@ export default function VehicleIntelligenceSettings({
                   </div>
                   <div className="space-y-2">
                     <Label>Source role</Label>
-                    <Select value={overviewDraft.sourceRole} onValueChange={(sourceRole) => setOverviewDraft({ ...overviewDraft, sourceRole })}>
+                    <Select
+                      value={overviewDraft.sourceRole}
+                      disabled={overviewDraft.overviewContext === "entry"}
+                      onValueChange={(sourceRole) => setOverviewDraft({ ...overviewDraft, sourceRole })}
+                    >
                       <SelectTrigger><SelectValue /></SelectTrigger>
                       <SelectContent>
                         <SelectItem value="primary">Primary overview</SelectItem>
-                        <SelectItem value="fallback">Driveway fallback</SelectItem>
+                        {overviewDraft.overviewContext !== "entry" ? <SelectItem value="fallback">Legacy overview fallback profile</SelectItem> : null}
                       </SelectContent>
                     </Select>
+                    <p className="text-xs text-muted-foreground">
+                      {overviewDraft.overviewContext === "entry"
+                        ? "Entry LPR reads always use Cam143 as their direct Primary overview."
+                        : "The paired driveway route is configured separately above."}
+                    </p>
                   </div>
                   <div className="space-y-2">
                     <Label htmlFor="overview-expected-delta">Expected delta (ms)</Label>

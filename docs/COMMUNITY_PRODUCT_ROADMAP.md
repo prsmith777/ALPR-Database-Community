@@ -18,7 +18,7 @@ reliable background processing.
 6. Audit sensitive searches, exports, corrections, rule changes, and
    destructive maintenance.
 
-## Release candidate baseline — August 11, 2026
+## Release candidate baseline — August 12, 2026
 
 - Application `0.1.19` candidate includes named users and roles, evidence-preserving plate
   review, filter-respecting exports, the searchable help center, local privacy
@@ -620,10 +620,15 @@ notes. Updates remain externally orchestrated.
   claimed; initialization failures release that exact claim into the bounded
   retry policy and back off the worker instead of cycling through the backlog.
   No Entry Overview motion action, camera clone, or second export worker is
-  required. The existing Entry route fallback remains read-to-read and continues
-  using corroborating Entry LPR captures in this release; borrowing an already
-  validated Cam143 Vehicle View is reserved for the next separately reviewed
-  fallback enhancement.
+  required. Direct Entry mappings and the rare Street-to-driveway route are
+  deliberately separate: each eligible Entry LPR read retrieves its own Cam143
+  primary view, while an existing Street read may be considered only after two
+  exact Entry LPR reads corroborate one configured route. The paired Entry reads
+  continue to establish identity and timing. A separately gated Cam143 payload
+  may supply only a ready daytime `entry_overview_primary` image owned by one of
+  those exact reads; Cam143 never creates or identifies the Street event. Route
+  matching and payload use each start Off/Shadow and must both be Active before
+  a validated payload can be copied to a distinct target-read file.
 - A separate, direction-independent Entry Overview history campaign can upgrade
   retained Entry LPR 1/2 reads from an administrator-selected time range,
   including reads that predate reliable direction metadata. It uses immutable
@@ -698,11 +703,12 @@ be restored. Monochrome nighttime captures do not receive a direction result.
   writes. Review every ambiguous or unmatched outcome before changing
   tolerances; do not synthesize Street reads, enable nighttime processing, or
   restore the retired clip-based direction analyzer.
-- After Entry Overview primary mappings have been validated, upgrade the Entry
-  route fallback so its existing dual-Entry-LPR plate/timing corroboration may
-  select a ready `entry_overview_primary` Cam143 image as the payload. Preserve
-  the current one-to-one, daytime-only, fail-closed association rules; never let
-  the overview image establish identity or synthesize a missing Street read.
+- Validate Cam143 fallback payload proposals in Shadow against the existing
+  dual-Entry-LPR plate/timing decisions before enabling writes. Confirm that
+  every proposed payload belongs to one of the two exact corroborating reads,
+  carries ready daytime `entry_overview_primary` provenance, and leaves missing,
+  stale, nighttime, processing, or ambiguous payloads unchanged. Never let the
+  overview image establish identity or synthesize a missing Street read.
 - Expand Vehicle ReID calibration with larger labeled local samples and
   camera-pair reporting before making stronger labels or applying thresholds.
 - Consider pgvector only when the bounded in-process cosine scan no longer
