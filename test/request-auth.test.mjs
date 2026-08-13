@@ -217,6 +217,7 @@ test("unequal secret byte lengths return false without throwing", () => {
 
 test("plate-read route wrapper authorizes before parsing JSON", async () => {
   const events = [];
+  const receiptCalls = [];
   const handler = createIntegrationRouteHandler(
     async () => {
       events.push("process");
@@ -227,7 +228,24 @@ test("plate-read route wrapper authorizes before parsing JSON", async () => {
         events.push("authorize");
         return { ok: false, status: 401 };
       },
-      logger: { log() {}, error() {} },
+      recorder: {
+        async start(details) {
+          receiptCalls.push({ operation: "start", details });
+          return 41;
+        },
+        async complete(details) {
+          receiptCalls.push({ operation: "complete", details });
+        },
+      },
+      logger: {
+        info(event) {
+          events.push(event);
+        },
+        warn(event) {
+          events.push(event);
+        },
+        error() {},
+      },
     }
   );
   const request = makeRequest();
@@ -238,7 +256,18 @@ test("plate-read route wrapper authorizes before parsing JSON", async () => {
 
   const response = await handler(request);
   assert.equal(response.status, 401);
-  assert.deepEqual(events, ["authorize"]);
+  assert.deepEqual(events, [
+    "integration_request_arrived",
+    "authorize",
+    "integration_request_rejected",
+  ]);
+  assert.equal(receiptCalls.length, 2);
+  assert.equal(receiptCalls[0].operation, "start");
+  assert.equal(receiptCalls[0].details.rawText, null);
+  assert.equal(receiptCalls[0].details.data, null);
+  assert.equal(receiptCalls[1].operation, "complete");
+  assert.equal(receiptCalls[1].details.httpStatus, 401);
+  assert.equal(receiptCalls[1].details.errorCode, "UNAUTHORIZED");
 });
 
 test("plate-read wrapper logs no secrets, payloads, paths, or raw failures", async () => {
@@ -345,7 +374,60 @@ test("integration wrapper correlates a successful request with its receipt", asy
   assert.deepEqual(receiptCalls[1].details.processedReadIds, [901]);
 });
 
-test("integration wrapper rejects unsupported media and oversized bodies with receipts", async () => {
+test("integration wrapper accepts Blue Iris JSON sent as text/plain", async () => {
+  const events = [];
+  const logEvents = [];
+  const recorder = {
+    async start(details) {
+      events.push({ operation: "start", details });
+      return 88;
+    },
+    async complete(details) {
+      events.push({ operation: "complete", details });
+    },
+  };
+  const handler = createIntegrationRouteHandler(
+    async (data) => {
+      assert.equal(data.camera, "Driveway LPR");
+      return Response.json({ ok: true }, { status: 201 });
+    },
+    {
+      authorize: async () => ({ ok: true, status: 200 }),
+      recorder,
+      maxBodyBytes: 1024,
+      integration: "blue_iris",
+      logger: {
+        info(event) {
+          logEvents.push(event);
+        },
+        warn(event) {
+          logEvents.push(event);
+        },
+        error() {},
+      },
+    }
+  );
+
+  const rawBody = JSON.stringify({ camera: "Driveway LPR" });
+  const response = await handler(new Request("http://localhost/api/plate-reads", {
+    method: "POST",
+    headers: { "content-type": "text/plain" },
+    body: rawBody,
+  }));
+
+  assert.equal(response.status, 201);
+  assert.deepEqual(logEvents, [
+    "integration_request_arrived",
+    "integration_content_type_compatibility",
+    "integration_request_received",
+  ]);
+  assert.equal(events[0].details.contentType, "text/plain");
+  assert.equal(events[0].details.rawText, rawBody);
+  assert.deepEqual(events[0].details.data, { camera: "Driveway LPR" });
+  assert.equal(events[1].details.httpStatus, 201);
+});
+
+test("integration wrapper rejects oversized bodies with receipts", async () => {
   const events = [];
   const recorder = {
     async start(details) {
@@ -366,13 +448,6 @@ test("integration wrapper rejects unsupported media and oversized bodies with re
     }
   );
 
-  const unsupported = await handler(makeRequest({
-    headers: { "content-type": "text/plain" },
-  }));
-  assert.equal(unsupported.status, 415);
-  assert.equal(events[1].details.errorCode, "UNSUPPORTED_MEDIA_TYPE");
-
-  events.length = 0;
   const oversized = await handler(makeRequest({
     headers: {
       "content-type": "application/json",
