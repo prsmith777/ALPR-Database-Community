@@ -49,10 +49,10 @@ function createHarness({ behavior = "connect" } = {}) {
     },
   };
 
-  const mqttConnect = (url, options) => {
+  const mqttConnect = (options) => {
     const client = new FakeMqttClient();
     clients.push(client);
-    calls.push({ url, options, client });
+    calls.push({ options, client });
 
     queueMicrotask(() => {
       if (behavior === "connect") {
@@ -118,12 +118,12 @@ test("broker cache identities change for connection-affecting credentials and TL
   );
 });
 
-test("broker logging redacts passwords while retaining useful connection details", () => {
+test("broker logging redacts credentials while retaining useful connection details", () => {
   const redacted = redactBrokerConfig(baseBroker);
 
   assert.equal(redacted.password, "[REDACTED]");
   assert.equal(redacted.host, "192.168.0.50");
-  assert.equal(redacted.username, "alpr");
+  assert.equal(redacted.username, "[REDACTED]");
   assert.equal(JSON.stringify(redacted).includes("super-secret"), false);
 });
 
@@ -142,7 +142,9 @@ test("concurrent connection requests share one credential-aware MQTT client", as
   assert.equal(first, second);
   assert.equal(harness.calls.length, 1);
   assert.equal(manager.connectionCount, 1);
-  assert.equal(harness.calls[0].url, "mqtt://192.168.0.50:1883");
+  assert.equal(harness.calls[0].options.protocol, "mqtt");
+  assert.equal(harness.calls[0].options.host, "192.168.0.50");
+  assert.equal(harness.calls[0].options.port, 1883);
   assert.equal(harness.calls[0].options.reconnectPeriod, 5000);
   assert.equal(harness.calls[0].options.username, "alpr");
   assert.equal(harness.calls[0].options.password, "super-secret");

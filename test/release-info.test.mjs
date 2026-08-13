@@ -23,14 +23,14 @@ test("release information resolves a commit-pinned deployment image", () => {
   });
 
   assert.equal(release.version, "0.1.19");
-  assert.equal(release.manualVersion, "1.78");
-  assert.equal(release.manualUpdatedAt, "August 12, 2026");
+  assert.equal(release.manualVersion, "1.79");
+  assert.equal(release.manualUpdatedAt, "August 13, 2026");
   assert.equal(release.gitSha, "8cd2fa8");
   assert.equal(release.channel, "staging");
   assert.equal(release.source, "commit-pinned image");
   assert.equal(release.readOnly, true);
-  assert.equal(release.notes.title, "August 12, 2026 guarded Entry route matching");
-  assert.equal(release.notes.publishedAt, "2026-08-12");
+  assert.equal(release.notes.title, "August 13, 2026 structured operational log visibility");
+  assert.equal(release.notes.publishedAt, "2026-08-13");
   assert.ok(release.notes.items.length >= 4);
 });
 

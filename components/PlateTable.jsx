@@ -330,7 +330,6 @@ export default function PlateTable({
   onSort = () => {},
   matchingSettings,
 }) {
-  console.log("PlateTable rendering with data:", data.length);
 
   const { can } = useAccess();
   const canRead = can("plate.read");
@@ -571,7 +570,6 @@ export default function PlateTable({
   useEffect(() => {
     async function fetchBiHost() {
       const config = await getSettings();
-      console.log(config.blueiris.host);
       if (config?.blueiris?.host) {
         setBiHost(config.blueiris.host);
       }

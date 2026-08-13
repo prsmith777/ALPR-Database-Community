@@ -118,6 +118,8 @@ import {
   getDashboardTimeWindow,
   normalizeDashboardCameraNames,
 } from "@/lib/dashboard-time-distribution.mjs";
+import { querySystemLogText } from "@/lib/system-logs.mjs";
+import { createComponentLogger } from "@/logging/logger";
 import path from "path";
 import fs from "fs/promises";
 import split2 from "split2";
@@ -251,7 +253,6 @@ export async function getDashboardMetrics(
   cameraNames = []
 ) {
   await requirePermission("plate.read");
-  console.log("Fetching dashboard metrics");
   try {
     const selectedCameras = normalizeDashboardCameraNames(cameraNames);
     const metrics = await getMetrics(startDate, endDate, selectedCameras);
@@ -332,7 +333,6 @@ export async function getDashboardMetrics(
 
 export async function deleteTagFromPlate(formData) {
   await requirePermission("tag.manage");
-  console.log("Deleting tag from plate");
   try {
     const plateNumber = formData.get("plateNumber");
     const tagName = formData.get("tagName");
@@ -346,7 +346,6 @@ export async function deleteTagFromPlate(formData) {
 
 export async function deletePlate(formData) {
   await requirePermission("known_plate.manage");
-  console.log("Deleting known plate");
   try {
     const plateNumber = formData.get("plateNumber");
     await removeKnownPlate(plateNumber);
@@ -359,7 +358,6 @@ export async function deletePlate(formData) {
 
 export async function deletePlateFromDB(formData) {
   await requirePermission("plate.delete");
-  console.log("Deleting plate from database");
   try {
     const plateNumber = formData.get("plateNumber");
     await removePlate(plateNumber);
@@ -372,7 +370,6 @@ export async function deletePlateFromDB(formData) {
 
 export async function deletePlateRead(formData) {
   await requirePermission("plate.delete");
-  console.log("Deleting plate recognition");
   try {
     const id = formData.get("id"); // use ID
     await removePlateRead(id);
@@ -385,9 +382,7 @@ export async function deletePlateRead(formData) {
 
 export async function getKnownPlatesList() {
   await requirePermission("plate.read");
-  console.log("Fetching known plates");
   try {
-    console.log("known plates action run");
     return { success: true, data: await getKnownPlates() };
   } catch (error) {
     console.error("Error getting known plates:", error);
@@ -397,7 +392,6 @@ export async function getKnownPlatesList() {
 
 export async function getTags() {
   await requirePermission("plate.read");
-  console.log("Fetching tags");
   try {
     return { success: true, data: await getAvailableTags() };
   } catch (error) {
@@ -408,7 +402,6 @@ export async function getTags() {
 
 export async function addTag(formData) {
   await requirePermission("tag.manage");
-  console.log("Adding tag");
   try {
     const name = formData.get("name");
     const color = formData.get("color") || "#808080";
@@ -422,7 +415,6 @@ export async function addTag(formData) {
 
 export async function updateTag(formData) {
   await requirePermission("tag.manage");
-  console.log("Updating tag");
   try {
     const newName = formData.get("name");
     const color = formData.get("color");
@@ -445,7 +437,6 @@ export async function updateTag(formData) {
 
 export async function removeTag(formData) {
   await requirePermission("tag.manage");
-  console.log("Deleting tag");
   try {
     const name = formData.get("name");
     await deleteTag(name);
@@ -458,7 +449,6 @@ export async function removeTag(formData) {
 
 export async function addKnownPlate(formData) {
   await requirePermission("known_plate.manage");
-  console.log("Adding known plate");
   try {
     const plateNumber = formData.get("plateNumber");
     const name = formData.get("name");
@@ -474,7 +464,6 @@ export async function addKnownPlate(formData) {
 
 export async function tagPlate(formData) {
   await requirePermission("tag.manage");
-  console.log("Adding tag to plate");
   try {
     const plateNumber = formData.get("plateNumber");
     const tagName = formData.get("tagName");
@@ -498,7 +487,6 @@ export async function tagPlate(formData) {
 
 export async function untagPlate(formData) {
   await requirePermission("tag.manage");
-  console.log("Removing tag from plate");
   try {
     const plateNumber = formData.get("plateNumber");
     const tagName = formData.get("tagName");
@@ -512,7 +500,6 @@ export async function untagPlate(formData) {
 
 export async function getPlateHistoryData(plateNumber) {
   await requirePermission("plate.read");
-  console.log("Fetching plate history");
   try {
     return { success: true, data: await getPlateHistory(plateNumber) };
   } catch (error) {
@@ -528,7 +515,6 @@ export async function getPlates(
   filters = {}
 ) {
   await requirePermission("plate.read");
-  console.log("Querying plate database");
   try {
     const config = await getConfig();
     const result = await getAllPlates({
@@ -595,7 +581,6 @@ export async function getLatestPlateReads({
   sortDirection = "",
 } = {}) {
   await requirePermission("plate.read");
-  console.log("Fetching latest plate reads");
   try {
     const config = await getConfig();
     const result = await getPlateReads({
@@ -657,7 +642,6 @@ export async function getLatestPlateReads({
 
 export async function fetchPlateInsights(formDataOrPlateNumber, timeZone) {
   await requirePermission("plate.read");
-  console.log("Fetching plate insights");
   const config = await getConfig();
   try {
     let plateNumber;
@@ -725,7 +709,6 @@ export async function fetchPlateInsights(formDataOrPlateNumber, timeZone) {
 
 export async function alterPlateFlag(formData) {
   await requirePermission("plate.review");
-  console.log("Toggling plate flag");
   try {
     const plateNumber = formData.get("plateNumber");
     const flagged = formData.get("flagged") === "true";
@@ -760,7 +743,6 @@ export async function alterPlateFlag(formData) {
 
 export async function getFlagged() {
   await requirePermission("plate.read");
-  console.log("Fetching flagged plates");
   try {
     const plates = await getFlaggedPlates();
     return plates;
@@ -1231,7 +1213,6 @@ export async function retireOrphanedUnifiedNotificationRule(formData) {
 }
 
 export async function loginAction(formData) {
-  console.log("Attempting login...");
   const username = String(formData.get("username") || "").trim();
   const password = formData.get("password");
 
@@ -1273,7 +1254,6 @@ export async function loginAction(formData) {
     const isPasswordValid = await verifyPassword(password); // This verifies against whatever hash type is stored
 
     if (!isPasswordValid) {
-      console.log("Invalid password attempt");
       return { error: "Invalid username or password" };
     }
 
@@ -1281,11 +1261,9 @@ export async function loginAction(formData) {
     // If the stored password is an old SHA256 hash (doesn't start with '$2'),
     // re-hash the provided plaintext password to bcrypt and save it.
     if (!storedHash.startsWith("$2")) {
-      console.log("Old SHA256 password verified. Migrating to bcrypt...");
       const newBcryptHash = await hashPasswordBcrypt(password);
       config.password = newBcryptHash;
       await updateAuthConfig(config); // Save the updated config with the new hash
-      console.log("Password successfully migrated to bcrypt.");
     }
     // --- End Password Migration Logic ---
 
@@ -3201,9 +3179,7 @@ export async function toggleIgnorePlate(formData) {
 export async function revalidatePlatesPage() {
   await requirePermission("plate.read");
   try {
-    console.log("🔴 Starting revalidation");
     revalidatePath("/live_feed");
-    console.log("🔴 Revalidation completed");
   } catch (error) {
     console.error("🔴 Revalidation failed:", error);
     throw error;
@@ -3237,41 +3213,46 @@ export async function fetchPlateImagePreviews(
   );
 }
 
-export async function getSystemLogs() {
+const systemLogsLogger = createComponentLogger("system-logs");
+
+export async function getSystemLogs(filters = {}) {
   await requirePermission("system.view_audit");
+  const maxFileBytes = Number.parseInt(
+    process.env.ALPR_OPERATIONAL_LOG_FILE_MAX_BYTES || "5242880",
+    10
+  );
+  const maxFiles = Number.parseInt(
+    process.env.ALPR_OPERATIONAL_LOG_MAX_FILES || "20",
+    10
+  );
   try {
-    const logFile = path.join(process.cwd(), "logs", "app.log");
-    const content = await fs.readFile(logFile, "utf8");
+    const logDirectory = path.resolve(
+      process.env.ALPR_LOG_DIR || path.join(process.cwd(), "logs")
+    );
+    const logFile = path.join(logDirectory, "app.log");
+    const [content, stats] = await Promise.all([
+      fs.readFile(logFile, "utf8"),
+      fs.stat(logFile),
+    ]);
 
     return {
       success: true,
-      data: content
-        .split("\n")
-        .filter(Boolean)
-        .map((line) => {
-          try {
-            // Try parsing as Winston JSON format
-            const parsed = JSON.parse(line);
-            return {
-              timestamp: parsed.timestamp,
-              level: parsed.level.toUpperCase(),
-              // Strip ANSI color codes
-              message: parsed.message.replace(/\u001b\[\d+m/g, ""),
-            };
-          } catch (e) {
-            // Fall back to old format if it's not JSON
-            const [timestamp, rest] = line.split(" [");
-            const [level, ...messageParts] = rest.split("] ");
-            return {
-              timestamp,
-              level,
-              message: messageParts.join("] "),
-            };
-          }
-        }),
+      data: querySystemLogText(content, filters, {
+        fileBytes: stats.size,
+        maxFileBytes,
+        maxFiles,
+      }),
     };
   } catch (error) {
-    console.error("Error reading logs:", error);
+    if (error?.code === "ENOENT") {
+      return {
+        success: true,
+        data: querySystemLogText("", filters, { maxFileBytes, maxFiles }),
+      };
+    }
+    systemLogsLogger.error("system_log_read_failed", {
+      errorCode: error?.code || "LOG_READ_FAILED",
+    });
     return { success: false, error: "Failed to read system logs" };
   }
 }

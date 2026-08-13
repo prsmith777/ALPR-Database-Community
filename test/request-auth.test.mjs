@@ -377,6 +377,7 @@ test("integration wrapper correlates a successful request with its receipt", asy
 test("integration wrapper accepts Blue Iris JSON sent as text/plain", async () => {
   const events = [];
   const logEvents = [];
+  const logLevels = [];
   const recorder = {
     async start(details) {
       events.push({ operation: "start", details });
@@ -399,9 +400,11 @@ test("integration wrapper accepts Blue Iris JSON sent as text/plain", async () =
       logger: {
         info(event) {
           logEvents.push(event);
+          logLevels.push({ event, level: "info" });
         },
         warn(event) {
           logEvents.push(event);
+          logLevels.push({ event, level: "warn" });
         },
         error() {},
       },
@@ -421,6 +424,10 @@ test("integration wrapper accepts Blue Iris JSON sent as text/plain", async () =
     "integration_content_type_compatibility",
     "integration_request_received",
   ]);
+  assert.deepEqual(
+    logLevels.find((entry) => entry.event === "integration_content_type_compatibility"),
+    { event: "integration_content_type_compatibility", level: "info" }
+  );
   assert.equal(events[0].details.contentType, "text/plain");
   assert.equal(events[0].details.rawText, rawBody);
   assert.deepEqual(events[0].details.data, { camera: "Driveway LPR" });

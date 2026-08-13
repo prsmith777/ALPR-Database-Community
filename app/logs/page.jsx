@@ -25,7 +25,7 @@ async function LogsContent() {
     );
   }
 
-  return <LogViewer initialLogs={logs} />;
+  return <LogViewer initialPage={logs} />;
 }
 
 export default async function LogsPage() {
