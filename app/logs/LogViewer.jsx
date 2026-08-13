@@ -75,8 +75,11 @@ function FilterSelect({ label, value, onChange, children }) {
   );
 }
 
-export default function LogViewer({ initialPage }) {
-  const initialFilters = defaultFilters(initialPage?.pageSize);
+export default function LogViewer({ initialPage, initialFilters: requestedFilters = {} }) {
+  const initialFilters = {
+    ...defaultFilters(initialPage?.pageSize),
+    ...requestedFilters,
+  };
   const [pageData, setPageData] = useState(initialPage);
   const [draft, setDraft] = useState(initialFilters);
   const [applied, setApplied] = useState(initialFilters);
@@ -143,6 +146,16 @@ export default function LogViewer({ initialPage }) {
     setDraft(next);
     setFiltersExpanded(false);
     load(next, 1);
+    if (window.location.search) {
+      window.history.replaceState(null, "", window.location.pathname);
+    }
+  };
+
+  const clearReadFilter = () => {
+    const next = { ...applied, readId: "" };
+    setDraft((current) => ({ ...current, readId: "" }));
+    load(next, 1);
+    window.history.replaceState(null, "", window.location.pathname);
   };
 
   const metadata = pageData?.metadata || {};
@@ -406,7 +419,28 @@ export default function LogViewer({ initialPage }) {
 
       <div className="flex min-h-0 flex-1 flex-col">
         <div className="flex flex-wrap items-center justify-between gap-2 border-b px-4 py-2 text-xs text-muted-foreground">
-          <span>
+          {applied.readId && (
+            <div className="flex min-w-0 items-center gap-2">
+              <span>Log pipeline for read #{applied.readId}</span>
+              <span className="text-muted-foreground/60" aria-hidden="true">·</span>
+              <span>
+                {pageData?.total
+                  ? `${pageData.total} matching ${pageData.total === 1 ? "entry" : "entries"}`
+                  : "No matching entries"}
+              </span>
+              <Button
+                type="button"
+                size="sm"
+                variant="ghost"
+                className="h-7 px-2 text-xs"
+                onClick={clearReadFilter}
+                disabled={isPending}
+              >
+                Show all logs
+              </Button>
+            </div>
+          )}
+          <span className={applied.readId ? "hidden" : undefined}>
             {pageData?.total
               ? `Showing ${firstRow}–${lastRow} of ${pageData.total} matching entries`
               : "No matching log entries"}

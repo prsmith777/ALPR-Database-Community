@@ -114,8 +114,9 @@ test("log query inputs are bounded to supported levels and page sizes", () => {
 });
 
 test("System Logs exposes bounded structured diagnostics and operator controls", async () => {
-  const [actions, viewer, message, instrumentation, mqtt] = await Promise.all([
+  const [actions, page, viewer, message, instrumentation, mqtt] = await Promise.all([
     source("app/actions.js"),
+    source("app/logs/page.jsx"),
     source("app/logs/LogViewer.jsx"),
     source("app/logs/LogMessage.jsx"),
     source("instrumentation.js"),
@@ -124,6 +125,11 @@ test("System Logs exposes bounded structured diagnostics and operator controls",
 
   assert.match(actions, /querySystemLogText\(content, filters/);
   assert.match(actions, /requirePermission\("system\.view_audit"\)/);
+  assert.match(page, /LogsPage\(\{ searchParams \}\)/);
+  assert.match(page, /initialFilters = readId \? \{ readId \} : \{\}/);
+  assert.match(page, /getSystemLogs\(initialFilters\)/);
+  assert.match(viewer, /Log pipeline for read #\{applied\.readId\}/);
+  assert.match(viewer, /Show all logs/);
   assert.match(viewer, /Search messages and structured fields/);
   assert.match(viewer, /Request ID/);
   assert.match(viewer, /Read ID/);
