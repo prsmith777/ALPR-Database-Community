@@ -44,8 +44,8 @@ next-env.d.ts
 config/settings.yaml
 auth/auth.json
 
-#logs
-logs/app.log
+# logs
+/logs/
 
 #storage
 

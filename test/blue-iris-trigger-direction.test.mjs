@@ -162,6 +162,23 @@ test("monochrome nighttime evidence cannot become a Blue Iris direction", () => 
     errorCode: "MONOCHROME_NIGHT_DIRECTION_UNAVAILABLE",
   });
   assert.equal(primaryDirectionObservationFromBlueIris(suppressed), null);
+
+  const missingTrigger = {
+    algorithm: BLUE_IRIS_TRIGGER_DIRECTION_ALGORITHM,
+    status: "unknown",
+    triggerType: null,
+    orientation: null,
+    directionLabel: null,
+    profileVersion: 8,
+    errorCode: "TRIGGER_TYPE_UNAVAILABLE",
+  };
+  assert.deepEqual(
+    applyBlueIrisDirectionEligibility(missingTrigger, {
+      eligible: false,
+      reason: "monochrome_night_capture",
+    }),
+    missingTrigger
+  );
 });
 
 test("plate-read trigger lookup executes mapped, unmapped, invalid, and omitted evidence paths", async () => {
@@ -225,15 +242,14 @@ test("plate-read trigger lookup executes mapped, unmapped, invalid, and omitted 
     camera: "Street LPR 1",
     value: "  ",
   });
-  assert.equal(omitted, null);
-  assert.equal(calls.length, beforeOmitted);
+  assert.equal(calls.length, beforeOmitted + 1);
   assert.deepEqual(blueIrisTriggerDirectionColumns(omitted), {
     bi_trigger_type: null,
-    bi_trigger_direction_status: null,
+    bi_trigger_direction_status: "unknown",
     bi_trigger_direction_label: null,
-    bi_trigger_direction_profile_version: null,
-    bi_trigger_direction_algorithm: null,
-    bi_trigger_direction_error_code: null,
+    bi_trigger_direction_profile_version: 7,
+    bi_trigger_direction_algorithm: BLUE_IRIS_TRIGGER_DIRECTION_ALGORITHM,
+    bi_trigger_direction_error_code: "TRIGGER_TYPE_UNAVAILABLE",
   });
 });
 
