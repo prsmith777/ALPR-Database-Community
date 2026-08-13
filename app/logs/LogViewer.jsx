@@ -1,118 +1,294 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
-import { ScrollArea } from "@/components/ui/scroll-area";
+import { useState, useTransition } from "react";
+import { RefreshCw, Search, X } from "lucide-react";
+import { getSystemLogs } from "@/app/actions";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Search } from "lucide-react";
 import LogMessage from "./LogMessage";
 
-const LogViewer = ({ initialLogs }) => {
-  const scrollRef = useRef(null);
-  const [selectedLevel, setSelectedLevel] = useState("All");
-  const [searchQuery, setSearchQuery] = useState("");
+const LEVELS = ["ALL", "INFO", "WARN", "ERROR", "DEBUG"];
 
-  // Use the specific log levels provided
-  const logLevels = ["All", "WARN", "ERROR"];
+function defaultFilters(pageSize = 50) {
+  return {
+    level: "ALL",
+    search: "",
+    component: "",
+    cameraName: "",
+    requestId: "",
+    readId: "",
+    startAt: "",
+    endAt: "",
+    pageSize: String(pageSize),
+  };
+}
 
-  // Filter logs based on selected level and search query
-  const filteredLogs =
-    initialLogs?.filter((log) => {
-      // "All" catches everything (INFO, metrics, etc.)
-      const matchesLevel =
-        selectedLevel === "All" || log.level === selectedLevel;
-      const matchesSearch =
-        searchQuery === "" ||
-        log.message.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        log.level.toLowerCase().includes(searchQuery.toLowerCase());
-      return matchesLevel && matchesSearch;
-    }) || [];
+function actionFilters(filters, page) {
+  const timestamp = (value) => {
+    if (!value) return "";
+    const date = new Date(value);
+    return Number.isNaN(date.getTime()) ? "" : date.toISOString();
+  };
+  return {
+    ...filters,
+    page,
+    pageSize: Number(filters.pageSize),
+    startAt: timestamp(filters.startAt),
+    endAt: timestamp(filters.endAt),
+  };
+}
 
-  useEffect(() => {
-    const scrollToBottom = () => {
-      if (scrollRef.current) {
-        const scrollContainer = scrollRef.current.querySelector(
-          "[data-radix-scroll-area-viewport]"
-        );
-        if (scrollContainer) {
-          scrollContainer.scrollTop = scrollContainer.scrollHeight;
-        }
+function formatBytes(value) {
+  const bytes = Number(value) || 0;
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function FilterSelect({ label, value, onChange, children }) {
+  return (
+    <label className="grid gap-1 text-xs text-muted-foreground">
+      {label}
+      <select
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+        className="h-9 rounded-md border border-border bg-background px-3 text-sm text-foreground shadow-sm"
+      >
+        {children}
+      </select>
+    </label>
+  );
+}
+
+export default function LogViewer({ initialPage }) {
+  const initialFilters = defaultFilters(initialPage?.pageSize);
+  const [pageData, setPageData] = useState(initialPage);
+  const [draft, setDraft] = useState(initialFilters);
+  const [applied, setApplied] = useState(initialFilters);
+  const [error, setError] = useState("");
+  const [isPending, startTransition] = useTransition();
+
+  const updateDraft = (field, value) => {
+    setDraft((current) => ({ ...current, [field]: value }));
+  };
+
+  const load = (filters, page = 1) => {
+    startTransition(async () => {
+      setError("");
+      const response = await getSystemLogs(actionFilters(filters, page));
+      if (!response?.success) {
+        setError(response?.error || "Failed to load system logs");
+        return;
       }
-    };
+      setPageData(response.data);
+      setApplied(filters);
+    });
+  };
 
-    scrollToBottom();
-  }, [filteredLogs]);
+  const apply = (event) => {
+    event?.preventDefault();
+    load(draft, 1);
+  };
 
-  if (!initialLogs || !initialLogs.length) {
-    return (
-      <div className="flex justify-center items-center h-full text-muted-foreground">
-        No logs available
-      </div>
-    );
-  }
+  const selectLevel = (level) => {
+    const next = { ...draft, level };
+    setDraft(next);
+    load(next, 1);
+  };
+
+  const clear = () => {
+    const next = defaultFilters(pageData?.pageSize);
+    setDraft(next);
+    load(next, 1);
+  };
+
+  const metadata = pageData?.metadata || {};
+  const entries = pageData?.entries || [];
+  const firstRow = pageData?.total
+    ? (pageData.page - 1) * pageData.pageSize + 1
+    : 0;
+  const lastRow = Math.min(pageData?.total || 0, pageData?.page * pageData?.pageSize);
 
   return (
-    <div className="h-full flex flex-col">
-      {/* Search Bar and Tab Navigation on same line */}
-      <div className="flex-shrink-0 bg-background">
-        <div className="px-5 py-6 flex items-center space-x-4">
-          {/* Search on the left */}
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground h-4 w-4" />
+    <div className="flex h-full min-h-0 flex-col">
+      <form onSubmit={apply} className="flex-shrink-0 border-b bg-background p-4">
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="relative min-w-[16rem] flex-1">
+            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
             <Input
-              placeholder="Search logs"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="pl-10 h-10 text-sm w-80"
+              aria-label="Search all log fields"
+              placeholder="Search messages and structured fields"
+              value={draft.search}
+              onChange={(event) => updateDraft("search", event.target.value)}
+              className="pl-10"
             />
           </div>
+          <Button type="submit" size="sm" disabled={isPending}>
+            Apply filters
+          </Button>
+          <Button type="button" size="sm" variant="outline" onClick={clear} disabled={isPending}>
+            <X aria-hidden="true" /> Clear
+          </Button>
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            onClick={() => load(applied, pageData?.page || 1)}
+            disabled={isPending}
+          >
+            <RefreshCw className={isPending ? "animate-spin" : ""} aria-hidden="true" />
+            Refresh
+          </Button>
+        </div>
 
-          {/* Tab selector */}
-          <div className="flex h-9 rounded-md border border-border overflow-hidden">
-            {logLevels.map((level, index) => (
+        <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-8">
+          <label className="grid gap-1 text-xs text-muted-foreground">
+            Request ID
+            <Input
+              value={draft.requestId}
+              onChange={(event) => updateDraft("requestId", event.target.value)}
+              placeholder="Correlation UUID"
+              className="h-9"
+            />
+          </label>
+          <label className="grid gap-1 text-xs text-muted-foreground">
+            Read ID
+            <Input
+              value={draft.readId}
+              onChange={(event) => updateDraft("readId", event.target.value)}
+              placeholder="40645"
+              inputMode="numeric"
+              className="h-9"
+            />
+          </label>
+          <FilterSelect
+            label="Component"
+            value={draft.component}
+            onChange={(value) => updateDraft("component", value)}
+          >
+            <option value="">All components</option>
+            {pageData?.facets?.components?.map((component) => (
+              <option key={component} value={component}>{component}</option>
+            ))}
+          </FilterSelect>
+          <FilterSelect
+            label="Camera"
+            value={draft.cameraName}
+            onChange={(value) => updateDraft("cameraName", value)}
+          >
+            <option value="">All cameras</option>
+            {pageData?.facets?.cameras?.map((camera) => (
+              <option key={camera} value={camera}>{camera}</option>
+            ))}
+          </FilterSelect>
+          <label className="grid gap-1 text-xs text-muted-foreground">
+            From
+            <Input
+              type="datetime-local"
+              value={draft.startAt}
+              onChange={(event) => updateDraft("startAt", event.target.value)}
+              className="h-9"
+            />
+          </label>
+          <label className="grid gap-1 text-xs text-muted-foreground">
+            Through
+            <Input
+              type="datetime-local"
+              value={draft.endAt}
+              onChange={(event) => updateDraft("endAt", event.target.value)}
+              className="h-9"
+            />
+          </label>
+          <FilterSelect
+            label="Rows per page"
+            value={draft.pageSize}
+            onChange={(value) => updateDraft("pageSize", value)}
+          >
+            {[25, 50, 100].map((size) => (
+              <option key={size} value={String(size)}>{size}</option>
+            ))}
+          </FilterSelect>
+        </div>
+
+        <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
+          <div className="flex h-9 overflow-hidden rounded-md border border-border">
+            {LEVELS.map((level, index) => (
               <button
+                type="button"
                 key={level}
-                onClick={() => setSelectedLevel(level)}
+                onClick={() => selectLevel(level)}
+                disabled={isPending}
                 className={`px-3 text-sm font-medium transition-colors ${
-                  selectedLevel === level
-                    ? "text-blue-500 bg-muted/50"
-                    : "text-muted-foreground hover:text-foreground hover:bg-muted/30"
-                } ${index > 0 ? "border-l border-border" : ""}`}
+                  draft.level === level
+                    ? "bg-muted/60 text-blue-500"
+                    : "text-muted-foreground hover:bg-muted/30 hover:text-foreground"
+                } ${index ? "border-l border-border" : ""}`}
               >
-                {level.charAt(0).toUpperCase() + level.slice(1).toLowerCase()}
+                {level === "ALL" ? "All" : level.charAt(0) + level.slice(1).toLowerCase()}
               </button>
             ))}
           </div>
-        </div>
-      </div>
-
-      {/* Table Header */}
-      <div className="flex-shrink-0 border-b">
-        <div className="px-6 py-4">
-          <div className="grid grid-cols-12 gap-4 text-sm font-medium text-muted-foreground">
-            <div className="col-span-9">Description</div>
-            <div className="col-span-3 text-right">Date / Time</div>
+          <div className="text-xs text-muted-foreground">
+            Active file {formatBytes(metadata.fileBytes)} / {formatBytes(metadata.maxFileBytes)}
+            {metadata.maxFiles ? ` · ${metadata.maxFiles} rotated files configured` : ""}
+            {` · ${metadata.availableRows || 0} available rows`}
           </div>
         </div>
-      </div>
+      </form>
 
-      {/* Scrollable Content */}
-      <div className="flex-1 min-h-0">
-        <ScrollArea ref={scrollRef} className="h-full">
-          <div className="p-6">
-            {filteredLogs.length > 0 ? (
-              filteredLogs.map((log, index) => (
-                <LogMessage key={index} log={log} />
-              ))
-            ) : (
-              <div className="text-center text-muted-foreground py-8">
-                No logs found matching your criteria
-              </div>
-            )}
-          </div>
-        </ScrollArea>
+      {error && (
+        <Alert variant="destructive" className="m-4">
+          <AlertDescription>{error}</AlertDescription>
+        </Alert>
+      )}
+
+      <div className="flex min-h-0 flex-1 flex-col">
+        <div className="flex flex-wrap items-center justify-between gap-2 border-b px-6 py-3 text-sm text-muted-foreground">
+          <span>
+            {pageData?.total
+              ? `Showing ${firstRow}–${lastRow} of ${pageData.total} matching entries`
+              : "No matching log entries"}
+          </span>
+          <span>Newest entries first; select a row for structured fields.</span>
+        </div>
+
+        <div className="min-h-0 flex-1 overflow-y-auto px-6">
+          {entries.length ? (
+            entries.map((log) => <LogMessage key={log.id} log={log} />)
+          ) : (
+            <div className="flex h-full items-center justify-center py-12 text-muted-foreground">
+              No logs found. Adjust the filters or refresh.
+            </div>
+          )}
+        </div>
+
+        <div className="flex flex-shrink-0 items-center justify-between border-t px-6 py-3">
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            disabled={isPending || !pageData?.totalPages || pageData.page <= 1}
+            onClick={() => load(applied, pageData.page - 1)}
+          >
+            Previous
+          </Button>
+          <span className="text-sm text-muted-foreground">
+            Page {pageData?.totalPages ? pageData.page : 0} of {pageData?.totalPages || 0}
+          </span>
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            disabled={
+              isPending || !pageData?.totalPages || pageData.page >= pageData.totalPages
+            }
+            onClick={() => load(applied, pageData.page + 1)}
+          >
+            Next
+          </Button>
+        </div>
       </div>
     </div>
   );
-};
-
-export default LogViewer;
+}
