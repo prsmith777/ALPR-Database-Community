@@ -287,3 +287,99 @@ test("plate-read wrapper logs no secrets, payloads, paths, or raw failures", asy
     assert.equal(captured.includes(secret), false);
   }
 });
+
+test("integration wrapper correlates a successful request with its receipt", async () => {
+  const receiptCalls = [];
+  const recorder = {
+    async start(details) {
+      receiptCalls.push({ operation: "start", details });
+      return { receiptId: 73 };
+    },
+    async complete(details) {
+      receiptCalls.push({ operation: "complete", details });
+    },
+  };
+  const handler = createIntegrationRouteHandler(
+    async (data, _request, context) => {
+      assert.equal(data.camera, "Street LPR 1");
+      assert.equal(context.requestId, "blue-iris-request-73");
+      context.setOutcome({
+        outcome: "accepted",
+        processedReadIds: [901],
+        processedCount: 1,
+      });
+      return Response.json({ ok: true }, { status: 201 });
+    },
+    {
+      authorize: async () => ({ ok: true, status: 200 }),
+      recorder,
+      integration: "blue_iris",
+      routeName: "/api/plate-reads",
+      logger: { info() {}, warn() {}, error() {} },
+    }
+  );
+  const rawBody = JSON.stringify({
+    camera: "Street LPR 1",
+    trigger_type: "MOTION_A>B",
+  });
+  const response = await handler(new Request("http://localhost/api/plate-reads", {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      "x-request-id": "blue-iris-request-73",
+    },
+    body: rawBody,
+  }));
+
+  assert.equal(response.status, 201);
+  assert.equal(response.headers.get("x-request-id"), "blue-iris-request-73");
+  assert.equal(receiptCalls.length, 2);
+  assert.equal(receiptCalls[0].operation, "start");
+  assert.equal(receiptCalls[0].details.rawText, rawBody);
+  assert.equal(receiptCalls[0].details.bodyBytes, Buffer.byteLength(rawBody));
+  assert.deepEqual(receiptCalls[0].details.data, JSON.parse(rawBody));
+  assert.equal(receiptCalls[1].operation, "complete");
+  assert.equal(receiptCalls[1].details.receiptId, 73);
+  assert.equal(receiptCalls[1].details.httpStatus, 201);
+  assert.equal(receiptCalls[1].details.outcome, "accepted");
+  assert.deepEqual(receiptCalls[1].details.processedReadIds, [901]);
+});
+
+test("integration wrapper rejects unsupported media and oversized bodies with receipts", async () => {
+  const events = [];
+  const recorder = {
+    async start(details) {
+      events.push({ operation: "start", details });
+      return 88;
+    },
+    async complete(details) {
+      events.push({ operation: "complete", details });
+    },
+  };
+  const handler = createIntegrationRouteHandler(
+    async () => assert.fail("rejected requests must not reach the processor"),
+    {
+      authorize: async () => ({ ok: true, status: 200 }),
+      recorder,
+      maxBodyBytes: 16,
+      logger: { info() {}, warn() {}, error() {} },
+    }
+  );
+
+  const unsupported = await handler(makeRequest({
+    headers: { "content-type": "text/plain" },
+  }));
+  assert.equal(unsupported.status, 415);
+  assert.equal(events[1].details.errorCode, "UNSUPPORTED_MEDIA_TYPE");
+
+  events.length = 0;
+  const oversized = await handler(makeRequest({
+    headers: {
+      "content-type": "application/json",
+      "content-length": "17",
+    },
+  }));
+  assert.equal(oversized.status, 413);
+  assert.equal(events[0].details.bodyBytes, 17);
+  assert.equal(events[1].details.errorCode, "BODY_TOO_LARGE");
+});
