@@ -76,6 +76,12 @@ payloads, AI dumps, image contents, internal filesystem paths, raw exceptions,
 or stack traces. Client errors are generic and do not include exception
 messages or internal paths.
 
+Authenticated integration requests also create short-lived ingress receipts
+containing only bounded request-shape, correlation, trigger-type, status, and
+count metadata. Receipts may record recognized field names, sizes, and a body
+digest, but never store raw bodies, plate values, AI dumps, images, or Blue Iris
+paths. Retention is bounded by both age and row count.
+
 ## Test isolation and validation
 
 Authentication tests run with `NODE_ENV=test` and must set

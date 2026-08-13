@@ -27,9 +27,20 @@ import { MqttAcceptedReadService } from "@/lib/mqtt/accepted-read-service.mjs";
 import { MqttRepository } from "@/lib/mqtt/repository.mjs";
 import { getConfig } from "@/lib/settings";
 import fileStorage from "@/lib/fileStorage";
+import { createIntegrationIngressRecorder } from "@/lib/integration-ingress.mjs";
 import { createIntegrationRouteHandler } from "@/lib/request-auth.mjs";
 import { overviewReadQueueState } from "@/lib/vehicle-overview-association.mjs";
+import { createComponentLogger } from "@/logging/logger";
 import { revalidatePath } from "next/cache";
+
+const plateIngressLogger = createComponentLogger("plate-read-ingress");
+const plateIngressRecorder = createIntegrationIngressRecorder({
+  query: async (text, values) => {
+    const pool = await getPool();
+    return pool.query(text, values);
+  },
+  logger: plateIngressLogger,
+});
 
 // Revised to use a blacklist of all other possible AI labels if using the memo
 const EXCLUDED_LABELS = [
@@ -169,7 +180,7 @@ function extractPlatesFromMemo(memo) {
   return [...new Set(plates)]; // Remove duplicates
 }
 
-async function processPlateRead(data) {
+async function processPlateRead(data, _request, context = {}) {
   let dbClient = null;
   let transactionOpen = false;
   const transactionImages = [];
@@ -219,7 +230,15 @@ async function processPlateRead(data) {
           }));
         }
       } catch {
-        console.error("Invalid Blue Iris plate-read payload");
+        context.setOutcome?.({
+          outcome: "invalid_plate_payload",
+          errorCode: "INVALID_PLATE_PAYLOAD",
+        });
+        plateIngressLogger.warn("plate_read_payload_invalid", {
+          requestId: context.requestId,
+          cameraName: camera,
+          errorCode: "INVALID_PLATE_PAYLOAD",
+        });
         return Response.json(
           { error: "Invalid plate-read payload" },
           { status: 400 }
@@ -241,6 +260,10 @@ async function processPlateRead(data) {
     }
 
     if (plates.length === 0) {
+      context.setOutcome?.({
+        outcome: "no_valid_plates",
+        errorCode: "NO_VALID_PLATES",
+      });
       return Response.json(
         { error: "No valid plates found in request" },
         { status: 400 }
@@ -258,7 +281,11 @@ async function processPlateRead(data) {
         monochromeRatio: null,
         reason: "direction_image_assessment_failed",
       };
-      console.error("Direction image lighting assessment failed");
+      plateIngressLogger.warn("direction_image_assessment_failed", {
+        requestId: context.requestId,
+        cameraName: camera,
+        errorCode: "DIRECTION_IMAGE_ASSESSMENT_FAILED",
+      });
     }
 
     // Get database connection
@@ -266,7 +293,6 @@ async function processPlateRead(data) {
     dbClient = await pool.connect();
     await dbClient.query("BEGIN");
     transactionOpen = true;
-    console.log("Database connection established");
 
     const config = await getConfig();
     const mqttRepository = new MqttRepository({
@@ -275,13 +301,13 @@ async function processPlateRead(data) {
     });
     const mqttService = new MqttAcceptedReadService({
       repository: mqttRepository,
-      logger: console,
+      logger: plateIngressLogger,
       matchingSettings: config.plateMatching,
     });
     const notificationService = new NotificationAcceptedReadService({
       repository: new NotificationRuntimeRepository({ executor: dbClient }),
       mqttRepository,
-      logger: console,
+      logger: plateIngressLogger,
       matchingSettings: config.plateMatching,
     });
     const resolvedBlueIrisTriggerDirection = await resolveBlueIrisTriggerDirectionForRead({
@@ -340,7 +366,11 @@ async function processPlateRead(data) {
             plateData.plate_number
           );
         } catch {
-          console.error("Plate image storage failed");
+          plateIngressLogger.error("plate_image_storage_failed", {
+            requestId: context.requestId,
+            cameraName: camera,
+            errorCode: "PLATE_IMAGE_STORAGE_FAILED",
+          });
         }
       }
 
@@ -451,7 +481,11 @@ async function processPlateRead(data) {
         duplicatePlates.push(observedPlate);
         await fileStorage
           .deleteImage(imagePaths.imagePath, imagePaths.thumbnailPath)
-          .catch(() => console.error("Duplicate plate image cleanup failed"));
+          .catch(() => plateIngressLogger.warn("duplicate_plate_image_cleanup_failed", {
+            requestId: context.requestId,
+            cameraName: camera,
+            errorCode: "DUPLICATE_IMAGE_CLEANUP_FAILED",
+          }));
         const trackedImageIndex = transactionImages.indexOf(imagePaths);
         if (trackedImageIndex >= 0) {
           transactionImages.splice(trackedImageIndex, 1);
@@ -541,10 +575,14 @@ async function processPlateRead(data) {
           shouldSendPushover: checkPlateForNotification,
           sendPushover: sendPushoverNotification,
           processMqtt: async () => effect.mqttResult,
-          logger: console,
+          logger: plateIngressLogger,
         });
       } catch {
-        console.error("Accepted plate notification processing failed");
+        plateIngressLogger.error("accepted_plate_notification_processing_failed", {
+          requestId: context.requestId,
+          processedCount: processedPlates.length,
+          errorCode: "ACCEPTED_READ_EFFECT_FAILED",
+        });
       }
     }
 
@@ -556,15 +594,41 @@ async function processPlateRead(data) {
     // }
     if (processedPlates.length > 0) {
       try {
-        console.log("⭐ Plate Received");
         revalidatePath("/live_feed");
         // Ensure revalidation completes
         await new Promise((resolve) => setTimeout(resolve, 100));
-        // console.log("⭐ Revalidation completed");
       } catch {
-        console.error("Plate page revalidation failed");
+        plateIngressLogger.warn("plate_feed_revalidation_failed", {
+          requestId: context.requestId,
+          processedCount: processedPlates.length,
+          errorCode: "PLATE_FEED_REVALIDATION_FAILED",
+        });
       }
     }
+
+    const responseStatus = processedPlates.length > 0 ? 201 : 409;
+    const outcome = processedPlates.length > 0
+      ? "accepted"
+      : duplicatePlates.length > 0
+        ? "duplicate"
+        : ignoredPlates.length > 0
+          ? "ignored"
+          : "no_changes";
+    const outcomeDetails = {
+      outcome,
+      processedReadIds: processedPlates.map(({ id }) => id),
+      processedCount: processedPlates.length,
+      duplicateCount: duplicatePlates.length,
+      ignoredCount: ignoredPlates.length,
+      overviewWorkQueued,
+    };
+    context.setOutcome?.(outcomeDetails);
+    plateIngressLogger.info("plate_read_ingress_completed", {
+      requestId: context.requestId,
+      cameraName: camera,
+      httpStatus: responseStatus,
+      ...outcomeDetails,
+    });
 
     return Response.json(
       {
@@ -573,7 +637,7 @@ async function processPlateRead(data) {
         ignored: ignoredPlates,
         message: `Processed ${processedPlates.length} plates, ${duplicatePlates.length} duplicates, ${ignoredPlates.length} ignored`,
       },
-      { status: processedPlates.length > 0 ? 201 : 409 }
+      { status: responseStatus }
     );
   } catch (error) {
     const shouldDeleteTransactionImages = transactionOpen;
@@ -582,7 +646,10 @@ async function processPlateRead(data) {
       try {
         await dbClient.query("ROLLBACK");
       } catch {
-        console.error("Plate-read transaction rollback failed");
+        plateIngressLogger.error("plate_read_transaction_rollback_failed", {
+          requestId: context.requestId,
+          errorCode: "PLATE_READ_ROLLBACK_FAILED",
+        });
       }
     }
 
@@ -602,4 +669,9 @@ async function processPlateRead(data) {
   }
 }
 
-export const POST = createIntegrationRouteHandler(processPlateRead);
+export const POST = createIntegrationRouteHandler(processPlateRead, {
+  integration: "blue_iris",
+  routeName: "/api/plate-reads",
+  logger: plateIngressLogger,
+  recorder: plateIngressRecorder,
+});
