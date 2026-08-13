@@ -33,10 +33,12 @@ reliable background processing.
   filters in a compact toolbar, and keeps collapsed entries on one line so more
   rows remain visible. Camera, trigger, evaluated direction, and the first read
   ID remain inline when space permits; component, request, direction-error, and
-  complete read context move into the expanded entry. Expanded controls support
-  level and correlation filters, pagination and refresh, and rows expand the
-  complete tag set plus sanitized JSON metadata without returning credentials, plate
-  values, image data, or paths. Accepted Blue Iris `text/plain` JSON is an
+  complete read context remain in the expanded entry as secondary tags sharing one
+  line with the Structured fields disclosure. Expanded controls support level and
+  correlation filters, pagination and refresh. Rows expose independently collapsible
+  sanitized JSON immediately below that line, and each tag jumps to and highlights
+  its exact field without returning credentials, plate values, image data, or paths.
+  Accepted Blue Iris `text/plain` JSON is an
   informational compatibility event rather than a warning. Background MQTT and
   storage activity uses the sanitizer, broker credentials are not logged, and
   MQTT connects without Node's deprecated legacy URL parser.

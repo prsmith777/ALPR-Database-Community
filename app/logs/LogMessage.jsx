@@ -1,6 +1,6 @@
 "use client";
 
-import { useId, useState } from "react";
+import { useEffect, useId, useState } from "react";
 import { Check, ChevronDown, Copy } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
@@ -23,35 +23,69 @@ function formattedTimestamp(timestamp) {
   return Number.isNaN(value.getTime()) ? "Time unavailable" : value.toLocaleString();
 }
 
-function ContextPill({ children }) {
-  if (!children) return null;
+function InlineFieldPill({ children, fieldKey, onReveal }) {
+  if (!children || !fieldKey) return null;
   return (
-    <span className="max-w-80 shrink-0 truncate rounded border border-border bg-muted/40 px-1.5 py-0.5 text-[10px] leading-4 text-muted-foreground">
+    <button
+      type="button"
+      className="max-w-80 shrink-0 truncate rounded border border-border bg-muted/40 px-1.5 py-0.5 text-[10px] leading-4 text-muted-foreground transition-colors hover:border-foreground/40 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+      onClick={() => onReveal(fieldKey)}
+      aria-label={`Show ${fieldKey} in structured fields`}
+      title={`Show ${fieldKey} in structured fields`}
+    >
       {children}
-    </span>
+    </button>
   );
+}
+
+function firstDetailKey(details, keys) {
+  return keys.find((key) => Object.hasOwn(details || {}, key)) || null;
+}
+
+function formattedField(key, value, isLast) {
+  const serialized = JSON.stringify(value, null, 2) ?? "null";
+  const indented = serialized.replace(/\n/g, "\n  ");
+  return `  ${JSON.stringify(key)}: ${indented}${isLast ? "" : ","}`;
 }
 
 export default function LogMessage({ log }) {
   const [expanded, setExpanded] = useState(false);
+  const [fieldsExpanded, setFieldsExpanded] = useState(true);
+  const [highlightedField, setHighlightedField] = useState(null);
   const [copied, setCopied] = useState(false);
   const detailsId = useId();
+  const fieldsId = `${detailsId}-fields`;
   const detailCount = Object.keys(log.details || {}).length;
+  const detailEntries = Object.entries(log.details || {});
+  const cameraField = firstDetailKey(log.details, ["cameraName", "camera_name", "camera"]);
+  const triggerField = firstDetailKey(log.details, ["triggerType", "trigger_type"]);
+  const directionField = firstDetailKey(log.details, [
+    "directionLabel",
+    "directionStatus",
+    "direction_label",
+    "direction_status",
+  ]);
+  const readField = firstDetailKey(log.details, [
+    "readId",
+    "read_id",
+    "processedReadIds",
+    "processed_read_ids",
+  ]);
+  const componentField = firstDetailKey(log.details, ["component"]);
+  const requestField = firstDetailKey(log.details, ["requestId", "request_id"]);
+  const directionErrorField = firstDetailKey(log.details, [
+    "directionErrorCode",
+    "direction_error_code",
+  ]);
+  const directionErrorValue = directionErrorField
+    ? log.details?.[directionErrorField]
+    : null;
+  const additionalReadIds = log.readIds?.slice(1) || [];
   const directionContext = log.details?.directionLabel
     ? `Direction ${log.details.directionLabel}`
     : log.details?.directionStatus
       ? `Direction ${log.details.directionStatus}`
       : null;
-  const hasContext = Boolean(
-    log.component
-      || log.cameraName
-      || log.details?.triggerType
-      || directionContext
-      || log.details?.directionErrorCode
-      || log.readIds?.length
-      || log.requestId,
-  );
-
   const copyRequestId = async () => {
     if (!log.requestId || !navigator.clipboard) return;
     await navigator.clipboard.writeText(log.requestId);
@@ -59,17 +93,35 @@ export default function LogMessage({ log }) {
     window.setTimeout(() => setCopied(false), 1500);
   };
 
+  const revealField = (fieldKey) => {
+    setExpanded(true);
+    setFieldsExpanded(true);
+    setHighlightedField(fieldKey);
+  };
+
+  useEffect(() => {
+    if (!expanded || !fieldsExpanded || !highlightedField) return undefined;
+    const fieldIndex = Object.keys(log.details || {}).indexOf(highlightedField);
+    if (fieldIndex < 0) return undefined;
+    const timer = window.setTimeout(() => {
+      const target = document.getElementById(`${fieldsId}-field-${fieldIndex}`);
+      target?.focus({ preventScroll: true });
+      target?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, [expanded, fieldsExpanded, fieldsId, highlightedField, log.details]);
+
   return (
     <article className="border-b border-border/40 py-1.5 last:border-b-0">
       <div className="grid items-center gap-1 lg:grid-cols-[minmax(0,1fr)_auto]">
-        <button
-          type="button"
-          className="min-w-0 overflow-hidden text-left"
-          aria-expanded={expanded}
-          aria-controls={detailsId}
-          onClick={() => setExpanded((value) => !value)}
-        >
-          <div className="flex min-w-0 items-center gap-2 font-mono text-sm leading-6">
+        <div className="flex min-w-0 items-center gap-2 font-mono text-sm leading-6">
+          <button
+            type="button"
+            className="flex min-w-0 items-center gap-2 overflow-hidden text-left"
+            aria-expanded={expanded}
+            aria-controls={detailsId}
+            onClick={() => setExpanded((value) => !value)}
+          >
             <ChevronDown
               className={`h-4 w-4 shrink-0 text-muted-foreground transition-transform ${
                 expanded ? "rotate-180" : ""
@@ -80,19 +132,29 @@ export default function LogMessage({ log }) {
               [{log.level}]
             </span>
             <span className="min-w-0 truncate text-foreground">{log.message}</span>
-            <div className="ml-1 hidden min-w-0 flex-1 items-center gap-1 overflow-hidden lg:flex">
-              <ContextPill>{log.cameraName}</ContextPill>
-              <ContextPill>
-                {log.details?.triggerType ? `Trigger ${log.details.triggerType}` : null}
-              </ContextPill>
-              <ContextPill>{directionContext}</ContextPill>
-              {log.readIds?.[0] && <ContextPill>Read {log.readIds[0]}</ContextPill>}
-              {log.readIds?.length > 1 && (
-                <ContextPill>+{log.readIds.length - 1} reads</ContextPill>
-              )}
-            </div>
+          </button>
+          <div className="ml-1 hidden min-w-0 flex-1 items-center gap-1 overflow-hidden lg:flex">
+            <InlineFieldPill fieldKey={cameraField} onReveal={revealField}>
+              {log.cameraName}
+            </InlineFieldPill>
+            <InlineFieldPill fieldKey={triggerField} onReveal={revealField}>
+              {log.details?.triggerType ? `Trigger ${log.details.triggerType}` : null}
+            </InlineFieldPill>
+            <InlineFieldPill fieldKey={directionField} onReveal={revealField}>
+              {directionContext}
+            </InlineFieldPill>
+            {log.readIds?.[0] && (
+              <InlineFieldPill fieldKey={readField} onReveal={revealField}>
+                Read {log.readIds[0]}
+              </InlineFieldPill>
+            )}
+            {log.readIds?.length > 1 && (
+              <InlineFieldPill fieldKey={readField} onReveal={revealField}>
+                +{log.readIds.length - 1} reads
+              </InlineFieldPill>
+            )}
           </div>
-        </button>
+        </div>
 
         <div className="flex items-start justify-between gap-2 lg:justify-end">
           <time className="whitespace-nowrap font-mono text-[11px] text-muted-foreground">
@@ -119,36 +181,70 @@ export default function LogMessage({ log }) {
           id={detailsId}
           className="ml-6 mt-2 rounded-md border border-border bg-muted/20 p-3"
         >
-          {hasContext && (
-            <div className="mb-3">
-              <div className="mb-2 text-xs font-medium text-muted-foreground">
-                Context
-              </div>
-              <div className="flex flex-wrap gap-1.5">
-                <ContextPill>{log.component}</ContextPill>
-                <ContextPill>{log.cameraName}</ContextPill>
-                <ContextPill>
-                  {log.details?.triggerType ? `Trigger ${log.details.triggerType}` : null}
-                </ContextPill>
-                <ContextPill>{directionContext}</ContextPill>
-                <ContextPill>
-                  {log.details?.directionErrorCode
-                    ? `Direction error ${log.details.directionErrorCode}`
-                    : null}
-                </ContextPill>
-                {log.readIds?.map((readId) => (
-                  <ContextPill key={readId}>Read {readId}</ContextPill>
-                ))}
-                {log.requestId && <ContextPill>Request {log.requestId}</ContextPill>}
-              </div>
-            </div>
-          )}
-          <div className="mb-2 text-xs font-medium text-muted-foreground">
-            Structured fields ({detailCount})
+          <div
+            className={`flex flex-wrap items-center gap-1.5 font-mono ${
+              fieldsExpanded ? "mb-2" : ""
+            }`}
+          >
+            <InlineFieldPill fieldKey={componentField} onReveal={revealField}>
+              {log.component}
+            </InlineFieldPill>
+            <InlineFieldPill fieldKey={requestField} onReveal={revealField}>
+              {log.requestId ? `Request ${log.requestId}` : null}
+            </InlineFieldPill>
+            <InlineFieldPill fieldKey={directionErrorField} onReveal={revealField}>
+              {directionErrorValue
+                ? `Direction error ${directionErrorValue}`
+                : null}
+            </InlineFieldPill>
+            {additionalReadIds.map((readId) => (
+              <InlineFieldPill
+                key={readId}
+                fieldKey={readField}
+                onReveal={revealField}
+              >
+                Read {readId}
+              </InlineFieldPill>
+            ))}
+            <button
+              type="button"
+              className="flex shrink-0 items-center gap-1 rounded-sm text-left text-xs font-medium text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              aria-expanded={fieldsExpanded}
+              aria-controls={fieldsId}
+              onClick={() => setFieldsExpanded((value) => !value)}
+            >
+              <ChevronDown
+                className={`h-3.5 w-3.5 shrink-0 transition-transform ${
+                  fieldsExpanded ? "" : "-rotate-90"
+                }`}
+                aria-hidden="true"
+              />
+              <span>Structured fields ({detailCount})</span>
+            </button>
           </div>
-          <pre className="max-h-80 overflow-auto whitespace-pre-wrap break-all font-mono text-xs text-foreground">
-            {JSON.stringify(log.details || {}, null, 2)}
-          </pre>
+          {fieldsExpanded && (
+            <pre
+              id={fieldsId}
+              className="max-h-80 overflow-auto whitespace-pre-wrap break-all font-mono text-xs text-foreground"
+            >
+              <span className="block">{"{"}</span>
+              {detailEntries.map(([key, value], index) => (
+                <span
+                  key={key}
+                  id={`${fieldsId}-field-${index}`}
+                  tabIndex={-1}
+                  className={`block rounded-sm px-1 outline-none transition-colors ${
+                    highlightedField === key
+                      ? "bg-primary/15 ring-1 ring-inset ring-primary/40"
+                      : ""
+                  }`}
+                >
+                  {formattedField(key, value, index === detailEntries.length - 1)}
+                </span>
+              ))}
+              <span className="block">{"}"}</span>
+            </pre>
+          )}
         </div>
       )}
     </article>
