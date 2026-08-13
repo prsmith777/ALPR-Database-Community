@@ -33,10 +33,12 @@ reliable background processing.
   filters in a compact toolbar, and keeps collapsed entries on one line so more
   rows remain visible. Camera, trigger, evaluated direction, and the first read
   ID remain inline when space permits; component, request, direction-error, and
-  complete read context remain in the expanded entry as secondary tags sharing one
-  line with the Structured fields disclosure. Expanded controls support level and
-  correlation filters, pagination and refresh. Rows expose independently collapsible
-  sanitized JSON immediately below that line, and each tag jumps to and highlights
+  complete read context remain in the expanded entry as secondary tags. Expanded
+  controls support level and correlation filters, pagination, and manual refresh.
+  Default-on live updating refreshes the newest page every five seconds and pauses
+  on older pages, hidden browser tabs, or while any entry is expanded for inspection.
+  Rows expose sanitized JSON immediately below their secondary tags without a
+  redundant nested disclosure, and each tag jumps to and highlights
   its exact field without returning credentials, plate values, image data, or paths.
   Accepted Blue Iris `text/plain` JSON is an
   informational compatibility event rather than a warning. Background MQTT and
@@ -750,9 +752,10 @@ be restored. Monochrome nighttime captures do not receive a direction result.
   trigger-field state, and Blue Iris content-type compatibility.
 - Delivered operator visibility: bounded server-side System Logs filtering and
   pagination, default-collapsed filters with active-filter summaries, denser
-  log rows, Blue Iris trigger/direction context, expandable structured fields,
-  request-ID copy, active-file usage, normalized compatibility severity, and
-  sanitized background-runtime logging.
+  log rows, Blue Iris trigger/direction context, expandable sanitized JSON,
+  default-on five-second live refresh with inspection-aware pause, request-ID
+  copy, active-file usage, normalized compatibility severity, and sanitized
+  background-runtime logging.
 - Next: add an Administrator/Auditor ingress-receipt explorer with request,
   read, camera, outcome, error, and date filters; correlate each receipt with
   its operational log and resulting read; add schema/version, alias-conflict,

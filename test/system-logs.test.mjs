@@ -114,8 +114,9 @@ test("log query inputs are bounded to supported levels and page sizes", () => {
 });
 
 test("System Logs exposes bounded structured diagnostics and operator controls", async () => {
-  const [actions, viewer, message, instrumentation, mqtt] = await Promise.all([
+  const [actions, page, viewer, message, instrumentation, mqtt] = await Promise.all([
     source("app/actions.js"),
+    source("app/logs/page.jsx"),
     source("app/logs/LogViewer.jsx"),
     source("app/logs/LogMessage.jsx"),
     source("instrumentation.js"),
@@ -124,6 +125,11 @@ test("System Logs exposes bounded structured diagnostics and operator controls",
 
   assert.match(actions, /querySystemLogText\(content, filters/);
   assert.match(actions, /requirePermission\("system\.view_audit"\)/);
+  assert.match(page, /LogsPage\(\{ searchParams \}\)/);
+  assert.match(page, /initialFilters = readId \? \{ readId \} : \{\}/);
+  assert.match(page, /getSystemLogs\(initialFilters\)/);
+  assert.match(viewer, /Log pipeline for read #\{applied\.readId\}/);
+  assert.match(viewer, /Show all logs/);
   assert.match(viewer, /Search messages and structured fields/);
   assert.match(viewer, /Request ID/);
   assert.match(viewer, /Read ID/);
@@ -132,19 +138,29 @@ test("System Logs exposes bounded structured diagnostics and operator controls",
   assert.match(viewer, /Rows per page/);
   assert.match(viewer, /Log level/);
   assert.match(viewer, /Refresh/);
+  assert.match(viewer, /const LIVE_REFRESH_MS = 5_000/);
+  assert.match(viewer, /const \[liveUpdates, setLiveUpdates\] = useState\(true\)/);
+  assert.match(viewer, /document\.visibilityState === "visible"/);
+  assert.match(viewer, /window\.setInterval\(refreshVisiblePage, LIVE_REFRESH_MS\)/);
+  assert.match(viewer, /aria-pressed=\{liveUpdates\}/);
+  assert.match(viewer, /Live updates resume on page 1/);
+  assert.match(viewer, /const \[expandedRows, setExpandedRows\] = useState\(\(\) => new Set\(\)\)/);
+  assert.match(viewer, /liveUpdates && pageData\?\.page === 1 && !hasExpandedRows/);
+  assert.match(viewer, /Live updates resume when log details are closed/);
+  assert.match(viewer, /expanded=\{expandedRows\.has\(log\.id\)\}/);
   assert.match(viewer, /const \[filtersExpanded, setFiltersExpanded\] = useState\(false\)/);
   assert.match(viewer, /aria-controls="system-log-filters"/);
   assert.match(viewer, /All levels · all sources/);
   assert.match(viewer, /Unapplied changes/);
-  assert.match(message, /Structured fields/);
+  assert.doesNotMatch(message, /Structured fields/);
   assert.match(message, /Copy request ID/);
   assert.match(message, /Trigger \$\{log\.details\.triggerType\}/);
   assert.match(message, /aria-controls=\{detailsId\}/);
+  assert.match(message, /onExpandedChange\?\.\(log\.id, !expanded\)/);
   assert.match(message, /hidden min-w-0 flex-1 items-center gap-1 overflow-hidden lg:flex/);
   assert.match(message, /log\.readIds\?\.\[0\]/);
-  assert.match(message, /const \[fieldsExpanded, setFieldsExpanded\] = useState\(true\)/);
-  assert.match(message, /aria-controls=\{fieldsId\}/);
-  assert.match(message, /Show \$\{fieldKey\} in structured fields/);
+  assert.doesNotMatch(message, /fieldsExpanded/);
+  assert.match(message, /Show \$\{fieldKey\} in log details/);
   assert.match(message, /fieldKey=\{cameraField\}/);
   assert.match(message, /fieldKey=\{triggerField\}/);
   assert.match(message, /fieldKey=\{directionField\}/);

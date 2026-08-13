@@ -32,6 +32,7 @@ import {
   ChevronLeft,
   ChevronRight,
   Split,
+  ScrollText,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -346,6 +347,7 @@ export default function PlateTable({
   const canManageKnownPlates = can("known_plate.manage");
   const canManageTags = can("tag.manage");
   const canExport = can("export.create");
+  const canViewAudit = can("system.view_audit");
   const selectedTags = Array.isArray(filters.tags)
     ? filters.tags
     : filters.tag && filters.tag !== "all"
@@ -2603,35 +2605,23 @@ export default function PlateTable({
                               </TooltipContent>
                             </Tooltip>
                           )}
-                          {canReview && <Tooltip>
+                          {canViewAudit && <Tooltip>
                             <TooltipTrigger asChild>
                               <Button
                                 variant="ghost"
                                 size="icon"
-                                aria-label={`${
-                                  plate?.validated ? "Reopen review for" : "Confirm detected plate"
-                                } ${plate.plate_number}`}
-                                className={
-                                  plate?.validated
-                                    ? `${TABLE_ACTION_BUTTON_CLASS} text-green-500 hover:text-green-700`
-                                    : TABLE_ACTION_BUTTON_CLASS
-                                }
-                                onClick={() => {
-                                  onValidate(plate.id, !plate.validated);
-                                }}
+                                className={TABLE_ACTION_BUTTON_CLASS}
+                                asChild
                               >
-                                {plate?.validated ? (
-                                  <CircleCheck className="h-4 w-4" />
-                                ) : (
-                                  <Check className="h-4 w-4" />
-                                )}
+                                <Link
+                                  href={`/logs?readId=${plate.id}`}
+                                  aria-label={`View logs for read ${plate.id}`}
+                                >
+                                  <ScrollText className="h-4 w-4" />
+                                </Link>
                               </Button>
                             </TooltipTrigger>
-                            <TooltipContent>
-                              {plate?.validated
-                                ? "Reopen review"
-                                : "Confirm detected plate"}
-                            </TooltipContent>
+                            <TooltipContent>View logs for this read</TooltipContent>
                           </Tooltip>}
 
                           {canDelete && <Tooltip>
