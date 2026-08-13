@@ -30,8 +30,8 @@ function InlineFieldPill({ children, fieldKey, onReveal }) {
       type="button"
       className="max-w-80 shrink-0 truncate rounded border border-border bg-muted/40 px-1.5 py-0.5 text-[10px] leading-4 text-muted-foreground transition-colors hover:border-foreground/40 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
       onClick={() => onReveal(fieldKey)}
-      aria-label={`Show ${fieldKey} in structured fields`}
-      title={`Show ${fieldKey} in structured fields`}
+      aria-label={`Show ${fieldKey} in log details`}
+      title={`Show ${fieldKey} in log details`}
     >
       {children}
     </button>
@@ -48,14 +48,11 @@ function formattedField(key, value, isLast) {
   return `  ${JSON.stringify(key)}: ${indented}${isLast ? "" : ","}`;
 }
 
-export default function LogMessage({ log }) {
-  const [expanded, setExpanded] = useState(false);
-  const [fieldsExpanded, setFieldsExpanded] = useState(true);
+export default function LogMessage({ log, expanded = false, onExpandedChange }) {
   const [highlightedField, setHighlightedField] = useState(null);
   const [copied, setCopied] = useState(false);
   const detailsId = useId();
   const fieldsId = `${detailsId}-fields`;
-  const detailCount = Object.keys(log.details || {}).length;
   const detailEntries = Object.entries(log.details || {});
   const cameraField = firstDetailKey(log.details, ["cameraName", "camera_name", "camera"]);
   const triggerField = firstDetailKey(log.details, ["triggerType", "trigger_type"]);
@@ -94,13 +91,12 @@ export default function LogMessage({ log }) {
   };
 
   const revealField = (fieldKey) => {
-    setExpanded(true);
-    setFieldsExpanded(true);
+    onExpandedChange?.(log.id, true);
     setHighlightedField(fieldKey);
   };
 
   useEffect(() => {
-    if (!expanded || !fieldsExpanded || !highlightedField) return undefined;
+    if (!expanded || !highlightedField) return undefined;
     const fieldIndex = Object.keys(log.details || {}).indexOf(highlightedField);
     if (fieldIndex < 0) return undefined;
     const timer = window.setTimeout(() => {
@@ -109,7 +105,7 @@ export default function LogMessage({ log }) {
       target?.scrollIntoView({ behavior: "smooth", block: "nearest" });
     }, 0);
     return () => window.clearTimeout(timer);
-  }, [expanded, fieldsExpanded, fieldsId, highlightedField, log.details]);
+  }, [expanded, fieldsId, highlightedField, log.details]);
 
   return (
     <article className="border-b border-border/40 py-1.5 last:border-b-0">
@@ -120,7 +116,7 @@ export default function LogMessage({ log }) {
             className="flex min-w-0 items-center gap-2 overflow-hidden text-left"
             aria-expanded={expanded}
             aria-controls={detailsId}
-            onClick={() => setExpanded((value) => !value)}
+            onClick={() => onExpandedChange?.(log.id, !expanded)}
           >
             <ChevronDown
               className={`h-4 w-4 shrink-0 text-muted-foreground transition-transform ${
@@ -181,11 +177,7 @@ export default function LogMessage({ log }) {
           id={detailsId}
           className="ml-6 mt-2 rounded-md border border-border bg-muted/20 p-3"
         >
-          <div
-            className={`flex flex-wrap items-center gap-1.5 font-mono ${
-              fieldsExpanded ? "mb-2" : ""
-            }`}
-          >
+          <div className="mb-2 flex flex-wrap items-center gap-1.5 font-mono">
             <InlineFieldPill fieldKey={componentField} onReveal={revealField}>
               {log.component}
             </InlineFieldPill>
@@ -206,45 +198,28 @@ export default function LogMessage({ log }) {
                 Read {readId}
               </InlineFieldPill>
             ))}
-            <button
-              type="button"
-              className="flex shrink-0 items-center gap-1 rounded-sm text-left text-xs font-medium text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-              aria-expanded={fieldsExpanded}
-              aria-controls={fieldsId}
-              onClick={() => setFieldsExpanded((value) => !value)}
-            >
-              <ChevronDown
-                className={`h-3.5 w-3.5 shrink-0 transition-transform ${
-                  fieldsExpanded ? "" : "-rotate-90"
-                }`}
-                aria-hidden="true"
-              />
-              <span>Structured fields ({detailCount})</span>
-            </button>
           </div>
-          {fieldsExpanded && (
-            <pre
-              id={fieldsId}
-              className="max-h-80 overflow-auto whitespace-pre-wrap break-all font-mono text-xs text-foreground"
-            >
-              <span className="block">{"{"}</span>
-              {detailEntries.map(([key, value], index) => (
-                <span
-                  key={key}
-                  id={`${fieldsId}-field-${index}`}
-                  tabIndex={-1}
-                  className={`block rounded-sm px-1 outline-none transition-colors ${
-                    highlightedField === key
-                      ? "bg-primary/15 ring-1 ring-inset ring-primary/40"
-                      : ""
-                  }`}
-                >
-                  {formattedField(key, value, index === detailEntries.length - 1)}
-                </span>
-              ))}
-              <span className="block">{"}"}</span>
-            </pre>
-          )}
+          <pre
+            id={fieldsId}
+            className="max-h-80 overflow-auto whitespace-pre-wrap break-all font-mono text-xs text-foreground"
+          >
+            <span className="block">{"{"}</span>
+            {detailEntries.map(([key, value], index) => (
+              <span
+                key={key}
+                id={`${fieldsId}-field-${index}`}
+                tabIndex={-1}
+                className={`block rounded-sm px-1 outline-none transition-colors ${
+                  highlightedField === key
+                    ? "bg-primary/15 ring-1 ring-inset ring-primary/40"
+                    : ""
+                }`}
+              >
+                {formattedField(key, value, index === detailEntries.length - 1)}
+              </span>
+            ))}
+            <span className="block">{"}"}</span>
+          </pre>
         </div>
       )}
     </article>

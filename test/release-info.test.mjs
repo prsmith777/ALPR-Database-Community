@@ -23,7 +23,7 @@ test("release information resolves a commit-pinned deployment image", () => {
   });
 
   assert.equal(release.version, "0.1.19");
-  assert.equal(release.manualVersion, "1.81");
+  assert.equal(release.manualVersion, "1.82");
   assert.equal(release.manualUpdatedAt, "August 13, 2026");
   assert.equal(release.gitSha, "8cd2fa8");
   assert.equal(release.channel, "staging");
