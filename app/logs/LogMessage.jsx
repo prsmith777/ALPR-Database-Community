@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useId, useState } from "react";
 import { Check, ChevronDown, Copy } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
@@ -26,7 +26,7 @@ function formattedTimestamp(timestamp) {
 function ContextPill({ children }) {
   if (!children) return null;
   return (
-    <span className="max-w-80 truncate rounded border border-border bg-muted/40 px-1.5 py-0.5 text-[10px] leading-4 text-muted-foreground">
+    <span className="max-w-80 shrink-0 truncate rounded border border-border bg-muted/40 px-1.5 py-0.5 text-[10px] leading-4 text-muted-foreground">
       {children}
     </span>
   );
@@ -35,7 +35,22 @@ function ContextPill({ children }) {
 export default function LogMessage({ log }) {
   const [expanded, setExpanded] = useState(false);
   const [copied, setCopied] = useState(false);
+  const detailsId = useId();
   const detailCount = Object.keys(log.details || {}).length;
+  const directionContext = log.details?.directionLabel
+    ? `Direction ${log.details.directionLabel}`
+    : log.details?.directionStatus
+      ? `Direction ${log.details.directionStatus}`
+      : null;
+  const hasContext = Boolean(
+    log.component
+      || log.cameraName
+      || log.details?.triggerType
+      || directionContext
+      || log.details?.directionErrorCode
+      || log.readIds?.length
+      || log.requestId,
+  );
 
   const copyRequestId = async () => {
     if (!log.requestId || !navigator.clipboard) return;
@@ -45,17 +60,18 @@ export default function LogMessage({ log }) {
   };
 
   return (
-    <article className="border-b border-border/40 py-2 last:border-b-0">
-      <div className="grid gap-1.5 lg:grid-cols-[minmax(0,1fr)_auto]">
+    <article className="border-b border-border/40 py-1.5 last:border-b-0">
+      <div className="grid items-center gap-1 lg:grid-cols-[minmax(0,1fr)_auto]">
         <button
           type="button"
-          className="min-w-0 text-left"
+          className="min-w-0 overflow-hidden text-left"
           aria-expanded={expanded}
+          aria-controls={detailsId}
           onClick={() => setExpanded((value) => !value)}
         >
-          <div className="flex min-w-0 items-start gap-2 font-mono text-sm">
+          <div className="flex min-w-0 items-center gap-2 font-mono text-sm leading-6">
             <ChevronDown
-              className={`mt-0.5 h-4 w-4 shrink-0 text-muted-foreground transition-transform ${
+              className={`h-4 w-4 shrink-0 text-muted-foreground transition-transform ${
                 expanded ? "rotate-180" : ""
               }`}
               aria-hidden="true"
@@ -63,30 +79,18 @@ export default function LogMessage({ log }) {
             <span className={`shrink-0 ${levelColor(log.level)}`}>
               [{log.level}]
             </span>
-            <span className="break-words text-foreground">{log.message}</span>
-          </div>
-          <div className="ml-6 mt-1 flex max-h-5 flex-wrap gap-1.5 overflow-hidden">
-            <ContextPill>{log.component}</ContextPill>
-            <ContextPill>{log.cameraName}</ContextPill>
-            <ContextPill>
-              {log.details?.triggerType ? `Trigger ${log.details.triggerType}` : null}
-            </ContextPill>
-            <ContextPill>
-              {log.details?.directionLabel
-                ? `Direction ${log.details.directionLabel}`
-                : log.details?.directionStatus
-                  ? `Direction ${log.details.directionStatus}`
-                  : null}
-            </ContextPill>
-            <ContextPill>
-              {log.details?.directionErrorCode
-                ? `Direction error ${log.details.directionErrorCode}`
-                : null}
-            </ContextPill>
-            {log.readIds?.map((readId) => (
-              <ContextPill key={readId}>Read {readId}</ContextPill>
-            ))}
-            {log.requestId && <ContextPill>Request {log.requestId}</ContextPill>}
+            <span className="min-w-0 truncate text-foreground">{log.message}</span>
+            <div className="ml-1 hidden min-w-0 flex-1 items-center gap-1 overflow-hidden lg:flex">
+              <ContextPill>{log.cameraName}</ContextPill>
+              <ContextPill>
+                {log.details?.triggerType ? `Trigger ${log.details.triggerType}` : null}
+              </ContextPill>
+              <ContextPill>{directionContext}</ContextPill>
+              {log.readIds?.[0] && <ContextPill>Read {log.readIds[0]}</ContextPill>}
+              {log.readIds?.length > 1 && (
+                <ContextPill>+{log.readIds.length - 1} reads</ContextPill>
+              )}
+            </div>
           </div>
         </button>
 
@@ -111,7 +115,34 @@ export default function LogMessage({ log }) {
       </div>
 
       {expanded && (
-        <div className="ml-6 mt-3 rounded-md border border-border bg-muted/20 p-3">
+        <div
+          id={detailsId}
+          className="ml-6 mt-2 rounded-md border border-border bg-muted/20 p-3"
+        >
+          {hasContext && (
+            <div className="mb-3">
+              <div className="mb-2 text-xs font-medium text-muted-foreground">
+                Context
+              </div>
+              <div className="flex flex-wrap gap-1.5">
+                <ContextPill>{log.component}</ContextPill>
+                <ContextPill>{log.cameraName}</ContextPill>
+                <ContextPill>
+                  {log.details?.triggerType ? `Trigger ${log.details.triggerType}` : null}
+                </ContextPill>
+                <ContextPill>{directionContext}</ContextPill>
+                <ContextPill>
+                  {log.details?.directionErrorCode
+                    ? `Direction error ${log.details.directionErrorCode}`
+                    : null}
+                </ContextPill>
+                {log.readIds?.map((readId) => (
+                  <ContextPill key={readId}>Read {readId}</ContextPill>
+                ))}
+                {log.requestId && <ContextPill>Request {log.requestId}</ContextPill>}
+              </div>
+            </div>
+          )}
           <div className="mb-2 text-xs font-medium text-muted-foreground">
             Structured fields ({detailCount})
           </div>
