@@ -140,7 +140,11 @@ test("System Logs exposes bounded structured diagnostics and operator controls",
   assert.match(message, /Copy request ID/);
   assert.match(message, /Trigger \$\{log\.details\.triggerType\}/);
   assert.match(message, /Direction error \$\{log\.details\.directionErrorCode\}/);
-  assert.match(message, /border-b border-border\/40 py-2/);
+  assert.match(message, /aria-controls=\{detailsId\}/);
+  assert.match(message, /hidden min-w-0 flex-1 items-center gap-1 overflow-hidden lg:flex/);
+  assert.match(message, /log\.readIds\?\.\[0\]/);
+  assert.match(message, /Context/);
+  assert.match(message, /border-b border-border\/40 py-1\.5/);
   assert.match(instrumentation, /createComponentLogger\("background-runtime"\)/);
   assert.match(mqtt, /this\.mqttConnect\(options\)/);
   assert.doesNotMatch(mqtt, /this\.mqttConnect\(url, options\)/);

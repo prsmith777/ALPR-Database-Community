@@ -30,9 +30,12 @@ reliable background processing.
   direction status, duration, and outcome
   fields. The page queries the bounded active file server-side, presents newest
   records first, keeps its filter panel collapsed by default, summarizes active
-  filters in a compact toolbar, and uses denser rows so more entries remain
-  visible. Expanded controls support level and correlation filters, pagination
-  and refresh, and rows expand sanitized JSON metadata without returning credentials, plate
+  filters in a compact toolbar, and keeps collapsed entries on one line so more
+  rows remain visible. Camera, trigger, evaluated direction, and the first read
+  ID remain inline when space permits; component, request, direction-error, and
+  complete read context move into the expanded entry. Expanded controls support
+  level and correlation filters, pagination and refresh, and rows expand the
+  complete tag set plus sanitized JSON metadata without returning credentials, plate
   values, image data, or paths. Accepted Blue Iris `text/plain` JSON is an
   informational compatibility event rather than a warning. Background MQTT and
   storage activity uses the sanitizer, broker credentials are not logged, and
