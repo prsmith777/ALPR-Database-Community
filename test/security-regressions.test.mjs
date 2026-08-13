@@ -14,7 +14,8 @@ test("middleware contains no whitelist, request IP, or forwarded-header authenti
 
 test("plate-read route delegates to the authentication-first wrapper", async () => {
   const source = await fs.readFile("app/api/plate-reads/route.js", "utf8");
-  assert.match(source, /createIntegrationRouteHandler\(processPlateRead\)/);
+  assert.match(source, /createIntegrationRouteHandler\(processPlateRead,\s*\{/);
+  assert.match(source, /recorder:\s*plateIngressRecorder/);
   assert.equal(source.includes("await req.json()"), false);
   assert.equal(source.includes("Received plate read data"), false);
   assert.equal(source.includes("details: error.message"), false);
@@ -33,7 +34,8 @@ test("committed plate reads cannot fail because cache revalidation lacks a brows
     source.indexOf("return Response.json", start)
   );
   assert.equal(revalidationBlock.includes("throw error"), false);
-  assert.match(revalidationBlock, /Plate page revalidation failed/);
+  assert.match(revalidationBlock, /plate_feed_revalidation_failed/);
+  assert.match(revalidationBlock, /PLATE_FEED_REVALIDATION_FAILED/);
 });
 
 test("every non-public server action verifies its own session", async () => {

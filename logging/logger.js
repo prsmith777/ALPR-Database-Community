@@ -1,88 +1,216 @@
 import fs from "fs";
 import path from "path";
 import winston from "winston";
-import Transport from "winston-transport";
 
-class LimitedLineTransport extends Transport {
-  constructor(opts) {
-    super(opts);
-    this.filename = opts.filename;
-    this.maxLines = opts.maxLines;
-  }
+const DEFAULT_MAX_FILE_BYTES = 5 * 1024 * 1024;
+const DEFAULT_MAX_FILES = 20;
+const MAX_STRING_LENGTH = 512;
+const MAX_ARRAY_LENGTH = 25;
+const MAX_OBJECT_KEYS = 50;
+const MAX_DEPTH = 5;
 
-  log(info, callback) {
-    try {
-      let lines = [];
-      if (fs.existsSync(this.filename)) {
-        lines = fs
-          .readFileSync(this.filename, "utf8")
-          .split("\n")
-          .filter(Boolean);
-      }
-      lines.push(JSON.stringify(info));
+const SENSITIVE_KEY_NAMES = new Set([
+  "authorization",
+  "apikey",
+  "password",
+  "passwd",
+  "secret",
+  "token",
+  "cookie",
+  "session",
+  "sessionid",
+  "plate",
+  "platenumber",
+  "image",
+  "jpeg",
+  "base64",
+  "aidump",
+  "raw",
+  "rawtext",
+  "body",
+  "payload",
+  "path",
+  "alertpath",
+  "clip",
+  "alertclip",
+  "file",
+  "filename",
+]);
 
-      // Keep only last maxLines
-      if (lines.length > this.maxLines) {
-        lines = lines.slice(-this.maxLines);
-      }
+const SENSITIVE_KEY_SUFFIXES = [
+  "authorization",
+  "apikey",
+  "password",
+  "passwd",
+  "secret",
+  "token",
+  "cookie",
+  "sessionid",
+  "platenumber",
+  "image",
+  "jpeg",
+  "base64",
+  "aidump",
+  "rawtext",
+  "body",
+  "payload",
+  "path",
+  "alertpath",
+  "clip",
+  "alertclip",
+  "filename",
+];
 
-      fs.writeFileSync(this.filename, lines.join("\n") + "\n");
-    } catch (error) {
-      console.error("Error writing to log file:", error);
-    }
-    callback();
-  }
+function sensitiveLogKey(key) {
+  const normalized = String(key).toLowerCase().replace(/[^a-z0-9]/g, "");
+  return (
+    SENSITIVE_KEY_NAMES.has(normalized) ||
+    SENSITIVE_KEY_SUFFIXES.some((name) =>
+      normalized.endsWith(name) && normalized.length > name.length
+    )
+  );
 }
 
-if (typeof window === "undefined" && !global.__loggerInitialized) {
-  const LOG_DIR = path.join(process.cwd(), "logs");
-  const LOG_FILE = path.join(LOG_DIR, "app.log");
-  const MAX_LINES = 1000;
+function positiveInteger(value, fallback) {
+  const parsed = Number.parseInt(value, 10);
+  return Number.isSafeInteger(parsed) && parsed > 0 ? parsed : fallback;
+}
 
-  try {
-    if (!fs.existsSync(LOG_DIR)) {
-      fs.mkdirSync(LOG_DIR, { recursive: true });
-    }
-  } catch (error) {
-    console.error("Failed to create logs directory:", error);
+function boundedString(value) {
+  const text = String(value);
+  return text.length <= MAX_STRING_LENGTH
+    ? text
+    : `${text.slice(0, MAX_STRING_LENGTH)}...[truncated]`;
+}
+
+/**
+ * Return a bounded, JSON-safe representation suitable for operational logs.
+ * Payload bodies, images, plate values, credentials, paths, and Error details
+ * are intentionally not emitted.
+ */
+export function sanitizeLogValue(value, depth = 0, seen = new WeakSet()) {
+  if (value == null || typeof value === "boolean" || typeof value === "number") {
+    return value;
   }
 
-  // Configure winston with JSON format
+  if (typeof value === "string" || typeof value === "bigint") {
+    return boundedString(value);
+  }
+
+  if (value instanceof Error) {
+    return {
+      name: boundedString(value.name || "Error"),
+      ...(value.code ? { code: boundedString(value.code) } : {}),
+    };
+  }
+
+  if (
+    (typeof Buffer !== "undefined" && Buffer.isBuffer(value)) ||
+    ArrayBuffer.isView(value)
+  ) {
+    return { type: "binary", bytes: value.byteLength };
+  }
+
+  if (depth >= MAX_DEPTH) return "[depth-limit]";
+  if (typeof value !== "object") return boundedString(value);
+  if (seen.has(value)) return "[circular]";
+  seen.add(value);
+
+  if (Array.isArray(value)) {
+    return value
+      .slice(0, MAX_ARRAY_LENGTH)
+      .map((entry) => sanitizeLogValue(entry, depth + 1, seen));
+  }
+
+  const sanitized = {};
+  for (const [key, entry] of Object.entries(value).slice(0, MAX_OBJECT_KEYS)) {
+    if (sensitiveLogKey(key)) {
+      sanitized[key] = "[redacted]";
+      continue;
+    }
+    sanitized[key] = sanitizeLogValue(entry, depth + 1, seen);
+  }
+  return sanitized;
+}
+
+export function createOperationalLogger({ env = process.env, cwd = process.cwd() } = {}) {
+  const logDirectory = path.resolve(env.ALPR_LOG_DIR || path.join(cwd, "logs"));
+  const maxsize = positiveInteger(
+    env.ALPR_OPERATIONAL_LOG_FILE_MAX_BYTES,
+    DEFAULT_MAX_FILE_BYTES
+  );
+  const maxFiles = positiveInteger(
+    env.ALPR_OPERATIONAL_LOG_MAX_FILES,
+    DEFAULT_MAX_FILES
+  );
+  const transports = [new winston.transports.Console()];
+
+  try {
+    fs.mkdirSync(logDirectory, { recursive: true });
+    transports.push(
+      new winston.transports.File({
+        filename: path.join(logDirectory, "app.log"),
+        maxsize,
+        maxFiles,
+        tailable: true,
+      })
+    );
+  } catch {
+    // Console JSON remains available when the bounded file cannot be opened.
+  }
+
   const logger = winston.createLogger({
-    format: winston.format.combine(
-      winston.format.timestamp(),
-      winston.format.json()
-    ),
-    transports: [
-      new LimitedLineTransport({
-        filename: LOG_FILE,
-        maxLines: MAX_LINES,
-      }),
-    ],
+    level: env.ALPR_LOG_LEVEL || "info",
+    defaultMeta: { service: "alpr-community" },
+    format: winston.format.combine(winston.format.timestamp(), winston.format.json()),
+    transports,
   });
 
-  // Store original console methods
-  const originalMethods = {
-    log: console.log.bind(console),
-    error: console.error.bind(console),
-    warn: console.warn.bind(console),
-  };
+  function emit(level, event, fields = {}) {
+    const safeEvent = boundedString(event || "operational_event");
+    const safeFields = sanitizeLogValue(fields);
+    logger.log({ ...safeFields, level, message: safeEvent });
+  }
 
-  // Override console methods
-  console.log = (...args) => {
-    logger.info(args.join(" "));
-    originalMethods.log(...args);
+  return {
+    info: (event, fields) => emit("info", event, fields),
+    warn: (event, fields) => emit("warn", event, fields),
+    error: (event, fields) => emit("error", event, fields),
+    debug: (event, fields) => emit("debug", event, fields),
+    log: (event, fields) => emit("info", event, fields),
+    close: () => logger.close(),
   };
+}
 
-  console.error = (...args) => {
-    logger.error(args.join(" "));
-    originalMethods.error(...args);
+const globalKey = Symbol.for("alpr.operationalLogger");
+
+function singletonLogger() {
+  if (typeof window !== "undefined") {
+    return {
+      info() {},
+      warn() {},
+      error() {},
+      debug() {},
+      log() {},
+      close() {},
+    };
+  }
+  if (!globalThis[globalKey]) {
+    globalThis[globalKey] = createOperationalLogger();
+  }
+  return globalThis[globalKey];
+}
+
+export const appLogger = singletonLogger();
+
+export function createComponentLogger(component) {
+  const safeComponent = boundedString(component || "application");
+  const withComponent = (fields) => ({ ...(fields || {}), component: safeComponent });
+  return {
+    info: (event, fields) => appLogger.info(event, withComponent(fields)),
+    warn: (event, fields) => appLogger.warn(event, withComponent(fields)),
+    error: (event, fields) => appLogger.error(event, withComponent(fields)),
+    debug: (event, fields) => appLogger.debug(event, withComponent(fields)),
+    log: (event, fields) => appLogger.info(event, withComponent(fields)),
   };
-
-  console.warn = (...args) => {
-    logger.warn(args.join(" "));
-    originalMethods.warn(...args);
-  };
-
-  global.__loggerInitialized = true;
 }

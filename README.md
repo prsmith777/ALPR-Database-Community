@@ -132,6 +132,13 @@ unmapped crossings fall back to Vehicle ReID. Monochrome nighttime captures
 are not classified and display `Unavailable nighttime`. Existing historical
 reads are not rewritten.
 
+Each authenticated alert is assigned an `x-request-id` and leaves a bounded,
+metadata-only ingress receipt. This makes a missing or blank `&TYPE` visible to
+operators without retaining the plate value, image, AI dump, request body, or
+Blue Iris path in operational logs. File-log rotation, request-size limits, and
+receipt retention can be tuned with the `ALPR_*` logging settings documented in
+`.env.example`.
+
 **Set your API key with the `x-api-key` header as seen below.**
 ![Notification settings](Images/alert.JPG)
 
