@@ -89,6 +89,13 @@ digest, but never store raw bodies, plate values, AI dumps, images, or Blue Iris
 paths. Rejected authentication attempts create metadata-only receipts without
 reading the body. Retention is bounded by both age and row count.
 
+The protected System Logs action re-sanitizes parsed JSON before returning a
+bounded page to an Administrator or Auditor. Filtering occurs on the server and
+may use safe component, camera, request-ID, read-ID, level, date, and outcome
+metadata. The browser never receives the entire active file in one response,
+and expanding a row does not bypass credential, plate, payload, image, or path
+redaction.
+
 ## Test isolation and validation
 
 Authentication tests run with `NODE_ENV=test` and must set
