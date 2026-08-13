@@ -26,10 +26,13 @@ reliable background processing.
   inside Known Plates with reason, priority, monitoring-since, and read-history
   context; the former `/flagged` route redirects to that view.
 - Structured operational logs now reach the protected System Logs page without
-  discarding request, read, camera, component, status, duration, and outcome
+  discarding request, read, camera, component, Blue Iris trigger type, evaluated
+  direction status, duration, and outcome
   fields. The page queries the bounded active file server-side, presents newest
-  records first, supports level and correlation filters, pagination and refresh,
-  and expands sanitized JSON metadata without returning credentials, plate
+  records first, keeps its filter panel collapsed by default, summarizes active
+  filters in a compact toolbar, and uses denser rows so more entries remain
+  visible. Expanded controls support level and correlation filters, pagination
+  and refresh, and rows expand sanitized JSON metadata without returning credentials, plate
   values, image data, or paths. Accepted Blue Iris `text/plain` JSON is an
   informational compatibility event rather than a warning. Background MQTT and
   storage activity uses the sanitizer, broker credentials are not logged, and
@@ -741,8 +744,10 @@ be restored. Monochrome nighttime captures do not receive a direction result.
   authenticated size-limited JSON ingress, sanitized ingress receipts, explicit
   trigger-field state, and Blue Iris content-type compatibility.
 - Delivered operator visibility: bounded server-side System Logs filtering and
-  pagination, expandable structured fields, request-ID copy, active-file usage,
-  normalized compatibility severity, and sanitized background-runtime logging.
+  pagination, default-collapsed filters with active-filter summaries, denser
+  log rows, Blue Iris trigger/direction context, expandable structured fields,
+  request-ID copy, active-file usage, normalized compatibility severity, and
+  sanitized background-runtime logging.
 - Next: add an Administrator/Auditor ingress-receipt explorer with request,
   read, camera, outcome, error, and date filters; correlate each receipt with
   its operational log and resulting read; add schema/version, alias-conflict,

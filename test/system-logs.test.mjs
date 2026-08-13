@@ -130,9 +130,17 @@ test("System Logs exposes bounded structured diagnostics and operator controls",
   assert.match(viewer, /All components/);
   assert.match(viewer, /All cameras/);
   assert.match(viewer, /Rows per page/);
+  assert.match(viewer, /Log level/);
   assert.match(viewer, /Refresh/);
+  assert.match(viewer, /const \[filtersExpanded, setFiltersExpanded\] = useState\(false\)/);
+  assert.match(viewer, /aria-controls="system-log-filters"/);
+  assert.match(viewer, /All levels · all sources/);
+  assert.match(viewer, /Unapplied changes/);
   assert.match(message, /Structured fields/);
   assert.match(message, /Copy request ID/);
+  assert.match(message, /Trigger \$\{log\.details\.triggerType\}/);
+  assert.match(message, /Direction error \$\{log\.details\.directionErrorCode\}/);
+  assert.match(message, /border-b border-border\/40 py-2/);
   assert.match(instrumentation, /createComponentLogger\("background-runtime"\)/);
   assert.match(mqtt, /this\.mqttConnect\(options\)/);
   assert.doesNotMatch(mqtt, /this\.mqttConnect\(url, options\)/);

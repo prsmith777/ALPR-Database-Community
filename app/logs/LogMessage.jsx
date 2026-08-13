@@ -26,7 +26,7 @@ function formattedTimestamp(timestamp) {
 function ContextPill({ children }) {
   if (!children) return null;
   return (
-    <span className="rounded border border-border bg-muted/40 px-1.5 py-0.5 text-[11px] text-muted-foreground">
+    <span className="max-w-80 truncate rounded border border-border bg-muted/40 px-1.5 py-0.5 text-[10px] leading-4 text-muted-foreground">
       {children}
     </span>
   );
@@ -45,8 +45,8 @@ export default function LogMessage({ log }) {
   };
 
   return (
-    <article className="border-b border-border/40 py-3 last:border-b-0">
-      <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_auto]">
+    <article className="border-b border-border/40 py-2 last:border-b-0">
+      <div className="grid gap-1.5 lg:grid-cols-[minmax(0,1fr)_auto]">
         <button
           type="button"
           className="min-w-0 text-left"
@@ -65,9 +65,24 @@ export default function LogMessage({ log }) {
             </span>
             <span className="break-words text-foreground">{log.message}</span>
           </div>
-          <div className="ml-6 mt-2 flex flex-wrap gap-1.5">
+          <div className="ml-6 mt-1 flex max-h-5 flex-wrap gap-1.5 overflow-hidden">
             <ContextPill>{log.component}</ContextPill>
             <ContextPill>{log.cameraName}</ContextPill>
+            <ContextPill>
+              {log.details?.triggerType ? `Trigger ${log.details.triggerType}` : null}
+            </ContextPill>
+            <ContextPill>
+              {log.details?.directionLabel
+                ? `Direction ${log.details.directionLabel}`
+                : log.details?.directionStatus
+                  ? `Direction ${log.details.directionStatus}`
+                  : null}
+            </ContextPill>
+            <ContextPill>
+              {log.details?.directionErrorCode
+                ? `Direction error ${log.details.directionErrorCode}`
+                : null}
+            </ContextPill>
             {log.readIds?.map((readId) => (
               <ContextPill key={readId}>Read {readId}</ContextPill>
             ))}
@@ -76,7 +91,7 @@ export default function LogMessage({ log }) {
         </button>
 
         <div className="flex items-start justify-between gap-2 lg:justify-end">
-          <time className="whitespace-nowrap font-mono text-xs text-muted-foreground">
+          <time className="whitespace-nowrap font-mono text-[11px] text-muted-foreground">
             {formattedTimestamp(log.timestamp)}
           </time>
           {log.requestId && (
@@ -84,7 +99,7 @@ export default function LogMessage({ log }) {
               type="button"
               variant="ghost"
               size="icon"
-              className="h-7 w-7"
+              className="h-6 w-6"
               onClick={copyRequestId}
               aria-label="Copy request ID"
               title="Copy request ID"

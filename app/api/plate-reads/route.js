@@ -627,6 +627,12 @@ async function processPlateRead(data, _request, context = {}) {
       requestId: context.requestId,
       cameraName: camera,
       httpStatus: responseStatus,
+      triggerType: blueIrisTriggerColumns.bi_trigger_type,
+      directionStatus: blueIrisTriggerColumns.bi_trigger_direction_status,
+      directionLabel: blueIrisTriggerColumns.bi_trigger_direction_label,
+      directionErrorCode: blueIrisTriggerColumns.bi_trigger_direction_error_code,
+      directionProfileVersion: blueIrisTriggerColumns.bi_trigger_direction_profile_version,
+      directionAlgorithm: blueIrisTriggerColumns.bi_trigger_direction_algorithm,
       ...outcomeDetails,
     });
 

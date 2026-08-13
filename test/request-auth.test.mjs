@@ -319,10 +319,20 @@ test("plate-read wrapper logs no secrets, payloads, paths, or raw failures", asy
 
 test("integration wrapper correlates a successful request with its receipt", async () => {
   const receiptCalls = [];
+  const logCalls = [];
   const recorder = {
     async start(details) {
       receiptCalls.push({ operation: "start", details });
-      return { receiptId: 73 };
+      return {
+        receiptId: 73,
+        logSummary: {
+          cameraName: "Street LPR 1",
+          triggerField: "trigger_type",
+          triggerPresent: true,
+          triggerValueState: "recorded",
+          triggerType: "MOTION_A>B",
+        },
+      };
     },
     async complete(details) {
       receiptCalls.push({ operation: "complete", details });
@@ -344,7 +354,11 @@ test("integration wrapper correlates a successful request with its receipt", asy
       recorder,
       integration: "blue_iris",
       routeName: "/api/plate-reads",
-      logger: { info() {}, warn() {}, error() {} },
+      logger: {
+        info(event, details) { logCalls.push({ event, details }); },
+        warn() {},
+        error() {},
+      },
     }
   );
   const rawBody = JSON.stringify({
@@ -372,6 +386,19 @@ test("integration wrapper correlates a successful request with its receipt", asy
   assert.equal(receiptCalls[1].details.httpStatus, 201);
   assert.equal(receiptCalls[1].details.outcome, "accepted");
   assert.deepEqual(receiptCalls[1].details.processedReadIds, [901]);
+  assert.deepEqual(
+    logCalls.find(({ event }) => event === "integration_request_received")?.details,
+    {
+      requestId: "blue-iris-request-73",
+      integration: "blue_iris",
+      routeName: "/api/plate-reads",
+      cameraName: "Street LPR 1",
+      triggerField: "trigger_type",
+      triggerPresent: true,
+      triggerValueState: "recorded",
+      triggerType: "MOTION_A>B",
+    }
+  );
 });
 
 test("integration wrapper accepts Blue Iris JSON sent as text/plain", async () => {
