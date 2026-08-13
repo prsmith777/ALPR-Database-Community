@@ -106,7 +106,7 @@ test("ingress recorder inserts, bounds, and completes receipt metadata", async (
     Image: "IMAGE-SENTINEL",
   });
 
-  const receiptId = await recorder.start({
+  const receipt = await recorder.start({
     requestId: "request-41",
     integration: "blue_iris",
     routeName: "/api/plate-reads",
@@ -115,7 +115,29 @@ test("ingress recorder inserts, bounds, and completes receipt metadata", async (
     rawText,
     data: JSON.parse(rawText),
   });
-  assert.equal(receiptId, 41);
+  assert.equal(receipt.receiptId, 41);
+  assert.deepEqual(receipt.logSummary, {
+    contentType: "application/json",
+    bodyBytes: Buffer.byteLength(rawText),
+    cameraName: "Street LPR 1",
+    eventTimestamp: null,
+    payloadKeys: ["Image", "camera", "plate_number", "trigger_type"],
+    unknownPayloadKeyCount: 0,
+    triggerField: "trigger_type",
+    triggerPresent: true,
+    triggerValueState: "recorded",
+    triggerType: "MOTION_B>A",
+    fieldSummaries: {
+      aiDumpField: { present: false },
+      imageField: {
+        present: true,
+        type: "string",
+        bytes: Buffer.byteLength("IMAGE-SENTINEL"),
+      },
+      alertPathField: { present: false },
+      alertClipField: { present: false },
+    },
+  });
   assert.equal(calls.length, 3);
   assert.match(calls[0].text, /INSERT INTO public\.integration_ingress_receipts/);
   assert.match(calls[1].text, /received_at < CURRENT_TIMESTAMP/);
@@ -126,7 +148,7 @@ test("ingress recorder inserts, bounds, and completes receipt metadata", async (
   assert.equal(JSON.stringify(calls[0].values).includes("IMAGE-SENTINEL"), false);
 
   await recorder.complete({
-    receiptId,
+    receiptId: receipt.receiptId,
     durationMs: 18.9,
     httpStatus: 201,
     outcome: "accepted",

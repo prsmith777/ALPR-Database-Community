@@ -266,6 +266,9 @@ test("plate ingestion promotes current mapped crossings while preserving legacy 
   assert.match(route, /persistBlueIrisPrimaryDirectionForRead/);
   assert.match(route, /assessDirectionImageEligibility/);
   assert.match(route, /applyBlueIrisDirectionEligibility/);
+  assert.match(route, /triggerType: blueIrisTriggerColumns\.bi_trigger_type/);
+  assert.match(route, /directionStatus: blueIrisTriggerColumns\.bi_trigger_direction_status/);
+  assert.match(route, /directionErrorCode: blueIrisTriggerColumns\.bi_trigger_direction_error_code/);
   assert.match(route, /processVehicleDirection/);
   assert.match(route, /\.\.\.blueIrisTriggerColumns/);
   assert.match(migration, /2026080702_blue_iris_trigger_direction_shadow/);
