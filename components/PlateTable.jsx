@@ -118,6 +118,10 @@ import {
 } from "@/lib/live-feed-popup-preference.mjs";
 import { buildBlueIrisUiUrl } from "@/lib/blue-iris-ui-url.mjs";
 import {
+  elapsedMilliseconds,
+  recordLiveFeedPerformance,
+} from "@/lib/live-feed-performance.mjs";
+import {
   Sheet,
   SheetContent,
   SheetHeader,
@@ -329,8 +333,10 @@ export default function PlateTable({
   sort = { field: "", direction: "" },
   onSort = () => {},
   matchingSettings,
+  isLive = true,
+  onLiveChange = () => {},
+  onViewerOpenChange = () => {},
 }) {
-
   const { can } = useAccess();
   const canRead = can("plate.read");
   const canReview = can("plate.review");
@@ -418,7 +424,6 @@ export default function PlateTable({
   const [isDirectionReviewOpen, setIsDirectionReviewOpen] = useState(false);
   const [directionReviewError, setDirectionReviewError] = useState("");
   const [searchInput, setSearchInput] = useState(filters.search || "");
-  const [isLive, setIsLive] = useState(true);
   const [prefetchedImages, setPrefetchedImages] = useState(new Set());
   const [biHost, setBiHost] = useState(null);
   const [isFilterSheetOpen, setIsFilterSheetOpen] = useState(false);
@@ -428,12 +433,17 @@ export default function PlateTable({
   const confirmNextTokenSequenceRef = useRef(0);
   const activeConfirmNextOperationRef = useRef(null);
   const selectedImageIdRef = useRef(null);
+  const viewerNavigationTimingRef = useRef(null);
 
   const router = useRouter();
 
   useEffect(() => {
     selectedImageIdRef.current = selectedImage?.id ?? null;
   }, [selectedImage?.id]);
+
+  useEffect(() => {
+    onViewerOpenChange(selectedImage !== null);
+  }, [onViewerOpenChange, selectedImage]);
 
   const cancelConfirmNextOperation = useCallback(() => {
     activeConfirmNextOperationRef.current = null;
@@ -449,6 +459,7 @@ export default function PlateTable({
   useEffect(() => () => {
     activeConfirmNextOperationRef.current = null;
     selectedImageIdRef.current = null;
+    viewerNavigationTimingRef.current = null;
   }, []);
 
   useEffect(() => {
@@ -577,20 +588,6 @@ export default function PlateTable({
     fetchBiHost();
   }, []);
 
-  useEffect(() => {
-    let interval;
-    if (
-      isLive &&
-      pendingUnconfirmedNavigation === null &&
-      confirmNextOperation === null
-    ) {
-      interval = setInterval(() => {
-        router.refresh();
-      }, 4500);
-    }
-    return () => clearInterval(interval);
-  }, [confirmNextOperation, isLive, pendingUnconfirmedNavigation, router]);
-
   // Helper functions
   const getImageUrl = (base64Data) => {
     if (!base64Data) return "/placeholder-image.jpg";
@@ -626,6 +623,14 @@ export default function PlateTable({
 
     if (plate.crop_coordinates) {
       crop_coordinates = plate.crop_coordinates;
+    }
+
+    if (viewerNavigationTimingRef.current) {
+      viewerNavigationTimingRef.current = {
+        ...viewerNavigationTimingRef.current,
+        targetReadId: Number(plate.id),
+        targetCamera: plate.camera_name || "",
+      };
     }
 
     setSelectedIndex(plateIndex);
@@ -708,6 +713,7 @@ export default function PlateTable({
     ]
   );
   const onViewerPageChange = pagination.onViewerPageChange;
+  const onViewerDataRefresh = pagination.onViewerDataRefresh;
 
   const handleViewerNavigation = useCallback((direction) => {
     if (
@@ -718,6 +724,23 @@ export default function PlateTable({
     ) return;
 
     const destination = getViewerNavigation(direction);
+    if (destination.kind === "none") return;
+
+    viewerNavigationTimingRef.current = {
+      metric: "viewer_navigation",
+      operation: direction,
+      boundary: destination.kind === "item" ? "same_page" : "cross_page",
+      startedAt: performance.now(),
+      sourceReadId: Number(selectedImage.id),
+      sourceCamera: selectedImage.cameraName || "",
+      targetPage: destination.kind === "page" ? destination.page : pagination.page,
+      targetReadId: destination.kind === "item"
+        ? Number(data[destination.index]?.id)
+        : null,
+      targetCamera: destination.kind === "item"
+        ? data[destination.index]?.camera_name || ""
+        : "",
+    };
     if (destination.kind === "item") {
       handleImageClick(
         { preventDefault: () => {} },
@@ -740,6 +763,7 @@ export default function PlateTable({
     onViewerPageChange,
     pendingUnconfirmedNavigation,
     pendingViewerNavigation,
+    pagination.page,
     selectedImage,
   ]);
 
@@ -827,6 +851,25 @@ export default function PlateTable({
     selectedImageView === "vehicle" && selectedImage?.vehicleImageUrl
       ? "vehicle"
       : "plate";
+
+  const handleViewerImageLoad = useCallback(({ url, width, height }) => {
+    const timing = viewerNavigationTimingRef.current;
+    if (!timing || !selectedImage?.id) return;
+    if (timing.targetReadId && timing.targetReadId !== Number(selectedImage.id)) return;
+
+    recordLiveFeedPerformance({
+      ...timing,
+      durationMs: elapsedMilliseconds(timing.startedAt, performance.now()),
+      outcome: "image_loaded",
+      targetReadId: Number(selectedImage.id),
+      targetCamera: selectedImage.cameraName || timing.targetCamera || "",
+      imageView: displayedImageView,
+      imageUrlKind: String(url || "").startsWith("data:") ? "inline" : "stored_file",
+      imageWidth: width,
+      imageHeight: height,
+    });
+    viewerNavigationTimingRef.current = null;
+  }, [displayedImageView, selectedImage]);
 
   useEffect(() => {
     if (selectedImage && data && data.length > 0) {
@@ -972,6 +1015,8 @@ export default function PlateTable({
 
     const readId = selectedImage.id;
     const nextValidated = !selectedImage.validated;
+    const reviewStartedAt = performance.now();
+    let reviewSucceeded = false;
     const previousReviewState = {
       validated: selectedImage.validated,
       plateNumber: selectedImage.plateNumber,
@@ -1017,12 +1062,21 @@ export default function PlateTable({
             result.data?.reviewRevision ?? previous.reviewRevision,
         };
       });
+      reviewSucceeded = true;
       return true;
     } catch (error) {
       rollbackReviewState();
       console.error("Failed to update plate review:", error);
       return false;
     } finally {
+      recordLiveFeedPerformance({
+        metric: "review_action",
+        operation: nextValidated ? "confirm" : "reopen",
+        durationMs: elapsedMilliseconds(reviewStartedAt, performance.now()),
+        success: reviewSucceeded,
+        readId: Number(readId),
+        camera: selectedImage.cameraName || "",
+      });
       setPendingReviewReadId((current) => (current === readId ? null : current));
       setPendingReviewTargetValidated(null);
     }
@@ -1046,9 +1100,21 @@ export default function PlateTable({
     activeConfirmNextOperationRef.current = operation;
     setConfirmNextOperation(operation);
     const nextRead = nextUnconfirmedIndex >= 0 ? data[nextUnconfirmedIndex] : null;
-    const waitsForFilteredRemoval =
+    const waitsForFilteredBoundaryRefresh =
+      !nextRead &&
       selectedReviewStatuses.length > 0 &&
       !selectedReviewStatuses.includes("confirmed");
+    viewerNavigationTimingRef.current = {
+      metric: "viewer_navigation",
+      operation: "confirm_and_next",
+      boundary: nextRead ? "same_page" : "cross_page",
+      startedAt: performance.now(),
+      sourceReadId: Number(selectedImage.id),
+      sourceCamera: selectedImage.cameraName || "",
+      targetPage: nextRead ? pagination.page : pagination.page + 1,
+      targetReadId: nextRead ? Number(nextRead.id) : null,
+      targetCamera: nextRead?.camera_name || "",
+    };
     const confirmed = await handleSelectedImageValidation();
     if (!isConfirmNextOperationCurrent({
       activeToken: activeConfirmNextOperationRef.current?.token ?? null,
@@ -1057,6 +1123,15 @@ export default function PlateTable({
       originReadId: origin.originReadId,
     })) return;
     if (!confirmed) {
+      const timing = viewerNavigationTimingRef.current;
+      if (timing?.operation === "confirm_and_next") {
+        recordLiveFeedPerformance({
+          ...timing,
+          durationMs: elapsedMilliseconds(timing.startedAt, performance.now()),
+          outcome: "review_failed",
+        });
+        viewerNavigationTimingRef.current = null;
+      }
       cancelConfirmNextOperation();
       return;
     }
@@ -1069,12 +1144,17 @@ export default function PlateTable({
       ...origin,
       deadlineAt: Date.now() + CONFIRM_NEXT_SCAN_TIMEOUT_MS,
     };
-    if (waitsForFilteredRemoval) {
+    if (
+      waitsForFilteredBoundaryRefresh &&
+      typeof onViewerDataRefresh === "function"
+    ) {
       setPendingUnconfirmedNavigation({
         ...pending,
         phase: "await-filtered-removal",
         targetPage: origin.originPage,
+        originDataRevision: pagination.dataRevision,
       });
+      onViewerDataRefresh();
       return;
     }
     if (hasLaterResultPage && typeof onViewerPageChange === "function") {
@@ -1090,6 +1170,13 @@ export default function PlateTable({
   useEffect(() => {
     const pending = pendingUnconfirmedNavigation;
     if (!pending) return;
+    if (
+      pending.phase === "await-filtered-removal" &&
+      pending.originDataRevision === pagination.dataRevision &&
+      Date.now() < pending.deadlineAt
+    ) {
+      return;
+    }
     const transition = resolveUnconfirmedPageTransition({
       pending,
       reads: data,
@@ -1117,6 +1204,7 @@ export default function PlateTable({
     onViewerPageChange,
     pagination.page,
     pagination.pageSize,
+    pagination.dataRevision,
     pagination.total,
     pendingUnconfirmedNavigation,
   ]);
@@ -1316,6 +1404,7 @@ export default function PlateTable({
     if (deletingSelectedRead) {
       cancelConfirmNextFlow();
       selectedImageIdRef.current = null;
+      viewerNavigationTimingRef.current = null;
       setSelectedImage(null);
       setSelectedIndex(-1);
       setPendingViewerNavigation(null);
@@ -1871,7 +1960,7 @@ export default function PlateTable({
               <div className="flex shrink-0 items-center gap-2 rounded-md border px-3 py-2 dark:bg-[#161618]">
                 <Switch
                   checked={isLive}
-                  onCheckedChange={setIsLive}
+                  onCheckedChange={onLiveChange}
                   id="live-updates"
                 />
                 <Label
@@ -2843,6 +2932,7 @@ export default function PlateTable({
             if (!open) {
               cancelConfirmNextFlow();
               selectedImageIdRef.current = null;
+              viewerNavigationTimingRef.current = null;
               setIsImageFullscreen(false);
               setSelectedImage(null);
               setSelectedIndex(-1);
@@ -3006,6 +3096,7 @@ export default function PlateTable({
                       defaultZoom={null}
                       zoomLabel={displayedImageView === "vehicle" ? "Zoom to Vehicle" : "Zoom to Plate"}
                       onFullscreenChange={setIsImageFullscreen}
+                      onImageLoad={handleViewerImageLoad}
                     />
                   </div>
                 </div>
