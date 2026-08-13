@@ -18,13 +18,22 @@ reliable background processing.
 6. Audit sensitive searches, exports, corrections, rule changes, and
    destructive maintenance.
 
-## Release candidate baseline — August 12, 2026
+## Release candidate baseline — August 13, 2026
 
 - Application `0.1.19` candidate includes named users and roles, evidence-preserving plate
   review, filter-respecting exports, the searchable help center, local privacy
   controls, and viewport-safe date/help navigation. Monitored Plates now lives
   inside Known Plates with reason, priority, monitoring-since, and read-history
   context; the former `/flagged` route redirects to that view.
+- Structured operational logs now reach the protected System Logs page without
+  discarding request, read, camera, component, status, duration, and outcome
+  fields. The page queries the bounded active file server-side, presents newest
+  records first, supports level and correlation filters, pagination and refresh,
+  and expands sanitized JSON metadata without returning credentials, plate
+  values, image data, or paths. Accepted Blue Iris `text/plain` JSON is an
+  informational compatibility event rather than a warning. Background MQTT and
+  storage activity uses the sanitizer, broker credentials are not logged, and
+  MQTT connects without Node's deprecated legacy URL parser.
 - Dashboard Time Distribution columns now open Live Feed with the exact selected
   Last 24 Hours, Last 3 Days, Last 7 Days, Last 30 Days, or All Time window,
   browser-local hour, and every selected camera filter. The dashboard camera
@@ -725,6 +734,26 @@ be restored. Monochrome nighttime captures do not receive a direction result.
   meets latency targets.
 - Render configurable overlays at view/export time and cache derived assets;
   never burn overlays into the original capture.
+
+## Operational logging roadmap
+
+- Delivered foundation: bounded persistent JSON application logs, request IDs,
+  authenticated size-limited JSON ingress, sanitized ingress receipts, explicit
+  trigger-field state, and Blue Iris content-type compatibility.
+- Delivered operator visibility: bounded server-side System Logs filtering and
+  pagination, expandable structured fields, request-ID copy, active-file usage,
+  normalized compatibility severity, and sanitized background-runtime logging.
+- Next: add an Administrator/Auditor ingress-receipt explorer with request,
+  read, camera, outcome, error, and date filters; correlate each receipt with
+  its operational log and resulting read; add schema/version, alias-conflict,
+  and duplicate-target evidence before extending receipt retention.
+- Then: add an append-only per-read pipeline timeline and guarded late-duplicate
+  reconciliation that may attach missing nonconflicting evidence but never
+  replace established evidence or queue successful work twice.
+- Later: expose log/table growth and retention health, preview-first cleanup,
+  incident protection and export, audit retention/partitioning, and bounded
+  PostgreSQL log rotation. These controls remain planned and are not implied by
+  the current System Logs page.
 
 ## Fuzzy matching vocabulary
 

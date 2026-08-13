@@ -55,9 +55,12 @@ async function registerForRuntime({
 export async function register() {
   if (process.env.NEXT_RUNTIME === "nodejs") {
     try {
-      const nodeInstrumentation = await import("./instrumentation.node.js");
+      const [nodeInstrumentation, logging] = await Promise.all([
+        import("./instrumentation.node.js"),
+        import("./logging/logger.js"),
+      ]);
       return await nodeInstrumentation.registerNodeInstrumentation({
-        logger: console,
+        logger: logging.createComponentLogger("background-runtime"),
       });
     } catch (error) {
       const normalized = safeError(error);
