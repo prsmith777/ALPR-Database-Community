@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useCallback, useEffect, useRef, useState, useTransition } from "react";
 import { ChevronDown, RefreshCw, Search, SlidersHorizontal, X } from "lucide-react";
 import { getSystemLogs } from "@/app/actions";
 import { Alert, AlertDescription } from "@/components/ui/alert";
@@ -9,6 +9,7 @@ import { Input } from "@/components/ui/input";
 import LogMessage from "./LogMessage";
 
 const LEVELS = ["ALL", "INFO", "WARN", "ERROR", "DEBUG"];
+const LIVE_REFRESH_MS = 5_000;
 
 function defaultFilters(pageSize = 50) {
   return {
@@ -80,25 +81,49 @@ export default function LogViewer({ initialPage }) {
   const [draft, setDraft] = useState(initialFilters);
   const [applied, setApplied] = useState(initialFilters);
   const [filtersExpanded, setFiltersExpanded] = useState(false);
+  const [liveUpdates, setLiveUpdates] = useState(true);
+  const [expandedRows, setExpandedRows] = useState(() => new Set());
   const [error, setError] = useState("");
   const [isPending, startTransition] = useTransition();
+  const requestInFlight = useRef(false);
 
   const updateDraft = (field, value) => {
     setDraft((current) => ({ ...current, [field]: value }));
   };
 
-  const load = (filters, page = 1) => {
+  const load = useCallback((filters, page = 1) => {
+    if (requestInFlight.current) return;
+    requestInFlight.current = true;
     startTransition(async () => {
-      setError("");
-      const response = await getSystemLogs(actionFilters(filters, page));
-      if (!response?.success) {
-        setError(response?.error || "Failed to load system logs");
-        return;
+      try {
+        setError("");
+        const response = await getSystemLogs(actionFilters(filters, page));
+        if (!response?.success) {
+          setError(response?.error || "Failed to load system logs");
+          return;
+        }
+        setPageData(response.data);
+        setApplied(filters);
+        const visibleIds = new Set(
+          (response.data?.entries || []).map((entry) => entry.id)
+        );
+        setExpandedRows((current) => {
+          const next = new Set(
+            [...current].filter((logId) => visibleIds.has(logId))
+          );
+          return next.size === current.size ? current : next;
+        });
+      } catch (loadError) {
+        setError(
+          loadError instanceof Error
+            ? loadError.message
+            : "Failed to load system logs"
+        );
+      } finally {
+        requestInFlight.current = false;
       }
-      setPageData(response.data);
-      setApplied(filters);
     });
-  };
+  }, []);
 
   const apply = (event) => {
     event?.preventDefault();
@@ -130,6 +155,32 @@ export default function LogViewer({ initialPage }) {
   const hasUnappliedChanges = Object.keys(draft).some(
     (field) => draft[field] !== applied[field]
   );
+  const hasExpandedRows = expandedRows.size > 0;
+  const liveUpdatesActive =
+    liveUpdates && pageData?.page === 1 && !hasExpandedRows;
+  const updateExpandedRow = useCallback((logId, expanded) => {
+    setExpandedRows((current) => {
+      const next = new Set(current);
+      if (expanded) next.add(logId);
+      else next.delete(logId);
+      return next;
+    });
+  }, []);
+
+  useEffect(() => {
+    if (!liveUpdatesActive) return undefined;
+
+    const refreshVisiblePage = () => {
+      if (document.visibilityState === "visible") load(applied, 1);
+    };
+    const timer = window.setInterval(refreshVisiblePage, LIVE_REFRESH_MS);
+    document.addEventListener("visibilitychange", refreshVisiblePage);
+
+    return () => {
+      window.clearInterval(timer);
+      document.removeEventListener("visibilitychange", refreshVisiblePage);
+    };
+  }, [applied, liveUpdatesActive, load]);
 
   return (
     <div className="flex h-full min-h-0 flex-col">
@@ -180,6 +231,34 @@ export default function LogViewer({ initialPage }) {
           <span className="hidden whitespace-nowrap text-xs text-muted-foreground sm:inline">
             {metadata.availableRows || 0} entries
           </span>
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            aria-pressed={liveUpdates}
+            title={
+              liveUpdatesActive
+                ? "Live updates refresh every 5 seconds"
+                : hasExpandedRows
+                  ? "Live updates resume when log details are closed"
+                : liveUpdates
+                  ? "Live updates resume on page 1"
+                  : "Live updates are off"
+            }
+            onClick={() => setLiveUpdates((enabled) => !enabled)}
+          >
+            <span
+              className={`h-2 w-2 rounded-full ${
+                liveUpdatesActive
+                  ? "bg-emerald-500"
+                  : liveUpdates
+                    ? "bg-amber-500"
+                    : "bg-muted-foreground/50"
+              }`}
+              aria-hidden="true"
+            />
+            {liveUpdatesActive ? "Live" : liveUpdates ? "Paused" : "Live off"}
+          </Button>
           <Button
             type="button"
             size="sm"
@@ -337,7 +416,14 @@ export default function LogViewer({ initialPage }) {
 
         <div className="min-h-0 flex-1 overflow-y-auto px-4">
           {entries.length ? (
-            entries.map((log) => <LogMessage key={log.id} log={log} />)
+            entries.map((log) => (
+              <LogMessage
+                key={log.id}
+                log={log}
+                expanded={expandedRows.has(log.id)}
+                onExpandedChange={updateExpandedRow}
+              />
+            ))
           ) : (
             <div className="flex h-full items-center justify-center py-12 text-muted-foreground">
               No logs found. Adjust the filters or refresh.
