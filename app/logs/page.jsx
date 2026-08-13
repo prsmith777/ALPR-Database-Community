@@ -13,9 +13,9 @@ import {
   PROJECT_RELEASES_URL,
 } from "@/lib/project-info";
 
-async function LogsContent() {
+async function LogsContent({ initialFilters }) {
   unstable_noStore();
-  const { data: logs, error } = await getSystemLogs();
+  const { data: logs, error } = await getSystemLogs(initialFilters);
 
   if (error) {
     return (
@@ -25,11 +25,19 @@ async function LogsContent() {
     );
   }
 
-  return <LogViewer initialPage={logs} />;
+  return <LogViewer initialPage={logs} initialFilters={initialFilters} />;
 }
 
-export default async function LogsPage() {
+export default async function LogsPage({ searchParams }) {
   await requirePagePermission("system.view_audit");
+  const parameters = await searchParams;
+  const requestedReadId = Array.isArray(parameters?.readId)
+    ? parameters.readId[0]
+    : parameters?.readId;
+  const readId = /^\d+$/.test(String(requestedReadId || ""))
+    ? String(requestedReadId)
+    : "";
+  const initialFilters = readId ? { readId } : {};
   const version = await getLocalVersionInfo();
 
   return (
@@ -59,7 +67,7 @@ export default async function LogsPage() {
               </div>
             }
           >
-            <LogsContent />
+            <LogsContent initialFilters={initialFilters} />
           </Suspense>
         </div>
       </div>
