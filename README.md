@@ -121,6 +121,10 @@ We can make use of the built-in macros to dynamically get the alert data and sen
 
     { "ai_dump":&JSON, "Image":"&ALERT_JPEG", "camera":"&CAM", "ALERT_PATH":"&ALERT_PATH", "ALERT_CLIP":"&ALERT_CLIP", "timestamp":"&ALERT_TIME", "trigger_type":"&TYPE" }
 
+Blue Iris may label this JSON alert body as `text/plain`. The integration
+accepts that default for compatibility and validates the body itself as JSON;
+no additional `Content-Type` header is required.
+
 For primary direction without a cloned camera, configure the motion sensor
 with both explicit ordered crossings (for example `A>B,B>A`) rather than the
 bidirectional shorthand `A-B`. Blue Iris then sends `MOTION_A>B` or
@@ -132,12 +136,14 @@ unmapped crossings fall back to Vehicle ReID. Monochrome nighttime captures
 are not classified and display `Unavailable nighttime`. Existing historical
 reads are not rewritten.
 
-Each authenticated alert is assigned an `x-request-id` and leaves a bounded,
-metadata-only ingress receipt. This makes a missing or blank `&TYPE` visible to
-operators without retaining the plate value, image, AI dump, request body, or
-Blue Iris path in operational logs. File-log rotation, request-size limits, and
-receipt retention can be tuned with the `ALPR_*` logging settings documented in
-`.env.example`.
+Each alert attempt is assigned an `x-request-id` and emits safe arrival status
+metadata. Authenticated alerts also leave a bounded, metadata-only ingress
+receipt; rejected authentication attempts leave a receipt without reading the
+request body. This makes rejected requests and a missing or blank `&TYPE`
+visible to operators without retaining the plate value, image, AI dump,
+request body, or Blue Iris path in operational logs. File-log rotation,
+request-size limits, and receipt retention can be tuned with the `ALPR_*`
+logging settings documented in `.env.example`.
 
 **Set your API key with the `x-api-key` header as seen below.**
 ![Notification settings](Images/alert.JPG)
