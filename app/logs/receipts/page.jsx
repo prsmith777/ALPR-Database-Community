@@ -11,9 +11,9 @@ import IngressReceiptViewer from "./IngressReceiptViewer";
 
 export const dynamic = "force-dynamic";
 
-async function ReceiptContent() {
+async function ReceiptContent({ initialFilters, initialExpandFirst }) {
   unstable_noStore();
-  const response = await getIntegrationIngressReceipts();
+  const response = await getIntegrationIngressReceipts(initialFilters);
   if (!response?.success) {
     return (
       <Alert variant="destructive" className="m-6">
@@ -23,11 +23,24 @@ async function ReceiptContent() {
       </Alert>
     );
   }
-  return <IngressReceiptViewer initialPage={response.data} />;
+  return (
+    <IngressReceiptViewer
+      initialPage={response.data}
+      initialFilters={initialFilters}
+      initialExpandFirst={initialExpandFirst}
+    />
+  );
 }
 
-export default async function IngressReceiptsPage() {
+export default async function IngressReceiptsPage({ searchParams }) {
   await requirePagePermission("system.view_audit");
+  const parameters = await searchParams;
+  const requestedRequestId = Array.isArray(parameters?.requestId)
+    ? parameters.requestId[0]
+    : parameters?.requestId;
+  const requestId = String(requestedRequestId || "").trim().slice(0, 128);
+  const initialFilters = requestId ? { requestId } : {};
+  const initialExpandFirst = parameters?.expand === "first";
   const version = await getLocalVersionInfo();
 
   return (
@@ -42,7 +55,10 @@ export default async function IngressReceiptsPage() {
               </div>
             }
           >
-            <ReceiptContent />
+            <ReceiptContent
+              initialFilters={initialFilters}
+              initialExpandFirst={initialExpandFirst}
+            />
           </Suspense>
         </div>
       </div>

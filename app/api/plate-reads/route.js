@@ -28,6 +28,11 @@ import { MqttRepository } from "@/lib/mqtt/repository.mjs";
 import { getConfig } from "@/lib/settings";
 import fileStorage from "@/lib/fileStorage";
 import { createIntegrationIngressRecorder } from "@/lib/integration-ingress.mjs";
+import {
+  appendReadPipelineEvents,
+  buildAcceptedReadPipelineEvents,
+  buildLegacyPushoverPipelineEvent,
+} from "@/lib/read-pipeline-timeline.mjs";
 import { createIntegrationRouteHandler } from "@/lib/request-auth.mjs";
 import { overviewReadQueueState } from "@/lib/vehicle-overview-association.mjs";
 import { createComponentLogger } from "@/logging/logger";
@@ -41,6 +46,23 @@ const plateIngressRecorder = createIntegrationIngressRecorder({
   },
   logger: plateIngressLogger,
 });
+
+async function recordReadPipelineEvents(buildEvents, context = {}) {
+  try {
+    const events = typeof buildEvents === "function" ? buildEvents() : buildEvents;
+    const pool = await getPool();
+    await appendReadPipelineEvents(
+      (text, values) => pool.query(text, values),
+      events,
+    );
+  } catch (error) {
+    plateIngressLogger.warn("read_pipeline_timeline_append_failed", {
+      readId: context.readId ?? null,
+      requestId: context.requestId ?? null,
+      errorCode: error?.code || "READ_PIPELINE_TIMELINE_APPEND_FAILED",
+    });
+  }
+}
 
 // Revised to use a blacklist of all other possible AI labels if using the memo
 const EXCLUDED_LABELS = [
@@ -561,8 +583,9 @@ async function processPlateRead(data, _request, context = {}) {
             `Unified notification outbox handoff failed for accepted read ${readId}`
           );
         }
+        let directionResult = null;
         if (primaryDirection) {
-          const directionResult = await notificationService.processVehicleDirection(
+          directionResult = await notificationService.processVehicleDirection(
             acceptedRead,
             primaryDirection
           );
@@ -578,19 +601,47 @@ async function processPlateRead(data, _request, context = {}) {
           imageData: data.Image,
           mqttResult,
           unifiedResult,
+          directionResult,
+          aliasApplied: Boolean(alias),
+          imageStored: Boolean(imagePaths.imagePath),
+          thumbnailStored: Boolean(imagePaths.thumbnailPath),
+          alertPointerPresent: Boolean(
+            blueIrisAlert.alertClip || blueIrisAlert.alertPath || blueIrisAlert.playbackPath
+          ),
+          direction: blueIrisTriggerColumns,
+          vehicleOverview: overviewVehicleView,
         });
       }
     }
 
     await dbClient.query("COMMIT");
     transactionOpen = false;
+    for (const effect of pendingEffects) {
+      await recordReadPipelineEvents(
+        () => buildAcceptedReadPipelineEvents({
+          readId: effect.read.id,
+          requestId: context.requestId,
+          ingressReceiptId: context.ingressReceiptId,
+          aliasApplied: effect.aliasApplied,
+          imageStored: effect.imageStored,
+          thumbnailStored: effect.thumbnailStored,
+          alertPointerPresent: effect.alertPointerPresent,
+          direction: effect.direction,
+          mqttResult: effect.mqttResult,
+          notificationResult: effect.unifiedResult,
+          directionNotificationResult: effect.directionResult,
+          vehicleOverview: effect.vehicleOverview,
+        }),
+        { readId: effect.read.id, requestId: context.requestId },
+      );
+    }
     if (overviewWorkQueued) wakeBlueIrisVehicleFrameWorker();
 
     // Unified MQTT and Pushover handoffs committed with each read. The legacy
     // Pushover path remains post-commit until every migrated rule is cut over.
     for (const effect of pendingEffects) {
       try {
-        await processAcceptedPlateReadEffects({
+        const legacyResult = await processAcceptedPlateReadEffects({
           read: effect.read,
           imageData: effect.imageData,
           shouldSendPushover: checkPlateForNotification,
@@ -598,6 +649,15 @@ async function processPlateRead(data, _request, context = {}) {
           processMqtt: async () => effect.mqttResult,
           logger: plateIngressLogger,
         });
+        await recordReadPipelineEvents(
+          () => [buildLegacyPushoverPipelineEvent({
+            readId: effect.read.id,
+            requestId: context.requestId,
+            ingressReceiptId: context.ingressReceiptId,
+            result: legacyResult,
+          })],
+          { readId: effect.read.id, requestId: context.requestId },
+        );
       } catch {
         plateIngressLogger.error("accepted_plate_notification_processing_failed", {
           requestId: context.requestId,

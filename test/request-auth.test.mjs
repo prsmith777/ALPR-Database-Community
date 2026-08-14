@@ -342,6 +342,7 @@ test("integration wrapper correlates a successful request with its receipt", asy
     async (data, _request, context) => {
       assert.equal(data.camera, "Street LPR 1");
       assert.equal(context.requestId, "blue-iris-request-73");
+      assert.equal(context.ingressReceiptId, 73);
       context.setOutcome({
         outcome: "accepted",
         processedReadIds: [901],
