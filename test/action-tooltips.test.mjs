@@ -27,7 +27,7 @@ test("plate tables label icon-only row actions with accessible tooltips", async 
   assert.match(liveFeed, /<TooltipContent>Correct plate<\/TooltipContent>/);
   assert.match(liveFeed, /Confirm detected plate/);
   assert.match(liveFeed, /<TooltipContent>View logs for this read<\/TooltipContent>/);
-  assert.match(liveFeed, /href=\{`\/logs\?readId=\$\{plate\.id\}`\}/);
+  assert.match(liveFeed, /href=\{`\/logs\?readId=\$\{plate\.id\}&expand=first`\}/);
   assert.match(plateDatabase, /<TooltipContent>View insights<\/TooltipContent>/);
   assert.match(plateDatabase, /Monitor plate/);
   assert.match(knownPlates, /<TooltipProvider delayDuration=\{250\}>/);

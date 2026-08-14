@@ -119,6 +119,7 @@ import {
   normalizeDashboardCameraNames,
 } from "@/lib/dashboard-time-distribution.mjs";
 import { querySystemLogText } from "@/lib/system-logs.mjs";
+import { queryIntegrationIngressReceipts } from "@/lib/integration-ingress-receipts.mjs";
 import { createComponentLogger } from "@/logging/logger";
 import path from "path";
 import fs from "fs/promises";
@@ -563,6 +564,7 @@ export async function getPlates(
 export async function getLatestPlateReads({
   page = 1,
   pageSize = 25,
+  readId = "",
   search = "",
   fuzzySearch = false,
   matchMode = "balanced",
@@ -587,6 +589,7 @@ export async function getLatestPlateReads({
       page,
       pageSize,
       filters: {
+        readId,
         plateNumber: search,
         matchMode:
           fuzzySearch && !matchMode ? "balanced" : matchMode || "balanced",
@@ -3214,6 +3217,24 @@ export async function fetchPlateImagePreviews(
 }
 
 const systemLogsLogger = createComponentLogger("system-logs");
+const ingressReceiptsLogger = createComponentLogger("ingress-receipts");
+
+export async function getIntegrationIngressReceipts(filters = {}) {
+  await requirePermission("system.view_audit");
+  try {
+    const pool = await getPool();
+    const data = await queryIntegrationIngressReceipts(
+      (text, values) => pool.query(text, values),
+      filters
+    );
+    return { success: true, data };
+  } catch (error) {
+    ingressReceiptsLogger.error("integration_ingress_receipt_query_failed", {
+      errorCode: error?.code || "INGRESS_RECEIPT_QUERY_FAILED",
+    });
+    return { success: false, error: "Failed to read integration ingress receipts" };
+  }
+}
 
 export async function getSystemLogs(filters = {}) {
   await requirePermission("system.view_audit");

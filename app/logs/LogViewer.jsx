@@ -75,7 +75,11 @@ function FilterSelect({ label, value, onChange, children }) {
   );
 }
 
-export default function LogViewer({ initialPage, initialFilters: requestedFilters = {} }) {
+export default function LogViewer({
+  initialPage,
+  initialFilters: requestedFilters = {},
+  initialExpandFirst = false,
+}) {
   const initialFilters = {
     ...defaultFilters(initialPage?.pageSize),
     ...requestedFilters,
@@ -85,7 +89,10 @@ export default function LogViewer({ initialPage, initialFilters: requestedFilter
   const [applied, setApplied] = useState(initialFilters);
   const [filtersExpanded, setFiltersExpanded] = useState(false);
   const [liveUpdates, setLiveUpdates] = useState(true);
-  const [expandedRows, setExpandedRows] = useState(() => new Set());
+  const [expandedRows, setExpandedRows] = useState(() => {
+    const firstLogId = initialExpandFirst ? initialPage?.entries?.[0]?.id : null;
+    return new Set(firstLogId ? [firstLogId] : []);
+  });
   const [error, setError] = useState("");
   const [isPending, startTransition] = useTransition();
   const requestInFlight = useRef(false);

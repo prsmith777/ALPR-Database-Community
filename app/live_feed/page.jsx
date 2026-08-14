@@ -77,6 +77,9 @@ export default async function LivePlates(props) {
   const params = {
     page: parseInt(searchParams?.page || "1"),
     pageSize: parseInt(searchParams?.pageSize || String(defaultPageSize)),
+    readId: /^\d+$/.test(String(searchParams?.readId || ""))
+      ? String(searchParams.readId)
+      : "",
     search: searchParams?.search || "",
     matchMode:
       searchParams?.matchMode ||

@@ -528,6 +528,7 @@ export default function PlateTableWrapper({
         onViewerDataRefresh: handleViewerDataRefresh,
       }}
       filters={{
+        readId: params.get("readId") || "",
         search: params.get("search") || "",
         matchMode: params.get("matchMode") || preferredMatchMode,
         tags: params.getAll("tag").filter((tag) => tag && tag !== "all"),

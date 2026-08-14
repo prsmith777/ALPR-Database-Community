@@ -126,7 +126,11 @@ test("System Logs exposes bounded structured diagnostics and operator controls",
   assert.match(actions, /querySystemLogText\(content, filters/);
   assert.match(actions, /requirePermission\("system\.view_audit"\)/);
   assert.match(page, /LogsPage\(\{ searchParams \}\)/);
-  assert.match(page, /initialFilters = readId \? \{ readId \} : \{\}/);
+  assert.match(page, /requestedRequestId/);
+  assert.match(page, /parameters\?\.expand === "first"/);
+  assert.match(page, /initialExpandFirst=\{initialExpandFirst\}/);
+  assert.match(page, /\.\.\.\(readId \? \{ readId \} : \{\}\)/);
+  assert.match(page, /\.\.\.\(requestId \? \{ requestId \} : \{\}\)/);
   assert.match(page, /getSystemLogs\(initialFilters\)/);
   assert.match(viewer, /Log pipeline for read #\{applied\.readId\}/);
   assert.match(viewer, /Show all logs/);
@@ -144,7 +148,7 @@ test("System Logs exposes bounded structured diagnostics and operator controls",
   assert.match(viewer, /window\.setInterval\(refreshVisiblePage, LIVE_REFRESH_MS\)/);
   assert.match(viewer, /aria-pressed=\{liveUpdates\}/);
   assert.match(viewer, /Live updates resume on page 1/);
-  assert.match(viewer, /const \[expandedRows, setExpandedRows\] = useState\(\(\) => new Set\(\)\)/);
+  assert.match(viewer, /initialExpandFirst \? initialPage\?\.entries\?\.\[0\]\?\.id : null/);
   assert.match(viewer, /liveUpdates && pageData\?\.page === 1 && !hasExpandedRows/);
   assert.match(viewer, /Live updates resume when log details are closed/);
   assert.match(viewer, /expanded=\{expandedRows\.has\(log\.id\)\}/);

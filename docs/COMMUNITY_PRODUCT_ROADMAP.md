@@ -755,11 +755,11 @@ be restored. Monochrome nighttime captures do not receive a direction result.
   log rows, Blue Iris trigger/direction context, expandable sanitized JSON,
   default-on five-second live refresh with inspection-aware pause, request-ID
   copy, active-file usage, normalized compatibility severity, and sanitized
-  background-runtime logging.
-- Next: add an Administrator/Auditor ingress-receipt explorer with request,
-  read, camera, outcome, error, and date filters; correlate each receipt with
-  its operational log and resulting read; add schema/version, alias-conflict,
-  and duplicate-target evidence before extending receipt retention.
+  background-runtime logging. An Administrator/Auditor ingress-receipt
+  explorer adds bounded request, read, camera, outcome, error, and date filters
+  plus direct correlation to operational logs and the exact resulting read.
+- Next: add receipt schema/version, alias-conflict, and duplicate-target
+  evidence before extending receipt retention.
 - Then: add an append-only per-read pipeline timeline and guarded late-duplicate
   reconciliation that may attach missing nonconflicting evidence but never
   replace established evidence or queue successful work twice.

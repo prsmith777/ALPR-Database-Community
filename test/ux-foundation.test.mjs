@@ -50,9 +50,10 @@ test("the mobile navigation sheet has an accessible dialog title", async () => {
 });
 
 test("dashboard, manifests, README, and system logs identify the community fork", async () => {
-  const [dashboard, logs, projectInfo, layout, manifest, publicManifest, readme] = await Promise.all([
+  const [dashboard, logs, auditHeader, projectInfo, layout, manifest, publicManifest, readme] = await Promise.all([
     source("app/dashboard/DashboardMetrics.jsx"),
     source("app/logs/page.jsx"),
+    source("app/logs/AuditHeader.jsx"),
     source("lib/project-info.js"),
     source("app/layout.jsx"),
     source("app/manifest.js"),
@@ -66,8 +67,8 @@ test("dashboard, manifests, README, and system logs identify the community fork"
   assert.match(dashboard, /Fork source on GitHub/);
   assert.equal(dashboard.includes("algertc"), false);
   assert.match(logs, /getLocalVersionInfo/);
-  assert.match(logs, /PROJECT_NAME/);
-  assert.match(logs, /PROJECT_RELEASES_URL/);
+  assert.match(auditHeader, /PROJECT_NAME/);
+  assert.match(auditHeader, /PROJECT_RELEASES_URL/);
   assert.match(projectInfo, /PROJECT_OWNER = "prsmith777"/);
   assert.match(projectInfo, /PROJECT_REPOSITORY_NAME = "ALPR-Database-Community"/);
   assert.match(projectInfo, /\/tree\/main\/docs/);
