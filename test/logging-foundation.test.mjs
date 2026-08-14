@@ -113,7 +113,7 @@ test("ingress summaries distinguish absent, blank, and invalid trigger evidence"
   assert.equal(invalid.triggerType, null);
 });
 
-test("ingress recorder inserts, bounds, and completes receipt metadata", async () => {
+test("ingress recorder inserts and completes receipt metadata without request-path cleanup", async () => {
   const calls = [];
   const query = async (text, values) => {
     calls.push({ text, values });
@@ -168,12 +168,8 @@ test("ingress recorder inserts, bounds, and completes receipt metadata", async (
       alertClipField: { present: false },
     },
   });
-  assert.equal(calls.length, 3);
+  assert.equal(calls.length, 1);
   assert.match(calls[0].text, /INSERT INTO public\.integration_ingress_receipts/);
-  assert.match(calls[1].text, /received_at < CURRENT_TIMESTAMP/);
-  assert.deepEqual(calls[1].values, [7]);
-  assert.match(calls[2].text, /OFFSET \$1::integer/);
-  assert.deepEqual(calls[2].values, [1_000]);
   assert.equal(JSON.stringify(calls[0].values).includes("PLATE-SENTINEL"), false);
   assert.equal(JSON.stringify(calls[0].values).includes("IMAGE-SENTINEL"), false);
 
@@ -189,9 +185,9 @@ test("ingress recorder inserts, bounds, and completes receipt metadata", async (
     ignoredCount: 0,
     overviewWorkQueued: true,
   });
-  assert.equal(calls.length, 4);
-  assert.match(calls[3].text, /UPDATE public\.integration_ingress_receipts/);
-  assert.deepEqual(calls[3].values, [
+  assert.equal(calls.length, 2);
+  assert.match(calls[1].text, /UPDATE public\.integration_ingress_receipts/);
+  assert.deepEqual(calls[1].values, [
     41,
     18,
     201,
@@ -236,7 +232,7 @@ test("structured logger redacts sensitive fields and bounds unsafe values", () =
   assert.equal(JSON.stringify(sanitized).includes("RAW-ERROR-SENTINEL"), false);
 });
 
-test("migration and Compose configuration keep logging and receipts bounded", async () => {
+test("migration and Compose configure bounded logs and receipt candidate policy", async () => {
   const [migration, compose, externalCompose, envExample, security] = await Promise.all([
     readFile(new URL("../migrations.sql", import.meta.url), "utf8"),
     readFile(new URL("../docker-compose.yml", import.meta.url), "utf8"),

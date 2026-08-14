@@ -142,8 +142,11 @@ receipt; rejected authentication attempts leave a receipt without reading the
 request body. This makes rejected requests and a missing or blank `&TYPE`
 visible to operators without retaining the plate value, image, AI dump,
 request body, or Blue Iris path in operational logs. File-log rotation,
-request-size limits, and receipt retention can be tuned with the `ALPR_*`
-logging settings documented in `.env.example`.
+request-size limits, receipt preview policy, hot-audit policy, and PostgreSQL
+container-log bounds can be tuned with the `ALPR_*` logging settings documented
+in `.env.example`. Administrators can review growth, preserve a bounded incident
+package, and run an exact preview-confirmed retention batch from **System Logs >
+Retention & incidents**. Retention execution is never scheduled automatically.
 
 **Set your API key with the `x-api-key` header as seen below.**
 ![Notification settings](Images/alert.JPG)

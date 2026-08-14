@@ -87,7 +87,9 @@ containing only bounded request-shape, correlation, trigger-type, status, and
 count metadata. Receipts may record recognized field names, sizes, and a body
 digest, but never store raw bodies, plate values, AI dumps, images, or Blue Iris
 paths. Rejected authentication attempts create metadata-only receipts without
-reading the body. Retention is bounded by both age and row count.
+reading the body. Age and row-count policy identify cleanup candidates, but
+ingress never deletes evidence on the request path and no cleanup schedule is
+enabled.
 
 Receipt schema v2 may record the names and distinct state/value count of supported
 trigger aliases, whether those aliases conflict, and the numeric IDs of
@@ -143,6 +145,27 @@ parameterized, and its detail view exposes only the metadata-only receipt
 fields described above. Links may correlate a request or produced read with
 the protected operational-log view and may open the exact produced read in the
 Recognition Feed; they do not add raw request values to either URL.
+
+The protected Retention & incidents view exposes count, age, and size health to
+Administrators and Auditors. Only an Administrator with `maintenance.manage`
+may create an incident package or a retention preview. An incident scope is one
+bounded request ID, positive read ID, or time window no longer than seven days.
+Creation snapshots matching sanitized operational entries from retained files,
+metadata-only receipts, allowlisted read-timeline events, and matching hot and
+archived audit rows into an append-only, byte-bounded JSON object with a SHA-256
+digest. Matching live receipts and hot audit events are protected until the
+scope expires; the immutable package itself is not deleted at expiry.
+
+Retention execution is hard-disabled on schedules. A preview stores only a
+SHA-256 hash of its random one-time token, is bound to the creating actor, lists
+exact candidate IDs, and expires after 15 minutes. Execution requires the exact
+`ARCHIVE LOG EVIDENCE` phrase, revalidates the candidate set, and row-locks that
+set in one transaction. Old audit events are copied into an append-only,
+time-partitioned archive and verified there before the hot copies may be
+released. Receipt deletion is limited to the locked preview IDs. Changed,
+expired, missing, or previously used previews cannot delete evidence. Read
+timeline events keep their parent-read lifecycle. Application file logs and
+PostgreSQL Docker logs remain independently bounded by file rotation.
 
 ## Test isolation and validation
 

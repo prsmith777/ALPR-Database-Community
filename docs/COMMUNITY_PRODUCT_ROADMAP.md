@@ -18,7 +18,7 @@ reliable background processing.
 6. Audit sensitive searches, exports, corrections, rule changes, and
    destructive maintenance.
 
-## Release candidate baseline — August 13, 2026
+## Release candidate baseline — August 14, 2026
 
 - Application `0.1.19` candidate includes named users and roles, evidence-preserving plate
   review, filter-respecting exports, the searchable help center, local privacy
@@ -790,10 +790,28 @@ be restored. Monochrome nighttime captures do not receive a direction result.
   unified notifications, and legacy Pushover are never replayed. Reconciliations
   append sanitized per-read timeline evidence and retain the existing duplicate
   response contract, ingress-receipt bounds, and parent-read cleanup lifecycle.
-- Next: expose log/table growth and retention health, preview-first cleanup,
-  incident protection and export, audit retention/partitioning, and bounded
-  PostgreSQL log rotation. These controls remain planned and are not implied by
-  the current System Logs page.
+- Delivered retention and preservation: Retention & incidents exposes
+  operational-file, ingress-receipt, read-timeline, hot-audit, archived-audit,
+  and active-incident health to Administrators and Auditors. Administrators can
+  create byte-bounded, append-only JSON evidence packages for one request ID,
+  one read ID, or a time window of at most seven days; packages include matching
+  retained operational logs, receipts, read-timeline events, and hot plus
+  archived audit evidence with a SHA-256 digest. Active incident scopes exclude
+  matching live receipt and hot-audit rows from retention until protection
+  expires, while the incident package remains immutable afterward.
+- Delivered preview-first cleanup: ingress no longer deletes receipts on the
+  request path. An Administrator must create a 15-minute, one-time, actor-bound
+  preview and type `ARCHIVE LOG EVIDENCE`; execution revalidates and locks the
+  exact candidate IDs before changing data. Old audit rows are copied and
+  verified in an append-only time-partitioned archive before hot-table release,
+  expired receipts are removed only from the confirmed set, and changed or
+  expired previews invalidate without deletion. Scheduled execution remains
+  hard-disabled. Read-timeline rows retain their existing parent-read lifecycle.
+- Delivered bounded host logs: PostgreSQL Docker `json-file` output is capped by
+  configurable size and file count in both database Compose variants. Existing
+  application JSON file rotation remains bounded; incident creation can search
+  the retained rotations without making five-second System Logs polling read
+  every rotated file.
 
 ## Fuzzy matching vocabulary
 
