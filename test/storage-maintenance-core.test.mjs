@@ -486,7 +486,7 @@ test("manual cleanup rejects a symbolic-link ancestor even when its real target 
   }), /symbolic links/);
 });
 
-test("cleanup locks both reference tables before checking references and unlinking", async () => {
+test("cleanup locks every reference table before checking references and unlinking", async () => {
   const calls = [];
   const client = {
     async query(sql, values) {
@@ -509,7 +509,7 @@ test("cleanup locks both reference tables before checking references and unlinki
   assert.equal(outcome.status, "deleted");
   assert.deepEqual(calls.slice(0, 5).map(({ sql }) => sql.split("\n")[0]), [
     "BEGIN",
-    "LOCK TABLE public.plate_reads, public.capture_assets IN SHARE MODE",
+    "LOCK TABLE public.plate_reads, public.capture_assets, public.vehicle_image_assets IN SHARE MODE",
     "SELECT five_column_reference_check",
     "UNLINK derived/file.jpg",
     "UPDATE public.maintenance_cleanup_items SET",

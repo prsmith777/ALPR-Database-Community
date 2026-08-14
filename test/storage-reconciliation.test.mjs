@@ -142,6 +142,62 @@ test("a completed reconciliation persists read-only results under an advisory lo
   assert.equal(statements.some(({ sql }) => /DELETE\s+FROM|TRUNCATE|\bUNLINK\b/i.test(sql)), false);
 });
 
+test("canonical vehicle image assets run through a bounded reconciliation phase", async () => {
+  const statements = [];
+  let released = false;
+  const run = {
+    id: "19",
+    status: "running",
+    phase: "vehicle-image-assets",
+    max_vehicle_image_asset_id: "9",
+    vehicle_image_asset_cursor: "0",
+  };
+  const client = {
+    async query(sql, values) {
+      statements.push({ sql, values });
+      if (/pg_try_advisory_lock/.test(sql)) return { rows: [{ locked: true }], rowCount: 1 };
+      if (/SELECT \* FROM public\.storage_reconciliation_runs[\s\S]*status = 'running'/.test(sql)) {
+        return { rows: [run], rowCount: 1 };
+      }
+      if (/SELECT id, storage_path FROM public\.vehicle_image_assets/.test(sql)) {
+        return {
+          rows: [{
+            id: "9",
+            storage_path: `derived/vehicle-assets/aa/${"a".repeat(64)}.jpg`,
+          }],
+          rowCount: 1,
+        };
+      }
+      if (/INSERT INTO public\.storage_reconciliation_items/.test(sql)) {
+        return { rows: [{ id: "1" }], rowCount: 1 };
+      }
+      return { rows: [], rowCount: 1 };
+    },
+    release() { released = true; },
+  };
+  const result = await runStorageReconciliationBatch({
+    pool: { connect: async () => client },
+    baseDir: "/storage-that-does-not-exist",
+    batchSize: 25,
+  });
+
+  assert.deepEqual(result, { status: "running", phase: "completed", runId: 19 });
+  const assetRead = statements.find(({ sql }) => (
+    /SELECT id, storage_path FROM public\.vehicle_image_assets/.test(sql)
+  ));
+  assert.deepEqual(assetRead.values, ["0", "9", 25]);
+  const missingInsert = statements.find(({ sql }) => (
+    /INSERT INTO public\.storage_reconciliation_items/.test(sql)
+  ));
+  assert.deepEqual(missingInsert.values[2], ["vehicle-image-asset"]);
+  assert.deepEqual(missingInsert.values[3], ["9"]);
+  const cursorUpdate = statements.find(({ sql }) => (
+    /SET vehicle_image_asset_cursor = \$2/.test(sql)
+  ));
+  assert.deepEqual(cursorUpdate.values.slice(0, 3), ["19", "9", "completed"]);
+  assert.equal(released, true);
+});
+
 test("reconciliation schema and UI expose inventory without cleanup controls", async () => {
   const [repository, migrations, card] = await Promise.all([
     readFile(new URL("../lib/storage-reconciliation-repository.mjs", import.meta.url), "utf8"),

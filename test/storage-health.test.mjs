@@ -54,6 +54,9 @@ test("storage health combines exact database and filesystem facts with a bounded
     failed_count: "1",
     source_missing_count: "1",
     last_indexed_at: "2026-07-24T11:30:00.000Z",
+    vehicle_image_asset_count: "4",
+    vehicle_image_asset_bytes: "1200",
+    vehicle_image_asset_read_links: "7",
   };
   const sampleRows = [
     { image_path: "images/a.jpg", thumbnail_path: "thumbnails/a.jpg", derived_path: "derived/a.jpg" },
@@ -100,11 +103,15 @@ test("storage health combines exact database and filesystem facts with a bounded
   assert.equal(snapshot.assets.sampledReads, 2);
   assert.equal(snapshot.assets.averageAssetBytesPerRead, 200);
   assert.equal(snapshot.assets.missingReferences, 1);
+  assert.equal(snapshot.assets.canonicalVehicleImageCount, 4);
+  assert.equal(snapshot.assets.canonicalVehicleImageBytes, 1_200);
+  assert.equal(snapshot.assets.canonicalVehicleImageReadLinks, 7);
   assert.equal(snapshot.growth.estimatedBytesPerRead, 400);
   assert.equal(snapshot.growth.estimatedBytesPerDay, 4_000);
   assert.equal(snapshot.growth.projections[0].days, 1);
   assert.equal(queries[1].sql, STORAGE_HEALTH_SAMPLE_SQL);
   assert.deepEqual(queries[1].values, [2]);
+  assert.match(STORAGE_HEALTH_METRICS_SQL, /vehicle_image_asset_metrics\.\*/);
 });
 
 test("storage health degrades to partial read-only results when database probes fail", async () => {

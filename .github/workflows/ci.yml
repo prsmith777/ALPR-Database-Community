@@ -92,6 +92,11 @@ jobs:
           DATABASE_URL='postgresql://postgres:fixture-test-password@127.0.0.1:5432/fixture_test' \
             yarn test:overview-export:postgres
 
+          VEHICLE_IMAGE_ASSET_POSTGRES_TEST_OPT_IN='true' \
+            VEHICLE_IMAGE_ASSET_POSTGRES_TEST_DATABASE='fixture_test' \
+            DATABASE_URL='postgresql://postgres:fixture-test-password@127.0.0.1:5432/fixture_test' \
+            yarn test:vehicle-image-asset:postgres
+
           fixture status | grep -F 'fixture_state=absent'
           fixture load | grep -F 'fixture_state=loaded'
 

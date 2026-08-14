@@ -717,6 +717,19 @@ notes. Updates remain externally orchestrated.
   Recognition Feed shows assignment, direction, and color evidence in its image
   dialog. Confirmed associations are a baseline only; mismatch labels and alerts
   remain disabled.
+- Canonical Overview image ownership is now implemented as an intentionally
+  inactive foundation for the next ReID generation. Exact JPEG SHA-256, not a
+  plate read or perceptual similarity, owns one immutable content-addressed
+  asset; multiple Entry or Street reads can link to the same bytes with their
+  original provenance. Only reviewed ready Overview source kinds qualify,
+  including the configured legacy Street Overview fallback role. Plate-camera
+  fallbacks are excluded, and
+  an Entry-to-Street display fallback is explicitly ineligible as a second
+  identity observation. The current read-owned Vehicle View, ReID index,
+  clusters, attributes, ingestion worker, and review UI remain unchanged. No
+  worker, page, automatic history import, or external enrichment call is enabled
+  by this foundation. Storage health, reconciliation, and cleanup now recognize
+  the canonical asset path before any catalog population begins.
 Street LPR 1, Street Overview, and Entry Overview are installed. Street Overview
 and Entry Overview supply strong daytime vehicle images but are monochrome at
 night and are not expected to read a plate. Entry Overview is Blue Iris `Cam143`.
@@ -764,6 +777,22 @@ be restored. Monochrome nighttime captures do not receive a direction result.
   or synthesize a missing Street read.
 - Expand Vehicle ReID calibration with larger labeled local samples and
   camera-pair reporting before making stronger labels or applying thresholds.
+- Build the canonical-asset rollout in conservative stages: first add a
+  preview-first, resumable catalog campaign for already-ready Overview images;
+  then correlate paired reads into shadow vehicle events without gating
+  ingestion; then create Overview-owned crops, embeddings, attributes, and ReID
+  v2 profiles. Shared Street images count once, and Entry-to-Street display
+  fallbacks never become an additional identity observation. Keep the existing
+  ReID path available until asset/event results have been reviewed and the
+  cutover has an explicit rollback plan. Before bulk cataloging or any ReID v2
+  consumer is enabled, require the link's exact source revision to match the
+  current read, define whether superseded zero-link assets are archival or
+  garbage-collected, include canonical-copy growth in storage projections, and
+  pass a real-PostgreSQL migration/FK/concurrency smoke test.
+- Keep external make/model/color enrichment deferred until the canonical asset
+  and ReID v2 pipeline is stable. When that later phase is approved, send each
+  eligible canonical Overview asset at most once and reuse its result for every
+  linked read; do not submit Entry or Street plate-camera captures.
 - Consider pgvector only when the bounded in-process cosine scan no longer
   meets latency targets.
 - Render configurable overlays at view/export time and cache derived assets;

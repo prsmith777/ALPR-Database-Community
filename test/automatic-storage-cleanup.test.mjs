@@ -282,7 +282,10 @@ test("automatic candidate transactions apply remaining-budget database timeouts"
   assert.equal(calls[0].sql, "BEGIN");
   assert.match(calls[1].sql, /set_config\('lock_timeout'/);
   assert.deepEqual(calls[1].values, ["5000ms", "123456ms"]);
-  assert.match(calls[2].sql, /LOCK TABLE public\.plate_reads, public\.capture_assets IN SHARE MODE/);
+  assert.match(
+    calls[2].sql,
+    /LOCK TABLE public\.plate_reads, public\.capture_assets, public\.vehicle_image_assets IN SHARE MODE/
+  );
 });
 
 test("crash recovery atomically opens the automatic breaker and makes reconciliation due", async () => {
