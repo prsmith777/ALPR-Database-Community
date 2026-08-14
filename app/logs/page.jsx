@@ -11,7 +11,7 @@ import LogViewer from "./LogViewer";
 
 export const dynamic = "force-dynamic";
 
-async function LogsContent({ initialFilters }) {
+async function LogsContent({ initialFilters, initialExpandFirst }) {
   unstable_noStore();
   const { data: logs, error } = await getSystemLogs(initialFilters);
 
@@ -23,7 +23,13 @@ async function LogsContent({ initialFilters }) {
     );
   }
 
-  return <LogViewer initialPage={logs} initialFilters={initialFilters} />;
+  return (
+    <LogViewer
+      initialPage={logs}
+      initialFilters={initialFilters}
+      initialExpandFirst={initialExpandFirst}
+    />
+  );
 }
 
 export default async function LogsPage({ searchParams }) {
@@ -39,6 +45,7 @@ export default async function LogsPage({ searchParams }) {
     ? String(requestedReadId)
     : "";
   const requestId = String(requestedRequestId || "").trim().slice(0, 128);
+  const initialExpandFirst = parameters?.expand === "first";
   const initialFilters = {
     ...(readId ? { readId } : {}),
     ...(requestId ? { requestId } : {}),
@@ -58,7 +65,10 @@ export default async function LogsPage({ searchParams }) {
               </div>
             }
           >
-            <LogsContent initialFilters={initialFilters} />
+            <LogsContent
+              initialFilters={initialFilters}
+              initialExpandFirst={initialExpandFirst}
+            />
           </Suspense>
         </div>
       </div>

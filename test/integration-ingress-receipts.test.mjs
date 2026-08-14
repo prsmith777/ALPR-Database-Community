@@ -149,5 +149,6 @@ test("receipt explorer is protected and reachable from System Logs", async () =>
   assert.equal(liveFeed.includes("readId: /^\\d+$/.test"), true);
   assert.match(wrapper, /readId: params\.get\("readId"\)/);
   assert.match(plateTable, /Exact read: \{filters\.readId\}/);
+  assert.match(plateTable, /\/logs\?readId=\$\{plate\.id\}&expand=first/);
   assert.match(database, /pr\.id = \$\{addValue\(requestedReadId\)\}::bigint/);
 });

@@ -2626,7 +2626,7 @@ export default function PlateTable({
                                 asChild
                               >
                                 <Link
-                                  href={`/logs?readId=${plate.id}`}
+                                  href={`/logs?readId=${plate.id}&expand=first`}
                                   aria-label={`View logs for read ${plate.id}`}
                                 >
                                   <ScrollText className="h-4 w-4" />
