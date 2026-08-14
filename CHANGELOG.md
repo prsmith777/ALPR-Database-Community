@@ -51,6 +51,13 @@
   typed acknowledgement. Added read-only PostgreSQL dead/live tuple,
   autovacuum/autoanalyze, and transaction-ID-age observability; no VACUUM,
   restore, shell, unrestricted Docker, or release controls were added.
+- Exposed the protected host-maintenance breaker recovery transaction in the
+  Cleanup UI. An Administrator must type the category-specific acknowledgement;
+  the server locks the current breaker, binds the destructive failure that
+  opened it, requires newer healthy worker heartbeat and inventory evidence,
+  and appends immutable actor and worker evidence. Acknowledgement closes only
+  that breaker, deletes nothing, leaves every host schedule disabled, and does
+  not replace the separately queued read-only preview required before cleanup.
 - Added a fail-closed, no-input manual PostgreSQL custom-format backup
   request/status control. It is available only when a fresh, separately
   installed worker advertises `database-backup-create-v1`, exposes no path,

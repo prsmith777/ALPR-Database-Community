@@ -14,7 +14,7 @@ async function source(path) {
 }
 
 test("the user guide is structured, searchable, and role-aware", () => {
-  assert.equal(HELP_MANUAL.manualVersion, "1.83");
+  assert.equal(HELP_MANUAL.manualVersion, "1.84");
   assert.ok(HELP_MANUAL.sections.length >= 14);
 
   const ids = HELP_MANUAL.sections.map((section) => section.id);
@@ -58,6 +58,9 @@ test("the guide covers required workflows and clearly labels planned features", 
     "configurable image overlays",
     "read storage health safely",
     "cannot delete or modify images",
+    "category's displayed acknowledgement phrase",
+    "keeps every host schedule disabled",
+    "separately queued read-only preview",
     "read installed release information",
     "confirm association",
     "configure daytime vehicle views",

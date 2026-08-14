@@ -390,6 +390,15 @@ until the documented fixed host service is independently installed. That
 service is installed and active on staging and production. See
 `docs/host-maintenance-worker-contract.md`.
 
+The Cleanup UI now exposes the existing protected recovery transaction when a
+host category's safety breaker is open. An Administrator must type that
+category's displayed acknowledgement phrase. The server locks the current
+breaker, binds the failed destructive receipt that opened it, requires newer
+healthy worker heartbeat and inventory evidence, and appends immutable actor
+and worker evidence before closing only that breaker. Acknowledgement deletes
+nothing, leaves all host schedules disabled, and requires a separately queued
+read-only preview before any cleanup request.
+
 The repo-side manual database-backup increment uses its own one-active-request
 queue rather than a cleanup category. A fixed adapter must create and verify a
 PostgreSQL custom-format dump in the approved backup root, then return only a
@@ -435,6 +444,11 @@ notes. Updates remain externally orchestrated.
   bounded per-candidate database waits, minimum daily interval, minimum seven-day
   grace, durable provenance, alert/audit history, and a fail-closed circuit
   breaker.
+- Delivered increment: category-specific typed Administrator acknowledgement
+  for a host-maintenance safety breaker, bound to the current breaker, its
+  failed destructive receipt, and newer healthy worker evidence. The immutable
+  acknowledgement closes only that breaker, deletes nothing, keeps schedules
+  disabled, and does not replace a separate read-only preview.
 - Delivered increment: read-only PostgreSQL table maintenance and transaction
   ID age observability, plus the fail-closed application control plane for one
   manual custom-format database backup. The reviewed fixed worker adapter is
