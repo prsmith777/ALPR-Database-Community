@@ -1,8 +1,10 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useId, useState } from "react";
-import { Check, ChevronDown, Copy } from "lucide-react";
+import { Check, ChevronDown, Copy, ReceiptText } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { copyTextToClipboard } from "@/lib/browser-clipboard.mjs";
 
 function levelColor(level) {
   switch (level) {
@@ -86,8 +88,7 @@ export default function LogMessage({ log, expanded = false, onExpandedChange }) 
       ? `Direction ${log.details.directionStatus}`
       : null;
   const copyRequestId = async () => {
-    if (!log.requestId || !navigator.clipboard) return;
-    await navigator.clipboard.writeText(log.requestId);
+    if (!log.requestId || !(await copyTextToClipboard(log.requestId))) return;
     setCopied(true);
     window.setTimeout(() => setCopied(false), 1500);
   };
@@ -159,17 +160,35 @@ export default function LogMessage({ log, expanded = false, onExpandedChange }) 
             {formattedTimestamp(log.timestamp)}
           </time>
           {log.requestId && (
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon"
-              className="h-6 w-6"
-              onClick={copyRequestId}
-              aria-label="Copy request ID"
-              title="Copy request ID"
-            >
-              {copied ? <Check aria-hidden="true" /> : <Copy aria-hidden="true" />}
-            </Button>
+            <div className="flex items-center gap-0.5">
+              {log.component === "plate-read-ingress" && (
+                <Button
+                  asChild
+                  variant="ghost"
+                  size="icon"
+                  className="h-6 w-6"
+                >
+                  <Link
+                    href={`/logs/receipts?requestId=${encodeURIComponent(log.requestId)}&expand=first`}
+                    aria-label="Open matching ingress receipt"
+                    title="Open matching ingress receipt"
+                  >
+                    <ReceiptText aria-hidden="true" />
+                  </Link>
+                </Button>
+              )}
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                className="h-6 w-6"
+                onClick={copyRequestId}
+                aria-label="Copy request ID"
+                title={copied ? "Request ID copied" : "Copy request ID"}
+              >
+                {copied ? <Check aria-hidden="true" /> : <Copy aria-hidden="true" />}
+              </Button>
+            </div>
           )}
         </div>
       </div>

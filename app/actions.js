@@ -120,6 +120,7 @@ import {
 } from "@/lib/dashboard-time-distribution.mjs";
 import { querySystemLogText } from "@/lib/system-logs.mjs";
 import { queryIntegrationIngressReceipts } from "@/lib/integration-ingress-receipts.mjs";
+import { queryReadPipelineTimeline } from "@/lib/read-pipeline-timeline.mjs";
 import { createComponentLogger } from "@/logging/logger";
 import path from "path";
 import fs from "fs/promises";
@@ -3225,6 +3226,25 @@ export async function fetchPlateImagePreviews(
 
 const systemLogsLogger = createComponentLogger("system-logs");
 const ingressReceiptsLogger = createComponentLogger("ingress-receipts");
+const readPipelineLogger = createComponentLogger("read-pipeline-timeline");
+
+export async function getReadPipelineTimeline(readId) {
+  await requirePermission("system.view_audit");
+  try {
+    const pool = await getPool();
+    const data = await queryReadPipelineTimeline(
+      (text, values) => pool.query(text, values),
+      readId,
+    );
+    return { success: true, data };
+  } catch (error) {
+    readPipelineLogger.error("read_pipeline_timeline_query_failed", {
+      readId,
+      errorCode: error?.code || "READ_PIPELINE_TIMELINE_QUERY_FAILED",
+    });
+    return { success: false, error: "Failed to read the plate-read pipeline timeline" };
+  }
+}
 
 export async function getIntegrationIngressReceipts(filters = {}) {
   await requirePermission("system.view_audit");

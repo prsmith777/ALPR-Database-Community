@@ -252,6 +252,9 @@ test("migration and Compose configuration keep logging and receipts bounded", as
   assert.match(migration, /trigger_alias_conflict BOOLEAN NOT NULL DEFAULT FALSE/);
   assert.match(migration, /duplicate_target_read_ids BIGINT\[\] NOT NULL/);
   assert.match(migration, /2026081302_ingress_receipt_diagnostics_v2/);
+  assert.match(migration, /CREATE TABLE IF NOT EXISTS public\.plate_read_pipeline_events/);
+  assert.match(migration, /REFERENCES public\.plate_reads\(id\) ON DELETE CASCADE/);
+  assert.match(migration, /2026081303_read_pipeline_timeline/);
   for (const source of [compose, externalCompose, envExample]) {
     assert.match(source, /ALPR_OPERATIONAL_LOG_FILE_MAX_BYTES/);
     assert.match(source, /ALPR_INTEGRATION_MAX_BODY_BYTES/);

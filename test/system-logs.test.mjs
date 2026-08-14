@@ -115,16 +115,18 @@ test("log query inputs are bounded to supported levels and page sizes", () => {
 });
 
 test("System Logs exposes bounded structured diagnostics and operator controls", async () => {
-  const [actions, page, viewer, message, instrumentation, mqtt] = await Promise.all([
+  const [actions, page, viewer, message, timeline, instrumentation, mqtt] = await Promise.all([
     source("app/actions.js"),
     source("app/logs/page.jsx"),
     source("app/logs/LogViewer.jsx"),
     source("app/logs/LogMessage.jsx"),
+    source("app/logs/ReadPipelineTimeline.jsx"),
     source("instrumentation.js"),
     source("lib/mqtt/client-manager.mjs"),
   ]);
 
   assert.match(actions, /querySystemLogText\(content, filters/);
+  assert.match(actions, /queryReadPipelineTimeline/);
   assert.match(actions, /requirePermission\("system\.view_audit"\)/);
   assert.match(page, /LogsPage\(\{ searchParams \}\)/);
   assert.match(page, /requestedRequestId/);
@@ -133,7 +135,11 @@ test("System Logs exposes bounded structured diagnostics and operator controls",
   assert.match(page, /\.\.\.\(readId \? \{ readId \} : \{\}\)/);
   assert.match(page, /\.\.\.\(requestId \? \{ requestId \} : \{\}\)/);
   assert.match(page, /getSystemLogs\(initialFilters\)/);
-  assert.match(viewer, /Log pipeline for read #\{applied\.readId\}/);
+  assert.match(page, /getReadPipelineTimeline\(initialFilters\.readId\)/);
+  assert.match(page, /initialTimeline=/);
+  assert.match(viewer, /Read #\{applied\.readId\} pipeline/);
+  assert.match(viewer, /durable \{timelineData\?\.total === 1 \? "event" : "events"\}/);
+  assert.match(viewer, /operational \{pageData\?\.total === 1 \? "log" : "logs"\}/);
   assert.match(viewer, /Show all logs/);
   assert.match(viewer, /Search messages and structured fields/);
   assert.match(viewer, /Request ID/);
@@ -150,8 +156,10 @@ test("System Logs exposes bounded structured diagnostics and operator controls",
   assert.match(viewer, /aria-pressed=\{liveUpdates\}/);
   assert.match(viewer, /Live updates resume on page 1/);
   assert.match(viewer, /initialExpandFirst \? initialPage\?\.entries\?\.\[0\]\?\.id : null/);
-  assert.match(viewer, /liveUpdates && pageData\?\.page === 1 && !hasExpandedRows/);
+  assert.match(viewer, /liveUpdates && pageData\?\.page === 1 && !hasExpandedRows && !timelineExpanded/);
   assert.match(viewer, /Live updates resume when log details are closed/);
+  assert.match(viewer, /Live updates resume when the durable timeline is closed/);
+  assert.match(viewer, /<ReadPipelineTimeline/);
   assert.match(viewer, /expanded=\{expandedRows\.has\(log\.id\)\}/);
   assert.match(viewer, /const \[filtersExpanded, setFiltersExpanded\] = useState\(false\)/);
   assert.match(viewer, /aria-controls="system-log-filters"/);
@@ -159,6 +167,10 @@ test("System Logs exposes bounded structured diagnostics and operator controls",
   assert.match(viewer, /Unapplied changes/);
   assert.doesNotMatch(message, /Structured fields/);
   assert.match(message, /Copy request ID/);
+  assert.match(message, /copyTextToClipboard\(log\.requestId\)/);
+  assert.doesNotMatch(message, /navigator\.clipboard\.writeText/);
+  assert.match(message, /\/logs\/receipts\?requestId=\$\{encodeURIComponent\(log\.requestId\)\}&expand=first/);
+  assert.match(message, /Open matching ingress receipt/);
   assert.match(message, /Trigger \$\{log\.details\.triggerType\}/);
   assert.match(message, /aria-controls=\{detailsId\}/);
   assert.match(message, /onExpandedChange\?\.\(log\.id, !expanded\)/);
@@ -179,6 +191,11 @@ test("System Logs exposes bounded structured diagnostics and operator controls",
   assert.match(message, /highlightedField === key/);
   assert.match(message, /flex flex-wrap items-center gap-1\.5 font-mono/);
   assert.match(message, /border-b border-border\/40 py-1\.5/);
+  assert.match(timeline, /Durable read timeline/);
+  assert.match(timeline, /No durable events for this legacy read/);
+  assert.match(timeline, /Durable timeline events begin with reads ingested after this release/);
+  assert.match(timeline, /max-h-72 overflow-y-auto/);
+  assert.match(timeline, /onExpandedChange\?\.\(!expanded\)/);
   assert.match(instrumentation, /createComponentLogger\("background-runtime"\)/);
   assert.match(mqtt, /this\.mqttConnect\(options\)/);
   assert.doesNotMatch(mqtt, /this\.mqttConnect\(url, options\)/);

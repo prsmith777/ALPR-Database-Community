@@ -1,7 +1,7 @@
 import { Suspense } from "react";
 import { unstable_noStore } from "next/cache";
 
-import { getSystemLogs } from "@/app/actions";
+import { getReadPipelineTimeline, getSystemLogs } from "@/app/actions";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import DashboardLayout from "@/components/layout/MainLayout";
 import { getLocalVersionInfo } from "@/lib/version";
@@ -13,7 +13,13 @@ export const dynamic = "force-dynamic";
 
 async function LogsContent({ initialFilters, initialExpandFirst }) {
   unstable_noStore();
-  const { data: logs, error } = await getSystemLogs(initialFilters);
+  const [logResponse, timelineResponse] = await Promise.all([
+    getSystemLogs(initialFilters),
+    initialFilters.readId
+      ? getReadPipelineTimeline(initialFilters.readId)
+      : Promise.resolve(null),
+  ]);
+  const { data: logs, error } = logResponse;
 
   if (error) {
     return (
@@ -28,6 +34,21 @@ async function LogsContent({ initialFilters, initialExpandFirst }) {
       initialPage={logs}
       initialFilters={initialFilters}
       initialExpandFirst={initialExpandFirst}
+      initialTimeline={
+        timelineResponse?.success
+          ? timelineResponse.data
+          : initialFilters.readId
+            ? {
+                readId: Number(initialFilters.readId),
+                readExists: false,
+                total: 0,
+                events: [],
+                error:
+                  timelineResponse?.error ||
+                  "Failed to read the plate-read pipeline timeline",
+              }
+            : null
+      }
     />
   );
 }

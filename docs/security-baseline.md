@@ -103,6 +103,22 @@ metadata. The browser never receives the entire active file in one response,
 and expanding a row does not bypass credential, plate, payload, image, or path
 redaction.
 
+New accepted reads may also append a durable per-read pipeline timeline. Its
+detail object uses an explicit allowlist of bounded booleans, counts, statuses,
+direction labels, algorithm identifiers, and error codes. It never stores plate
+text, request bodies, images, AI dumps, paths, alternate trigger values,
+credentials, remote responses, or raw exceptions. Timeline writes are
+best-effort after the read transaction commits, so an observability failure
+cannot reverse an accepted read or cause a duplicate client retry.
+
+The timeline query uses the same Administrator/Auditor permission as System
+Logs, is parameterized by one positive read ID, and returns at most 100 events.
+The event table has no update or delete application operation. Its rows use a
+foreign key with `ON DELETE CASCADE`, so deleting a parent read through the
+existing authorized retention or cleanup lifecycle removes only that read's
+timeline; the timeline adds no cleanup authority or independent retention job.
+Deleting an expired ingress receipt merely clears the optional receipt link.
+
 The protected ingress-receipt explorer uses the same Administrator/Auditor
 permission and returns only a bounded database page. Its filters are
 parameterized, and its detail view exposes only the metadata-only receipt

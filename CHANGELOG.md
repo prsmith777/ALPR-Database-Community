@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+- Added an append-only, sanitized pipeline timeline for newly accepted reads.
+  It records bounded persistence, direction, notification-outbox, Vehicle View,
+  and legacy Pushover outcome evidence without plate text, request bodies,
+  images, paths, alternate trigger values, credentials, or raw failures. The
+  read-filtered Logs view shows the timeline collapsed above rotating
+  operational logs and pauses live updates while either evidence view is open.
+  Operational logs and ingress receipts now link in both directions by request
+  ID and open the first matching detail row. Request-ID copy actions support
+  direct-LAN HTTP pages when the secure-context clipboard API is unavailable.
+  Timeline rows follow their parent read's existing cleanup lifecycle; duplicate
+  handling is unchanged and remains the next guarded follow-up.
+
 - Versioned new integration ingress receipts as schema v2 and added sanitized
   trigger-alias conflict evidence plus exact duplicate-target read IDs. The
   protected receipt explorer links duplicate targets to their Recognition Feed

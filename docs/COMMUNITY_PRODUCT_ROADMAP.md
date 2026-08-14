@@ -768,15 +768,22 @@ be restored. Monochrome nighttime captures do not receive a direction result.
   pagination, default-collapsed filters with active-filter summaries, denser
   log rows, Blue Iris trigger/direction context, expandable sanitized JSON,
   default-on five-second live refresh with inspection-aware pause, request-ID
-  copy, active-file usage, normalized compatibility severity, and sanitized
-  background-runtime logging. An Administrator/Auditor ingress-receipt
+  copy with direct-LAN HTTP fallback, bidirectional expanded request/receipt
+  navigation, active-file usage, normalized compatibility severity, and
+  sanitized background-runtime logging. An Administrator/Auditor ingress-receipt
   explorer adds bounded request, read, camera, outcome, error, and date filters
   plus direct correlation to operational logs and the exact resulting read.
   Versioned v2 receipts add sanitized trigger-alias conflict counts and exact
   duplicate-target read IDs without retaining alternate values or plates.
-- Next: add an append-only per-read pipeline timeline and guarded late-duplicate
-  reconciliation that may attach missing nonconflicting evidence but never
-  replace established evidence or queue successful work twice.
+- Delivered per-read evidence: new accepted reads append a sanitized durable
+  timeline for read persistence, direction resolution, notification outbox
+  handoff, Vehicle View queue state, and legacy Pushover completion. The
+  read-filtered Logs view keeps this timeline collapsed above rotating
+  operational logs and pauses live refresh while it is inspected. Timeline
+  rows follow parent read deletion through the existing cleanup lifecycle.
+- Next: add guarded late-duplicate reconciliation that may attach missing
+  nonconflicting evidence but never replace established evidence or queue
+  successful work twice.
 - Later: expose log/table growth and retention health, preview-first cleanup,
   incident protection and export, audit retention/partitioning, and bounded
   PostgreSQL log rotation. These controls remain planned and are not implied by

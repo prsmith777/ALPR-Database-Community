@@ -233,6 +233,7 @@ test("the plate route commits each read and MQTT outbox handoff atomically", asy
   );
   const commit = source.indexOf('await dbClient.query("COMMIT")');
   const acceptedEffects = source.indexOf("await processAcceptedPlateReadEffects");
+  const pipelineTimeline = source.indexOf("await recordReadPipelineEvents");
 
   assert.ok(ignoreCheck >= 0);
   assert.ok(begin >= 0);
@@ -246,7 +247,11 @@ test("the plate route commits each read and MQTT outbox handoff atomically", asy
   assert.match(source, /transactionImages\.splice\(trackedImageIndex, 1\)/);
   assert.ok(mqttHandoff > duplicateBranch);
   assert.ok(commit > mqttHandoff);
+  assert.ok(pipelineTimeline > commit);
   assert.ok(acceptedEffects > commit);
+  assert.match(source, /buildAcceptedReadPipelineEvents/);
+  assert.match(source, /buildLegacyPushoverPipelineEvent/);
+  assert.match(source, /read_pipeline_timeline_append_failed/);
   assert.equal(source.includes("timestamp: data.timestamp || null"), true);
 
   assert.deepEqual(

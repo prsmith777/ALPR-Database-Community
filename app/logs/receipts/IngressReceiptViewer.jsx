@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useCallback, useState, useTransition } from "react";
 import {
+  Check,
   ChevronDown,
   ChevronRight,
   Copy,
@@ -18,6 +19,7 @@ import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
+import { copyTextToClipboard } from "@/lib/browser-clipboard.mjs";
 
 function defaultFilters(pageSize = 50) {
   return {
@@ -165,13 +167,25 @@ function StatusBadge({ receipt }) {
   );
 }
 
-export default function IngressReceiptViewer({ initialPage }) {
-  const initialFilters = defaultFilters(initialPage?.pageSize);
+export default function IngressReceiptViewer({
+  initialPage,
+  initialFilters: requestedFilters = {},
+  initialExpandFirst = false,
+}) {
+  const initialFilters = {
+    ...defaultFilters(initialPage?.pageSize),
+    ...requestedFilters,
+  };
   const [pageData, setPageData] = useState(initialPage);
   const [draft, setDraft] = useState(initialFilters);
   const [applied, setApplied] = useState(initialFilters);
   const [filtersExpanded, setFiltersExpanded] = useState(false);
-  const [expandedRows, setExpandedRows] = useState(() => new Set());
+  const [expandedRows, setExpandedRows] = useState(() => {
+    const firstReceiptId = initialExpandFirst
+      ? initialPage?.receipts?.[0]?.id
+      : null;
+    return new Set(firstReceiptId ? [firstReceiptId] : []);
+  });
   const [error, setError] = useState("");
   const [isPending, startTransition] = useTransition();
 
@@ -463,9 +477,12 @@ export default function IngressReceiptViewer({ initialPage }) {
 }
 
 function ReceiptRows({ receipt, expanded, detailsId, onToggle }) {
+  const [copied, setCopied] = useState(false);
   const copyRequestId = async (event) => {
     event.stopPropagation();
-    await navigator.clipboard.writeText(receipt.requestId);
+    if (!(await copyTextToClipboard(receipt.requestId))) return;
+    setCopied(true);
+    window.setTimeout(() => setCopied(false), 1500);
   };
 
   return (
@@ -487,7 +504,7 @@ function ReceiptRows({ receipt, expanded, detailsId, onToggle }) {
         <td className="max-w-72 px-3 py-2">
           <div className="flex items-center gap-1">
             <Link
-              href={`/logs?requestId=${encodeURIComponent(receipt.requestId)}`}
+              href={`/logs?requestId=${encodeURIComponent(receipt.requestId)}&expand=first`}
               className="truncate font-mono text-xs text-blue-500 hover:underline"
               title="Filter operational logs by this request ID"
             >
@@ -497,9 +514,11 @@ function ReceiptRows({ receipt, expanded, detailsId, onToggle }) {
               type="button"
               onClick={copyRequestId}
               className="shrink-0 rounded p-1 text-muted-foreground hover:text-foreground"
-              title="Copy request ID"
+              title={copied ? "Request ID copied" : "Copy request ID"}
             >
-              <Copy className="h-3.5 w-3.5" />
+              {copied
+                ? <Check className="h-3.5 w-3.5" />
+                : <Copy className="h-3.5 w-3.5" />}
               <span className="sr-only">Copy request ID</span>
             </button>
           </div>
@@ -532,7 +551,7 @@ function ReceiptRows({ receipt, expanded, detailsId, onToggle }) {
                     <ExternalLink className="h-3 w-3" />
                   </Link>
                   <Link
-                    href={`/logs?readId=${encodeURIComponent(readId)}`}
+                    href={`/logs?readId=${encodeURIComponent(readId)}&expand=first`}
                     className="border-l border-border p-1.5 text-muted-foreground hover:text-blue-500"
                     title={`View operational logs for read ${readId}`}
                   >
@@ -555,7 +574,7 @@ function ReceiptRows({ receipt, expanded, detailsId, onToggle }) {
                     <ExternalLink className="h-3 w-3" />
                   </Link>
                   <Link
-                    href={`/logs?readId=${encodeURIComponent(readId)}`}
+                    href={`/logs?readId=${encodeURIComponent(readId)}&expand=first`}
                     className="border-l border-amber-500/30 p-1.5 text-muted-foreground hover:text-amber-500"
                     title={`View operational logs for duplicate target read ${readId}`}
                   >

@@ -2,11 +2,12 @@
 
 import { useCallback, useEffect, useRef, useState, useTransition } from "react";
 import { ChevronDown, RefreshCw, Search, SlidersHorizontal, X } from "lucide-react";
-import { getSystemLogs } from "@/app/actions";
+import { getReadPipelineTimeline, getSystemLogs } from "@/app/actions";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import LogMessage from "./LogMessage";
+import ReadPipelineTimeline from "./ReadPipelineTimeline";
 
 const LEVELS = ["ALL", "INFO", "WARN", "ERROR", "DEBUG"];
 const LIVE_REFRESH_MS = 5_000;
@@ -79,6 +80,7 @@ export default function LogViewer({
   initialPage,
   initialFilters: requestedFilters = {},
   initialExpandFirst = false,
+  initialTimeline = null,
 }) {
   const initialFilters = {
     ...defaultFilters(initialPage?.pageSize),
@@ -89,6 +91,8 @@ export default function LogViewer({
   const [applied, setApplied] = useState(initialFilters);
   const [filtersExpanded, setFiltersExpanded] = useState(false);
   const [liveUpdates, setLiveUpdates] = useState(true);
+  const [timelineData, setTimelineData] = useState(initialTimeline);
+  const [timelineExpanded, setTimelineExpanded] = useState(false);
   const [expandedRows, setExpandedRows] = useState(() => {
     const firstLogId = initialExpandFirst ? initialPage?.entries?.[0]?.id : null;
     return new Set(firstLogId ? [firstLogId] : []);
@@ -107,13 +111,34 @@ export default function LogViewer({
     startTransition(async () => {
       try {
         setError("");
-        const response = await getSystemLogs(actionFilters(filters, page));
+        const [response, timelineResponse] = await Promise.all([
+          getSystemLogs(actionFilters(filters, page)),
+          filters.readId
+            ? getReadPipelineTimeline(filters.readId)
+            : Promise.resolve(null),
+        ]);
         if (!response?.success) {
           setError(response?.error || "Failed to load system logs");
           return;
         }
         setPageData(response.data);
         setApplied(filters);
+        setTimelineData(
+          filters.readId
+            ? timelineResponse?.success
+              ? timelineResponse.data
+              : {
+                  readId: Number(filters.readId),
+                  readExists: false,
+                  total: 0,
+                  events: [],
+                  error:
+                    timelineResponse?.error ||
+                    "Failed to read the plate-read pipeline timeline",
+                }
+            : null
+        );
+        if (!filters.readId) setTimelineExpanded(false);
         const visibleIds = new Set(
           (response.data?.entries || []).map((entry) => entry.id)
         );
@@ -152,6 +177,7 @@ export default function LogViewer({
     const next = defaultFilters(pageData?.pageSize);
     setDraft(next);
     setFiltersExpanded(false);
+    setTimelineExpanded(false);
     load(next, 1);
     if (window.location.search) {
       window.history.replaceState(null, "", window.location.pathname);
@@ -161,6 +187,7 @@ export default function LogViewer({
   const clearReadFilter = () => {
     const next = { ...applied, readId: "" };
     setDraft((current) => ({ ...current, readId: "" }));
+    setTimelineExpanded(false);
     load(next, 1);
     window.history.replaceState(null, "", window.location.pathname);
   };
@@ -177,7 +204,7 @@ export default function LogViewer({
   );
   const hasExpandedRows = expandedRows.size > 0;
   const liveUpdatesActive =
-    liveUpdates && pageData?.page === 1 && !hasExpandedRows;
+    liveUpdates && pageData?.page === 1 && !hasExpandedRows && !timelineExpanded;
   const updateExpandedRow = useCallback((logId, expanded) => {
     setExpandedRows((current) => {
       const next = new Set(current);
@@ -261,6 +288,8 @@ export default function LogViewer({
                 ? "Live updates refresh every 5 seconds"
                 : hasExpandedRows
                   ? "Live updates resume when log details are closed"
+                : timelineExpanded
+                  ? "Live updates resume when the durable timeline is closed"
                 : liveUpdates
                   ? "Live updates resume on page 1"
                   : "Live updates are off"
@@ -428,12 +457,14 @@ export default function LogViewer({
         <div className="flex flex-wrap items-center justify-between gap-2 border-b px-4 py-2 text-xs text-muted-foreground">
           {applied.readId && (
             <div className="flex min-w-0 items-center gap-2">
-              <span>Log pipeline for read #{applied.readId}</span>
+              <span>Read #{applied.readId} pipeline</span>
               <span className="text-muted-foreground/60" aria-hidden="true">·</span>
               <span>
-                {pageData?.total
-                  ? `${pageData.total} matching ${pageData.total === 1 ? "entry" : "entries"}`
-                  : "No matching entries"}
+                {timelineData?.total || 0} durable {timelineData?.total === 1 ? "event" : "events"}
+              </span>
+              <span className="text-muted-foreground/60" aria-hidden="true">·</span>
+              <span>
+                {pageData?.total || 0} operational {pageData?.total === 1 ? "log" : "logs"}
               </span>
               <Button
                 type="button"
@@ -454,6 +485,14 @@ export default function LogViewer({
           </span>
           <span className="hidden md:inline">Newest entries first; select a row for structured fields.</span>
         </div>
+
+        {applied.readId && (
+          <ReadPipelineTimeline
+            timeline={timelineData}
+            expanded={timelineExpanded}
+            onExpandedChange={setTimelineExpanded}
+          />
+        )}
 
         <div className="min-h-0 flex-1 overflow-y-auto px-4">
           {entries.length ? (
