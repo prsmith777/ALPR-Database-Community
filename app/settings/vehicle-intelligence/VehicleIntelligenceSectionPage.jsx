@@ -1,6 +1,7 @@
 import VehicleIntelligenceSettings from "@/components/settings/VehicleIntelligenceSettings";
 import {
   getBlueIrisVehicleFrameQueueStatus,
+  getVehicleImageAssetCatalogOverview,
   getVehicleOverviewSetup,
   getVehicleDirectionSetup,
 } from "@/app/actions";
@@ -78,13 +79,21 @@ export default async function VehicleIntelligenceSectionPage({ section = "camera
     );
   }
 
-  const result = await getVehicleDirectionSetup(null, directionOptions(section));
+  const [result, vehicleImageCatalog] = await Promise.all([
+    getVehicleDirectionSetup(null, directionOptions(section)),
+    section === "processing"
+      ? getVehicleImageAssetCatalogOverview()
+      : Promise.resolve(null),
+  ]);
   if (!result.success) throw new Error(result.error);
   return (
     <VehicleIntelligenceSettings
       initialData={result.data}
       initialFrameQueue={null}
       initialOverviewSetup={null}
+      initialVehicleImageCatalog={vehicleImageCatalog?.success
+        ? vehicleImageCatalog.data.overview
+        : null}
     />
   );
 }

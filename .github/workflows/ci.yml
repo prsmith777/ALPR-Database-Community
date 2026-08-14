@@ -89,11 +89,29 @@ jobs:
           psql_fixture --file /workspace/migrations.sql
           psql_fixture --file /workspace/migrations.sql
 
+          psql_fixture --command "
+            CREATE TABLE public.codex_integration_test_guard (
+              scope TEXT PRIMARY KEY,
+              guard_token TEXT NOT NULL
+            );
+            INSERT INTO public.codex_integration_test_guard (scope, guard_token)
+            VALUES
+              ('vehicle-image-asset-cleanup:v1', 'ci-disposable-pg17'),
+              ('vehicle-image-asset-campaign:v1', 'ci-disposable-pg17');
+          "
+
+          VEHICLE_IMAGE_ASSET_CLEANUP_POSTGRES_TEST_OPT_IN='true' \
+            VEHICLE_IMAGE_ASSET_CLEANUP_POSTGRES_TEST_DATABASE='fixture_test' \
+            VEHICLE_IMAGE_ASSET_CLEANUP_POSTGRES_TEST_GUARD_TOKEN='ci-disposable-pg17' \
+            DATABASE_URL='postgresql://postgres:fixture-test-password@127.0.0.1:5432/fixture_test' \
+            yarn test:vehicle-image-asset-cleanup:postgres
+
           DATABASE_URL='postgresql://postgres:fixture-test-password@127.0.0.1:5432/fixture_test' \
             yarn test:overview-export:postgres
 
           VEHICLE_IMAGE_ASSET_POSTGRES_TEST_OPT_IN='true' \
             VEHICLE_IMAGE_ASSET_POSTGRES_TEST_DATABASE='fixture_test' \
+            VEHICLE_IMAGE_ASSET_POSTGRES_TEST_GUARD_TOKEN='ci-disposable-pg17' \
             DATABASE_URL='postgresql://postgres:fixture-test-password@127.0.0.1:5432/fixture_test' \
             yarn test:vehicle-image-asset:postgres
 

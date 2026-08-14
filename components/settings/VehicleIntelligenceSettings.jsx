@@ -44,6 +44,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { SettingsShell } from "@/components/settings/SettingsShell";
+import VehicleImageAssetCatalogPanel from "@/components/settings/VehicleImageAssetCatalogPanel";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -110,6 +111,7 @@ export default function VehicleIntelligenceSettings({
   initialData,
   initialFrameQueue = null,
   initialOverviewSetup = null,
+  initialVehicleImageCatalog = null,
 }) {
   const routeTab = useRouteTab(VEHICLE_SETUP_ROUTES, "cameras");
   const [data, setData] = useState(initialData);
@@ -1805,7 +1807,8 @@ export default function VehicleIntelligenceSettings({
         </TabsContent>
 
         <TabsContent value="processing" className="mt-0">
-          <Card>
+          <VehicleImageAssetCatalogPanel initialOverview={initialVehicleImageCatalog} />
+          <Card className="mt-6">
           <CardHeader>
             <CardTitle>Historical direction backfill</CardTitle>
             <CardDescription>
