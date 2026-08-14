@@ -781,10 +781,16 @@ be restored. Monochrome nighttime captures do not receive a direction result.
   read-filtered Logs view keeps this timeline collapsed above rotating
   operational logs and pauses live refresh while it is inspected. Timeline
   rows follow parent read deletion through the existing cleanup lifecycle.
-- Next: add guarded late-duplicate reconciliation that may attach missing
-  nonconflicting evidence but never replace established evidence or queue
-  successful work twice.
-- Later: expose log/table growth and retention health, preview-first cleanup,
+- Delivered duplicate recovery: an exact late duplicate now locks its existing
+  read and may fill only missing, nonconflicting capture, Blue Iris alert,
+  recognition, or direction evidence. Established evidence is immutable.
+  Only a never-started Vehicle View that was previously blocked by missing
+  evidence may be queued, and a newly inserted primary-direction observation
+  may prepare its idempotent direction notification; accepted-read MQTT,
+  unified notifications, and legacy Pushover are never replayed. Reconciliations
+  append sanitized per-read timeline evidence and retain the existing duplicate
+  response contract, ingress-receipt bounds, and parent-read cleanup lifecycle.
+- Next: expose log/table growth and retention health, preview-first cleanup,
   incident protection and export, audit retention/partitioning, and bounded
   PostgreSQL log rotation. These controls remain planned and are not implied by
   the current System Logs page.

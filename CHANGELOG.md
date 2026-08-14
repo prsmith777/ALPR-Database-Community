@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+- Added guarded late-duplicate reconciliation for exact read identities. A
+  duplicate may fill only missing, nonconflicting source-image, Blue Iris alert,
+  recognition, or direction evidence on the locked existing read; established
+  values are never replaced. Only never-started Vehicle View work blocked by
+  missing evidence may be queued, and only a newly inserted primary-direction
+  observation may prepare its idempotent direction notification. General MQTT,
+  unified notifications, legacy Pushover, completed work, active work, and
+  previously attempted work are never replayed. Each actual reconciliation
+  appends sanitized evidence to the read timeline and preserves the existing
+  duplicate response, receipt retention, and parent-read cleanup behavior.
+
 - Added an append-only, sanitized pipeline timeline for newly accepted reads.
   It records bounded persistence, direction, notification-outbox, Vehicle View,
   and legacy Pushover outcome evidence without plate text, request bodies,
@@ -11,8 +22,7 @@
   Operational logs and ingress receipts now link in both directions by request
   ID and open the first matching detail row. Request-ID copy actions support
   direct-LAN HTTP pages when the secure-context clipboard API is unavailable.
-  Timeline rows follow their parent read's existing cleanup lifecycle; duplicate
-  handling is unchanged and remains the next guarded follow-up.
+  Timeline rows follow their parent read's existing cleanup lifecycle.
 
 - Versioned new integration ingress receipts as schema v2 and added sanitized
   trigger-alias conflict evidence plus exact duplicate-target read IDs. The
