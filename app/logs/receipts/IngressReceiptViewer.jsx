@@ -107,12 +107,23 @@ function ReceiptDetails({ receipt }) {
   return (
     <div className="rounded-md border border-border/70 bg-muted/20 p-3">
       <dl className="grid gap-x-6 gap-y-3 sm:grid-cols-2 lg:grid-cols-3">
+        <Detail label="Receipt schema">v{receipt.receiptSchemaVersion || 1}</Detail>
         <Detail label="Integration">{receipt.integration}</Detail>
         <Detail label="Route">{receipt.routeName}</Detail>
         <Detail label="Request">{[receipt.method, receipt.contentType].filter(Boolean).join(" · ")}</Detail>
         <Detail label="Body size">{formatBytes(receipt.bodyBytes)}</Detail>
         <Detail label="Event timestamp">{receipt.eventTimestampText}</Detail>
         <Detail label="Completed">{formatTimestamp(receipt.completedAt)}</Detail>
+        <Detail label="Trigger aliases" wide>
+          {receipt.triggerAliasFields.length
+            ? receipt.triggerAliasFields.join(", ")
+            : "No trigger alias supplied"}
+          {receipt.triggerAliasConflict
+            ? ` · conflict across ${receipt.triggerAliasDistinctValueCount} distinct states or values`
+            : receipt.triggerAliasFields.length > 1
+              ? " · consistent"
+              : ""}
+        </Detail>
         <Detail label="Payload keys" wide>
           {receipt.payloadKeys.length ? receipt.payloadKeys.join(", ") : "None recorded"}
           {receipt.unknownPayloadKeyCount > 0
@@ -498,6 +509,7 @@ function ReceiptRows({ receipt, expanded, detailsId, onToggle }) {
           <div>{receipt.triggerType || "—"}</div>
           <div className="mt-1 text-xs text-muted-foreground">
             {receipt.triggerField || "No field"} · {receipt.triggerValueState || "unknown"}
+            {receipt.triggerAliasConflict ? " · alias conflict" : ""}
           </div>
         </td>
         <td className="px-3 py-2">
@@ -507,7 +519,7 @@ function ReceiptRows({ receipt, expanded, detailsId, onToggle }) {
           )}
         </td>
         <td className="px-3 py-2">
-          {receipt.processedReadIds.length ? (
+          {receipt.processedReadIds.length || receipt.duplicateTargetReadIds.length ? (
             <div className="flex flex-wrap gap-1.5">
               {receipt.processedReadIds.map((readId) => (
                 <span key={readId} className="inline-flex items-center rounded border border-border bg-muted/30">
@@ -526,6 +538,29 @@ function ReceiptRows({ receipt, expanded, detailsId, onToggle }) {
                   >
                     <ScrollText className="h-3.5 w-3.5" />
                     <span className="sr-only">View logs for read {readId}</span>
+                  </Link>
+                </span>
+              ))}
+              {receipt.duplicateTargetReadIds.map((readId) => (
+                <span
+                  key={`duplicate-${readId}`}
+                  className="inline-flex items-center rounded border border-amber-500/40 bg-amber-500/10"
+                >
+                  <Link
+                    href={`/live_feed?readId=${encodeURIComponent(readId)}`}
+                    className="inline-flex items-center gap-1 px-2 py-1 text-xs hover:text-amber-500"
+                    title={`Open duplicate target read ${readId} in Live Feed`}
+                  >
+                    Duplicate target {readId}
+                    <ExternalLink className="h-3 w-3" />
+                  </Link>
+                  <Link
+                    href={`/logs?readId=${encodeURIComponent(readId)}`}
+                    className="border-l border-amber-500/30 p-1.5 text-muted-foreground hover:text-amber-500"
+                    title={`View operational logs for duplicate target read ${readId}`}
+                  >
+                    <ScrollText className="h-3.5 w-3.5" />
+                    <span className="sr-only">View logs for duplicate target read {readId}</span>
                   </Link>
                 </span>
               ))}

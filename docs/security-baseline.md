@@ -89,6 +89,13 @@ digest, but never store raw bodies, plate values, AI dumps, images, or Blue Iris
 paths. Rejected authentication attempts create metadata-only receipts without
 reading the body. Retention is bounded by both age and row count.
 
+Receipt schema v2 may record the names and distinct state/value count of supported
+trigger aliases, whether those aliases conflict, and the numeric IDs of
+existing reads targeted by a duplicate submission. It does not retain
+alternate alias values or duplicate plate values. Existing schema-v1 receipts
+remain readable, and the additive columns do not broaden cleanup authority or
+change the age and row-count retention limits.
+
 The protected System Logs action re-sanitizes parsed JSON before returning a
 bounded page to an Administrator or Auditor. Filtering occurs on the server and
 may use safe component, camera, request-ID, read-ID, level, date, and outcome

@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- Versioned new integration ingress receipts as schema v2 and added sanitized
+  trigger-alias conflict evidence plus exact duplicate-target read IDs. The
+  protected receipt explorer links duplicate targets to their Recognition Feed
+  record and operational logs without storing alternate trigger values, plate
+  values, raw request bodies, images, AI dumps, paths, or API keys. Existing
+  schema-v1 receipts and bounded age/row-count cleanup remain unchanged.
+
 - Corrected daytime Vehicle Views to use each mapped Street LPR read as the
   owner and timing anchor. The worker selects the exact Street Overview profile
   by validated Blue Iris direction, adds its signed timing delta, samples 61

@@ -70,6 +70,10 @@ test("ingress receipt explorer uses parameterized filters and maps safe metadata
         trigger_present: true,
         trigger_value_state: "recorded",
         trigger_type: "MOTION_A>B",
+        receipt_schema_version: 2,
+        trigger_alias_fields: ["trigger_type", "TYPE"],
+        trigger_alias_conflict: true,
+        trigger_alias_distinct_value_count: 2,
         heavy_fields: { Image: { present: true, type: "string" } },
         state: "completed",
         received_at: "2026-08-13T21:00:00.000Z",
@@ -81,6 +85,7 @@ test("ingress receipt explorer uses parameterized filters and maps safe metadata
         processed_read_ids: ["40683"],
         processed_count: 1,
         duplicate_count: 0,
+        duplicate_target_read_ids: ["40682"],
         ignored_count: 0,
         overview_work_queued: true,
         updated_at: "2026-08-13T21:00:00.050Z",
@@ -103,12 +108,18 @@ test("ingress receipt explorer uses parameterized filters and maps safe metadata
   assert.deepEqual(result.facets.cameras, ["Street LPR 1"]);
   assert.equal(result.receipts[0].requestId, "request-42");
   assert.deepEqual(result.receipts[0].processedReadIds, ["40683"]);
+  assert.deepEqual(result.receipts[0].duplicateTargetReadIds, ["40682"]);
+  assert.equal(result.receipts[0].receiptSchemaVersion, 2);
+  assert.deepEqual(result.receipts[0].triggerAliasFields, ["trigger_type", "TYPE"]);
+  assert.equal(result.receipts[0].triggerAliasConflict, true);
+  assert.equal(result.receipts[0].triggerAliasDistinctValueCount, 2);
   assert.equal(result.receipts[0].heavyFields.Image.present, true);
   assert.equal(result.receipts[0].bodyBytes, 2048);
 
   const countCall = calls.find((call) => /AS total/.test(call.text));
   assert.match(countCall.text, /POSITION\(LOWER\(\$1::text\) IN LOWER\(request_id\)\)/);
   assert.match(countCall.text, /\$2::bigint = ANY\(processed_read_ids\)/);
+  assert.match(countCall.text, /\$2::bigint = ANY\(duplicate_target_read_ids\)/);
   assert.match(countCall.text, /camera_name = \$3::text/);
   assert.match(countCall.text, /outcome = \$4::text/);
   assert.match(countCall.text, /error_code IS NOT NULL/);
@@ -146,6 +157,9 @@ test("receipt explorer is protected and reachable from System Logs", async () =>
   assert.match(viewer, /href=\{`\/logs\?requestId=/);
   assert.match(viewer, /href=\{`\/logs\?readId=/);
   assert.match(viewer, /href=\{`\/live_feed\?readId=/);
+  assert.match(viewer, /Receipt schema/);
+  assert.match(viewer, /triggerAliasConflict/);
+  assert.match(viewer, /Duplicate target \{readId\}/);
   assert.equal(liveFeed.includes("readId: /^\\d+$/.test"), true);
   assert.match(wrapper, /readId: params\.get\("readId"\)/);
   assert.match(plateTable, /Exact read: \{filters\.readId\}/);

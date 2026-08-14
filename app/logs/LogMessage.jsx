@@ -67,6 +67,8 @@ export default function LogMessage({ log, expanded = false, onExpandedChange }) 
     "read_id",
     "processedReadIds",
     "processed_read_ids",
+    "duplicateTargetReadIds",
+    "duplicate_target_read_ids",
   ]);
   const componentField = firstDetailKey(log.details, ["component"]);
   const requestField = firstDetailKey(log.details, ["requestId", "request_id"]);

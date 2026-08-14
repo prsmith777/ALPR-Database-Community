@@ -758,9 +758,9 @@ be restored. Monochrome nighttime captures do not receive a direction result.
   background-runtime logging. An Administrator/Auditor ingress-receipt
   explorer adds bounded request, read, camera, outcome, error, and date filters
   plus direct correlation to operational logs and the exact resulting read.
-- Next: add receipt schema/version, alias-conflict, and duplicate-target
-  evidence before extending receipt retention.
-- Then: add an append-only per-read pipeline timeline and guarded late-duplicate
+  Versioned v2 receipts add sanitized trigger-alias conflict counts and exact
+  duplicate-target read IDs without retaining alternate values or plates.
+- Next: add an append-only per-read pipeline timeline and guarded late-duplicate
   reconciliation that may attach missing nonconflicting evidence but never
   replace established evidence or queue successful work twice.
 - Later: expose log/table growth and retention health, preview-first cleanup,
