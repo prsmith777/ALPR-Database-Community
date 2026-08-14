@@ -95,6 +95,12 @@ test("ingress summaries flag conflicting trigger aliases without retaining alter
 });
 
 test("ingress summaries distinguish absent, blank, and invalid trigger evidence", () => {
+  const composite = summarizeIntegrationIngress({
+    data: { trigger_type: "Motion_A>B,Zone A,Zone B,Zone C" },
+  });
+  assert.equal(composite.triggerValueState, "recorded");
+  assert.equal(composite.triggerType, "Motion_A>B,Zone A,Zone B,Zone C");
+
   const absent = summarizeIntegrationIngress({ data: {} });
   assert.equal(absent.triggerPresent, false);
   assert.equal(absent.triggerValueState, "absent");

@@ -10,6 +10,7 @@ import {
   blueIrisTriggerDirectionColumns,
   normalizeBlueIrisDirectionalTrigger,
   normalizeBlueIrisDirectionProfile,
+  normalizeBlueIrisTriggerEvidence,
   normalizeBlueIrisTriggerType,
   persistBlueIrisPrimaryDirectionForRead,
   primaryDirectionObservationFromBlueIris,
@@ -26,6 +27,25 @@ test("Blue Iris trigger types retain an ordered zone crossing safely", () => {
     () => normalizeBlueIrisDirectionalTrigger("MOTION_B-C"),
     /ordered Blue Iris zone crossing/i
   );
+});
+
+test("Blue Iris 6 composite trigger evidence retains only its ordered crossing", () => {
+  assert.equal(
+    normalizeBlueIrisTriggerEvidence("Motion_A>B,Zone A,Zone B,Zone C"),
+    "MOTION_A>B"
+  );
+  assert.equal(
+    normalizeBlueIrisTriggerEvidence("Motion_B>A,Driveway,Street"),
+    "MOTION_B>A"
+  );
+  assert.equal(normalizeBlueIrisTriggerEvidence("MOTION_A>B"), "MOTION_A>B");
+  assert.equal(
+    normalizeBlueIrisTriggerEvidence("MOTION_A>B,MOTION_B>A"),
+    null,
+    "conflicting ordered crossings must fail closed"
+  );
+  assert.equal(normalizeBlueIrisTriggerEvidence("Zone A,MOTION_A>B"), null);
+  assert.equal(normalizeBlueIrisTriggerEvidence("MOTION_A>B,Zone A\nZone B"), null);
 });
 
 test("camera mappings require two exact reverse crossings before primary direction is enabled", () => {
@@ -70,6 +90,18 @@ test("an ordered Blue Iris trigger maps to the camera semantic direction", () =>
     profileVersion: 4,
     errorCode: null,
   });
+  assert.deepEqual(
+    resolveBlueIrisTriggerDirection(profile, "Motion_B>A,Zone A,Zone B,Zone C"),
+    {
+      algorithm: BLUE_IRIS_TRIGGER_DIRECTION_ALGORITHM,
+      status: "ready",
+      triggerType: "MOTION_B>A",
+      orientation: "rear",
+      directionLabel: "Westbound",
+      profileVersion: 4,
+      errorCode: null,
+    }
+  );
   assert.equal(
     resolveBlueIrisTriggerDirection(profile, "MOTION_C>D").errorCode,
     "TRIGGER_TYPE_UNMAPPED"
@@ -205,6 +237,20 @@ test("plate-read trigger lookup executes mapped, unmapped, invalid, and omitted 
   assert.equal(calls[0].text, BLUE_IRIS_TRIGGER_DIRECTION_PROFILE_SQL);
   assert.deepEqual(calls[0].values, ["Street LPR 1"]);
   assert.deepEqual(blueIrisTriggerDirectionColumns(mapped), {
+    bi_trigger_type: "MOTION_A>B",
+    bi_trigger_direction_status: "ready",
+    bi_trigger_direction_label: "Eastbound",
+    bi_trigger_direction_profile_version: 7,
+    bi_trigger_direction_algorithm: BLUE_IRIS_TRIGGER_DIRECTION_ALGORITHM,
+    bi_trigger_direction_error_code: null,
+  });
+
+  const compositeMapped = await resolveBlueIrisTriggerDirectionForRead({
+    query,
+    camera: "Street LPR 1",
+    value: "Motion_A>B,Zone A,Zone B,Zone C",
+  });
+  assert.deepEqual(blueIrisTriggerDirectionColumns(compositeMapped), {
     bi_trigger_type: "MOTION_A>B",
     bi_trigger_direction_status: "ready",
     bi_trigger_direction_label: "Eastbound",

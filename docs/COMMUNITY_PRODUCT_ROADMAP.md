@@ -25,6 +25,11 @@ reliable background processing.
   controls, and viewport-safe date/help navigation. Monitored Plates now lives
   inside Known Plates with reason, priority, monitoring-since, and read-history
   context; the former `/flagged` route redirects to that view.
+- Blue Iris 6 composite `&TYPE` values are accepted without weakening stored
+  camera direction profiles. ALPR retains the complete sanitized ingress value,
+  extracts only a valid leading ordered crossing such as `Motion_A>B` for mapped
+  daytime direction and Vehicle View work, and fails closed on conflicting
+  crossings, control characters, or oversized evidence.
 - Structured operational logs now reach the protected System Logs page without
   discarding request, read, camera, component, Blue Iris trigger type, evaluated
   direction status, duration, and outcome
