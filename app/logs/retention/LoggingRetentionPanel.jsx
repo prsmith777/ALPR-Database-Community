@@ -201,11 +201,13 @@ export default function LoggingRetentionPanel({ initialOverview, canManage }) {
           <form className="mt-4 grid gap-3 lg:grid-cols-6" onSubmit={submitIncident}>
             <Input
               required
+              aria-label="Incident name"
               placeholder="Incident name"
               value={incident.name}
               onChange={(event) => setIncident({ ...incident, name: event.target.value })}
             />
             <select
+              aria-label="Incident scope"
               className="h-9 rounded-md border bg-background px-3 text-sm"
               value={incident.scopeType}
               onChange={(event) => setIncident({ ...incident, scopeType: event.target.value })}
@@ -217,6 +219,7 @@ export default function LoggingRetentionPanel({ initialOverview, canManage }) {
             {incident.scopeType === "request" && (
               <Input
                 required
+                aria-label="Request UUID"
                 placeholder="Request UUID"
                 value={incident.requestId}
                 onChange={(event) => setIncident({ ...incident, requestId: event.target.value })}
@@ -227,6 +230,7 @@ export default function LoggingRetentionPanel({ initialOverview, canManage }) {
                 required
                 type="number"
                 min="1"
+                aria-label="Read ID"
                 placeholder="Read ID"
                 value={incident.readId}
                 onChange={(event) => setIncident({ ...incident, readId: event.target.value })}
@@ -237,12 +241,14 @@ export default function LoggingRetentionPanel({ initialOverview, canManage }) {
                 <Input
                   required
                   type="datetime-local"
+                  aria-label="Window start"
                   value={incident.windowStart}
                   onChange={(event) => setIncident({ ...incident, windowStart: event.target.value })}
                 />
                 <Input
                   required
                   type="datetime-local"
+                  aria-label="Window end"
                   value={incident.windowEnd}
                   onChange={(event) => setIncident({ ...incident, windowEnd: event.target.value })}
                 />
@@ -259,6 +265,7 @@ export default function LoggingRetentionPanel({ initialOverview, canManage }) {
             <Button type="submit" disabled={isPending}>Protect and snapshot</Button>
             <Input
               className="lg:col-span-5"
+              aria-label="Optional description"
               placeholder="Optional description"
               value={incident.description}
               onChange={(event) => setIncident({ ...incident, description: event.target.value })}

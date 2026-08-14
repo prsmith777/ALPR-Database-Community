@@ -315,6 +315,10 @@ test("schema, UI, and Compose expose one default-off preservation workflow", asy
   assert.match(actions, /requirePermission\("maintenance\.manage"\)/);
   assert.match(page, /requirePagePermission\("system\.view_audit"\)/);
   assert.match(panel, /Scheduled execution is disabled/);
+  assert.match(panel, /aria-label="Incident scope"/);
+  assert.match(panel, /aria-label="Read ID"/);
+  assert.match(panel, /aria-label="Window start"/);
+  assert.match(panel, /aria-label="Window end"/);
   assert.match(panel, /Create retention preview/);
   assert.match(panel, /Show exact candidate IDs/);
   assert.match(panel, /Archive exact preview/);
