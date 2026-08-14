@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+- Added an operator-controlled canonical Overview image catalog under Vehicle
+  Setup > Processing. A durable background preview freezes eligible ready Entry
+  and Street Overview source revisions, validates exact JPEG hashes without
+  writing catalog files, and reports deduplication plus one-time storage growth.
+  Administrators then admit explicit 1, 5, 25, or 250-read batches; every write
+  revalidates the frozen bytes and database snapshot before publishing one
+  immutable content-addressed asset and linking byte-identical reads. Pause,
+  resume, cancellation, bounded retries, stale-link repair, archival zero-link
+  retention, startup recovery, audit evidence, storage-health projections, and
+  a real PostgreSQL-plus-filesystem cleanup safety gate are included. Existing
+  Vehicle Views and ReID remain unchanged, and no Plate Recognizer or other
+  external enrichment service is contacted.
+
 - Added preview-first recovery for reads affected before Blue Iris 6 composite
   trigger compatibility was installed. The Administrator action joins only one
   retained accepted ingress receipt to its exact processed read, requires the

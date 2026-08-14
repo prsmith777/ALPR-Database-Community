@@ -604,10 +604,15 @@ test("PostgreSQL asset smoke test is explicitly guarded before reading migration
     /VEHICLE_IMAGE_ASSET_POSTGRES_TEST_OPT_IN !== "true"/
   );
   assert.match(smokeSource, /VEHICLE_IMAGE_ASSET_POSTGRES_TEST_DATABASE/);
+  assert.match(smokeSource, /VEHICLE_IMAGE_ASSET_POSTGRES_TEST_GUARD_TOKEN/);
+  assert.match(smokeSource, /vehicle-image-asset-campaign:v1/);
+  assert.match(smokeSource, /host_maintenance_environment_identity/);
+  assert.match(smokeSource, /expectedDatabase !== "fixture_test"/);
   const databaseGuard = smokeSource.indexOf("SELECT current_database() AS database_name");
   const migrationRead = smokeSource.indexOf("fs.readFile");
   assert.ok(databaseGuard >= 0);
   assert.ok(migrationRead > databaseGuard);
+  assert.ok(smokeSource.indexOf("codex_integration_test_guard") < migrationRead);
   assert.match(smokeSource, /assert\.deepEqual\(residue\.rows\[0\]/);
   assert.doesNotMatch(smokeSource, /\.catch\(\(\) => \{\}\)/);
 });

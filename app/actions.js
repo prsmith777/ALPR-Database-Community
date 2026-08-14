@@ -82,6 +82,11 @@ import {
   wakeVisualIndexWorker,
 } from "@/lib/visual-index-runtime.mjs";
 import {
+  getVehicleImageAssetCatalogRuntime,
+  getVehicleImageAssetCatalogWorkerStatus,
+  wakeVehicleImageAssetCatalogWorker,
+} from "@/lib/vehicle-image-asset-catalog-runtime.mjs";
+import {
   applyVisualIndexPace,
   normalizeVisualIndexSettings,
   visualIndexPace,
@@ -3746,6 +3751,211 @@ export async function submitVehicleMatchFeedback(input = {}) {
     return { success: true, data };
   } catch (error) {
     return visualSearchFailure(error, "Unable to save vehicle match feedback.");
+  }
+}
+
+function canonicalCatalogCount(value) {
+  const number = Number(value || 0);
+  return Number.isFinite(number) && number >= 0 ? number : 0;
+}
+
+function canonicalCatalogInstant(value) {
+  if (!value) return null;
+  const date = new Date(value);
+  return Number.isFinite(date.getTime()) ? date.toISOString() : null;
+}
+
+function canonicalCatalogRunData(run) {
+  if (!run) return null;
+  const raw = run.counts || {};
+  const value = (key) => canonicalCatalogCount(raw[key]);
+  const candidateReads = canonicalCatalogCount(run.candidate_reads);
+  const materialized = value("total");
+  const unmaterialized = run.phase === "preview"
+    ? Math.max(0, candidateReads - materialized)
+    : 0;
+  return {
+    id: Number(run.id),
+    status: run.status,
+    phase: run.phase,
+    previewFingerprint: run.preview_fingerprint || null,
+    maxReadId: canonicalCatalogCount(run.max_read_id),
+    previewCursorReadId: canonicalCatalogCount(run.preview_cursor_read_id),
+    batchSize: canonicalCatalogCount(run.batch_size),
+    createdAt: canonicalCatalogInstant(run.created_at),
+    updatedAt: canonicalCatalogInstant(run.updated_at),
+    confirmedAt: canonicalCatalogInstant(run.confirmed_at),
+    pausedAt: canonicalCatalogInstant(run.paused_at),
+    cancelledAt: canonicalCatalogInstant(run.cancelled_at),
+    completedAt: canonicalCatalogInstant(run.completed_at),
+    counts: {
+      total: candidateReads,
+      pendingPreview: value("pending_preview") + unmaterialized,
+      previewing: value("previewing"),
+      previewed: value("previewed"),
+      queued: value("queued"),
+      processing: value("processing"),
+      cataloged: value("cataloged"),
+      alreadyCurrent: value("already_current"),
+      superseded: value("superseded"),
+      unavailable: value("unavailable"),
+      invalid: value("invalid"),
+      failed: value("failed"),
+      cancelled: value("cancelled"),
+      retryable: value("retryable"),
+      identityEligible: value("identity_eligible"),
+      displayOnly: value("display_only"),
+      uniqueHashes: value("unique_hashes"),
+      logicalSourceBytes: value("logical_source_bytes"),
+      uniqueBytes: value("unique_bytes"),
+      existingAssetBytes: value("existing_asset_bytes"),
+      projectedNewBytes: value("projected_new_bytes"),
+      duplicateBytesAvoided: value("duplicate_bytes_avoided"),
+      currentLinks: value("cataloged") + value("already_current"),
+      staleLinks: value("stale_links"),
+      missingLinks: value("missing_links"),
+    },
+  };
+}
+
+function canonicalCatalogOverviewData(overview, worker) {
+  const catalog = overview?.catalog || {};
+  return {
+    worker: {
+      phase: worker?.phase || "starting",
+      lastError: worker?.lastError?.message || null,
+      lastBatch: worker?.lastBatch || null,
+    },
+    retention: {
+      policy: "archival",
+      zeroLinkAssetCount: canonicalCatalogCount(
+        overview?.retention?.zeroLinkAssetCount ?? catalog.zero_link_asset_count
+      ),
+      zeroLinkAssetBytes: canonicalCatalogCount(
+        overview?.retention?.zeroLinkAssetBytes ?? catalog.zero_link_asset_bytes
+      ),
+    },
+    catalog: {
+      eligibleReads: canonicalCatalogCount(catalog.eligible_reads),
+      currentLinks: canonicalCatalogCount(catalog.current_links),
+      staleLinks: canonicalCatalogCount(catalog.stale_links),
+      assetCount: canonicalCatalogCount(catalog.asset_count),
+      assetBytes: canonicalCatalogCount(catalog.asset_bytes),
+      readLinks: canonicalCatalogCount(catalog.read_links),
+      identityEligibleLinks: canonicalCatalogCount(catalog.identity_eligible_links),
+      displayOnlyLinks: canonicalCatalogCount(catalog.display_only_links),
+    },
+    latestRun: canonicalCatalogRunData(overview?.latestRun),
+    retryCandidates: (overview?.retryCandidates || []).map((item) => ({
+      jobId: Number(item.id),
+      readId: Number(item.read_id),
+      errorCode: item.error_code || "VEHICLE_IMAGE_ASSET_CATALOG_FAILED",
+      failureStage: item.failure_stage || null,
+      operatorRetryCount: canonicalCatalogCount(item.operator_retry_count),
+    })),
+  };
+}
+
+function canonicalCatalogActionFailure(error, fallback) {
+  const message = String(error?.message || "").trim();
+  if (/^(Canonical Overview|The exact canonical Overview|Wait for (?:the current|active) canonical Overview|Only a terminal catalog|This catalog item|A cancelled canonical Overview)/.test(message)) {
+    return { success: false, error: message };
+  }
+  console.error(fallback, { code: String(error?.code || "") });
+  return { success: false, error: fallback };
+}
+
+async function loadCanonicalCatalogOverview(runtime) {
+  const overview = await runtime.service.getOverview();
+  return canonicalCatalogOverviewData(overview, getVehicleImageAssetCatalogWorkerStatus());
+}
+
+export async function getVehicleImageAssetCatalogOverview() {
+  await requirePermission("system.manage_settings");
+  try {
+    const runtime = await getVehicleImageAssetCatalogRuntime();
+    return { success: true, data: { overview: await loadCanonicalCatalogOverview(runtime) } };
+  } catch (error) {
+    return canonicalCatalogActionFailure(error, "Unable to load the canonical Overview catalog.");
+  }
+}
+
+export async function previewVehicleImageAssetCatalog() {
+  const principal = await requirePermission("maintenance.manage");
+  try {
+    const runtime = await getVehicleImageAssetCatalogRuntime();
+    await runtime.service.createPreview({ actorUserId: principal.id });
+    wakeVehicleImageAssetCatalogWorker();
+    revalidatePath("/settings/vehicle-intelligence/processing");
+    return { success: true, data: { overview: await loadCanonicalCatalogOverview(runtime) } };
+  } catch (error) {
+    return canonicalCatalogActionFailure(error, "Unable to create the canonical Overview preview.");
+  }
+}
+
+export async function confirmVehicleImageAssetCatalogBatch(input = {}) {
+  const principal = await requirePermission("maintenance.manage");
+  try {
+    const runtime = await getVehicleImageAssetCatalogRuntime();
+    const confirmation = await runtime.service.confirmBatch({
+      runId: input.runId,
+      previewFingerprint: input.previewFingerprint,
+      limit: input.limit,
+      actorUserId: principal.id,
+    });
+    wakeVehicleImageAssetCatalogWorker();
+    revalidatePath("/settings/vehicle-intelligence/processing");
+    return {
+      success: true,
+      data: {
+        confirmation,
+        overview: await loadCanonicalCatalogOverview(runtime),
+      },
+    };
+  } catch (error) {
+    return canonicalCatalogActionFailure(error, "Unable to confirm this canonical Overview batch.");
+  }
+}
+
+export async function setVehicleImageAssetCatalogPaused(input = {}) {
+  const principal = await requirePermission("maintenance.manage");
+  try {
+    const runtime = await getVehicleImageAssetCatalogRuntime();
+    await runtime.service.setPaused({
+      runId: input.runId,
+      paused: input.paused === true,
+      actorUserId: principal.id,
+    });
+    if (input.paused !== true) wakeVehicleImageAssetCatalogWorker();
+    revalidatePath("/settings/vehicle-intelligence/processing");
+    return { success: true, data: { overview: await loadCanonicalCatalogOverview(runtime) } };
+  } catch (error) {
+    return canonicalCatalogActionFailure(error, "Unable to update canonical Overview catalog processing.");
+  }
+}
+
+export async function cancelVehicleImageAssetCatalog(input = {}) {
+  const principal = await requirePermission("maintenance.manage");
+  try {
+    const runtime = await getVehicleImageAssetCatalogRuntime();
+    await runtime.service.cancel({ runId: input.runId, actorUserId: principal.id });
+    revalidatePath("/settings/vehicle-intelligence/processing");
+    return { success: true, data: { overview: await loadCanonicalCatalogOverview(runtime) } };
+  } catch (error) {
+    return canonicalCatalogActionFailure(error, "Unable to cancel canonical Overview catalog processing.");
+  }
+}
+
+export async function retryVehicleImageAssetCatalogJob(input = {}) {
+  const principal = await requirePermission("maintenance.manage");
+  try {
+    const runtime = await getVehicleImageAssetCatalogRuntime();
+    await runtime.service.retryItem({ jobId: input.jobId, actorUserId: principal.id });
+    wakeVehicleImageAssetCatalogWorker();
+    revalidatePath("/settings/vehicle-intelligence/processing");
+    return { success: true, data: { overview: await loadCanonicalCatalogOverview(runtime) } };
+  } catch (error) {
+    return canonicalCatalogActionFailure(error, "Unable to retry this canonical Overview catalog item.");
   }
 }
 

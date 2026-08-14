@@ -14,7 +14,7 @@ async function source(path) {
 }
 
 test("the user guide is structured, searchable, and role-aware", () => {
-  assert.equal(HELP_MANUAL.manualVersion, "1.89");
+  assert.equal(HELP_MANUAL.manualVersion, "1.90");
   assert.ok(HELP_MANUAL.sections.length >= 14);
 
   const ids = HELP_MANUAL.sections.map((section) => section.id);
@@ -68,6 +68,9 @@ test("the guide covers required workflows and clearly labels planned features", 
     "cam143",
     "archive log evidence",
     "cleanup never runs on a schedule",
+    "build the canonical overview catalog",
+    "creates no canonical files or read links",
+    "makes no plate recognizer",
   ]) {
     assert.match(text, new RegExp(required, "i"));
   }
