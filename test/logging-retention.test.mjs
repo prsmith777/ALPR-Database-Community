@@ -6,14 +6,47 @@ import {
   AUDIT_PREVIEW_SQL,
   LOGGING_INCIDENT_MAX_SNAPSHOT_BYTES,
   LOGGING_RETENTION_CONFIRMATION,
+  LOGGING_RETENTION_OVERVIEW_SQL,
   RECEIPT_PREVIEW_SQL,
   createLoggingIncident,
   createLoggingRetentionPreview,
   executeLoggingRetentionPreview,
+  getLoggingRetentionOverview,
   normalizeLoggingIncidentInput,
   normalizeLoggingRetentionPolicy,
   operationalFiltersForIncident,
 } from "../lib/logging-retention.mjs";
+
+test("empty retention categories do not report the Unix epoch as their oldest row", async () => {
+  const overview = await getLoggingRetentionOverview({
+    query: async (text) => {
+      if (text === LOGGING_RETENTION_OVERVIEW_SQL) {
+        return {
+          rows: [{
+            receipt_count: 0,
+            receipt_oldest: null,
+            receipt_newest: null,
+            pipeline_count: 0,
+            pipeline_oldest: null,
+            pipeline_newest: null,
+            audit_hot_count: 0,
+            audit_hot_oldest: null,
+            audit_hot_newest: null,
+          }],
+        };
+      }
+      return { rows: [] };
+    },
+    now: new Date("2026-08-14T12:00:00.000Z"),
+  });
+
+  assert.equal(overview.receipts.oldest, null);
+  assert.equal(overview.receipts.newest, null);
+  assert.equal(overview.pipeline.oldest, null);
+  assert.equal(overview.pipeline.newest, null);
+  assert.equal(overview.audit.hotOldest, null);
+  assert.equal(overview.audit.hotNewest, null);
+});
 
 function transactionalExecutor(handler) {
   const calls = [];
