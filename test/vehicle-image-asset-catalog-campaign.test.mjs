@@ -299,6 +299,7 @@ test("campaign migration and repository preserve preview-first and archival safe
   assert.match(repository, /VALUES \(\$1, 'browser'/);
   assert.match(repository, /item\.run_status === "cancelled"/);
   assert.match(repository, /\["ready", "completed", "failed"\]\.includes\(item\.run_status\)/);
+  assert.match(repository, /status = \$2::varchar\(16\)/);
   assert.match(repository, /current canonical Overview item to finish before cancelling/);
   assert.match(campaign, /previewSnapshot/);
   assert.match(campaign, /catalogSnapshot/);
