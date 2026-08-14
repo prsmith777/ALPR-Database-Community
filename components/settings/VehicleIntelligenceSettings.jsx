@@ -22,6 +22,7 @@ import {
   deleteVehicleEntryRouteProfile,
   cancelBlueIrisVehicleFrameHistory,
   queueBlueIrisVehicleFrameHistory,
+  recoverBlueIrisCompositeTriggerReads,
   recoverIncompleteBlueIrisOverviewReads,
   previewVehicleEntryOverviewHistory,
   confirmVehicleEntryOverviewHistory,
@@ -123,6 +124,8 @@ export default function VehicleIntelligenceSettings({
   const [frameEndDate, setFrameEndDate] = useState("");
   const [overviewRecoveryStart, setOverviewRecoveryStart] = useState("");
   const [overviewRecoveryPreview, setOverviewRecoveryPreview] = useState(null);
+  const [triggerRecoveryStart, setTriggerRecoveryStart] = useState("");
+  const [triggerRecoveryPreview, setTriggerRecoveryPreview] = useState(null);
   const [cancelFrameHistoryOpen, setCancelFrameHistoryOpen] = useState(false);
   const [overviewSetup, setOverviewSetup] = useState(initialOverviewSetup);
   const [entryHistoryDeltas, setEntryHistoryDeltas] = useState(() => (
@@ -731,6 +734,43 @@ export default function VehicleIntelligenceSettings({
       if (!result.success) throw new Error(result.error);
       setOverviewRecoveryPreview(result.data.preview);
       setFrameMessage(`Preview found ${result.data.preview.eligible.toLocaleString()} eligible incomplete overview Vehicle View${result.data.preview.eligible === 1 ? "" : "s"}. Nothing was changed.`);
+    } catch (error) { setFrameMessage(error.message); }
+    finally { setBusy(""); }
+  };
+
+  const previewCompositeTriggerRecovery = async () => {
+    setBusy("trigger-recovery-preview");
+    setFrameMessage("");
+    try {
+      const recoveryStart = new Date(triggerRecoveryStart);
+      if (!Number.isFinite(recoveryStart.getTime())) throw new Error("Choose a valid trigger recovery start time.");
+      const result = await recoverBlueIrisCompositeTriggerReads({
+        startAt: recoveryStart.toISOString(),
+        previewOnly: true,
+      });
+      if (!result.success) throw new Error(result.error);
+      setTriggerRecoveryPreview(result.data.preview);
+      setFrameMessage(`Preview found ${result.data.preview.eligible.toLocaleString()} exact read${result.data.preview.eligible === 1 ? "" : "s"} whose retained Blue Iris 6 trigger can safely restore direction and queue an overview. Nothing was changed.${result.data.preview.moreAvailable ? " Preview and run another batch afterward for the remaining reads." : ""}`);
+    } catch (error) { setFrameMessage(error.message); }
+    finally { setBusy(""); }
+  };
+
+  const recoverCompositeTriggers = async () => {
+    setBusy("trigger-recovery");
+    setFrameMessage("");
+    try {
+      if (!triggerRecoveryPreview?.readIds?.length) {
+        throw new Error("Preview the exact trigger recovery batch before queuing it.");
+      }
+      const result = await recoverBlueIrisCompositeTriggerReads({
+        startAt: triggerRecoveryPreview.startAt,
+        endAt: triggerRecoveryPreview.endAt,
+        readIds: triggerRecoveryPreview.readIds,
+      });
+      if (!result.success) throw new Error(result.error);
+      setFrameQueue(result.data.status);
+      setTriggerRecoveryPreview(null);
+      setFrameMessage(`Restored direction and queued overview Vehicle Views for ${result.data.queued.toLocaleString()} read${result.data.queued === 1 ? "" : "s"}.${result.data.stale ? ` ${result.data.stale.toLocaleString()} previewed read${result.data.stale === 1 ? " was" : "s were"} no longer eligible and remained unchanged.` : ""} Historical notifications were not replayed.`);
     } catch (error) { setFrameMessage(error.message); }
     finally { setBusy(""); }
   };
@@ -1743,6 +1783,20 @@ export default function VehicleIntelligenceSettings({
                 </div>
                 <Button variant="outline" disabled={Boolean(busy) || !frameQueue?.configured || !overviewRecoveryStart} onClick={previewIncompleteOverview}>{busy === "overview-recovery-preview" ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <ScanSearch className="mr-2 h-4 w-4" />}Preview incomplete jobs</Button>
                 <Button variant="outline" disabled={Boolean(busy) || !frameQueue?.configured || !overviewRecoveryPreview || overviewRecoveryPreview.eligible < 1} onClick={recoverIncompleteOverview}>{busy === "overview-recovery" ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <History className="mr-2 h-4 w-4" />}Queue {overviewRecoveryPreview ? Number(overviewRecoveryPreview.eligible || 0).toLocaleString() : "previewed"} incomplete jobs</Button>
+              </div>
+              <div className="space-y-3 rounded-md border p-3 sm:col-span-2">
+                <div>
+                  <div className="font-medium">Repair missed Blue Iris 6 composite triggers</div>
+                  <p className="text-xs text-muted-foreground">Use this only for reads created before composite &amp;TYPE compatibility was installed. Preview joins each read to its one retained accepted ingress receipt, requires the unchanged camera mapping and exact never-started overview state, then queues at most 250 reads. Re-running is safe; completed or changed reads are excluded.</p>
+                </div>
+                <div className="flex flex-wrap items-end gap-2">
+                  <div className="flex min-w-[18rem] flex-col gap-1">
+                    <Label htmlFor="trigger-recovery-start">Affected reads start</Label>
+                    <Input id="trigger-recovery-start" type="datetime-local" value={triggerRecoveryStart} onChange={(event) => { setTriggerRecoveryStart(event.target.value); setTriggerRecoveryPreview(null); }} />
+                  </div>
+                  <Button variant="outline" disabled={Boolean(busy) || !frameQueue?.configured || !triggerRecoveryStart} onClick={previewCompositeTriggerRecovery}>{busy === "trigger-recovery-preview" ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <ScanSearch className="mr-2 h-4 w-4" />}Preview trigger repair</Button>
+                  <Button variant="outline" disabled={Boolean(busy) || !frameQueue?.configured || !triggerRecoveryPreview?.readIds?.length} onClick={recoverCompositeTriggers}>{busy === "trigger-recovery" ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <History className="mr-2 h-4 w-4" />}Repair and queue {triggerRecoveryPreview ? Number(triggerRecoveryPreview.eligible || 0).toLocaleString() : "previewed"}</Button>
+                </div>
               </div>
             </div>
             {frameMessage && <p className="rounded-md border p-3 text-sm">{frameMessage}</p>}

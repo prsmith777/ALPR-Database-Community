@@ -23,13 +23,13 @@ test("release information resolves a commit-pinned deployment image", () => {
   });
 
   assert.equal(release.version, "0.1.19");
-  assert.equal(release.manualVersion, "1.86");
+  assert.equal(release.manualVersion, "1.88");
   assert.equal(release.manualUpdatedAt, "August 14, 2026");
   assert.equal(release.gitSha, "8cd2fa8");
   assert.equal(release.channel, "staging");
   assert.equal(release.source, "commit-pinned image");
   assert.equal(release.readOnly, true);
-  assert.equal(release.notes.title, "August 14, 2026 logging retention and incident preservation");
+  assert.equal(release.notes.title, "August 14, 2026 Blue Iris 6 trigger compatibility and recovery");
   assert.equal(release.notes.publishedAt, "2026-08-14");
   assert.ok(release.notes.items.length >= 4);
 });

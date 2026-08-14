@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+- Added preview-first recovery for reads affected before Blue Iris 6 composite
+  trigger compatibility was installed. The Administrator action joins only one
+  retained accepted ingress receipt to its exact processed read, requires the
+  unchanged camera mapping revision, excludes human direction labels and any
+  started or altered Vehicle View, and revalidates the exact previewed IDs in a
+  transaction. Each bounded 250-read batch restores mapped direction, queues
+  the ordinary overview worker, records audit and per-read timeline evidence,
+  remains safe to repeat, and never replays historical notifications.
+
 - Added guarded late-duplicate reconciliation for exact read identities. A
   duplicate may fill only missing, nonconflicting source-image, Blue Iris alert,
   recognition, or direction evidence on the locked existing read; established
