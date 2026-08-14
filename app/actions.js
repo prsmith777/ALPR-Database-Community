@@ -2652,6 +2652,42 @@ export async function recoverIncompleteBlueIrisOverviewReads(input = {}) {
   }
 }
 
+export async function recoverBlueIrisCompositeTriggerReads(input = {}) {
+  const principal = await requirePermission("maintenance.manage");
+  try {
+    const runtime = await getBlueIrisVehicleFrameRuntime();
+    if (input.previewOnly === true) {
+      const preview = await runtime.repository.previewBlueIrisCompositeTriggerRecovery({
+        startAt: input.startAt,
+        endAt: input.endAt ?? null,
+      });
+      return { success: true, data: { preview } };
+    }
+    const recovery = await runtime.repository.recoverBlueIrisCompositeTriggers({
+      startAt: input.startAt,
+      endAt: input.endAt,
+      readIds: input.readIds,
+      actor: principal,
+    });
+    if (recovery.queued > 0) wakeBlueIrisVehicleFrameWorker();
+    revalidatePath("/settings/vehicle-intelligence");
+    revalidatePath("/settings/vehicle-intelligence/vehicle-views");
+    revalidatePath("/live_feed");
+    return {
+      success: true,
+      data: {
+        ...recovery,
+        status: {
+          ...await runtime.queue.getStatus(),
+          worker: runtime.worker.snapshot(),
+        },
+      },
+    };
+  } catch (error) {
+    return visualSearchFailure(error, "Unable to repair Blue Iris composite trigger Vehicle Views.");
+  }
+}
+
 export async function getPlateViewSettings() {
   await requirePermission("plate.read");
   const config = await getConfig();

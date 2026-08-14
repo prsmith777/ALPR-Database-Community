@@ -29,7 +29,12 @@ reliable background processing.
   camera direction profiles. ALPR retains the complete sanitized ingress value,
   extracts only a valid leading ordered crossing such as `Motion_A>B` for mapped
   daytime direction and Vehicle View work, and fails closed on conflicting
-  crossings, control characters, or oversized evidence.
+  crossings, control characters, or oversized evidence. A separate delivered
+  Administrator recovery previews at most 250 exact pre-fix reads at a time from
+  their one retained accepted ingress receipt, requires the unchanged mapping and
+  never-started overview state, revalidates before mutation, records audit and
+  read-timeline evidence, and queues normal overview work without replaying
+  historical notifications.
 - Structured operational logs now reach the protected System Logs page without
   discarding request, read, camera, component, Blue Iris trigger type, evaluated
   direction status, duration, and outcome
