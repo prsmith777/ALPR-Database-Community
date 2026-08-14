@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { ArchiveRestore, Box, Database, HardDrive, RefreshCw, ShieldCheck } from "lucide-react";
 
 import {
+  acknowledgeHostMaintenanceFailureAction,
   createDatabaseBackup,
   previewHostMaintenance,
   refreshDatabaseBackup,
@@ -156,6 +157,7 @@ export default function HostMaintenancePanel({ overview = {}, canManage, canAppr
   const [requests, setRequests] = useState(() => activeHostRequests(overview.intents));
   const [databaseBackup, setDatabaseBackup] = useState(() => overview.databaseBackup || { status: "never" });
   const [manualConfirmations, setManualConfirmations] = useState({});
+  const [acknowledgementConfirmations, setAcknowledgementConfirmations] = useState({});
   const [activationConfirmations, setActivationConfirmations] = useState({});
   const [drafts, setDrafts] = useState(() => initialDrafts(overview.configs));
   const [notice, setNotice] = useState(null);
@@ -370,6 +372,25 @@ export default function HostMaintenancePanel({ overview = {}, canManage, canAppr
     });
   }
 
+  function acknowledgeFailure(category) {
+    runAction(`acknowledge:${category}`, async () => {
+      const result = await acknowledgeHostMaintenanceFailureAction({
+        category,
+        confirmation: acknowledgementConfirmations[category] || "",
+      });
+      if (!result.success) {
+        setNotice({ kind: "error", text: result.error });
+        return;
+      }
+      setAcknowledgementConfirmations((current) => ({ ...current, [category]: "" }));
+      setNotice({
+        kind: "success",
+        text: "Safety breaker acknowledged. Scheduling remains disabled; queue a separate read-only preview before any cleanup.",
+      });
+      router.refresh();
+    });
+  }
+
   function changeSchedule(config, enabled) {
     const category = config.category;
     const draft = drafts[category];
@@ -536,14 +557,18 @@ export default function HostMaintenancePanel({ overview = {}, canManage, canAppr
             const lastFailure = lastFor(overview.intents, definition.key, (item) => item.status === "failed");
             const confirmationPhrase = request?.confirmationPhrase || overview.confirmationPhrases?.[definition.key] || "";
             const activationPhrase = overview.activationPhrases?.[definition.key] || "";
+            const acknowledgementPhrase = overview.acknowledgementPhrases?.[definition.key] || "";
             const expiresAt = request?.expiresAt ? new Date(request.expiresAt).getTime() : 0;
             const previewExpired = !expiresAt || expiresAt <= Date.now();
             const categoryPending = isPending && pendingCategory === definition.key;
+            const acknowledgementPending = isPending && pendingCategory === `acknowledge:${definition.key}`;
             const blocked = !workerHealthy || !configured || effectiveConfig.circuitBreakerOpen || isPending;
             const candidateCount = Number(request?.candidateCount || 0);
             const canExecute = definition.destructiveAvailable !== false && canManage && !blocked && request?.operation === "preview" && request?.status === "completed" &&
               Boolean(request.previewToken) && !previewExpired && candidateCount > 0 &&
               manualConfirmations[definition.key] === confirmationPhrase;
+            const canAcknowledge = canApproveAutomaticCleanup && workerHealthy && configured && effectiveConfig.circuitBreakerOpen &&
+              Boolean(acknowledgementPhrase) && !isPending && acknowledgementConfirmations[definition.key] === acknowledgementPhrase;
             const draft = drafts[definition.key];
             const Icon = definition.Icon;
 
@@ -578,10 +603,35 @@ export default function HostMaintenancePanel({ overview = {}, canManage, canAppr
                   </p>
                 )}
 
-                {effectiveConfig.circuitBreakerOpen && (
-                  <p className="rounded-md border border-destructive/40 p-2 text-xs text-destructive">
-                    Cleanup is suspended after a failure. Resolve and acknowledge it through the protected maintenance process before retrying.
-                  </p>
+                {configured && effectiveConfig.circuitBreakerOpen && (
+                  <div className="space-y-3 rounded-md border border-destructive/40 p-3">
+                    <p className="text-xs text-destructive">
+                      Cleanup is suspended after a failure. Acknowledgement clears only this safety lock after the server verifies fresh post-failure worker evidence.
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      It does not delete anything, restart scheduling, or queue cleanup. Queue a separate safe preview afterward.
+                    </p>
+                    {acknowledgementPhrase ? (
+                      <>
+                        <Label htmlFor={`host-acknowledge-${definition.key}`}>Type {acknowledgementPhrase}</Label>
+                        <Input
+                          id={`host-acknowledge-${definition.key}`}
+                          value={acknowledgementConfirmations[definition.key] || ""}
+                          onChange={(event) => setAcknowledgementConfirmations((current) => ({ ...current, [definition.key]: event.target.value }))}
+                          autoComplete="off"
+                          disabled={!canApproveAutomaticCleanup || !workerHealthy || isPending}
+                        />
+                        <Button type="button" variant="outline" size="sm" onClick={() => acknowledgeFailure(definition.key)} disabled={!canAcknowledge}>
+                          {acknowledgementPending ? "Acknowledging…" : "Acknowledge resolved failure"}
+                        </Button>
+                      </>
+                    ) : (
+                      <p className="text-xs text-destructive">The protected acknowledgement phrase is unavailable; this breaker remains locked.</p>
+                    )}
+                    {!canApproveAutomaticCleanup && (
+                      <p className="text-xs text-muted-foreground">Administrator automatic-cleanup approval permission is required.</p>
+                    )}
+                  </div>
                 )}
 
                 <div className="flex flex-wrap gap-2">

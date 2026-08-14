@@ -1509,6 +1509,12 @@ function storageMaintenanceFailure(error, fallback) {
     /^Type (?:PRUNE UNUSED ALPR BUILD CACHE|PRUNE RETIRED ALPR IMAGES|PRUNE EXPIRED VERIFIED ROLLOUT BACKUPS) to request this category$/,
     /^Type ENABLE SCHEDULED (?:DOCKER CACHE PRUNING|UNUSED ALPR IMAGE PRUNING|ROLLOUT BACKUP RETENTION) to activate scheduled/,
     /^Type ACKNOWLEDGE (?:DOCKER CACHE|UNUSED IMAGE|ROLLOUT BACKUP) FAILURE to acknowledge this failure$/,
+    /^Category circuit breaker is not open$/,
+    /^A fresh worker inventory is required before acknowledgement$/,
+    /^No failed destructive intent is available for acknowledgement$/,
+    /^A post-failure worker inventory is required before acknowledgement$/,
+    /^Category circuit breaker is open; acknowledge it before requesting cleanup$/,
+    /^Queue a fresh host maintenance preview after acknowledging this failure$/,
   ];
   const safe = safeMessages.some((pattern) => pattern.test(candidate));
   if (!safe) {
@@ -1722,7 +1728,8 @@ export async function acknowledgeHostMaintenanceFailureAction(input = {}) {
     const data = await acknowledgeHostMaintenanceFailure({ actor: principal, input: {
       category: input.category, confirmation: String(input.confirmation || ""),
     } });
-    revalidatePath("/settings");
+    revalidatePath("/settings/data-privacy");
+    revalidatePath("/settings/data-privacy/cleanup");
     return { success: true, data };
   } catch (error) { return storageMaintenanceFailure(error, "Unable to acknowledge host maintenance failure."); }
 }

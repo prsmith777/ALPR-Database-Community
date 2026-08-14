@@ -4,12 +4,12 @@ import test from "node:test";
 
 import {
   assertFreshHostMaintenanceInventory, buildHostMaintenancePlan, candidateSetHash, canonicalHostInventoryRevision, HOST_MAINTENANCE_ACTIVATIONS,
-  HOST_MAINTENANCE_CAPS, HOST_MAINTENANCE_CONFIRMATIONS, HOST_MAINTENANCE_IMAGE_POLICY_CONFIRMATION, planForCategory,
+  HOST_MAINTENANCE_ACKNOWLEDGEMENTS, HOST_MAINTENANCE_CAPS, HOST_MAINTENANCE_CONFIRMATIONS, HOST_MAINTENANCE_IMAGE_POLICY_CONFIRMATION, planForCategory,
 } from "../lib/host-maintenance-policy.mjs";
 import { hostMaintenanceWorkerInternals, inspectAndHeartbeatHostMaintenanceWorker, recoverStaleHostMaintenanceLeases, validateDatabaseBackupReceipt, validateHostMaintenanceReceipt } from "../lib/host-maintenance.mjs";
 import { DisabledHostMaintenanceAdapter, InMemoryHostMaintenanceAdapter } from "../lib/host-maintenance-adapter.mjs";
 import {
-  getDatabaseBackupRequestStatus, getHostMaintenanceRequestStatus, hostMaintenanceControlInternals,
+  acknowledgeHostMaintenanceBreaker, getDatabaseBackupRequestStatus, getHostMaintenanceRequestStatus, hostMaintenanceControlInternals,
   requestDatabaseBackup, requestHostMaintenanceExecution, setManualImageRetentionPolicy, setScheduledHostMaintenance,
 } from "../lib/host-maintenance-control.mjs";
 
@@ -35,6 +35,86 @@ function inventory(overrides={}) {
     backups:[backup("backup-1",60),backup("backup-2",55),backup("backup-3",50),backup("backup-4",45),backup("backup-5",40),backup("backup-6",35),
       backup("backup-current",90,{currentRelease:true})],...overrides};
   result.revision=canonicalHostInventoryRevision(result);return result;
+}
+
+function bindHostMaintenanceTestEnvironment(t) {
+  const previousEnvironment=process.env.HOST_MAINTENANCE_ENVIRONMENT_ID;
+  const previousIdentity=process.env.HOST_MAINTENANCE_DATABASE_IDENTITY;
+  process.env.HOST_MAINTENANCE_ENVIRONMENT_ID="staging";
+  process.env.HOST_MAINTENANCE_DATABASE_IDENTITY="db-staging";
+  t.after(()=>{
+    if(previousEnvironment===undefined)delete process.env.HOST_MAINTENANCE_ENVIRONMENT_ID;
+    else process.env.HOST_MAINTENANCE_ENVIRONMENT_ID=previousEnvironment;
+    if(previousIdentity===undefined)delete process.env.HOST_MAINTENANCE_DATABASE_IDENTITY;
+    else process.env.HOST_MAINTENANCE_DATABASE_IDENTITY=previousIdentity;
+  });
+}
+
+function hostAcknowledgementHarness({
+  category="unused-alpr-images",
+  configOverrides={},
+  workerOverrides={},
+  failedRows,
+  filterFailedRowsByBreaker=false,
+  insertError=null,
+  clearRowCount=1,
+}={}) {
+  const breakerOpenedAt="2026-08-10T12:00:00.000Z";
+  const states=new Map([
+    ["unused-alpr-images",{category:"unused-alpr-images",scheduled_enabled:false,next_run_at:null,circuit_breaker_open:true,
+      circuit_breaker_opened_at:breakerOpenedAt,circuit_breaker_reason:"failed",circuit_breaker_generation:7}],
+    ["docker-build-cache",{category:"docker-build-cache",scheduled_enabled:false,next_run_at:null,circuit_breaker_open:true,
+      circuit_breaker_opened_at:breakerOpenedAt,circuit_breaker_reason:"failed",circuit_breaker_generation:8}],
+  ]);
+  Object.assign(states.get(category),configOverrides);
+  const worker={database_identity:"db-staging",heartbeat_at:"2026-08-10T12:04:00.000Z",inventory_measured_at:"2026-08-10T12:03:00.000Z",
+    worker_generation:"worker-fixed",inventory_revision:"inventory-after-failure",...workerOverrides};
+  const rows=failedRows===undefined?[{id:42,failed_worker_generation:"worker-old",failure_receipt_at:breakerOpenedAt}]:failedRows;
+  const calls=[];let released=false;let connects=0;
+  const client={query:async(sql,params=[])=>{calls.push({sql,params});
+    if(["BEGIN","COMMIT","ROLLBACK"].includes(sql))return{rowCount:0,rows:[]};
+    if(sql.includes("host_maintenance_environment_identity"))return{rowCount:1,rows:[{}]};
+    if(sql.includes("SELECT * FROM public.host_maintenance_config")){
+      const state=states.get(params[0]);return{rowCount:state?1:0,rows:state?[{...state}]:[]};
+    }
+    if(sql.includes("host_maintenance_worker_state"))return{rowCount:1,rows:[{...worker}]};
+    if(sql.includes("FROM public.host_maintenance_intents i JOIN public.host_maintenance_receipts")){
+      const selected=filterFailedRowsByBreaker?rows.filter((row)=>new Date(row.failure_receipt_at).getTime()===new Date(params[3]).getTime()):rows;
+      return{rowCount:selected.length,rows:selected};
+    }
+    if(sql.includes("INSERT INTO public.host_maintenance_acknowledgements")){
+      if(insertError)throw insertError;return{rowCount:1,rows:[]};
+    }
+    if(sql.includes("UPDATE public.host_maintenance_config")){
+      if(clearRowCount===1){const state=states.get(params[0]);state.circuit_breaker_open=false;state.circuit_breaker_opened_at=null;
+        state.circuit_breaker_reason=null;state.scheduled_enabled=false;state.next_run_at=null;}
+      return{rowCount:clearRowCount,rows:clearRowCount?[{category:params[0]}]:[]};
+    }
+    throw new Error(`Unexpected acknowledgement query: ${sql}`);
+  },release(){released=true;}};
+  return{calls,client,states,get connects(){return connects;},get released(){return released;},executor:{connect:async()=>{connects+=1;return client;}}};
+}
+
+function hostExecutionHarness({
+  previewCreatedAt="2026-08-10T12:01:00.000Z",
+  breakerOpen=false,
+  breakerGeneration=0,
+  acknowledgement=null,
+}={}) {
+  const calls=[];let released=false;
+  const preview={id:201,intent_id:101,category:"unused-alpr-images",created_at:previewCreatedAt};
+  const client={query:async(sql,params=[])=>{calls.push({sql,params});
+    if(["BEGIN","COMMIT","ROLLBACK"].includes(sql))return{rowCount:0,rows:[]};
+    if(sql.includes("host_maintenance_environment_identity"))return{rowCount:1,rows:[{}]};
+    if(sql.includes("FROM public.host_maintenance_previews p JOIN public.host_maintenance_intents"))return{rowCount:1,rows:[preview]};
+    if(sql.includes("SELECT circuit_breaker_open,circuit_breaker_generation FROM public.host_maintenance_config"))
+      return{rowCount:1,rows:[{circuit_breaker_open:breakerOpen,circuit_breaker_generation:breakerGeneration}]};
+    if(sql.includes("FROM public.host_maintenance_acknowledgements"))return{rowCount:acknowledgement?1:0,rows:acknowledgement?[acknowledgement]:[]};
+    if(sql.includes("INSERT INTO public.host_maintenance_intents"))return{rowCount:1,rows:[{id:303}]};
+    if(sql.includes("INSERT INTO public.host_maintenance_preview_consumptions"))return{rowCount:1,rows:[]};
+    throw new Error(`Unexpected execution query: ${sql}`);
+  },release(){released=true;}};
+  return{calls,preview,executor:{connect:async()=>client},get released(){return released;}};
 }
 
 test("host policy keeps newest five, all backups newer than 30 days, and protected chains",()=>{
@@ -114,6 +194,157 @@ test("manual image grace changes are typed, audited, bounded, and keep schedulin
   assert.ok(queries.findIndex(({sql})=>sql==="BEGIN")<queries.indexOf(approval));
   assert.ok(queries.indexOf(approval)<queries.findIndex(({sql})=>sql.includes("UPDATE public.host_maintenance_config")));
   assert.match(queries.find(({sql})=>sql.includes("UPDATE public.host_maintenance_config")).sql,/scheduled_enabled=FALSE,next_run_at=NULL/);
+});
+
+test("host breaker acknowledgement binds the exact current failure and commits atomically",async(t)=>{
+  bindHostMaintenanceTestEnvironment(t);
+  let invalidConnects=0;
+  await assert.rejects(()=>acknowledgeHostMaintenanceBreaker({
+    executor:{connect:async()=>{invalidConnects+=1;throw new Error("must not connect");}},actor:{id:9},category:"unused-alpr-images",confirmation:"acknowledge",
+  }),/ACKNOWLEDGE UNUSED IMAGE FAILURE/);
+  assert.equal(invalidConnects,0,"an invalid typed phrase fails before database access");
+
+  const now=new Date("2026-08-10T12:05:00.000Z");
+  const harness=hostAcknowledgementHarness();
+  const result=await acknowledgeHostMaintenanceBreaker({executor:harness.executor,actor:{id:9},category:"unused-alpr-images",
+    confirmation:HOST_MAINTENANCE_ACKNOWLEDGEMENTS["unused-alpr-images"],now});
+  assert.deepEqual(result,{category:"unused-alpr-images",acknowledged:true,breakerGeneration:7});
+  assert.equal(harness.connects,1);assert.equal(harness.released,true);
+
+  const failure=harness.calls.find(({sql})=>sql.includes("FROM public.host_maintenance_intents i JOIN public.host_maintenance_receipts"));
+  assert.ok(failure);assert.match(failure.sql,/i\.completed_at=\$4::timestamptz/);assert.match(failure.sql,/r\.created_at=\$4::timestamptz/);
+  assert.deepEqual(failure.params.slice(0,3),["unused-alpr-images","staging","db-staging"]);
+  assert.equal(new Date(failure.params[3]).toISOString(),"2026-08-10T12:00:00.000Z");
+
+  const acknowledgement=harness.calls.find(({sql})=>sql.includes("INSERT INTO public.host_maintenance_acknowledgements"));
+  assert.ok(acknowledgement);assert.deepEqual(acknowledgement.params.slice(0,4),["unused-alpr-images",7,42,9]);
+  assert.deepEqual(JSON.parse(acknowledgement.params[4]),{
+    environmentId:"staging",databaseIdentity:"db-staging",failedWorkerGeneration:"worker-old",workerGeneration:"worker-fixed",
+    inventoryRevision:"inventory-after-failure",inventoryMeasuredAt:"2026-08-10T12:03:00.000Z",heartbeatAt:"2026-08-10T12:04:00.000Z",
+  });
+  assert.equal(acknowledgement.params[5],now);
+
+  const cleared=harness.calls.find(({sql})=>sql.includes("UPDATE public.host_maintenance_config"));
+  assert.ok(cleared);assert.match(cleared.sql,/circuit_breaker_open=FALSE/);assert.match(cleared.sql,/circuit_breaker_opened_at=NULL/);
+  assert.match(cleared.sql,/circuit_breaker_reason=NULL/);assert.match(cleared.sql,/scheduled_enabled=FALSE,next_run_at=NULL/);
+  assert.deepEqual(cleared.params,["unused-alpr-images",now]);
+  assert.equal(harness.states.get("unused-alpr-images").circuit_breaker_open,false);
+  assert.equal(harness.states.get("unused-alpr-images").scheduled_enabled,false);
+  assert.equal(harness.states.get("unused-alpr-images").next_run_at,null);
+  assert.equal(harness.states.get("docker-build-cache").circuit_breaker_open,true,"acknowledgement is isolated to the selected category");
+
+  const positions=Object.fromEntries(harness.calls.map(({sql},index)=>[sql,index]));
+  assert.ok(positions.BEGIN<harness.calls.indexOf(failure));
+  assert.ok(harness.calls.indexOf(failure)<harness.calls.indexOf(acknowledgement));
+  assert.ok(harness.calls.indexOf(acknowledgement)<harness.calls.indexOf(cleared));
+  assert.ok(harness.calls.indexOf(cleared)<positions.COMMIT);
+  assert.equal(harness.calls.some(({sql})=>sql==="ROLLBACK"),false);
+});
+
+test("host breaker acknowledgement rejects invalid provenance and stale worker evidence before mutation",async(t)=>{
+  bindHostMaintenanceTestEnvironment(t);
+  const cases=[
+    {name:"invalid opened timestamp",configOverrides:{circuit_breaker_opened_at:"not-a-date"},error:/breaker evidence is invalid/},
+    {name:"missing opened timestamp",configOverrides:{circuit_breaker_opened_at:null},error:/breaker evidence is invalid/},
+    {name:"invalid generation",configOverrides:{circuit_breaker_generation:0},error:/breaker evidence is invalid/},
+    {name:"heartbeat not after breaker",workerOverrides:{heartbeat_at:"2026-08-10T12:00:00.000Z"},error:/fresh worker inventory/},
+    {name:"inventory not after breaker",workerOverrides:{inventory_measured_at:"2026-08-10T12:00:00.000Z"},error:/fresh worker inventory/},
+    {name:"missing current failure receipt",failedRows:[],error:/No failed destructive intent/},
+    {name:"historical receipt cannot acknowledge current breaker",failedRows:[{id:11,failed_worker_generation:"worker-old",
+      failure_receipt_at:"2026-08-01T12:00:00.000Z"}],filterFailedRowsByBreaker:true,error:/No failed destructive intent/},
+    {name:"invalid failure receipt timestamp",failedRows:[{id:42,failed_worker_generation:"worker-old",failure_receipt_at:"not-a-date"}],error:/post-failure worker inventory/},
+  ];
+  for(const scenario of cases){
+    const harness=hostAcknowledgementHarness(scenario);
+    await assert.rejects(()=>acknowledgeHostMaintenanceBreaker({executor:harness.executor,actor:{id:9},category:"unused-alpr-images",
+      confirmation:HOST_MAINTENANCE_ACKNOWLEDGEMENTS["unused-alpr-images"],now:new Date("2026-08-10T12:05:00.000Z")}),scenario.error,scenario.name);
+    assert.equal(harness.calls.some(({sql})=>sql.includes("INSERT INTO public.host_maintenance_acknowledgements")),false,scenario.name);
+    assert.equal(harness.calls.some(({sql})=>sql.includes("UPDATE public.host_maintenance_config")),false,scenario.name);
+    assert.equal(harness.calls.some(({sql})=>sql==="COMMIT"),false,scenario.name);
+    assert.equal(harness.calls.filter(({sql})=>sql==="ROLLBACK").length,1,scenario.name);
+    assert.equal(harness.released,true,scenario.name);
+  }
+});
+
+test("host breaker acknowledgement rolls back both acknowledgement and clear on transactional failures",async(t)=>{
+  bindHostMaintenanceTestEnvironment(t);
+  const scenarios=[
+    {name:"acknowledgement insert fails",options:{insertError:new Error("acknowledgement insert unavailable")},error:/insert unavailable/,
+      expectInsert:true,expectClear:false},
+    {name:"breaker clear loses lock",options:{clearRowCount:0},error:/lost its breaker lock/,expectInsert:true,expectClear:true},
+  ];
+  for(const scenario of scenarios){
+    const harness=hostAcknowledgementHarness(scenario.options);
+    await assert.rejects(()=>acknowledgeHostMaintenanceBreaker({executor:harness.executor,actor:{id:9},category:"unused-alpr-images",
+      confirmation:HOST_MAINTENANCE_ACKNOWLEDGEMENTS["unused-alpr-images"],now:new Date("2026-08-10T12:05:00.000Z")}),scenario.error,scenario.name);
+    assert.equal(harness.calls.some(({sql})=>sql.includes("INSERT INTO public.host_maintenance_acknowledgements")),scenario.expectInsert,scenario.name);
+    assert.equal(harness.calls.some(({sql})=>sql.includes("UPDATE public.host_maintenance_config")),scenario.expectClear,scenario.name);
+    assert.equal(harness.calls.some(({sql})=>sql==="COMMIT"),false,scenario.name);
+    assert.equal(harness.calls.filter(({sql})=>sql==="ROLLBACK").length,1,scenario.name);
+    assert.equal(harness.states.get("unused-alpr-images").circuit_breaker_open,true,scenario.name);
+    assert.equal(harness.states.get("docker-build-cache").circuit_breaker_open,true,scenario.name);
+    assert.equal(harness.released,true,scenario.name);
+  }
+});
+
+test("host execution rejects an open breaker and any preview not strictly newer than the current acknowledgement",async(t)=>{
+  bindHostMaintenanceTestEnvironment(t);
+  const acknowledgement={breaker_generation:7,created_at:"2026-08-10T12:00:00.000Z"};
+  const scenarios=[
+    {name:"open breaker",options:{breakerOpen:true,breakerGeneration:7},error:/circuit breaker is open/},
+    {name:"nonzero generation without acknowledgement",options:{breakerGeneration:7,acknowledgement:null},error:/acknowledgement evidence is invalid/},
+    {name:"generation zero with acknowledgement",options:{breakerGeneration:0,acknowledgement:{...acknowledgement,breaker_generation:0}},error:/acknowledgement evidence is invalid/},
+    {name:"negative generation",options:{breakerGeneration:-1,acknowledgement:null},error:/acknowledgement evidence is invalid/},
+    {name:"noninteger generation",options:{breakerGeneration:1.5,acknowledgement:{...acknowledgement,breaker_generation:1.5}},error:/acknowledgement evidence is invalid/},
+    {name:"acknowledgement generation mismatch",options:{breakerGeneration:7,acknowledgement:{...acknowledgement,breaker_generation:6}},error:/acknowledgement evidence is invalid/},
+    {name:"old preview",options:{breakerGeneration:7,acknowledgement,previewCreatedAt:"2026-08-10T11:59:59.999Z"},error:/Queue a fresh host maintenance preview/},
+    {name:"equal-time preview",options:{breakerGeneration:7,acknowledgement,previewCreatedAt:acknowledgement.created_at},error:/Queue a fresh host maintenance preview/},
+    {name:"invalid preview timestamp",options:{breakerGeneration:7,acknowledgement,previewCreatedAt:"not-a-date"},error:/acknowledgement evidence is invalid/},
+    {name:"invalid acknowledgement timestamp",options:{breakerGeneration:7,acknowledgement:{...acknowledgement,created_at:"not-a-date"}},error:/acknowledgement evidence is invalid/},
+  ];
+  for(const scenario of scenarios){
+    const harness=hostExecutionHarness(scenario.options);
+    await assert.rejects(()=>requestHostMaintenanceExecution({executor:harness.executor,actor:{id:9},previewToken:"opaque-preview",
+      confirmation:HOST_MAINTENANCE_CONFIRMATIONS["unused-alpr-images"],now:new Date("2026-08-10T12:05:00.000Z")}),scenario.error,scenario.name);
+    assert.equal(harness.calls.some(({sql})=>sql.includes("INSERT INTO public.host_maintenance_intents")),false,scenario.name);
+    assert.equal(harness.calls.some(({sql})=>sql.includes("INSERT INTO public.host_maintenance_preview_consumptions")),false,scenario.name);
+    assert.equal(harness.calls.some(({sql})=>sql==="COMMIT"),false,scenario.name);
+    assert.equal(harness.calls.filter(({sql})=>sql==="ROLLBACK").length,1,scenario.name);
+    assert.equal(harness.released,true,scenario.name);
+    const config=harness.calls.find(({sql})=>sql.includes("SELECT circuit_breaker_open,circuit_breaker_generation"));
+    assert.ok(config,scenario.name);assert.match(config.sql,/WHERE category=\$1 FOR UPDATE/);assert.deepEqual(config.params,["unused-alpr-images"]);
+    const acknowledgementQuery=harness.calls.find(({sql})=>sql.includes("FROM public.host_maintenance_acknowledgements"));
+    if(scenario.name==="open breaker")assert.equal(acknowledgementQuery,undefined,"open breaker fails before acknowledgement lookup");
+    else{assert.ok(acknowledgementQuery,scenario.name);assert.match(acknowledgementQuery.sql,/ORDER BY breaker_generation DESC LIMIT 1/);
+      assert.deepEqual(acknowledgementQuery.params,["unused-alpr-images"]);}
+  }
+});
+
+test("host execution accepts only a newer post-acknowledgement preview while preserving the never-failed flow",async(t)=>{
+  bindHostMaintenanceTestEnvironment(t);
+  const now=new Date("2026-08-10T12:05:00.000Z");
+  const scenarios=[
+    {name:"newer preview after exact current acknowledgement",options:{breakerGeneration:7,
+      acknowledgement:{breaker_generation:7,created_at:"2026-08-10T12:00:00.000Z"},previewCreatedAt:"2026-08-10T12:00:00.001Z"}},
+    {name:"no acknowledgement preserves never-failed flow",options:{breakerGeneration:0,acknowledgement:null,previewCreatedAt:"2026-08-01T12:00:00.000Z"}},
+  ];
+  for(const scenario of scenarios){
+    const harness=hostExecutionHarness(scenario.options);
+    const result=await requestHostMaintenanceExecution({executor:harness.executor,actor:{id:9},previewToken:"opaque-preview",
+      confirmation:HOST_MAINTENANCE_CONFIRMATIONS["unused-alpr-images"],now});
+    assert.deepEqual(result,{requestId:303,category:"unused-alpr-images",status:"pending",hostWorkerRequired:true},scenario.name);
+    const acknowledgementQuery=harness.calls.find(({sql})=>sql.includes("FROM public.host_maintenance_acknowledgements"));
+    const intent=harness.calls.find(({sql})=>sql.includes("INSERT INTO public.host_maintenance_intents"));
+    const consumption=harness.calls.find(({sql})=>sql.includes("INSERT INTO public.host_maintenance_preview_consumptions"));
+    assert.ok(acknowledgementQuery,scenario.name);assert.ok(intent,scenario.name);assert.ok(consumption,scenario.name);
+    assert.deepEqual(intent.params,["unused-alpr-images","staging","db-staging",9,101,now],scenario.name);
+    assert.deepEqual(consumption.params,[201,303,9,now],scenario.name);
+    assert.ok(harness.calls.indexOf(acknowledgementQuery)<harness.calls.indexOf(intent),scenario.name);
+    assert.ok(harness.calls.indexOf(intent)<harness.calls.indexOf(consumption),scenario.name);
+    assert.ok(harness.calls.indexOf(consumption)<harness.calls.findIndex(({sql})=>sql==="COMMIT"),scenario.name);
+    assert.equal(harness.calls.some(({sql})=>sql==="ROLLBACK"),false,scenario.name);
+    assert.equal(harness.released,true,scenario.name);
+  }
 });
 
 test("canonical inventory revision is stable across measurement time but changes with protection state",()=>{
@@ -582,6 +813,46 @@ test("monitor trusts sanitized worker health status for stale and recovery alert
   assert.match(monitor,/workerStatus: hostMaintenance\.worker\?\.status/);
 });
 
+test("host breaker acknowledgement UI and action remain administrator-only, typed, and category-bound",async()=>{
+  const [panel,actions]=await Promise.all([
+    readFile(new URL("../app/settings/HostMaintenancePanel.jsx",import.meta.url),"utf8"),
+    readFile(new URL("../app/actions.js",import.meta.url),"utf8"),
+  ]);
+  assert.match(panel,/acknowledgeHostMaintenanceFailureAction/);
+  assert.match(panel,/const \[acknowledgementConfirmations, setAcknowledgementConfirmations\] = useState\(\{\}\)/);
+  const acknowledgementFunction=panel.slice(panel.indexOf("function acknowledgeFailure"),panel.indexOf("function changeSchedule"));
+  assert.match(acknowledgementFunction,/runAction\(`acknowledge:\$\{category\}`/);
+  assert.match(acknowledgementFunction,/category,[\s\S]*confirmation: acknowledgementConfirmations\[category\] \|\| ""/);
+  assert.doesNotMatch(acknowledgementFunction,/evidence|requestId|previewToken|manualConfirmations/);
+  assert.ok(acknowledgementFunction.indexOf("if (!result.success)")<acknowledgementFunction.indexOf("setAcknowledgementConfirmations"));
+  assert.match(acknowledgementFunction,/Scheduling remains disabled; queue a separate read-only preview/);
+  assert.match(acknowledgementFunction,/router\.refresh\(\)/);
+
+  assert.match(panel,/overview\.acknowledgementPhrases\?\.\[definition\.key\] \|\| ""/);
+  const canAcknowledge=panel.slice(panel.indexOf("const canAcknowledge"),panel.indexOf("const draft",panel.indexOf("const canAcknowledge")));
+  for(const gate of[/canApproveAutomaticCleanup/,/workerHealthy/,/configured/,/effectiveConfig\.circuitBreakerOpen/,/Boolean\(acknowledgementPhrase\)/,
+    /!isPending/,/acknowledgementConfirmations\[definition\.key\] === acknowledgementPhrase/])assert.match(canAcknowledge,gate);
+  assert.doesNotMatch(canAcknowledge,/\bblocked\b/);
+  assert.match(panel,/configured && effectiveConfig\.circuitBreakerOpen/);
+  assert.match(panel,/disabled=\{!canApproveAutomaticCleanup \|\| !workerHealthy \|\| isPending\}/);
+  assert.match(panel,/onClick=\{\(\) => acknowledgeFailure\(definition\.key\)\} disabled=\{!canAcknowledge\}/);
+  assert.match(panel,/protected acknowledgement phrase is unavailable; this breaker remains locked/);
+  assert.match(panel,/Administrator automatic-cleanup approval permission is required/);
+  assert.match(panel,/It does not delete anything, restart scheduling, or queue cleanup/);
+
+  const action=actions.slice(actions.indexOf("export async function acknowledgeHostMaintenanceFailureAction"),actions.indexOf("export async function testBlueIrisConnection"));
+  assert.match(action,/requirePermission\("maintenance\.automatic_cleanup\.approve"\)/);
+  assert.doesNotMatch(action,/requirePermission\("maintenance\.manage"\)/);
+  assert.match(action,/category: input\.category, confirmation: String\(input\.confirmation \|\| ""\)/);
+  assert.doesNotMatch(action,/input\.evidence|input\.requestId|input\.previewToken/);
+  assert.match(action,/revalidatePath\("\/settings\/data-privacy"\)/);
+  assert.match(action,/revalidatePath\("\/settings\/data-privacy\/cleanup"\)/);
+  for(const safe of[/Category circuit breaker is not open/,/A fresh worker inventory is required before acknowledgement/,
+    /No failed destructive intent is available for acknowledgement/,/A post-failure worker inventory is required before acknowledgement/,
+    /Category circuit breaker is open; acknowledge it before requesting cleanup/,
+    /Queue a fresh host maintenance preview after acknowledging this failure/])assert.match(actions,safe);
+});
+
 test("host maintenance UI keeps categories separate and fails controls closed",async()=>{
   const [panel,container,control,actions]=await Promise.all([
     readFile(new URL("../app/settings/HostMaintenancePanel.jsx",import.meta.url),"utf8"),
@@ -625,7 +896,7 @@ test("host maintenance UI keeps categories separate and fails controls closed",a
   assert.match(control,/requestedAt:row\.requested_at\|\|null,startedAt:row\.started_at\|\|null,completedAt:row\.completed_at\|\|null/);
   assert.match(actions,/A host maintenance request is already pending or running for this category/);
   assert.match(panel,/request\?\.operation === "preview" \? \{ \.\.\.overviewPreview, \.\.\.request, intentType: "preview" \}/);
-  const queueExecution = panel.slice(panel.indexOf("function queueExecution"), panel.indexOf("function changeSchedule"));
+  const queueExecution = panel.slice(panel.indexOf("function queueExecution"), panel.indexOf("function acknowledgeFailure"));
   assert.doesNotMatch(queueExecution,/router\.refresh\(\)/);
   assert.doesNotMatch(panel,/Request \{request\.requestId\}/);
   assert.doesNotMatch(panel,/circuitBreakerReason/);
