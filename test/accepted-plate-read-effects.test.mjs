@@ -225,7 +225,7 @@ test("the plate route commits each read and MQTT outbox handoff atomically", asy
 
   const ignoreCheck = source.indexOf("await isPlateIgnored");
   const insertRead = source.indexOf("INSERT INTO plate_reads");
-  const duplicateBranch = source.indexOf("if (result.rows.length === 0)");
+  const duplicateBranch = source.indexOf("if (!resultRow.id)");
   const trackImage = source.indexOf("transactionImages.push(imagePaths)");
   const begin = source.indexOf('await dbClient.query("BEGIN")');
   const mqttHandoff = source.indexOf(
@@ -240,6 +240,8 @@ test("the plate route commits each read and MQTT outbox handoff atomically", asy
   assert.ok(trackImage < insertRead);
   assert.ok(insertRead > ignoreCheck);
   assert.ok(duplicateBranch > insertRead);
+  assert.match(source, /duplicate_target_read_id/);
+  assert.match(source, /duplicateTargetReadIds\.push\(duplicateTargetReadId\)/);
   assert.match(source, /transactionImages\.indexOf\(imagePaths\)/);
   assert.match(source, /transactionImages\.splice\(trackedImageIndex, 1\)/);
   assert.ok(mqttHandoff > duplicateBranch);

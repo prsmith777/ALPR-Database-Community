@@ -49,6 +49,9 @@ test("ingress summaries retain diagnostics without retaining sensitive values", 
   assert.equal(summary.triggerField, "TYPE");
   assert.equal(summary.triggerValueState, "recorded");
   assert.equal(summary.triggerType, "MOTION_A>B");
+  assert.deepEqual(summary.triggerAliasFields, ["TYPE"]);
+  assert.equal(summary.triggerAliasConflict, false);
+  assert.equal(summary.triggerAliasDistinctValueCount, 1);
   assert.deepEqual(summary.heavyFields.Image, {
     present: true,
     type: "string",
@@ -66,6 +69,29 @@ test("ingress summaries retain diagnostics without retaining sensitive values", 
   ]) {
     assert.equal(serialized.includes(sensitive), false);
   }
+});
+
+test("ingress summaries flag conflicting trigger aliases without retaining alternate values", () => {
+  const conflict = summarizeIntegrationIngress({
+    data: {
+      trigger_type: "MOTION_A>B",
+      triggerType: "motion_a>b",
+      TYPE: "MOTION_B>A",
+    },
+  });
+
+  assert.deepEqual(conflict.triggerAliasFields, ["trigger_type", "triggerType", "TYPE"]);
+  assert.equal(conflict.triggerAliasConflict, true);
+  assert.equal(conflict.triggerAliasDistinctValueCount, 2);
+  assert.equal(conflict.triggerField, "trigger_type");
+  assert.equal(conflict.triggerType, "MOTION_A>B");
+  assert.equal(JSON.stringify(conflict).includes("MOTION_B>A"), false);
+
+  const consistent = summarizeIntegrationIngress({
+    data: { trigger_type: "MOTION_A>B", TYPE: "motion_a>b" },
+  });
+  assert.equal(consistent.triggerAliasConflict, false);
+  assert.equal(consistent.triggerAliasDistinctValueCount, 1);
 });
 
 test("ingress summaries distinguish absent, blank, and invalid trigger evidence", () => {
@@ -127,6 +153,10 @@ test("ingress recorder inserts, bounds, and completes receipt metadata", async (
     triggerPresent: true,
     triggerValueState: "recorded",
     triggerType: "MOTION_B>A",
+    receiptSchemaVersion: 2,
+    triggerAliasFields: ["trigger_type"],
+    triggerAliasConflict: false,
+    triggerAliasDistinctValueCount: 1,
     fieldSummaries: {
       aiDumpField: { present: false },
       imageField: {
@@ -155,6 +185,7 @@ test("ingress recorder inserts, bounds, and completes receipt metadata", async (
     processedReadIds: [12, "12", 19, -1, "bad"],
     processedCount: 2,
     duplicateCount: 1,
+    duplicateTargetReadIds: [81, "81", 82, -1, "bad"],
     ignoredCount: 0,
     overviewWorkQueued: true,
   });
@@ -171,6 +202,7 @@ test("ingress recorder inserts, bounds, and completes receipt metadata", async (
     1,
     0,
     true,
+    [81, 82],
   ]);
 });
 
@@ -216,6 +248,10 @@ test("migration and Compose configuration keep logging and receipts bounded", as
   assert.match(migration, /CREATE TABLE IF NOT EXISTS public\.integration_ingress_receipts/);
   assert.match(migration, /trigger_value_state IN \('absent','blank','invalid','recorded'\)/);
   assert.match(migration, /2026081301_integration_ingress_receipts/);
+  assert.match(migration, /receipt_schema_version SMALLINT NOT NULL DEFAULT 1/);
+  assert.match(migration, /trigger_alias_conflict BOOLEAN NOT NULL DEFAULT FALSE/);
+  assert.match(migration, /duplicate_target_read_ids BIGINT\[\] NOT NULL/);
+  assert.match(migration, /2026081302_ingress_receipt_diagnostics_v2/);
   for (const source of [compose, externalCompose, envExample]) {
     assert.match(source, /ALPR_OPERATIONAL_LOG_FILE_MAX_BYTES/);
     assert.match(source, /ALPR_INTEGRATION_MAX_BODY_BYTES/);

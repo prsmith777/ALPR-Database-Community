@@ -35,6 +35,7 @@ test("structured log parsing preserves correlation fields and redacts credential
     component: "mqtt",
     requestId: "request-1",
     readId: 40645,
+    duplicateTargetReadIds: [40644, "40644"],
     cameraName: "Street LPR 1",
     username: "BROKER-USER-SENTINEL",
     password: "BROKER-PASSWORD-SENTINEL",
@@ -45,7 +46,7 @@ test("structured log parsing preserves correlation fields and redacts credential
   assert.equal(parsed.requestId, "request-1");
   assert.equal(parsed.component, "mqtt");
   assert.equal(parsed.cameraName, "Street LPR 1");
-  assert.deepEqual(parsed.readIds, ["40645"]);
+  assert.deepEqual(parsed.readIds, ["40645", "40644"]);
   assert.equal(parsed.details.username, "[redacted]");
   assert.equal(parsed.details.password, "[redacted]");
   assert.equal(parsed.details.plateNumber, "[redacted]");
@@ -163,6 +164,7 @@ test("System Logs exposes bounded structured diagnostics and operator controls",
   assert.match(message, /onExpandedChange\?\.\(log\.id, !expanded\)/);
   assert.match(message, /hidden min-w-0 flex-1 items-center gap-1 overflow-hidden lg:flex/);
   assert.match(message, /log\.readIds\?\.\[0\]/);
+  assert.match(message, /"duplicateTargetReadIds"/);
   assert.doesNotMatch(message, /fieldsExpanded/);
   assert.match(message, /Show \$\{fieldKey\} in log details/);
   assert.match(message, /fieldKey=\{cameraField\}/);

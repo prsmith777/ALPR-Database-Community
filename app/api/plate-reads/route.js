@@ -328,6 +328,7 @@ async function processPlateRead(data, _request, context = {}) {
 
     const processedPlates = [];
     const duplicatePlates = [];
+    const duplicateTargetReadIds = [];
     const ignoredPlates = [];
     const pendingEffects = [];
     let overviewWorkQueued = false;
@@ -445,7 +446,17 @@ async function processPlateRead(data, _request, context = {}) {
           ON CONFLICT DO NOTHING
           RETURNING id
         )
-        SELECT id FROM new_read`,
+        SELECT id, NULL::bigint AS duplicate_target_read_id
+        FROM new_read
+        UNION ALL
+        SELECT NULL::bigint AS id, existing.id AS duplicate_target_read_id
+        FROM plate_reads existing
+        WHERE existing.observed_plate = $2::varchar
+          AND existing.timestamp = $7
+          AND existing.camera_name IS NOT DISTINCT FROM $8::varchar
+          AND NOT EXISTS (SELECT 1 FROM new_read)
+        ORDER BY duplicate_target_read_id DESC NULLS LAST
+        LIMIT 1`,
         [
           effectivePlate,
           observedPlate,
@@ -477,8 +488,18 @@ async function processPlateRead(data, _request, context = {}) {
         ]
       );
 
-      if (result.rows.length === 0) {
+      const resultRow = result.rows?.[0] || {};
+      if (!resultRow.id) {
         duplicatePlates.push(observedPlate);
+        const duplicateTargetReadId = Number.parseInt(
+          String(resultRow.duplicate_target_read_id ?? ""),
+          10,
+        );
+        if (Number.isSafeInteger(duplicateTargetReadId)
+            && duplicateTargetReadId > 0
+            && !duplicateTargetReadIds.includes(duplicateTargetReadId)) {
+          duplicateTargetReadIds.push(duplicateTargetReadId);
+        }
         await fileStorage
           .deleteImage(imagePaths.imagePath, imagePaths.thumbnailPath)
           .catch(() => plateIngressLogger.warn("duplicate_plate_image_cleanup_failed", {
@@ -491,7 +512,7 @@ async function processPlateRead(data, _request, context = {}) {
           transactionImages.splice(trackedImageIndex, 1);
         }
       } else {
-        const readId = result.rows[0].id;
+        const readId = resultRow.id;
         const primaryDirection = await persistBlueIrisPrimaryDirectionForRead({
           query: (text, values) => dbClient.query(text, values),
           readId,
@@ -619,6 +640,7 @@ async function processPlateRead(data, _request, context = {}) {
       processedReadIds: processedPlates.map(({ id }) => id),
       processedCount: processedPlates.length,
       duplicateCount: duplicatePlates.length,
+      duplicateTargetReadIds,
       ignoredCount: ignoredPlates.length,
       overviewWorkQueued,
     };
