@@ -243,9 +243,18 @@ test("the plate route commits each read and MQTT outbox handoff atomically", asy
   assert.ok(duplicateBranch > insertRead);
   assert.match(source, /duplicate_target_read_id/);
   assert.match(source, /duplicateTargetReadIds\.push\(duplicateTargetReadId\)/);
+  assert.match(source, /await reconcileLateDuplicateRead\(/);
+  assert.match(source, /if \(!reconciliation\?\.imageAttached\)/);
+  assert.match(source, /if \(reconciliation\.directionAttached\)/);
+  assert.match(source, /processVehicleDirection\([\s\S]*reconciliation\.read/);
+  assert.match(source, /buildLateDuplicateReconciliationEvent/);
+  assert.match(source, /duplicateReconciledReadIds/);
   assert.match(source, /transactionImages\.indexOf\(imagePaths\)/);
   assert.match(source, /transactionImages\.splice\(trackedImageIndex, 1\)/);
+  const reconciliation = source.indexOf("await reconcileLateDuplicateRead");
   assert.ok(mqttHandoff > duplicateBranch);
+  assert.ok(reconciliation > duplicateBranch);
+  assert.ok(mqttHandoff > reconciliation);
   assert.ok(commit > mqttHandoff);
   assert.ok(pipelineTimeline > commit);
   assert.ok(acceptedEffects > commit);

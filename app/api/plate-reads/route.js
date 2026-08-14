@@ -9,6 +9,7 @@ import {
 } from "@/lib/accepted-plate-read-effects.mjs";
 import { NotificationAcceptedReadService } from "@/lib/notification-accepted-read-service.mjs";
 import { NotificationRuntimeRepository } from "@/lib/notification-runtime-repository.mjs";
+import { reconcileLateDuplicateRead } from "@/lib/late-duplicate-reconciliation.mjs";
 import { createPlateReadEventIdentity } from "@/lib/plate-read-event-identity.mjs";
 import { parseBlueIrisAlertPointer } from "@/lib/blue-iris-alert-pointer.mjs";
 import {
@@ -31,6 +32,7 @@ import { createIntegrationIngressRecorder } from "@/lib/integration-ingress.mjs"
 import {
   appendReadPipelineEvents,
   buildAcceptedReadPipelineEvents,
+  buildLateDuplicateReconciliationEvent,
   buildLegacyPushoverPipelineEvent,
 } from "@/lib/read-pipeline-timeline.mjs";
 import { createIntegrationRouteHandler } from "@/lib/request-auth.mjs";
@@ -353,6 +355,7 @@ async function processPlateRead(data, _request, context = {}) {
     const duplicateTargetReadIds = [];
     const ignoredPlates = [];
     const pendingEffects = [];
+    const duplicateReconciliations = [];
     let overviewWorkQueued = false;
     const blueIrisAlert = parseBlueIrisAlertPointer({
       clip: data.ALERT_CLIP,
@@ -522,16 +525,81 @@ async function processPlateRead(data, _request, context = {}) {
             && !duplicateTargetReadIds.includes(duplicateTargetReadId)) {
           duplicateTargetReadIds.push(duplicateTargetReadId);
         }
-        await fileStorage
-          .deleteImage(imagePaths.imagePath, imagePaths.thumbnailPath)
-          .catch(() => plateIngressLogger.warn("duplicate_plate_image_cleanup_failed", {
-            requestId: context.requestId,
-            cameraName: camera,
-            errorCode: "DUPLICATE_IMAGE_CLEANUP_FAILED",
-          }));
-        const trackedImageIndex = transactionImages.indexOf(imagePaths);
-        if (trackedImageIndex >= 0) {
-          transactionImages.splice(trackedImageIndex, 1);
+
+        let reconciliation = null;
+        let directionNotificationResult = null;
+        if (Number.isSafeInteger(duplicateTargetReadId) && duplicateTargetReadId > 0) {
+          reconciliation = await reconcileLateDuplicateRead(
+            (text, values) => dbClient.query(text, values),
+            {
+              readId: duplicateTargetReadId,
+              imagePath: imagePaths.imagePath,
+              thumbnailPath: imagePaths.thumbnailPath,
+              alert: {
+                bi_path: biPath,
+                bi_alert_clip: blueIrisAlert.alertClip,
+                bi_alert_path: blueIrisAlert.alertPath,
+                bi_alert_offset_ms: blueIrisAlert.offsetMs,
+              },
+              recognition: {
+                confidence: effectivePlateData.confidence ?? null,
+                crop_coordinates: effectivePlateData.crop_coordinates ?? null,
+                ocr_annotation: effectivePlateData.ocr_annotation ?? null,
+                plate_annotation: effectivePlateData.plate_annotation ?? null,
+              },
+              direction: blueIrisTriggerColumns,
+              vehicleOverview: overviewVehicleView,
+            },
+          );
+
+          if (reconciliation.directionAttached) {
+            const primaryDirection = await persistBlueIrisPrimaryDirectionForRead({
+              query: (text, values) => dbClient.query(text, values),
+              readId: duplicateTargetReadId,
+              camera,
+              evidence: blueIrisTriggerDirection,
+            });
+            if (primaryDirection) {
+              directionNotificationResult = await notificationService.processVehicleDirection(
+                {
+                  ...reconciliation.read,
+                  id: duplicateTargetReadId,
+                  persisted_timestamp: reconciliation.read.timestamp,
+                },
+                primaryDirection,
+              );
+              if (
+                directionNotificationResult.status === "error"
+                || directionNotificationResult.status === "partial"
+              ) {
+                throw new Error(
+                  `Blue Iris direction notification outbox handoff failed for reconciled read ${duplicateTargetReadId}`
+                );
+              }
+            }
+          }
+
+          if (reconciliation.changed) {
+            duplicateReconciliations.push({
+              reconciliation,
+              directionNotificationResult,
+            });
+            if (reconciliation.overviewQueued) overviewWorkQueued = true;
+          }
+        }
+
+        if (!reconciliation?.imageAttached) {
+          await fileStorage
+            .deleteImage(imagePaths.imagePath, imagePaths.thumbnailPath)
+            .catch(() => plateIngressLogger.warn("duplicate_plate_image_cleanup_failed", {
+              requestId: context.requestId,
+              cameraName: camera,
+              errorCode: "DUPLICATE_IMAGE_CLEANUP_FAILED",
+            }));
+          const trackedImageIndex = transactionImages.indexOf(imagePaths);
+          if (trackedImageIndex >= 0) {
+            transactionImages.splice(trackedImageIndex, 1);
+          }
         }
       } else {
         const readId = resultRow.id;
@@ -635,6 +703,18 @@ async function processPlateRead(data, _request, context = {}) {
         { readId: effect.read.id, requestId: context.requestId },
       );
     }
+    for (const effect of duplicateReconciliations) {
+      await recordReadPipelineEvents(
+        () => [buildLateDuplicateReconciliationEvent({
+          readId: effect.reconciliation.readId,
+          requestId: context.requestId,
+          ingressReceiptId: context.ingressReceiptId,
+          reconciliation: effect.reconciliation,
+          directionNotificationResult: effect.directionNotificationResult,
+        })],
+        { readId: effect.reconciliation.readId, requestId: context.requestId },
+      );
+    }
     if (overviewWorkQueued) wakeBlueIrisVehicleFrameWorker();
 
     // Unified MQTT and Pushover handoffs committed with each read. The legacy
@@ -673,7 +753,7 @@ async function processPlateRead(data, _request, context = {}) {
     //   // Add revalidation here as well for good measure
     //   await revalidatePlatesPage();
     // }
-    if (processedPlates.length > 0) {
+    if (processedPlates.length > 0 || duplicateReconciliations.length > 0) {
       try {
         revalidatePath("/live_feed");
         // Ensure revalidation completes
@@ -701,6 +781,10 @@ async function processPlateRead(data, _request, context = {}) {
       processedCount: processedPlates.length,
       duplicateCount: duplicatePlates.length,
       duplicateTargetReadIds,
+      duplicateReconciledCount: duplicateReconciliations.length,
+      duplicateReconciledReadIds: duplicateReconciliations.map(
+        ({ reconciliation }) => reconciliation.readId,
+      ),
       ignoredCount: ignoredPlates.length,
       overviewWorkQueued,
     };

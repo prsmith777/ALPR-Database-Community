@@ -111,6 +111,24 @@ credentials, remote responses, or raw exceptions. Timeline writes are
 best-effort after the read transaction commits, so an observability failure
 cannot reverse an accepted read or cause a duplicate client retry.
 
+An exact late duplicate may reconcile only against the existing event-identity
+target while holding that read's database row lock. Reconciliation is fill-only:
+an established image pair, Blue Iris alert pointer, direction bundle, or
+recognition field is never overwritten, and a partially established grouped
+pointer or direction bundle accepts additions only when every established value
+matches the incoming evidence. Conflicting evidence is discarded with the
+duplicate rather than retained as an alternate value.
+
+Vehicle View work may be queued by reconciliation only when the target has an
+attached source image and ready direction, has never been claimed or attempted,
+has no completed vehicle image or backfill owner, and is either unset or in a
+specific terminal missing-evidence state. A newly inserted primary-direction
+observation may prepare its deterministic direction-notification event once.
+General accepted-read MQTT, unified notifications, and legacy Pushover are not
+replayed for duplicates. The database update, optional direction observation,
+and any permitted outbox handoff share the ingestion transaction; a failure
+rolls them back and removes a newly saved image.
+
 The timeline query uses the same Administrator/Auditor permission as System
 Logs, is parameterized by one positive read ID, and returns at most 100 events.
 The event table has no update or delete application operation. Its rows use a

@@ -5,6 +5,7 @@ import test from "node:test";
 import {
   appendReadPipelineEvents,
   buildAcceptedReadPipelineEvents,
+  buildLateDuplicateReconciliationEvent,
   buildLegacyPushoverPipelineEvent,
   queryReadPipelineTimeline,
   readPipelineTimelineInternals,
@@ -111,6 +112,68 @@ test("legacy Pushover completion records only bounded outcome evidence", () => {
   });
   assert.equal(JSON.stringify(event).includes("PLATE-SENTINEL"), false);
   assert.equal(JSON.stringify(event).includes("REMOTE-RECEIPT-SENTINEL"), false);
+});
+
+test("late duplicate reconciliation records only bounded attachment and queue evidence", () => {
+  const event = buildLateDuplicateReconciliationEvent({
+    readId: 40791,
+    requestId: "request-duplicate-40791",
+    ingressReceiptId: 74,
+    reconciliation: {
+      imageAttached: true,
+      alertPointerAttached: true,
+      directionAttached: true,
+      recognitionAttached: false,
+      overviewQueued: true,
+      read: {
+        plate_number: "PLATE-SENTINEL",
+        image_path: "PATH-SENTINEL",
+        bi_trigger_direction_status: "ready",
+        bi_trigger_direction_label: "Eastbound",
+        bi_trigger_direction_profile_version: 2,
+        bi_trigger_direction_algorithm: "blue-iris-zone-crossing-v2-primary",
+        vehicle_image_status: "pending",
+        vehicle_image_queue_kind: "overview",
+        vehicle_image_retryable: true,
+        vehicle_image_error_code: "WAITING_FOR_DAYTIME_OVERVIEW",
+      },
+    },
+    directionNotificationResult: {
+      status: "queued",
+      planned: 1,
+      queued: 1,
+      duplicates: 0,
+      remotePayload: "REMOTE-SENTINEL",
+    },
+  });
+
+  assert.equal(event.eventType, "read.duplicate_reconciled");
+  assert.equal(event.stage, "ingress");
+  assert.equal(event.status, "succeeded");
+  assert.deepEqual(event.details, {
+    duplicateImageAttached: true,
+    duplicateAlertPointerAttached: true,
+    duplicateDirectionAttached: true,
+    duplicateRecognitionAttached: false,
+    duplicateOverviewQueued: true,
+    duplicateDirectionNotificationQueued: true,
+    directionStatus: "ready",
+    directionLabel: "Eastbound",
+    directionProfileVersion: 2,
+    directionAlgorithm: "blue-iris-zone-crossing-v2-primary",
+    directionNotificationStatus: "queued",
+    directionNotificationPlanned: 1,
+    directionNotificationQueued: 1,
+    directionNotificationDuplicates: 0,
+    vehicleOverviewStatus: "pending",
+    vehicleOverviewQueueKind: "overview",
+    vehicleOverviewRetryable: true,
+    vehicleOverviewErrorCode: "WAITING_FOR_DAYTIME_OVERVIEW",
+  });
+  const serialized = JSON.stringify(event);
+  assert.equal(serialized.includes("PLATE-SENTINEL"), false);
+  assert.equal(serialized.includes("PATH-SENTINEL"), false);
+  assert.equal(serialized.includes("REMOTE-SENTINEL"), false);
 });
 
 test("expected missing direction and unavailable Vehicle View evidence are skipped, not failures", () => {
