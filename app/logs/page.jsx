@@ -1,17 +1,15 @@
 import { Suspense } from "react";
 import { unstable_noStore } from "next/cache";
+
 import { getSystemLogs } from "@/app/actions";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import LogViewer from "./LogViewer";
 import DashboardLayout from "@/components/layout/MainLayout";
 import { getLocalVersionInfo } from "@/lib/version";
 import { requirePagePermission } from "@/lib/page-permission.mjs";
-export const dynamic = "force-dynamic";
+import AuditHeader from "./AuditHeader";
+import LogViewer from "./LogViewer";
 
-import {
-  PROJECT_NAME,
-  PROJECT_RELEASES_URL,
-} from "@/lib/project-info";
+export const dynamic = "force-dynamic";
 
 async function LogsContent({ initialFilters }) {
   unstable_noStore();
@@ -34,36 +32,29 @@ export default async function LogsPage({ searchParams }) {
   const requestedReadId = Array.isArray(parameters?.readId)
     ? parameters.readId[0]
     : parameters?.readId;
+  const requestedRequestId = Array.isArray(parameters?.requestId)
+    ? parameters.requestId[0]
+    : parameters?.requestId;
   const readId = /^\d+$/.test(String(requestedReadId || ""))
     ? String(requestedReadId)
     : "";
-  const initialFilters = readId ? { readId } : {};
+  const requestId = String(requestedRequestId || "").trim().slice(0, 128);
+  const initialFilters = {
+    ...(readId ? { readId } : {}),
+    ...(requestId ? { requestId } : {}),
+  };
   const version = await getLocalVersionInfo();
 
   return (
     <DashboardLayout>
-      <div className="flex flex-col h-full">
-        {/* Header - Fixed height */}
-        <div className="flex-shrink-0 border-b bg-background">
-          <div className="flex h-16 items-center justify-between px-6">
-            <h1 className="text-lg font-medium text-foreground">System Logs</h1>
-            <a
-              href={PROJECT_RELEASES_URL}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="text-sm text-muted-foreground hover:text-foreground hover:underline"
-            >
-              {PROJECT_NAME} · v{version}
-            </a>
-          </div>
-        </div>
+      <div className="flex h-full flex-col">
+        <AuditHeader active="logs" version={version} />
 
-        {/* Content - Takes remaining height */}
-        <div className="flex-1 min-h-0">
+        <div className="min-h-0 flex-1">
           <Suspense
             fallback={
-              <div className="flex justify-center items-center h-full">
-                <div className="animate-spin rounded-full w-8 h-8 border-b-2 border-primary" />
+              <div className="flex h-full items-center justify-center">
+                <div className="h-8 w-8 animate-spin rounded-full border-b-2 border-primary" />
               </div>
             }
           >

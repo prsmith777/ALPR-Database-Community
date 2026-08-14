@@ -126,7 +126,9 @@ test("System Logs exposes bounded structured diagnostics and operator controls",
   assert.match(actions, /querySystemLogText\(content, filters/);
   assert.match(actions, /requirePermission\("system\.view_audit"\)/);
   assert.match(page, /LogsPage\(\{ searchParams \}\)/);
-  assert.match(page, /initialFilters = readId \? \{ readId \} : \{\}/);
+  assert.match(page, /requestedRequestId/);
+  assert.match(page, /\.\.\.\(readId \? \{ readId \} : \{\}\)/);
+  assert.match(page, /\.\.\.\(requestId \? \{ requestId \} : \{\}\)/);
   assert.match(page, /getSystemLogs\(initialFilters\)/);
   assert.match(viewer, /Log pipeline for read #\{applied\.readId\}/);
   assert.match(viewer, /Show all logs/);

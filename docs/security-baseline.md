@@ -96,6 +96,13 @@ metadata. The browser never receives the entire active file in one response,
 and expanding a row does not bypass credential, plate, payload, image, or path
 redaction.
 
+The protected ingress-receipt explorer uses the same Administrator/Auditor
+permission and returns only a bounded database page. Its filters are
+parameterized, and its detail view exposes only the metadata-only receipt
+fields described above. Links may correlate a request or produced read with
+the protected operational-log view and may open the exact produced read in the
+Recognition Feed; they do not add raw request values to either URL.
+
 ## Test isolation and validation
 
 Authentication tests run with `NODE_ENV=test` and must set

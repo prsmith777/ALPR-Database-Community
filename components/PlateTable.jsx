@@ -1513,6 +1513,7 @@ export default function PlateTable({
   const clearFilters = () => {
     setSearchInput("");
     onUpdateFilters({
+      readId: null,
       search: "",
       fuzzySearch: null,
       tag: null,
@@ -2144,7 +2145,8 @@ export default function PlateTable({
                   })
                 }
               />
-              {(filters.search ||
+              {(filters.readId ||
+                filters.search ||
                 selectedTags.length > 0 ||
                 selectedDirections.length > 0 ||
                 filters.dashboardTimeFrame ||
@@ -2202,7 +2204,8 @@ export default function PlateTable({
           />
 
         {/* Active filters display */}
-        {(filters.search ||
+        {(filters.readId ||
+          filters.search ||
           selectedTags.length > 0 ||
           filters.dateRange.from ||
           selectedCameras.length > 0 ||
@@ -2216,6 +2219,15 @@ export default function PlateTable({
             <span className="text-xs text-muted-foreground whitespace-nowrap">
               Active filters:
             </span>
+
+            {filters.readId && (
+              <Badge
+                variant="outline"
+                className="h-6 whitespace-nowrap text-xs"
+              >
+                Exact read: {filters.readId}
+              </Badge>
+            )}
 
             {filters.search && (
               <Badge
