@@ -27,6 +27,11 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "${ALPR_POSTGRES_LOG_MAX_SIZE:-10m}"
+        max-file: "${ALPR_POSTGRES_LOG_MAX_FILES:-5}"
 
 volumes:
   db-data:

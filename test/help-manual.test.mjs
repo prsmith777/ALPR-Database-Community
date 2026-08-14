@@ -14,7 +14,7 @@ async function source(path) {
 }
 
 test("the user guide is structured, searchable, and role-aware", () => {
-  assert.equal(HELP_MANUAL.manualVersion, "1.85");
+  assert.equal(HELP_MANUAL.manualVersion, "1.86");
   assert.ok(HELP_MANUAL.sections.length >= 14);
 
   const ids = HELP_MANUAL.sections.map((section) => section.id);
@@ -66,6 +66,8 @@ test("the guide covers required workflows and clearly labels planned features", 
     "configure daytime vehicle views",
     "entry overview",
     "cam143",
+    "archive log evidence",
+    "cleanup never runs on a schedule",
   ]) {
     assert.match(text, new RegExp(required, "i"));
   }
@@ -107,7 +109,7 @@ test("production releases require help and roadmap updates", async () => {
     assert.match(text, /lib\/help-manual\.mjs/);
     assert.match(text, /docs\/COMMUNITY_PRODUCT_ROADMAP\.md/);
   }
-  assert.match(roadmap, /Release candidate baseline — August 13, 2026/);
+  assert.match(roadmap, /Release candidate baseline — August 14, 2026/);
   assert.doesNotMatch(roadmap, /current production release is `[0-9a-f]{7,40}`/i);
 });
 

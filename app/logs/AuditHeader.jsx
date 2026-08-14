@@ -9,6 +9,7 @@ import { cn } from "@/lib/utils";
 const sections = [
   { id: "logs", label: "Operational logs", href: "/logs" },
   { id: "receipts", label: "Ingress receipts", href: "/logs/receipts" },
+  { id: "retention", label: "Retention & incidents", href: "/logs/retention" },
 ];
 
 export default function AuditHeader({ active, version }) {

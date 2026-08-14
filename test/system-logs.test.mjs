@@ -5,6 +5,7 @@ import test from "node:test";
 import {
   normalizeSystemLogQuery,
   parseSystemLogLine,
+  querySystemLogIncident,
   querySystemLogText,
 } from "../lib/system-logs.mjs";
 
@@ -112,6 +113,19 @@ test("log query inputs are bounded to supported levels and page sizes", () => {
   assert.equal(normalized.pageSize, 50);
   assert.equal(normalized.level, "ALL");
   assert.equal(normalized.search.length, 200);
+});
+
+test("incident log snapshots filter retained rotations and stay bounded", () => {
+  const content = Array.from({ length: 12 }, (_, index) => entry(index)).join("\n");
+  const result = querySystemLogIncident(content, { cameraName: "Street LPR 1" }, 3);
+
+  assert.equal(result.matchedCount, 6);
+  assert.equal(result.truncated, true);
+  assert.deepEqual(result.entries.map((item) => item.requestId), [
+    "request-7",
+    "request-9",
+    "request-11",
+  ]);
 });
 
 test("System Logs exposes bounded structured diagnostics and operator controls", async () => {

@@ -38,6 +38,7 @@ services:
       ALPR_INTEGRATION_MAX_BODY_BYTES: "${ALPR_INTEGRATION_MAX_BODY_BYTES:-33554432}"
       ALPR_INGRESS_RECEIPT_RETENTION_DAYS: "${ALPR_INGRESS_RECEIPT_RETENTION_DAYS:-14}"
       ALPR_INGRESS_RECEIPT_MAX_ROWS: "${ALPR_INGRESS_RECEIPT_MAX_ROWS:-25000}"
+      ALPR_AUDIT_HOT_RETENTION_DAYS: "${ALPR_AUDIT_HOT_RETENTION_DAYS:-90}"
     depends_on:
       - db
     volumes:
@@ -84,6 +85,11 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "${ALPR_POSTGRES_LOG_MAX_SIZE:-10m}"
+        max-file: "${ALPR_POSTGRES_LOG_MAX_FILES:-5}"
 
 volumes:
   db-data:

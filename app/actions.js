@@ -118,9 +118,20 @@ import {
   getDashboardTimeWindow,
   normalizeDashboardCameraNames,
 } from "@/lib/dashboard-time-distribution.mjs";
-import { querySystemLogText } from "@/lib/system-logs.mjs";
+import {
+  querySystemLogIncident,
+  querySystemLogText,
+} from "@/lib/system-logs.mjs";
 import { queryIntegrationIngressReceipts } from "@/lib/integration-ingress-receipts.mjs";
 import { queryReadPipelineTimeline } from "@/lib/read-pipeline-timeline.mjs";
+import {
+  createLoggingIncident as createLoggingIncidentService,
+  createLoggingRetentionPreview as createLoggingRetentionPreviewService,
+  executeLoggingRetentionPreview as executeLoggingRetentionPreviewService,
+  getLoggingRetentionOverview as loadLoggingRetentionOverview,
+  normalizeLoggingIncidentInput,
+  operationalFiltersForIncident,
+} from "@/lib/logging-retention.mjs";
 import { createComponentLogger } from "@/logging/logger";
 import path from "path";
 import fs from "fs/promises";
@@ -3227,6 +3238,76 @@ export async function fetchPlateImagePreviews(
 const systemLogsLogger = createComponentLogger("system-logs");
 const ingressReceiptsLogger = createComponentLogger("ingress-receipts");
 const readPipelineLogger = createComponentLogger("read-pipeline-timeline");
+const loggingRetentionLogger = createComponentLogger("logging-retention");
+
+function operationalLogOrder(name) {
+  if (name === "app.log") return Number.MAX_SAFE_INTEGER;
+  const match = name.match(/^app(\d+)\.log$/);
+  return match ? -Number(match[1]) : 0;
+}
+
+async function readOperationalLogFile({ includeRotated = false } = {}) {
+  const activeMaximumBytes = Number.parseInt(
+    process.env.ALPR_OPERATIONAL_LOG_FILE_MAX_BYTES || "5242880",
+    10
+  );
+  const maximumFiles = Number.parseInt(
+    process.env.ALPR_OPERATIONAL_LOG_MAX_FILES || "20",
+    10
+  );
+  const logDirectory = path.resolve(
+    process.env.ALPR_LOG_DIR || path.join(process.cwd(), "logs")
+  );
+  try {
+    const names = await fs.readdir(logDirectory);
+    const retainedNames = names
+      .filter((name) => name === "app.log" || /^app\d+\.log$/.test(name))
+      .sort((left, right) => operationalLogOrder(left) - operationalLogOrder(right))
+      .slice(-Math.max(1, maximumFiles));
+    const retainedFiles = (await Promise.all(
+      retainedNames.map(async (name) => {
+        const fullPath = path.join(logDirectory, name);
+        try {
+          const [stats, content] = await Promise.all([
+            fs.stat(fullPath),
+            includeRotated || name === "app.log" ? fs.readFile(fullPath, "utf8") : "",
+          ]);
+          return { name, stats, content };
+        } catch (error) {
+          if (error?.code === "ENOENT") return null;
+          throw error;
+        }
+      })
+    )).filter(Boolean);
+    const active = retainedFiles.find((item) => item.name === "app.log");
+    return {
+      content: includeRotated
+        ? retainedFiles.map((item) => item.content).filter(Boolean).join("\n")
+        : active?.content || "",
+      metadata: {
+        activeBytes: active?.stats.size || 0,
+        activeMaximumBytes,
+        maximumFiles,
+        retainedFileCount: retainedFiles.length,
+        retainedBytes: retainedFiles.reduce((sum, item) => sum + item.stats.size, 0),
+      },
+    };
+  } catch (error) {
+    if (error?.code === "ENOENT") {
+      return {
+        content: "",
+        metadata: {
+          activeBytes: 0,
+          activeMaximumBytes,
+          maximumFiles,
+          retainedFileCount: 0,
+          retainedBytes: 0,
+        },
+      };
+    }
+    throw error;
+  }
+}
 
 export async function getReadPipelineTimeline(readId) {
   await requirePermission("system.view_audit");
@@ -3265,43 +3346,120 @@ export async function getIntegrationIngressReceipts(filters = {}) {
 
 export async function getSystemLogs(filters = {}) {
   await requirePermission("system.view_audit");
-  const maxFileBytes = Number.parseInt(
-    process.env.ALPR_OPERATIONAL_LOG_FILE_MAX_BYTES || "5242880",
-    10
-  );
-  const maxFiles = Number.parseInt(
-    process.env.ALPR_OPERATIONAL_LOG_MAX_FILES || "20",
-    10
-  );
   try {
-    const logDirectory = path.resolve(
-      process.env.ALPR_LOG_DIR || path.join(process.cwd(), "logs")
-    );
-    const logFile = path.join(logDirectory, "app.log");
-    const [content, stats] = await Promise.all([
-      fs.readFile(logFile, "utf8"),
-      fs.stat(logFile),
-    ]);
+    const { content, metadata } = await readOperationalLogFile();
 
     return {
       success: true,
       data: querySystemLogText(content, filters, {
-        fileBytes: stats.size,
-        maxFileBytes,
-        maxFiles,
+        fileBytes: metadata.activeBytes,
+        maxFileBytes: metadata.activeMaximumBytes,
+        maxFiles: metadata.maximumFiles,
       }),
     };
   } catch (error) {
-    if (error?.code === "ENOENT") {
-      return {
-        success: true,
-        data: querySystemLogText("", filters, { maxFileBytes, maxFiles }),
-      };
-    }
     systemLogsLogger.error("system_log_read_failed", {
       errorCode: error?.code || "LOG_READ_FAILED",
     });
     return { success: false, error: "Failed to read system logs" };
+  }
+}
+
+function loggingRetentionFailure(error, fallback) {
+  const safeMessage = String(error?.message || "");
+  if (
+    error instanceof TypeError
+    && /^(Incident name|Request ID|A positive read ID|A valid incident time window|Incident time windows|Incident scope|Type ARCHIVE LOG EVIDENCE|Logging retention preview|Logging retention candidates)/.test(safeMessage)
+  ) {
+    return { success: false, error: safeMessage };
+  }
+  loggingRetentionLogger.error("logging_retention_action_failed", {
+    errorCode: error?.code || "LOGGING_RETENTION_ACTION_FAILED",
+  });
+  return { success: false, error: fallback };
+}
+
+export async function getLoggingRetentionOverview() {
+  await requirePermission("system.view_audit");
+  try {
+    const pool = await getPool();
+    const { content, metadata } = await readOperationalLogFile({ includeRotated: true });
+    const activeLog = querySystemLogText(content, { pageSize: 25 }, {
+      fileBytes: metadata.activeBytes,
+      maxFileBytes: metadata.activeMaximumBytes,
+      maxFiles: metadata.maximumFiles,
+    });
+    const data = await loadLoggingRetentionOverview({
+      query: (text, values) => pool.query(text, values),
+      logMetadata: {
+        ...metadata,
+        oldestTimestamp: activeLog.metadata.oldestTimestamp,
+        newestTimestamp: activeLog.metadata.newestTimestamp,
+      },
+    });
+    data.operationalLog.retainedFileCount = metadata.retainedFileCount;
+    data.operationalLog.retainedBytes = metadata.retainedBytes;
+    return { success: true, data };
+  } catch (error) {
+    return loggingRetentionFailure(error, "Unable to read logging retention health.");
+  }
+}
+
+export async function createLoggingIncident(input = {}) {
+  const principal = await requirePermission("maintenance.manage");
+  const now = new Date();
+  try {
+    const normalized = normalizeLoggingIncidentInput(input, now);
+    const { content } = await readOperationalLogFile({ includeRotated: true });
+    const operationalSnapshot = querySystemLogIncident(
+      content,
+      operationalFiltersForIncident(normalized),
+    );
+    const pool = await getPool();
+    const data = await createLoggingIncidentService({
+      executor: pool,
+      actor: principal,
+      input: normalized,
+      operationalEntries: operationalSnapshot.entries,
+      now,
+    });
+    revalidatePath("/logs/retention");
+    return { success: true, data };
+  } catch (error) {
+    return loggingRetentionFailure(error, "Unable to create the incident evidence package.");
+  }
+}
+
+export async function previewLoggingRetention() {
+  const principal = await requirePermission("maintenance.manage");
+  try {
+    const pool = await getPool();
+    const data = await createLoggingRetentionPreviewService({
+      query: (text, values) => pool.query(text, values),
+      actor: principal,
+    });
+    revalidatePath("/logs/retention");
+    return { success: true, data };
+  } catch (error) {
+    return loggingRetentionFailure(error, "Unable to create a logging retention preview.");
+  }
+}
+
+export async function executeLoggingRetention(input = {}) {
+  const principal = await requirePermission("maintenance.manage");
+  try {
+    const pool = await getPool();
+    const data = await executeLoggingRetentionPreviewService({
+      executor: pool,
+      actor: principal,
+      previewToken: input.previewToken,
+      confirmation: input.confirmation,
+    });
+    revalidatePath("/logs/retention");
+    revalidatePath("/logs/receipts");
+    return { success: true, data };
+  } catch (error) {
+    return loggingRetentionFailure(error, "Unable to execute logging retention.");
   }
 }
 
