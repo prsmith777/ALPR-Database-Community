@@ -1,12 +1,13 @@
 "use client";
 
 import NextImage from "next/image";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { BrainCircuit, Check, History, Images, Loader2, Pause, Play, RotateCcw, Save, ScanSearch, Settings2, Trash2, XCircle } from "lucide-react";
 
 import {
   getVehicleDirectionSetup,
   getVehicleOverviewSetup,
+  getVehicleOverviewFramingAuditBatch,
   getBlueIrisVehicleFrameQueueStatus,
   labelVehicleOrientation,
   previewVehicleDirectionReevaluation,
@@ -134,6 +135,20 @@ export default function VehicleIntelligenceSettings({
   const [triggerRecoveryPreview, setTriggerRecoveryPreview] = useState(null);
   const [cancelFrameHistoryOpen, setCancelFrameHistoryOpen] = useState(false);
   const [overviewSetup, setOverviewSetup] = useState(initialOverviewSetup);
+  const overviewAuditStop = useRef(false);
+  const [overviewAudit, setOverviewAudit] = useState({
+    running: false,
+    completed: false,
+    inspected: 0,
+    total: 0,
+    maxReadId: null,
+    cursor: 0,
+    reviewCount: 0,
+    unacceptableCount: 0,
+    failureCount: 0,
+    flaggedItems: [],
+    error: "",
+  });
   const [entryHistoryDeltas, setEntryHistoryDeltas] = useState(() => (
     entryOverviewHistoryDeltas(initialOverviewSetup?.entryOverviewHistory?.profiles)
   ));
@@ -226,6 +241,10 @@ export default function VehicleIntelligenceSettings({
     setEntryHistoryDeltas(entryOverviewHistoryDeltas(overviewSetup?.entryOverviewHistory?.profiles));
   }, [overviewSetup?.entryOverviewHistory?.profiles]);
 
+  useEffect(() => () => {
+    overviewAuditStop.current = true;
+  }, []);
+
   useEffect(() => {
     const pending = Number(data.backfill?.pending || 0)
       + Number(data.backfill?.imagesAwaitingIndex || 0);
@@ -315,6 +334,75 @@ export default function VehicleIntelligenceSettings({
     setOverviewSetup(result.data);
     setEntryHistoryRetryCandidates(result.data.entryOverviewHistory?.retryCandidates || []);
     return result.data;
+  };
+
+  const runOverviewFramingAudit = async () => {
+    overviewAuditStop.current = false;
+    let cursor = 0;
+    let maxReadId = null;
+    let inspected = 0;
+    let reviewCount = 0;
+    let unacceptableCount = 0;
+    let failureCount = 0;
+    let flaggedItems = [];
+    setOverviewAudit({
+      running: true,
+      completed: false,
+      inspected: 0,
+      total: 0,
+      maxReadId: null,
+      cursor: 0,
+      reviewCount: 0,
+      unacceptableCount: 0,
+      failureCount: 0,
+      flaggedItems: [],
+      error: "",
+    });
+    try {
+      while (!overviewAuditStop.current) {
+        const result = await getVehicleOverviewFramingAuditBatch({
+          afterReadId: cursor,
+          maxReadId,
+          limit: 10,
+        });
+        if (!result.success) throw new Error(result.error);
+        const batch = result.data;
+        maxReadId = Number(batch.maxReadId || maxReadId || 0) || null;
+        cursor = Number(batch.nextCursor || cursor);
+        inspected += Number(batch.inspected || 0);
+        reviewCount += Number(batch.flagged || 0);
+        unacceptableCount += Number(batch.unacceptable || 0);
+        failureCount += Number(batch.failures || 0);
+        flaggedItems = [
+          ...flaggedItems,
+          ...(batch.items || []).filter((item) => item.needsReview),
+        ];
+        const completed = Number(batch.remaining || 0) === 0;
+        setOverviewAudit({
+          running: !completed,
+          completed,
+          inspected,
+          total: Number(batch.total || 0),
+          maxReadId,
+          cursor,
+          reviewCount,
+          unacceptableCount,
+          failureCount,
+          flaggedItems,
+          error: "",
+        });
+        if (completed || Number(batch.inspected || 0) === 0) break;
+      }
+      if (overviewAuditStop.current) {
+        setOverviewAudit((current) => ({ ...current, running: false }));
+      }
+    } catch (error) {
+      setOverviewAudit((current) => ({
+        ...current,
+        running: false,
+        error: error.message,
+      }));
+    }
   };
 
   const saveOverviewProfile = async () => {
@@ -966,6 +1054,78 @@ export default function VehicleIntelligenceSettings({
                 <div className="rounded-md border p-2"><div className="font-semibold">{Number(overviewSetup?.status?.nighttimeSkipped || 0).toLocaleString()}</div><div className="text-xs text-muted-foreground">nighttime skipped</div></div>
                 <div className="rounded-md border p-2"><div className="font-semibold">{Number(overviewSetup?.status?.failed || 0).toLocaleString()}</div><div className="text-xs text-muted-foreground">failures</div></div>
                 <div className="rounded-md border p-2"><div className="font-semibold">{Number(overviewSetup?.status?.exports?.automaticStarts || 0).toLocaleString()}</div><div className="text-xs text-muted-foreground">BI exports started</div></div>
+              </div>
+
+              <div className="space-y-4 rounded-lg border p-4">
+                <div className="flex flex-wrap items-start justify-between gap-4">
+                  <div className="max-w-3xl">
+                    <div className="font-medium">Saved Overview framing audit</div>
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      Re-detect every frozen ready Overview image from its saved pixels. This read-only audit catches edge truncation and stale stored geometry without replacing images, queueing work, or calling an external provider.
+                    </p>
+                  </div>
+                  <Badge variant={overviewAudit.completed ? "default" : overviewAudit.running ? "secondary" : "outline"}>
+                    {overviewAudit.completed ? "Complete" : overviewAudit.running ? "Inspecting" : "Not run"}
+                  </Badge>
+                </div>
+                <div className="grid grid-cols-2 gap-3 text-center sm:grid-cols-5">
+                  <div className="rounded-md border p-2"><div className="font-semibold">{overviewAudit.inspected.toLocaleString()}</div><div className="text-xs text-muted-foreground">inspected</div></div>
+                  <div className="rounded-md border p-2"><div className="font-semibold">{overviewAudit.total.toLocaleString()}</div><div className="text-xs text-muted-foreground">frozen scope</div></div>
+                  <div className="rounded-md border p-2"><div className="font-semibold">{overviewAudit.reviewCount.toLocaleString()}</div><div className="text-xs text-muted-foreground">review flags</div></div>
+                  <div className="rounded-md border p-2"><div className="font-semibold">{overviewAudit.unacceptableCount.toLocaleString()}</div><div className="text-xs text-muted-foreground">unacceptable</div></div>
+                  <div className="rounded-md border p-2"><div className="font-semibold">{overviewAudit.failureCount.toLocaleString()}</div><div className="text-xs text-muted-foreground">audit failures</div></div>
+                </div>
+                {overviewAudit.total > 0 ? (
+                  <Progress value={Math.min(100, (overviewAudit.inspected / overviewAudit.total) * 100)} />
+                ) : null}
+                <div className="flex flex-wrap gap-2">
+                  <Button type="button" onClick={runOverviewFramingAudit} disabled={overviewAudit.running || Boolean(busy)}>
+                    {overviewAudit.running ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <ScanSearch className="mr-2 h-4 w-4" />}
+                    {overviewAudit.completed ? "Run a new frozen audit" : "Audit all ready Overview images"}
+                  </Button>
+                  {overviewAudit.running ? (
+                    <Button type="button" variant="secondary" onClick={() => { overviewAuditStop.current = true; }}>
+                      <Pause className="mr-2 h-4 w-4" /> Stop after current batch
+                    </Button>
+                  ) : null}
+                </div>
+                {overviewAudit.error ? <p className="text-sm text-destructive">{overviewAudit.error}</p> : null}
+                {overviewAudit.flaggedItems.length ? (
+                  <details className="rounded-md border" open={overviewAudit.completed}>
+                    <summary className="cursor-pointer px-3 py-2 text-sm font-medium">
+                      Framing review list ({overviewAudit.flaggedItems.length.toLocaleString()})
+                    </summary>
+                    <div className="overflow-x-auto border-t">
+                      <table className="w-full min-w-[900px] text-left text-xs">
+                        <thead className="border-b text-muted-foreground">
+                          <tr><th className="px-3 py-2">Read</th><th className="px-3 py-2">Camera / time</th><th className="px-3 py-2">Result</th><th className="px-3 py-2">Actual framing</th><th className="px-3 py-2">Reasons</th></tr>
+                        </thead>
+                        <tbody>
+                          {overviewAudit.flaggedItems.map((item) => (
+                            <tr key={item.readId} className="border-b last:border-0">
+                              <td className="px-3 py-2">
+                                <a className="font-mono font-semibold text-blue-500 hover:underline" href={item.readUrl}>#{item.readId} {item.plateNumber}</a>
+                              </td>
+                              <td className="px-3 py-2">
+                                <div>{item.cameraName}</div>
+                                <div className="text-muted-foreground">{item.timestamp ? new Date(item.timestamp).toLocaleString() : "Unknown"}</div>
+                              </td>
+                              <td className="px-3 py-2">{String(item.classification || "review").replaceAll("_", " ")}</td>
+                              <td className="px-3 py-2">
+                                {item.edgeMargin == null
+                                  ? "Unavailable"
+                                  : `tier ${item.completenessTier} · ${(Number(item.edgeMargin) * 100).toFixed(1)}% edge margin`}
+                              </td>
+                              <td className="px-3 py-2">{item.error?.code || (item.reasons || []).join(", ").toLowerCase().replaceAll("_", " ")}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </details>
+                ) : overviewAudit.completed ? (
+                  <p className="text-sm text-muted-foreground">No saved Overview image required framing review.</p>
+                ) : null}
               </div>
 
               {overviewSetup?.status?.recentJobs?.length ? (
