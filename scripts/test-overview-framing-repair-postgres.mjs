@@ -45,6 +45,7 @@ let lockHeld = false;
 let profileId = null;
 let readId = null;
 let runId = null;
+let exportToken = null;
 
 async function guard() {
   lockClient = await pool.connect();
@@ -172,6 +173,54 @@ try {
   assert.equal(claimed.vehicle_image_status, "ready");
   assert.equal(claimed.vehicle_image_queue_kind, "overview_repair");
 
+  const repairProfileIdentity = crypto.createHash("sha256")
+    .update(JSON.stringify({
+      jobId: Number(claimed.framing_repair_job_id),
+      kind: "overview_framing_repair",
+    }))
+    .digest("hex");
+  const exportLedger = await repository.beginTimelineExport({
+    exportKey: crypto.randomBytes(32).toString("hex"),
+    readId,
+    claimToken: claimed.vehicle_image_claim_token,
+    sourceCameraName: `Repair Overview ${suffix}`,
+    requestedStartAt: "2026-08-15T17:24:03.500Z",
+    requestedDurationMs: 8_000,
+    hardDeadlineAt: claimed.vehicle_image_hard_deadline_at,
+    pairProfileId: profileId,
+    profileRevision: Number(profile.rows[0].revision),
+    algorithmRevision: "overview-timeline-export-v2",
+    profileKind: "framing_repair",
+    profileIdentity: repairProfileIdentity,
+  });
+  exportToken = exportLedger.export_token;
+  assert.match(exportToken, /^[0-9a-f-]{36}$/);
+  assert.equal(exportLedger.profile_kind, "framing_repair");
+  assert.equal(String(exportLedger.profile_identity).trim(), repairProfileIdentity);
+  const startClaim = await repository.claimTimelineExportStart(
+    exportToken,
+    claimed.vehicle_image_claim_token,
+    [],
+  );
+  assert.equal(Number(startClaim.automatic_start_count), 1,
+    "a claim-owned ready repair read must be permitted to start its distinct export");
+  await repository.recordTimelineExportRemote(exportToken, {
+    remotePath: `@repair-${suffix}.mp4`,
+    uri: `@repair-${suffix}.mp4`,
+    complete: true,
+    progress: 100,
+    utc: Date.parse("2026-08-15T17:24:03.500Z"),
+    durationMs: 8_000,
+    status: "ready",
+  }, { claimToken: claimed.vehicle_image_claim_token });
+  await repository.markTimelineExportDownloaded(exportToken, {
+    uri: `@repair-${suffix}.mp4`,
+    fileSize: 1024,
+    width: 2688,
+    height: 1520,
+    durationMs: 8_000,
+  }, { claimToken: claimed.vehicle_image_claim_token });
+
   const accepted = await repository.markOverviewFramingRepairReady(
     claimed.framing_repair_job_id,
     {
@@ -187,7 +236,7 @@ try {
         finalImage: { completenessTier: 1, edgeMargin: 0.01, edgeContacts: 0 },
       },
     },
-    { claimToken: claimed.vehicle_image_claim_token, exportToken: null },
+    { claimToken: claimed.vehicle_image_claim_token, exportToken },
   );
   assert.equal(accepted, null);
   const final = await pool.query(
@@ -216,6 +265,7 @@ try {
     );
   }
   if (readId !== null) {
+    await pool.query("DELETE FROM public.blue_iris_timeline_exports WHERE read_id = $1", [readId]);
     await pool.query("DELETE FROM public.plate_reads WHERE id = $1", [readId]);
   }
   if (profileId !== null) {
@@ -228,11 +278,19 @@ try {
           WHERE id = $1) AS runs,
          (SELECT COUNT(*)::integer FROM public.vehicle_overview_framing_repair_jobs
           WHERE run_id = $1) AS jobs,
+         (SELECT COUNT(*)::integer FROM public.blue_iris_timeline_exports
+          WHERE read_id = $2) AS exports,
          (SELECT COUNT(*)::integer FROM public.plate_reads WHERE id = $2) AS reads,
          (SELECT COUNT(*)::integer FROM public.vehicle_overview_pair_profiles WHERE id = $3) AS profiles`,
       [runId, readId, profileId],
     );
-    assert.deepEqual(residue.rows[0], { runs: 0, jobs: 0, reads: 0, profiles: 0 });
+    assert.deepEqual(residue.rows[0], {
+      runs: 0,
+      jobs: 0,
+      exports: 0,
+      reads: 0,
+      profiles: 0,
+    });
   }
   if (lockHeld) {
     await lockClient.query("SELECT pg_advisory_unlock(hashtextextended($1,0))", [LOCK_NAME]);

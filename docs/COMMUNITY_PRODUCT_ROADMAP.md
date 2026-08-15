@@ -823,6 +823,12 @@ notes. Updates remain externally orchestrated.
   therefore restore the prior ready read state and settle the durable repair
   outcome without a parameter-inference error; the current image remains
   available throughout.
+- Framing-repair timeline exports now use a stable identity derived from the
+  exact repair job rather than colliding with the read's original live export.
+  The export ledger explicitly accepts a claim-owned `ready` read only when its
+  queue kind is `overview_repair`; all ordinary live and historical export
+  ownership remains unchanged. Retries and restarts reuse the repair ledger,
+  while a later separately previewed repair receives a distinct identity.
 Street LPR 1, Street Overview, and Entry Overview are installed. Street Overview
 and Entry Overview supply strong daytime vehicle images but are monochrome at
 night and are not expected to read a plate. Entry Overview is Blue Iris `Cam143`.
