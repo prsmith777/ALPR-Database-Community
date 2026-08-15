@@ -739,6 +739,19 @@ notes. Updates remain externally orchestrated.
   read-owned Vehicle View, ReID index, clusters, attributes, ingestion behavior,
   and review UI remain unchanged, and no Plate Recognizer or other external
   enrichment call is made.
+- Default-off automatic canonical cataloging is implemented for eligible
+  Overview images that become ready after the initial operator campaign. An
+  Administrator must explicitly enable it in Settings > Vehicle Setup >
+  Processing, and activation fails closed until a completed campaign exists.
+  A durable bounded queue discovers missing or stale current-read links,
+  reuses the exact SHA-256 catalog transaction, retries transient failures at
+  most five times, exposes terminal exceptions with one operator retry, and
+  never blocks the existing Vehicle View readiness path. Operator preview and
+  catalog campaigns always take priority; automatic discovery and claims pause
+  while one is active. Disabling stops new claims without falsifying an item
+  already in progress. The recurring storage forecast includes observed
+  canonical growth only while automatic cataloging is enabled. No Plate
+  Recognizer, external provider, ReID v2, cluster, or attribute work is started.
 Street LPR 1, Street Overview, and Entry Overview are installed. Street Overview
 and Entry Overview supply strong daytime vehicle images but are monochrome at
 night and are not expected to read a plate. Entry Overview is Blue Iris `Cam143`.
@@ -788,9 +801,11 @@ be restored. Monochrome nighttime captures do not receive a direction result.
   camera-pair reporting before making stronger labels or applying thresholds.
 - Continue the canonical-asset rollout in conservative stages. The
   preview-first, resumable catalog campaign, exact source-revision checks,
-  archival zero-link policy, one-time active-campaign storage projections, and real
-  PostgreSQL/filesystem cleanup gate are delivered. Next correlate paired reads
-  into shadow vehicle events without gating ingestion; then create
+  archival zero-link policy, one-time active-campaign storage projections,
+  default-off automatic catalog for new Overview reads, recurring enabled-state
+  storage projection, and real PostgreSQL/filesystem cleanup gate are delivered.
+  Next correlate paired reads into shadow vehicle events without gating
+  ingestion; then create
   Overview-owned crops, embeddings, attributes, and ReID v2 profiles. Shared
   Street images count once, and Entry-to-Street display fallbacks never become
   an additional identity observation. Keep the existing ReID path available

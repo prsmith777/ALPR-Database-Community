@@ -7,6 +7,8 @@ import {
   collectStorageHealth,
   STORAGE_HEALTH_CATALOG_CAMPAIGN_RELATION_SQL,
   STORAGE_HEALTH_CATALOG_CAMPAIGN_SQL,
+  STORAGE_HEALTH_LIVE_CATALOG_RELATION_SQL,
+  STORAGE_HEALTH_LIVE_CATALOG_SQL,
   STORAGE_HEALTH_METRICS_SQL,
   STORAGE_HEALTH_SAMPLE_SQL,
 } from "../lib/storage-health.mjs";
@@ -52,6 +54,7 @@ test("storage health combines exact database and filesystem facts with a bounded
     records_without_image_path: "1",
     reads_last_24_hours: "12",
     reads_last_7_days: "70",
+    eligible_overview_reads_last_7_days: "14",
     ready_count: "7",
     failed_count: "1",
     source_missing_count: "1",
@@ -97,6 +100,15 @@ test("storage health combines exact database and filesystem facts with a bounded
           projected_new_bytes: "2500",
         }] };
       }
+      if (sql === STORAGE_HEALTH_LIVE_CATALOG_RELATION_SQL) {
+        return { rows: [{
+          control_relation: "vehicle_image_asset_live_catalog_control",
+          runs_relation: "vehicle_image_asset_catalog_runs",
+        }] };
+      }
+      if (sql === STORAGE_HEALTH_LIVE_CATALOG_SQL) {
+        return { rows: [{ enabled: false, completed_campaign: true }] };
+      }
       assert.fail("Unexpected storage-health query");
     },
     storagePath: "/capture-storage",
@@ -141,6 +153,10 @@ test("storage health combines exact database and filesystem facts with a bounded
     uniqueNewAssets: 2,
     projectedNewBytes: 2_500,
   });
+  assert.deepEqual(snapshot.assets.canonicalVehicleImageLiveCatalog, {
+    enabled: false,
+    completedCampaign: true,
+  });
   assert.equal(snapshot.growth.estimatedBytesPerRead, 400);
   assert.equal(snapshot.growth.estimatedBytesPerDay, 4_000);
   assert.equal(snapshot.growth.canonicalBytesPerLinkedRead, 150);
@@ -168,6 +184,7 @@ test("catalog campaign projection is optional across migration boundaries", asyn
     records_without_image_path: "2",
     reads_last_24_hours: "0",
     reads_last_7_days: "0",
+    eligible_overview_reads_last_7_days: "0",
     ready_count: "0",
     failed_count: "0",
     source_missing_count: "0",
@@ -197,6 +214,9 @@ test("catalog campaign projection is optional across migration boundaries", asyn
         if (sql === STORAGE_HEALTH_CATALOG_CAMPAIGN_SQL) {
           throw new Error("campaign schema is still migrating");
         }
+        if (sql === STORAGE_HEALTH_LIVE_CATALOG_RELATION_SQL) {
+          return { rows: [{ control_relation: null, runs_relation: null }] };
+        }
         assert.fail("Unexpected storage-health query");
       },
       storagePath: "/capture-storage",
@@ -208,11 +228,76 @@ test("catalog campaign projection is optional across migration boundaries", asyn
 
     assert.deepEqual(snapshot.errors, [], campaignState);
     assert.equal(snapshot.assets.canonicalVehicleImageActiveCampaign, null, campaignState);
+    assert.equal(snapshot.assets.canonicalVehicleImageLiveCatalog, null, campaignState);
     assert.equal(snapshot.assets.canonicalVehicleImageZeroLinkCount, 1, campaignState);
     assert.equal(snapshot.growth.canonicalBytesPerLinkedRead, 0, campaignState);
     assert.equal(snapshot.growth.canonicalContributionIncludedInDailyEstimate, false, campaignState);
     assert.equal(snapshot.growth.projectionsAfterActiveCampaign, null, campaignState);
   }
+});
+
+test("enabled automatic catalog contributes observed canonical growth to capacity forecasts", async () => {
+  const snapshot = await collectStorageHealth({
+    query: async (sql) => {
+      if (sql === STORAGE_HEALTH_METRICS_SQL) {
+        return { rows: [{
+          database_bytes: "1000",
+          plate_read_relation_bytes: "200",
+          plate_count: "5",
+          read_count: "10",
+          image_reference_count: "10",
+          records_without_image_path: "0",
+          reads_last_24_hours: "10",
+          reads_last_7_days: "70",
+          eligible_overview_reads_last_7_days: "14",
+          ready_count: "0",
+          failed_count: "0",
+          source_missing_count: "0",
+          vehicle_image_asset_count: "10",
+          vehicle_image_asset_bytes: "1000",
+          vehicle_image_asset_current_linked_bytes: "1000",
+          vehicle_image_asset_read_links: "10",
+          vehicle_image_asset_current_read_links: "10",
+          vehicle_image_asset_stale_read_links: "0",
+          vehicle_image_asset_zero_link_count: "0",
+          vehicle_image_asset_zero_link_bytes: "0",
+        }] };
+      }
+      if (sql === STORAGE_HEALTH_SAMPLE_SQL) {
+        return { rows: [{ image_path: "images/current.jpg" }] };
+      }
+      if (sql === STORAGE_HEALTH_CATALOG_CAMPAIGN_RELATION_SQL) {
+        return { rows: [{ runs_relation: null, items_relation: null }] };
+      }
+      if (sql === STORAGE_HEALTH_LIVE_CATALOG_RELATION_SQL) {
+        return { rows: [{
+          control_relation: "vehicle_image_asset_live_catalog_control",
+          runs_relation: "vehicle_image_asset_catalog_runs",
+        }] };
+      }
+      if (sql === STORAGE_HEALTH_LIVE_CATALOG_SQL) {
+        return { rows: [{ enabled: true, completed_campaign: true }] };
+      }
+      assert.fail("Unexpected storage-health query");
+    },
+    storagePath: "/capture-storage",
+    statfs: async () => ({ bsize: 100, blocks: 100, bavail: 60 }),
+    resolvePath: (value) => value,
+    statPath: async () => ({ size: 100, isFile: () => true }),
+    now: () => new Date("2026-08-14T12:00:00.000Z"),
+  });
+
+  assert.equal(snapshot.database.readsPerDay, 10);
+  assert.equal(snapshot.database.eligibleOverviewReadsPerDay, 2);
+  assert.equal(snapshot.growth.baseEstimatedBytesPerRead, 120);
+  assert.equal(snapshot.growth.baseEstimatedBytesPerDay, 1_200);
+  assert.equal(snapshot.growth.canonicalBytesPerLinkedRead, 100);
+  assert.equal(snapshot.growth.canonicalEstimatedBytesPerDay, 200);
+  assert.equal(snapshot.growth.canonicalBytesPerPlateRead, 20);
+  assert.equal(snapshot.growth.estimatedBytesPerRead, 140);
+  assert.equal(snapshot.growth.estimatedBytesPerDay, 1_400);
+  assert.equal(snapshot.growth.canonicalContributionIncludedInDailyEstimate, true);
+  assert.match(snapshot.growth.basis, /eligible Overview rate/);
 });
 
 test("storage health degrades to partial read-only results when database probes fail", async () => {

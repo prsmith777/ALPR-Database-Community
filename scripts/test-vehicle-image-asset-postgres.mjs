@@ -10,6 +10,7 @@ import {
   overviewSourceCameraName,
 } from "../lib/vehicle-image-asset-model.mjs";
 import { VehicleImageAssetCatalogCampaignRepository } from "../lib/vehicle-image-asset-catalog-campaign-repository.mjs";
+import { VehicleImageAssetLiveCatalogRepository } from "../lib/vehicle-image-asset-live-catalog-repository.mjs";
 import { VehicleImageAssetRepository } from "../lib/vehicle-image-asset-repository.mjs";
 
 const { Pool } = pg;
@@ -56,6 +57,7 @@ const suffix = crypto.randomUUID().replaceAll("-", "").slice(0, 8);
 const readIds = [];
 const assetHashes = [];
 const campaignRunIds = [];
+const liveJobIds = [];
 let campaignActorUserId = null;
 let databaseGuardPassed = false;
 
@@ -88,13 +90,15 @@ async function assertDisposableDatabaseGuard() {
        (SELECT COUNT(*)::integer FROM public.plate_reads) AS plate_reads,
        (SELECT COUNT(*)::integer FROM public.vehicle_image_assets) AS vehicle_image_assets,
        (SELECT COUNT(*)::integer FROM public.vehicle_image_asset_reads) AS vehicle_image_asset_reads,
-       (SELECT COUNT(*)::integer FROM public.vehicle_image_asset_catalog_runs) AS campaign_runs`
+       (SELECT COUNT(*)::integer FROM public.vehicle_image_asset_catalog_runs) AS campaign_runs,
+       (SELECT COUNT(*)::integer FROM public.vehicle_image_asset_live_catalog_jobs) AS live_jobs`
   );
   assert.deepEqual(initialState.rows[0], {
     plate_reads: 0,
     vehicle_image_assets: 0,
     vehicle_image_asset_reads: 0,
     campaign_runs: 0,
+    live_jobs: 0,
   });
 }
 
@@ -220,11 +224,44 @@ async function archiveCampaignAudits(resourceIds) {
   );
 }
 
+async function archiveLiveCatalogAudits(actorUserId) {
+  if (actorUserId == null) return;
+  await pool.query(
+    `INSERT INTO public.audit_event_archive (
+       source_event_id, actor_user_id, actor_api_credential_id, source,
+       event_type, resource_type, resource_id, outcome, reason, request_id,
+       metadata, occurred_at, retention_preview_id
+     )
+     SELECT id, actor_user_id, actor_api_credential_id, source,
+            event_type, resource_type, resource_id, outcome, reason, request_id,
+            metadata, occurred_at, NULL
+     FROM public.audit_events
+     WHERE resource_type = 'vehicle_image_asset_live_catalog'
+       AND actor_user_id = $1
+     ON CONFLICT (source_event_id, occurred_at) DO NOTHING`,
+    [actorUserId]
+  );
+  await pool.query(
+    `DELETE FROM public.audit_events
+     WHERE resource_type = 'vehicle_image_asset_live_catalog'
+       AND actor_user_id = $1`,
+    [actorUserId]
+  );
+}
+
 async function cleanupFixtures() {
   const fixtureCameraName = `Asset LPR ${suffix}`;
   const fixturePathPattern = `derived/vehicle-asset-smoke/${suffix}-%`;
   const campaignResourceIds = campaignRunIds.map(String);
   await archiveCampaignAudits(campaignResourceIds);
+  await archiveLiveCatalogAudits(campaignActorUserId);
+  if (liveJobIds.length || readIds.length) {
+    await pool.query(
+      `DELETE FROM public.vehicle_image_asset_live_catalog_jobs
+       WHERE id = ANY($1::bigint[]) OR read_id = ANY($2::integer[])`,
+      [liveJobIds, readIds]
+    );
+  }
   if (campaignRunIds.length) {
     await pool.query(
       "DELETE FROM public.vehicle_image_asset_catalog_items WHERE run_id = ANY($1::bigint[])",
@@ -265,20 +302,29 @@ async function cleanupFixtures() {
         FROM public.vehicle_image_asset_catalog_runs
         WHERE id = ANY($5::bigint[])) AS campaign_run_count,
        (SELECT COUNT(*)::integer
+        FROM public.vehicle_image_asset_live_catalog_jobs
+        WHERE id = ANY($6::bigint[]) OR read_id = ANY($1::integer[])) AS live_job_count,
+       (SELECT COUNT(*)::integer
         FROM public.audit_events
         WHERE resource_type = 'vehicle_image_asset_catalog'
-          AND resource_id = ANY($6::text[])) AS campaign_audit_count,
+          AND resource_id = ANY($7::text[])) AS campaign_audit_count,
+       (SELECT COUNT(*)::integer
+        FROM public.audit_events
+        WHERE resource_type = 'vehicle_image_asset_live_catalog'
+          AND actor_user_id = $8::bigint) AS live_audit_count,
        (SELECT COUNT(*)::integer FROM public.users
-        WHERE id = $7::bigint) AS campaign_user_count`,
+        WHERE id = $8::bigint) AS campaign_user_count`,
     [readIds, fixtureCameraName, fixturePathPattern, assetHashes,
-      campaignRunIds, campaignResourceIds, campaignActorUserId]
+      campaignRunIds, liveJobIds, campaignResourceIds, campaignActorUserId]
   );
   assert.deepEqual(residue.rows[0], {
     read_count: 0,
     link_count: 0,
     asset_count: 0,
     campaign_run_count: 0,
+    live_job_count: 0,
     campaign_audit_count: 0,
+    live_audit_count: 0,
     campaign_user_count: 0,
   });
 }
@@ -359,11 +405,19 @@ try {
 
   await pool.query(migrations);
   const migrationLedger = await pool.query(
-    `SELECT COUNT(*)::integer AS count
+    `SELECT COUNT(*) FILTER (
+              WHERE version = '2026081402_vehicle_image_asset_foundation'
+            )::integer AS foundation_count,
+            COUNT(*) FILTER (
+              WHERE version = '2026081404_vehicle_image_asset_live_catalog'
+            )::integer AS live_count
      FROM public.schema_migrations
-     WHERE version = '2026081402_vehicle_image_asset_foundation'`
+     WHERE version IN (
+       '2026081402_vehicle_image_asset_foundation',
+       '2026081404_vehicle_image_asset_live_catalog'
+     )`
   );
-  assert.equal(migrationLedger.rows[0].count, 1);
+  assert.deepEqual(migrationLedger.rows[0], { foundation_count: 1, live_count: 1 });
 
   await pool.query("DELETE FROM public.plate_reads WHERE id = $1", [sourceReadId]);
   const retainedSharedLink = await pool.query(
@@ -421,6 +475,11 @@ try {
 
   const campaignActorId = await insertCampaignActor();
   const campaignRepository = new VehicleImageAssetCatalogCampaignRepository(pool);
+  const liveRepository = new VehicleImageAssetLiveCatalogRepository(pool);
+  await assert.rejects(
+    liveRepository.setEnabled({ enabled: true, actorUserId: campaignActorId }),
+    /Complete the initial canonical Overview campaign/
+  );
   const campaignReadId = await insertReadyRead({
     plate: `C${suffix}`.slice(0, 10),
     imagePath: `derived/vehicle-asset-smoke/${suffix}-campaign-lifecycle.jpg`,
@@ -476,6 +535,105 @@ try {
   const completedEmptyRun = await campaignRepository.finalizePreview(emptyRun.id);
   assert.equal(completedEmptyRun.status, "completed");
   assert.equal(completedEmptyRun.phase, "completed");
+
+  assert.deepEqual(await liveRepository.getActivation(), {
+    enabled: false,
+    completedCampaign: true,
+    activeCampaign: false,
+    state: "disabled",
+  });
+  const liveReadId = await insertReadyRead({
+    plate: `L${suffix}`.slice(0, 10),
+    imagePath: `derived/vehicle-asset-smoke/${suffix}-live-a.jpg`,
+  });
+  assert.equal(await liveRepository.materializeCandidates({ limit: 10 }), 0);
+  assert.equal((await liveRepository.setEnabled({
+    enabled: true,
+    actorUserId: campaignActorId,
+  })).state, "active");
+  assert.equal(await liveRepository.materializeCandidates({ limit: 10 }), 1);
+  const firstLiveClaim = await liveRepository.claimNext();
+  assert.equal(Number(firstLiveClaim.read_id), liveReadId);
+  liveJobIds.push(Number(firstLiveClaim.id));
+  const liveHashA = contentHash("live-a");
+  const firstLiveRegistration = await registerReadAsset(liveReadId, asset(liveHashA));
+  assert.equal(await liveRepository.completeJob(firstLiveClaim, firstLiveRegistration), true);
+
+  const liveReplacementPath = `derived/vehicle-asset-smoke/${suffix}-live-b.jpg`;
+  await pool.query(
+    `UPDATE public.plate_reads
+     SET vehicle_image_path = $2,
+         vehicle_image_timestamp = '2026-08-14T19:05:01.333444Z'::timestamptz,
+         vehicle_image_updated_at = '2026-08-14T19:05:02.777888Z'::timestamptz
+     WHERE id = $1`,
+    [liveReadId, liveReplacementPath]
+  );
+  assert.equal(await liveRepository.materializeCandidates({ limit: 10 }), 1);
+  const replacementLiveClaim = await liveRepository.claimNext();
+  assert.equal(Number(replacementLiveClaim.id), Number(firstLiveClaim.id));
+  assert.equal(Number(replacementLiveClaim.attempt_count), 1);
+  const liveHashB = contentHash("live-b");
+  const replacementLiveRegistration = await registerReadAsset(liveReadId, asset(liveHashB));
+  assert.equal(replacementLiveRegistration.linkUpdated, true);
+  assert.equal(await liveRepository.completeJob(
+    replacementLiveClaim,
+    replacementLiveRegistration
+  ), true);
+  const liveProjection = await pool.query(
+    `SELECT jobs.status, jobs.attempt_count,
+            assets.content_sha256::text AS content_sha256,
+            links.source_path_snapshot,
+            to_char(links.source_updated_at, 'US') AS link_microseconds
+     FROM public.vehicle_image_asset_live_catalog_jobs jobs
+     JOIN public.vehicle_image_asset_reads links ON links.read_id = jobs.read_id
+     JOIN public.vehicle_image_assets assets ON assets.id = links.asset_id
+     WHERE jobs.id = $1`,
+    [replacementLiveClaim.id]
+  );
+  assert.deepEqual(liveProjection.rows[0], {
+    status: "cataloged",
+    attempt_count: 1,
+    content_sha256: liveHashB,
+    source_path_snapshot: liveReplacementPath,
+    link_microseconds: "777888",
+  });
+  const liveOverview = await liveRepository.getOverview();
+  assert.equal(liveOverview.state, "active");
+  assert.equal(Number(liveOverview.counts.cataloged), 1);
+  assert.equal(Number(liveOverview.counts.pending_eligible), 0);
+  assert.deepEqual(liveOverview.retryCandidates, []);
+
+  const pausedLiveReadId = await insertReadyRead({
+    plate: `LP${suffix}`.slice(0, 10),
+    imagePath: `derived/vehicle-asset-smoke/${suffix}-live-paused.jpg`,
+  });
+  const livePauseRun = await campaignRepository.createPreview({ actorUserId: campaignActorId });
+  campaignRunIds.push(Number(livePauseRun.id));
+  assert.equal(Number(livePauseRun.candidate_reads), 1);
+  assert.equal((await liveRepository.getActivation()).state, "paused_for_operator_campaign");
+  assert.equal(await liveRepository.materializeCandidates({ limit: 10 }), 0);
+  assert.equal(await liveRepository.claimNext(), null);
+  assert.equal((await campaignRepository.cancel({
+    runId: livePauseRun.id,
+    actorUserId: campaignActorId,
+  })).cancelled, 1);
+  await pool.query("DELETE FROM public.plate_reads WHERE id = $1", [pausedLiveReadId]);
+  assert.equal((await liveRepository.setEnabled({
+    enabled: false,
+    actorUserId: campaignActorId,
+  })).state, "disabled");
+  const liveAuditState = await pool.query(
+    `SELECT COUNT(*)::integer AS count,
+            COUNT(*) FILTER (WHERE source <> 'browser')::integer AS invalid_source,
+            COUNT(*) FILTER (WHERE outcome <> 'succeeded')::integer AS invalid_outcome
+     FROM public.audit_events
+     WHERE resource_type = 'vehicle_image_asset_live_catalog'
+       AND actor_user_id = $1`,
+    [campaignActorId]
+  );
+  assert.equal(liveAuditState.rows[0].count, 2);
+  assert.equal(liveAuditState.rows[0].invalid_source, 0);
+  assert.equal(liveAuditState.rows[0].invalid_outcome, 0);
 
   const retryGoodReadId = await insertReadyRead({
     plate: `R1${suffix}`.slice(0, 10),

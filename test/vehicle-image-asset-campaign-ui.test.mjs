@@ -37,6 +37,8 @@ test("catalog panel exposes the previewed bounded campaign without external enri
     "setVehicleImageAssetCatalogPaused",
     "cancelVehicleImageAssetCatalog",
     "retryVehicleImageAssetCatalogJob",
+    "setVehicleImageAssetLiveCatalogEnabled",
+    "retryVehicleImageAssetLiveCatalogJob",
   ]) {
     assert.match(panel, new RegExp(`${action}\\b`), action);
   }
@@ -51,6 +53,10 @@ test("catalog panel exposes the previewed bounded campaign without external enri
   assert.match(panel, /Cancel remaining/);
   assert.match(panel, /Failures eligible for one bounded retry/);
   assert.match(panel, /Retry item/);
+  assert.match(panel, /Automatic new Overview cataloging/);
+  assert.match(panel, /Enable automatic cataloging/);
+  assert.match(panel, /Disable automatic cataloging/);
+  assert.match(panel, /Retry automatic item/);
   assert.match(panel, /previewFingerprint: run\.previewFingerprint/);
   assert.match(panel, /limit: Number\(batchSize\)/);
 });
@@ -58,7 +64,10 @@ test("catalog panel exposes the previewed bounded campaign without external enri
 test("catalog panel polls only active work and explains storage and identity safeguards", async () => {
   const panel = await source("components/settings/VehicleImageAssetCatalogPanel.jsx");
 
-  assert.match(panel, /status === "previewing" \|\| \(status === "running" && activeJobs > 0\)/);
+  assert.match(
+    panel,
+    /status === "previewing"[\s\S]*\|\| \(status === "running" && activeJobs > 0\)[\s\S]*live\.state === "active"/
+  );
   assert.match(panel, /if \(!pollingActive\) return undefined/);
   assert.match(panel, /window\.setInterval\([\s\S]*5000\)/);
   assert.match(panel, /catalog\.currentLinks/);
@@ -69,6 +78,8 @@ test("catalog panel polls only active work and explains storage and identity saf
   assert.match(panel, /duplicate copies avoided/);
   assert.match(panel, /Existing Vehicle Views and ReID remain unchanged/);
   assert.match(panel, /Plate Recognizer and other external services are not contacted/);
+  assert.match(panel, /never blocks Vehicle View readiness/i);
+  assert.match(panel, /no external provider or ReID call/i);
   assert.match(panel, /Superseded and zero-link canonical assets are retained/);
   assert.match(panel, /no asset deletion or cleanup control/);
   assert.doesNotMatch(panel, />Delete(?: asset| file| image)/i);
@@ -88,6 +99,8 @@ test("catalog server actions use existing setup and maintenance permissions", as
     "setVehicleImageAssetCatalogPaused",
     "cancelVehicleImageAssetCatalog",
     "retryVehicleImageAssetCatalogJob",
+    "setVehicleImageAssetLiveCatalogEnabled",
+    "retryVehicleImageAssetLiveCatalogJob",
   ]) {
     const start = actions.indexOf(`export async function ${name}`);
     const end = actions.indexOf("export async function", start + 1);
