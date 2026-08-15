@@ -45,6 +45,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { SettingsShell } from "@/components/settings/SettingsShell";
 import VehicleImageAssetCatalogPanel from "@/components/settings/VehicleImageAssetCatalogPanel";
+import VehicleEventShadowPanel from "@/components/settings/VehicleEventShadowPanel";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -112,6 +113,7 @@ export default function VehicleIntelligenceSettings({
   initialFrameQueue = null,
   initialOverviewSetup = null,
   initialVehicleImageCatalog = null,
+  initialVehicleEventShadow = null,
 }) {
   const routeTab = useRouteTab(VEHICLE_SETUP_ROUTES, "cameras");
   const [data, setData] = useState(initialData);
@@ -1808,6 +1810,7 @@ export default function VehicleIntelligenceSettings({
 
         <TabsContent value="processing" className="mt-0">
           <VehicleImageAssetCatalogPanel initialOverview={initialVehicleImageCatalog} />
+          <VehicleEventShadowPanel initialOverview={initialVehicleEventShadow} />
           <Card className="mt-6">
           <CardHeader>
             <CardTitle>Historical direction backfill</CardTitle>

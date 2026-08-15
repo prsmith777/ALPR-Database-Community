@@ -23,11 +23,12 @@ export async function registerNodeInstrumentation({
   loadMaintenanceStartup = () => import("./lib/maintenance-startup.mjs"),
   loadStorageMonitorStartup = () => import("./lib/storage-maintenance-monitor-startup.mjs"),
   loadVehicleAssetCatalogStartup = () => import("./lib/vehicle-image-asset-catalog-startup.mjs"),
+  loadVehicleEventShadowStartup = () => import("./lib/vehicle-event-shadow-startup.mjs"),
 } = {}) {
-  if (typeof startMqtt !== "function" || typeof loadVisualStartup !== "function" || typeof loadVehicleFrameStartup !== "function" || typeof loadNotificationStartup !== "function" || typeof loadMaintenanceStartup !== "function" || typeof loadStorageMonitorStartup !== "function" || typeof loadVehicleAssetCatalogStartup !== "function") {
+  if (typeof startMqtt !== "function" || typeof loadVisualStartup !== "function" || typeof loadVehicleFrameStartup !== "function" || typeof loadNotificationStartup !== "function" || typeof loadMaintenanceStartup !== "function" || typeof loadStorageMonitorStartup !== "function" || typeof loadVehicleAssetCatalogStartup !== "function" || typeof loadVehicleEventShadowStartup !== "function") {
     throw new Error("Node instrumentation loaders must be functions");
   }
-  const [mqttResult, visualResult, vehicleFrameResult, notificationResult, maintenanceResult, storageMonitorResult, vehicleAssetCatalogResult] = await Promise.allSettled([
+  const [mqttResult, visualResult, vehicleFrameResult, notificationResult, maintenanceResult, storageMonitorResult, vehicleAssetCatalogResult, vehicleEventShadowResult] = await Promise.allSettled([
     startMqtt({ logger }),
     (async () => {
       const visualStartup = await loadVisualStartup();
@@ -71,6 +72,13 @@ export async function registerNodeInstrumentation({
       }
       return startup.startVehicleImageAssetCatalogRuntimeWithRetry({ logger });
     })(),
+    (async () => {
+      const startup = await loadVehicleEventShadowStartup();
+      if (typeof startup?.startVehicleEventShadowRuntimeWithRetry !== "function") {
+        throw new Error("Shadow vehicle event startup module did not expose startVehicleEventShadowRuntimeWithRetry()");
+      }
+      return startup.startVehicleEventShadowRuntimeWithRetry({ logger });
+    })(),
   ]);
   const normalizeResult = (result, name) => {
     if (result.status === "fulfilled") return result.value;
@@ -91,8 +99,9 @@ export async function registerNodeInstrumentation({
   const maintenance = normalizeResult(maintenanceResult, "Maintenance");
   const storageMonitor = normalizeResult(storageMonitorResult, "Storage maintenance monitor");
   const vehicleAssetCatalog = normalizeResult(vehicleAssetCatalogResult, "Canonical Overview catalog");
+  const vehicleEventShadow = normalizeResult(vehicleEventShadowResult, "Shadow vehicle events");
   return {
-    status: mqtt.status === "started" && visualIndex.status === "started" && vehicleFrames.status === "started" && notificationOperations.status === "started" && maintenance.status === "started" && storageMonitor.status === "started" && vehicleAssetCatalog.status === "started"
+    status: mqtt.status === "started" && visualIndex.status === "started" && vehicleFrames.status === "started" && notificationOperations.status === "started" && maintenance.status === "started" && storageMonitor.status === "started" && vehicleAssetCatalog.status === "started" && vehicleEventShadow.status === "started"
       ? "started"
       : "partial",
     mqtt,
@@ -102,5 +111,6 @@ export async function registerNodeInstrumentation({
     maintenance,
     storageMonitor,
     vehicleAssetCatalog,
+    vehicleEventShadow,
   };
 }
