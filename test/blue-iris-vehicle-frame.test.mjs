@@ -14,6 +14,7 @@ import {
   productionBaselineVehicleFrameScore,
   scoreVehicleFrame,
   selectAnchoredOverviewVehicleFrame,
+  selectTargetedOverviewRepairVehicleFrame,
   selectGuardedVehicleFrame,
   selectBestTrackedVehicleFrame,
 } from "../lib/blue-iris-vehicle-frame.mjs";
@@ -121,6 +122,65 @@ test("quality analysis distinguishes a sharp vehicle crop from a flat blurred cr
   const sharpQuality = await analyzeVehicleFrameQuality({ buffer: sharpFrame, detection, width, height });
   assert.ok(sharpQuality.sharpnessScore > flatQuality.sharpnessScore);
   assert.ok(sharpQuality.contrastScore > flatQuality.contrastScore);
+});
+
+test("framing repair builds target identity only from the frozen prior job snapshot", async () => {
+  const priorBuffer = await sharp({
+    create: { width: 320, height: 180, channels: 3, background: "#c0392b" },
+  }).jpeg().toBuffer();
+  let requestedPath = null;
+  let embedded = null;
+  const service = new BlueIrisVehicleFrameService({
+    client: {},
+    repository: {},
+    fileStorage: {
+      async getImage(path) {
+        requestedPath = path;
+        return priorBuffer;
+      },
+    },
+    detector: {
+      async embedDetection(_buffer, detection, dimensions) {
+        embedded = { detection, dimensions };
+        return { embedding: Float32Array.from([1, 0]) };
+      },
+    },
+  });
+  const target = await service.prepareOverviewFramingRepairTarget({
+    vehicle_image_path: "derived/mutable-read-value.jpg",
+    vehicle_image_detection_box: { left: 0, top: 0, right: 1, bottom: 1 },
+    framing_repair_prior_image_path: "derived/frozen-prior.jpg",
+    framing_repair_prior_detection_box: { left: 0.4, top: 0.1, right: 1, bottom: 0.8 },
+    framing_repair_prior_image_width: 320,
+    framing_repair_prior_image_height: 180,
+  });
+
+  assert.equal(requestedPath, "derived/frozen-prior.jpg");
+  assert.deepEqual(Array.from(target.embedding), [1, 0]);
+  assert.deepEqual(embedded.dimensions, { imageWidth: 320, imageHeight: 180 });
+  assert.deepEqual(
+    { ...embedded.detection, area: Number(embedded.detection.area.toFixed(6)) },
+    { left: 0.4, top: 0.1, right: 1, bottom: 0.8, area: 0.42 }
+  );
+});
+
+test("framing repair fails closed when frozen target evidence is unavailable", async () => {
+  const service = new BlueIrisVehicleFrameService({
+    client: {},
+    repository: {},
+    fileStorage: { async getImage() { return null; } },
+    detector: { async embedDetection() { assert.fail("missing files must not be embedded"); } },
+  });
+
+  await assert.rejects(
+    service.prepareOverviewFramingRepairTarget({
+      framing_repair_prior_image_path: "derived/missing.jpg",
+      framing_repair_prior_detection_box: { left: 0.1, top: 0.1, right: 0.8, bottom: 0.8 },
+      framing_repair_prior_image_width: 320,
+      framing_repair_prior_image_height: 180,
+    }),
+    (error) => error?.code === "OVERVIEW_REPAIR_TARGET_UNAVAILABLE"
+  );
 });
 
 test("plate anchoring and ReID tracking reject a larger unrelated vehicle", () => {
@@ -237,6 +297,192 @@ test("overview anchoring fails closed when multiple vehicles occupy the timing a
   assert.equal(result.status, "ambiguous");
   assert.equal(result.best, null);
   assert.equal(result.selectionReason, "multiple_vehicles_at_overview_anchor");
+});
+
+test("operator repair binds to the frozen target while live anchoring remains ambiguous", () => {
+  const targetTrack = [0, 100, 200, 300].map((offsetMs, index) => ({
+    offsetMs,
+    primarySample: true,
+    frameRank: 0,
+    detection: index < 2
+      ? { confidence: 0.96, area: 0.31, left: 0.64, top: 0.16, right: 1, bottom: 0.82 }
+      : { confidence: 0.97, area: 0.28, left: 0.22, top: 0.13, right: 0.76, bottom: 0.79 },
+    embedding: Float32Array.from([0.99, 0.1]),
+    baselineScore: index < 2 ? 0.7 : 0.88,
+    score: index < 2 ? 0.3 : 0.9,
+  }));
+  const laterUnrelatedTrack = [500, 600, 700].map((offsetMs) => ({
+    offsetMs,
+    primarySample: true,
+    frameRank: 0,
+    detection: { confidence: 0.99, area: 0.34, left: 0.18, top: 0.12, right: 0.82, bottom: 0.8 },
+    embedding: Float32Array.from([0.05, 0.99]),
+    baselineScore: 0.94,
+    score: 0.96,
+  }));
+  const candidates = [...targetTrack, ...laterUnrelatedTrack];
+
+  const live = selectAnchoredOverviewVehicleFrame(candidates, { toleranceMs: 1_500 });
+  const repair = selectTargetedOverviewRepairVehicleFrame(candidates, {
+    toleranceMs: 1_500,
+    targetEmbedding: Float32Array.from([1, 0]),
+  });
+
+  assert.equal(live.status, "ambiguous");
+  assert.equal(live.best, null);
+  assert.equal(repair.status, "selected");
+  assert.equal(repair.best.offsetMs, 200);
+  assert.equal(repair.best.detection.right, 0.76);
+  assert.equal(repair.viableTrackCount, 2);
+  assert.equal(repair.targetMatchedTrackCount, 1);
+  assert.equal(repair.selectionReason, "overview_repair_target_track");
+  assert.ok(repair.targetMeanSimilarity > 0.9);
+});
+
+test("operator repair still fails closed when frozen target evidence matches two tracks", () => {
+  const track = (offsets, x, embedding) => offsets.map((offsetMs) => ({
+    offsetMs,
+    frameRank: 0,
+    detection: {
+      confidence: 0.92,
+      area: 0.2,
+      left: x,
+      top: 0.12,
+      right: x + 0.38,
+      bottom: 0.68,
+    },
+    embedding,
+    score: 0.86,
+  }));
+  const candidates = [
+    ...track([0, 100, 200], 0.08, Float32Array.from([0.99, 0.08])),
+    ...track([600, 700, 800], 0.55, Float32Array.from([0.98, 0.12])),
+  ];
+
+  const repair = selectTargetedOverviewRepairVehicleFrame(candidates, {
+    toleranceMs: 1_500,
+    targetEmbedding: Float32Array.from([1, 0]),
+  });
+
+  assert.equal(repair.status, "ambiguous");
+  assert.equal(repair.best, null);
+  assert.equal(repair.targetMatchedTrackCount, 2);
+  assert.equal(repair.selectionReason, "overview_repair_target_ambiguous");
+});
+
+test("operator repair never returns an unrelated candidate that contaminates the target track", () => {
+  const target = [0, 100, 200].map((offsetMs) => ({
+    offsetMs,
+    frameRank: 0,
+    detection: {
+      confidence: 0.91,
+      area: 0.24,
+      left: 0.18 + offsetMs / 5_000,
+      top: 0.12,
+      right: 0.66 + offsetMs / 5_000,
+      bottom: 0.7,
+    },
+    embedding: Float32Array.from([0.995, 0.1]),
+    baselineScore: 0.8,
+    score: 0.82,
+  }));
+  const contaminant = {
+    offsetMs: 300,
+    frameRank: 0,
+    detection: {
+      confidence: 0.99,
+      area: 0.34,
+      left: 0.27,
+      top: 0.12,
+      right: 0.83,
+      bottom: 0.73,
+    },
+    // Similar enough to pass the soft-track bridge, but not enough to prove
+    // identity against the frozen operator-reviewed target.
+    embedding: Float32Array.from([0.55, 0.835165]),
+    baselineScore: 0.97,
+    score: 0.99,
+  };
+
+  const live = selectAnchoredOverviewVehicleFrame([...target, contaminant]);
+  const repair = selectTargetedOverviewRepairVehicleFrame([...target, contaminant], {
+    targetEmbedding: Float32Array.from([1, 0]),
+  });
+
+  assert.equal(live.best.offsetMs, 300);
+  assert.equal(repair.status, "selected");
+  assert.notEqual(repair.best.offsetMs, 300);
+  assert.ok(repair.best.targetSimilarity >= 0.5);
+  assert.equal(repair.targetCandidateSimilarity, repair.best.targetSimilarity);
+});
+
+test("six-second repair sampling follows the frozen target past an unrelated later vehicle", async () => {
+  const offsets = [0, 100, 200, 500, 600, 700];
+  const detections = new Map(offsets.map((offsetMs) => [offsetMs, offsetMs < 500
+    ? offsetMs < 200
+      ? { confidence: 0.96, area: 0.31, left: 0.64, top: 0.16, right: 1, bottom: 0.82 }
+      : { confidence: 0.97, area: 0.28, left: 0.22, top: 0.13, right: 0.76, bottom: 0.79 }
+    : { confidence: 0.99, area: 0.34, left: 0.18, top: 0.12, right: 0.82, bottom: 0.8 }]));
+  const service = new BlueIrisVehicleFrameService({
+    client: {},
+    repository: {},
+    fileStorage: {},
+    detector: {
+      async detectAll(buffer) {
+        return [detections.get(Number(buffer.toString()))];
+      },
+      async embedDetection(buffer) {
+        return {
+          embedding: Number(buffer.toString()) < 500
+            ? Float32Array.from([1, 0])
+            : Float32Array.from([0, 1]),
+        };
+      },
+    },
+    imageProcessor: (buffer) => ({
+      buffer,
+      rotate() { return this; },
+      jpeg() { return this; },
+      async toBuffer() { return this.buffer; },
+      async metadata() { return { width: 1280, height: 720 }; },
+      async stats() { return { entropy: 3, channels: [{ stdev: 20 }, { stdev: 20 }, { stdev: 20 }] }; },
+    }),
+    qualityAnalyzer: async () => ({ sharpnessScore: 0.8, exposureScore: 0.8, contrastScore: 0.8 }),
+    sampleOffsetsMs: offsets,
+    extensionOffsetsMs: [],
+    deepExtensionOffsetsMs: [],
+  });
+  const frameProvider = async ({ offsetMs, timestamp }) => ({
+    buffer: Buffer.from(String(offsetMs)),
+    timestamp: timestamp.toISOString(),
+  });
+
+  await assert.rejects(
+    service.selectBestFrame({
+      camera: "Cam149",
+      timestamp: "2026-08-15T17:23:55.500Z",
+      selectionMode: "overview_anchor",
+      anchorToleranceMs: 2_000,
+      sampleOffsetsMs: offsets,
+      frameProvider,
+    }),
+    (error) => error?.code === "MULTIPLE_VEHICLES_VISIBLE"
+  );
+  const repair = await service.selectBestFrame({
+    camera: "Cam149",
+    timestamp: "2026-08-15T17:23:55.500Z",
+    selectionMode: "overview_framing_repair",
+    anchorToleranceMs: 2_000,
+    targetEmbedding: Float32Array.from([1, 0]),
+    sampleOffsetsMs: offsets,
+    frameProvider,
+  });
+
+  assert.equal(repair.best.offsetMs, 200);
+  assert.equal(repair.selectionReason, "overview_repair_target_track");
+  assert.equal(repair.telemetry.viableTrackCount, 2);
+  assert.equal(repair.telemetry.targetMatchedTrackCount, 1);
+  assert.equal(repair.expandedSampling, false);
 });
 
 test("overview anchoring fails closed when a second viable track begins one sample from the anchor", () => {

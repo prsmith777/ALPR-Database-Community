@@ -554,6 +554,7 @@ test("direction-independent Entry history reuses the overview selector with a sy
 test("framing repair uses a distinct per-job timeline export identity", async () => {
   let acquisitionInput = null;
   let readyFrame = null;
+  let selectionInput = null;
   const service = new BlueIrisVehicleFrameService({
     client: {},
     repository: {
@@ -590,7 +591,13 @@ test("framing repair uses a distinct per-job timeline export identity", async ()
       },
     },
   });
-  service.selectBestFrame = async () => selectedOverview();
+  service.prepareOverviewFramingRepairTarget = async () => ({
+    embedding: Float32Array.from([1, 0]),
+  });
+  service.selectBestFrame = async (input) => {
+    selectionInput = input;
+    return selectedOverview();
+  };
   service.validateOverviewFinalFrame = async ({ timestamp, selected }) => ({
     buffer: Buffer.from("repair-maximum"),
     timestamp,
@@ -635,6 +642,117 @@ test("framing repair uses a distinct per-job timeline export identity", async ()
   assert.equal(acquisitionInput.profileIdentity, "a".repeat(64));
   assert.equal(acquisitionInput.algorithmRevision, undefined);
   assert.equal(readyFrame.selectionMetadata.profileKind, "framing_repair");
+  assert.equal(selectionInput.selectionMode, "overview_framing_repair");
+  assert.deepEqual(Array.from(selectionInput.targetEmbedding), [1, 0]);
+});
+
+test("framing repair recovery never falls through to a non-target frame", async () => {
+  const extractedOffsets = [];
+  let readyFrame = null;
+  const selection = selectedOverview(Buffer.from("target-primary"));
+  selection.best = {
+    ...selection.best,
+    offsetMs: 500,
+    targetSimilarity: 0.98,
+  };
+  const targetRecovery = {
+    ...selection.best,
+    buffer: Buffer.from("target-recovery"),
+    timestamp: "2026-08-09T14:00:05.100Z",
+    offsetMs: 600,
+    targetSimilarity: 0.91,
+  };
+  const unrelated = {
+    ...selection.best,
+    buffer: Buffer.from("unrelated-suv"),
+    timestamp: "2026-08-09T14:00:05.200Z",
+    offsetMs: 700,
+    score: 0.99,
+    targetSimilarity: 0.55,
+  };
+  selection.track = [selection.best, targetRecovery, unrelated];
+  selection.telemetry = {
+    ...selection.telemetry,
+    targetCandidateSimilarity: 0.98,
+    targetCandidateSimilarityFloor: 0.83,
+  };
+  const service = new BlueIrisVehicleFrameService({
+    client: {},
+    repository: {
+      async markReady() { assert.fail("repair completion must use its campaign lifecycle"); },
+      async markFailed() { assert.fail("target-bound recovery must succeed"); },
+    },
+    fileStorage: {
+      async saveDerivedImageAtomic() {},
+      async deleteImage() {},
+    },
+    timelineExportService: {
+      async acquire() {
+        return {
+          exportToken: "10000000-0000-4000-8000-000000000092",
+          requestedStartMs: Date.parse("2026-08-15T17:24:03.500Z"),
+          remoteStartMs: Date.parse("2026-08-15T17:24:03.500Z"),
+          trimStartMs: 1_000,
+          utcVerified: true,
+          remoteRetentionManaged: true,
+          probe: { width: 2688, height: 1520, durationMs: 8_000, codec: "h264", fileSize: 1 },
+          frames: Array.from({ length: 61 }, (_, index) => ({ buffer: Buffer.from(`frame-${index}`) })),
+          async extractFinalFrame({ selectedOffsetMs }) {
+            extractedOffsets.push(selectedOffsetMs);
+            return Buffer.from(`final-${selectedOffsetMs}`);
+          },
+          async cleanup() {},
+        };
+      },
+    },
+  });
+  service.prepareOverviewFramingRepairTarget = async () => ({
+    embedding: Float32Array.from([1, 0]),
+  });
+  service.selectBestFrame = async () => selection;
+  service.validateOverviewFinalFrame = async ({ selected }) => {
+    if (selected.offsetMs === 500) {
+      throw new BlueIrisError("FINAL_FRAME_INCOMPLETE", "Primary target frame is incomplete.");
+    }
+    assert.equal(selected.offsetMs, 600, "an unrelated recovery candidate must never be attempted");
+    return {
+      buffer: Buffer.from("validated-target-recovery"),
+      timestamp: selected.timestamp,
+      width: 2688,
+      height: 1520,
+      detection: selected.detection,
+      detectionBox: selected.detection,
+      detectionConfidence: selected.detection.confidence,
+      completenessTier: 3,
+      edgeMargin: 0.1,
+      edgeContacts: 0,
+      identitySimilarity: 0.99,
+      detectionOverlap: 0.98,
+      detectionContinuity: 0.97,
+      mode: "timeline_export_recovered",
+    };
+  };
+
+  const result = await service.processOverviewRead({
+    read: overviewRead(),
+    profile: overviewProfile({
+      profile_kind: "framing_repair",
+      profile_identity: "b".repeat(64),
+    }),
+    camera: "Cam149",
+    alreadyClaimed: true,
+    lifecycle: {
+      kind: "overview_framing_repair",
+      async heartbeat() { return { id: 92 }; },
+      async markReady({ frame }) { readyFrame = frame; return { id: 92 }; },
+      async markFailed() { assert.fail("target-bound recovery must not fail"); },
+    },
+  });
+
+  assert.equal(result.status, "ready");
+  assert.deepEqual(extractedOffsets, [2_500, 2_600]);
+  assert.equal(readyFrame.selectionMetadata.selectedOffsetMs, 600);
+  assert.equal(readyFrame.selectionMetadata.targetCandidateSimilarity, 0.91);
 });
 
 test("timeline Overview recovery publishes a nearby complete frame after the initial slot is clipped", async () => {

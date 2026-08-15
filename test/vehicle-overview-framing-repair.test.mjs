@@ -167,6 +167,8 @@ test("foundation is inert and preserves current images unless replacement comple
   assert.doesNotMatch(repository, /SET vehicle_image_status = 'processing', vehicle_image_queue_kind = 'overview_repair'/);
   assert.match(repository, /SET vehicle_image_queue_kind = 'overview_repair'/);
   assert.match(repository, /reads\.vehicle_image_status = 'ready'[\s\S]*reads\.vehicle_image_queue_kind = 'overview_repair'/);
+  assert.match(repository, /claimed_job\.prior_image_path AS framing_repair_prior_image_path/);
+  assert.match(repository, /claimed_job\.prior_detection_box AS framing_repair_prior_detection_box/);
   assert.match(repository, /vehicle_image_status = 'processing'[\s\S]*vehicle_image_status = 'ready'[\s\S]*vehicle_image_queue_kind = 'overview_repair'/);
   assert.match(queue, /claimNextOverviewFramingRepairJob\(\{ requireNoLiveWork: true \}\)/);
   assert.match(actions, /previewVehicleOverviewFramingRepairs/);
