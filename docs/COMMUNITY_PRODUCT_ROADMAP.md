@@ -818,6 +818,15 @@ notes. Updates remain externally orchestrated.
   blur, exposure, geometry-review, and multiple-vehicle findings never qualify
   by themselves. No ReID, event, crop, notification, or external-provider
   behavior changes.
+- Framing repair now binds its selector to local Vehicle ReID evidence derived
+  from the job's frozen prior image, detection box, and dimensions. The repair
+  may therefore choose a more complete frame of the reviewed vehicle while
+  ignoring a different vehicle later in the same validated six-second export.
+  Both the initially selected frame and bounded recovery candidates must remain
+  within a conservative relative similarity margin of the strongest frozen
+  target evidence. Missing target evidence or two similarly matched tracks fail
+  closed. Ordinary live Overview anchoring retains its existing multi-vehicle
+  ambiguity behavior.
 - Repair failure restoration now binds its status parameter as the exact
   PostgreSQL `varchar(20)` job type. Export, media, or selection failures
   therefore restore the prior ready read state and settle the durable repair

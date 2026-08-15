@@ -172,6 +172,15 @@ try {
   assert.equal(claimed.vehicle_image_path, imagePath);
   assert.equal(claimed.vehicle_image_status, "ready");
   assert.equal(claimed.vehicle_image_queue_kind, "overview_repair");
+  assert.equal(claimed.framing_repair_prior_image_path, imagePath);
+  assert.deepEqual(claimed.framing_repair_prior_detection_box, {
+    left: 0.42,
+    top: 0.1,
+    right: 1,
+    bottom: 0.8,
+  });
+  assert.equal(Number(claimed.framing_repair_prior_image_width), 2688);
+  assert.equal(Number(claimed.framing_repair_prior_image_height), 1520);
 
   const repairProfileIdentity = crypto.createHash("sha256")
     .update(JSON.stringify({
