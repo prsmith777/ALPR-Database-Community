@@ -1,0 +1,284 @@
+import assert from "node:assert/strict";
+import crypto from "node:crypto";
+import fs from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
+
+import pg from "pg";
+import sharp from "sharp";
+
+import { FileStorage } from "../lib/fileStorage.js";
+import { validateAndDeleteCleanupCandidate } from "../lib/storage-cleanup.mjs";
+import { VehicleImageCropCampaignService } from "../lib/vehicle-image-crop-campaign.mjs";
+import { VehicleImageCropRepository } from "../lib/vehicle-image-crop-repository.mjs";
+import { VehicleImageCropService } from "../lib/vehicle-image-crop.mjs";
+import { canonicalVehicleImageAssetPath } from "../lib/vehicle-image-asset-model.mjs";
+
+const OPT_IN = "VEHICLE_IMAGE_CROP_POSTGRES_TEST_OPT_IN";
+const EXPECTED_DATABASE = "VEHICLE_IMAGE_CROP_POSTGRES_TEST_DATABASE";
+const GUARD_TOKEN = "VEHICLE_IMAGE_CROP_POSTGRES_TEST_GUARD_TOKEN";
+const GUARD_SCOPE = "vehicle-image-crop:v1";
+const LOCK_NAME = "codex_vehicle_image_crop_postgres_test_v1";
+
+if (process.env[OPT_IN] !== "true") {
+  throw new Error(`${OPT_IN}=true is required for this destructive integration test`);
+}
+
+function required(name) {
+  const value = String(process.env[name] || "").trim();
+  if (!value) throw new Error(`${name} is required`);
+  return value;
+}
+
+const expectedDatabase = required(EXPECTED_DATABASE);
+const guardToken = required(GUARD_TOKEN);
+const databaseUrl = required("DATABASE_URL");
+const urlDatabase = decodeURIComponent(new URL(databaseUrl).pathname.replace(/^\/+/, ""));
+if (urlDatabase !== expectedDatabase) {
+  throw new Error(`Refusing crop integration test: DATABASE_URL names ${urlDatabase}`);
+}
+if (expectedDatabase !== "fixture_test"
+    && !/^codex_vehicle_crop_[0-9a-f]{8,32}$/.test(expectedDatabase)) {
+  throw new Error("Refusing crop integration test: database is not an approved disposable name");
+}
+
+const pool = new pg.Pool({
+  connectionString: databaseUrl,
+  max: 5,
+  options: "-c lock_timeout=5000 -c statement_timeout=30000",
+});
+const suffix = crypto.randomUUID().replaceAll("-", "").slice(0, 12);
+let lockClient = null;
+let lockHeld = false;
+let tempRoot = null;
+let actorId = null;
+let readId = null;
+let assetId = null;
+let runId = null;
+
+async function guard() {
+  lockClient = await pool.connect();
+  const identity = await lockClient.query(
+    `SELECT current_database() AS database_name,
+            to_regclass('public.codex_integration_test_guard')::text AS guard_table,
+            to_regclass('public.host_maintenance_environment_identity')::text
+              AS environment_identity_table`
+  );
+  assert.equal(identity.rows[0]?.database_name, expectedDatabase);
+  assert.equal(identity.rows[0]?.guard_table, "codex_integration_test_guard");
+  const sentinel = await lockClient.query(
+    `SELECT COUNT(*)::integer AS count FROM public.codex_integration_test_guard
+     WHERE scope = $1 AND guard_token = $2`,
+    [GUARD_SCOPE, guardToken]
+  );
+  assert.equal(sentinel.rows[0]?.count, 1);
+  if (identity.rows[0]?.environment_identity_table) {
+    const live = await lockClient.query(
+      "SELECT COUNT(*)::integer AS count FROM public.host_maintenance_environment_identity"
+    );
+    assert.equal(live.rows[0]?.count, 0, "application environment identity must be absent");
+  }
+  const empty = await lockClient.query(
+    `SELECT
+       (SELECT COUNT(*)::integer FROM public.plate_reads) AS reads,
+       (SELECT COUNT(*)::integer FROM public.vehicle_image_assets) AS assets,
+       (SELECT COUNT(*)::integer FROM public.vehicle_image_asset_reads) AS links,
+       (SELECT COUNT(*)::integer FROM public.vehicle_image_derivatives) AS derivatives,
+       (SELECT COUNT(*)::integer FROM public.vehicle_image_crop_runs) AS runs,
+       (SELECT COUNT(*)::integer FROM public.vehicle_image_crop_jobs) AS jobs`
+  );
+  assert.deepEqual(empty.rows[0], {
+    reads: 0, assets: 0, links: 0, derivatives: 0, runs: 0, jobs: 0,
+  });
+  const lock = await lockClient.query(
+    "SELECT pg_try_advisory_lock(hashtextextended($1, 0)) AS locked",
+    [LOCK_NAME]
+  );
+  assert.equal(lock.rows[0]?.locked, true);
+  lockHeld = true;
+}
+
+async function createFixture() {
+  tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), "codex-vehicle-crop-"));
+  const storage = new FileStorage({ baseDir: tempRoot });
+  await storage.initialize();
+  const actor = await pool.query(
+    `INSERT INTO public.users (username, display_name, password_hash)
+     VALUES ($1, 'Codex vehicle crop smoke', 'integration-test-not-a-password')
+     RETURNING id`,
+    [`codex_crop_${suffix}`]
+  );
+  actorId = Number(actor.rows[0].id);
+  const image = await sharp({
+    create: { width: 320, height: 180, channels: 3, background: "#557799" },
+  }).jpeg({ quality: 92 }).toBuffer();
+  const sourceHash = crypto.createHash("sha256").update(image).digest("hex");
+  const sourcePath = canonicalVehicleImageAssetPath(sourceHash);
+  await storage.saveDerivedImageIfAbsent(sourcePath, image);
+  const asset = await pool.query(
+    `INSERT INTO public.vehicle_image_assets (
+       content_sha256, storage_path, media_type, byte_size, image_width, image_height
+     ) VALUES ($1, $2, 'image/jpeg', $3, 320, 180) RETURNING id`,
+    [sourceHash, sourcePath, image.length]
+  );
+  assetId = Number(asset.rows[0].id);
+  const evidencePath = `derived/codex-crop-evidence-${suffix}.jpg`;
+  const read = await pool.query(
+    `INSERT INTO public.plate_reads (
+       plate_number, camera_name, "timestamp", vehicle_image_status,
+       vehicle_image_path, vehicle_image_timestamp, vehicle_image_source_kind,
+       vehicle_image_detection_confidence, vehicle_image_detection_box,
+       vehicle_image_width, vehicle_image_height, vehicle_image_retryable,
+       vehicle_image_updated_at
+     ) VALUES (
+       'CRP123', 'Street LPR 1', CURRENT_TIMESTAMP, 'ready', $1,
+       CURRENT_TIMESTAMP, 'overview_primary', 0.92,
+       '{"left":0.2,"top":0.2,"right":0.8,"bottom":0.8}'::jsonb,
+       320, 180, FALSE, '2026-08-14T20:00:00.123456Z'::timestamptz
+     ) RETURNING id, vehicle_image_updated_at::text AS updated_at`,
+    [evidencePath]
+  );
+  readId = Number(read.rows[0].id);
+  await pool.query(
+    `INSERT INTO public.vehicle_image_asset_reads (
+       asset_id, read_id, source_kind, relationship, identity_eligible,
+       overview_context, captured_at, read_camera_name, source_camera_name,
+       source_path_snapshot, source_updated_at, detection_confidence,
+       detection_box, selection_metadata
+     ) VALUES (
+       $1, $2, 'overview_primary', 'primary', TRUE, 'street', CURRENT_TIMESTAMP,
+       'Street LPR 1', 'Street Overview', $3, $4::timestamptz, 0.92,
+       '{"left":0.2,"top":0.2,"right":0.8,"bottom":0.8}'::jsonb, '{}'::jsonb
+     )`,
+    [assetId, readId, evidencePath, read.rows[0].updated_at]
+  );
+  return storage;
+}
+
+async function runCampaign(storage) {
+  const repository = new VehicleImageCropRepository({ pool });
+  const cropService = new VehicleImageCropService({ repository, fileStorage: storage });
+  const campaign = new VehicleImageCropCampaignService({ repository, cropService });
+  const run = await campaign.createPreview({ actorUserId: actorId });
+  runId = Number(run.id);
+  const preview = await campaign.processBatch({ limit: 5 });
+  assert.equal(preview.processed, 1);
+  let overview = await campaign.getOverview();
+  assert.equal(overview.latestRun.status, "ready");
+  assert.equal(Number(overview.counts.previewed), 1);
+  const fingerprint = overview.latestRun.preview_fingerprint;
+  const confirmation = await campaign.confirmBatch({
+    runId,
+    previewFingerprint: fingerprint,
+    limit: 1,
+    actorUserId: actorId,
+  });
+  assert.equal(confirmation.queued, 1);
+  const cataloged = await campaign.processBatch({ limit: 5 });
+  assert.equal(cataloged.processed, 1);
+  overview = await campaign.getOverview();
+  assert.equal(overview.latestRun.status, "completed");
+  const derivative = await pool.query(
+    `SELECT * FROM public.vehicle_image_derivatives WHERE asset_id = $1`,
+    [assetId]
+  );
+  assert.equal(derivative.rowCount, 1);
+  assert.ok(Number(derivative.rows[0].image_width) < 320);
+  assert.ok(Number(derivative.rows[0].image_height) < 180);
+  const cropPath = await storage.resolveExistingImagePath(derivative.rows[0].storage_path);
+  const cropBytes = await fs.readFile(cropPath);
+  assert.equal(
+    crypto.createHash("sha256").update(cropBytes).digest("hex"),
+    derivative.rows[0].content_sha256
+  );
+  const cropStat = await fs.lstat(cropPath);
+  const cleanupResult = await validateAndDeleteCleanupCandidate({
+    query: pool.query.bind(pool),
+    storagePath: tempRoot,
+    item: {
+      relative_path: derivative.rows[0].storage_path,
+      size_bytes: cropStat.size,
+      modified_at: cropStat.mtime,
+    },
+  });
+  assert.equal(cleanupResult.status, "skipped-referenced");
+  assert.deepEqual(await fs.readFile(cropPath), cropBytes);
+  await assert.rejects(
+    pool.query(
+      "UPDATE public.vehicle_image_derivatives SET byte_size = byte_size + 1 WHERE id = $1",
+      [derivative.rows[0].id]
+    ),
+    /immutable/
+  );
+}
+
+async function cleanup() {
+  if (actorId != null) {
+    await pool.query(
+      `INSERT INTO public.audit_event_archive (
+         source_event_id, actor_user_id, actor_api_credential_id, source,
+         event_type, resource_type, resource_id, outcome, reason, request_id,
+         metadata, occurred_at, retention_preview_id
+       )
+       SELECT id, actor_user_id, actor_api_credential_id, source,
+              event_type, resource_type, resource_id, outcome, reason, request_id,
+              metadata, occurred_at, NULL
+       FROM public.audit_events
+       WHERE resource_type = 'vehicle_image_crop' AND actor_user_id = $1
+       ON CONFLICT (source_event_id, occurred_at) DO NOTHING`,
+      [actorId]
+    );
+    await pool.query(
+      `DELETE FROM public.audit_events
+       WHERE resource_type = 'vehicle_image_crop' AND actor_user_id = $1`,
+      [actorId]
+    );
+  }
+  if (runId != null) {
+    await pool.query("DELETE FROM public.vehicle_image_crop_jobs WHERE run_id = $1", [runId]);
+    await pool.query("DELETE FROM public.vehicle_image_crop_runs WHERE id = $1", [runId]);
+  }
+  if (assetId != null) {
+    await pool.query("DELETE FROM public.vehicle_image_derivatives WHERE asset_id = $1", [assetId]);
+  }
+  if (readId != null) await pool.query("DELETE FROM public.plate_reads WHERE id = $1", [readId]);
+  if (assetId != null) await pool.query("DELETE FROM public.vehicle_image_assets WHERE id = $1", [assetId]);
+  if (actorId != null) await pool.query("DELETE FROM public.users WHERE id = $1", [actorId]);
+  const residue = await pool.query(
+    `SELECT
+       (SELECT COUNT(*)::integer FROM public.plate_reads) AS reads,
+       (SELECT COUNT(*)::integer FROM public.vehicle_image_assets) AS assets,
+       (SELECT COUNT(*)::integer FROM public.vehicle_image_asset_reads) AS links,
+       (SELECT COUNT(*)::integer FROM public.vehicle_image_derivatives) AS derivatives,
+       (SELECT COUNT(*)::integer FROM public.vehicle_image_crop_runs) AS runs,
+       (SELECT COUNT(*)::integer FROM public.vehicle_image_crop_jobs) AS jobs`
+  );
+  assert.deepEqual(residue.rows[0], {
+    reads: 0, assets: 0, links: 0, derivatives: 0, runs: 0, jobs: 0,
+  });
+}
+
+let succeeded = false;
+try {
+  await guard();
+  const storage = await createFixture();
+  await runCampaign(storage);
+  succeeded = true;
+} finally {
+  try {
+    await cleanup();
+  } finally {
+    if (tempRoot) await fs.rm(tempRoot, { recursive: true, force: true });
+    if (lockClient) {
+      if (lockHeld) await lockClient.query(
+        "SELECT pg_advisory_unlock(hashtextextended($1, 0))",
+        [LOCK_NAME]
+      );
+      lockClient.release();
+    }
+    await pool.end();
+  }
+}
+
+if (!succeeded) throw new Error("Vehicle crop integration test did not complete");
+console.log("vehicle_image_crop_postgres_gate=passed");

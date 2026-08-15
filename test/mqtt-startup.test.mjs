@@ -180,6 +180,7 @@ test("Node instrumentation starts MQTT and automatic visual indexing together", 
   let storageMonitorCalls = 0;
   let vehicleAssetCatalogCalls = 0;
   let vehicleEventShadowCalls = 0;
+  let vehicleImageCropCalls = 0;
   const result = await registerNodeInstrumentation({
     logger,
     async startMqtt(options) {
@@ -250,6 +251,15 @@ test("Node instrumentation starts MQTT and automatic visual indexing together", 
         },
       };
     },
+    async loadVehicleImageCropStartup() {
+      return {
+        async startVehicleImageCropRuntimeWithRetry(options) {
+          vehicleImageCropCalls += 1;
+          assert.equal(options.logger, logger);
+          return { status: "started" };
+        },
+      };
+    },
   });
   assert.equal(result.status, "started");
   assert.equal(result.mqtt.status, "started");
@@ -260,6 +270,7 @@ test("Node instrumentation starts MQTT and automatic visual indexing together", 
   assert.equal(result.storageMonitor.status, "started");
   assert.equal(result.vehicleAssetCatalog.status, "started");
   assert.equal(result.vehicleEventShadow.status, "started");
+  assert.equal(result.vehicleImageCrops.status, "started");
   assert.equal(mqttCalls, 1);
   assert.equal(visualCalls, 1);
   assert.equal(vehicleFrameCalls, 1);
@@ -268,6 +279,7 @@ test("Node instrumentation starts MQTT and automatic visual indexing together", 
   assert.equal(storageMonitorCalls, 1);
   assert.equal(vehicleAssetCatalogCalls, 1);
   assert.equal(vehicleEventShadowCalls, 1);
+  assert.equal(vehicleImageCropCalls, 1);
 });
 
 test("a visual-index instrumentation import failure cannot prevent MQTT startup", async () => {
@@ -299,6 +311,9 @@ test("a visual-index instrumentation import failure cannot prevent MQTT startup"
     },
     async loadVehicleEventShadowStartup() {
       return { async startVehicleEventShadowRuntimeWithRetry() { return { status: "started" }; } };
+    },
+    async loadVehicleImageCropStartup() {
+      return { async startVehicleImageCropRuntimeWithRetry() { return { status: "started" }; } };
     },
   });
   assert.equal(mqttCalls, 1);

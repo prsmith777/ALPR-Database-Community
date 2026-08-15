@@ -769,6 +769,16 @@ notes. Updates remain externally orchestrated.
   after a completed canonical catalog campaign. It does not gate ingestion or
   change Vehicle Views, current ReID, clusters, attributes, review, or
   notifications, and it makes no external provider call.
+- Operator-controlled canonical Overview vehicle crops are implemented for
+  current identity-eligible assets. The preview freezes the exact asset bytes,
+  evidence link, and validated detector box without writing files; explicit
+  1, 5, 25, or 250-asset batches re-hash and re-render that frozen input before
+  publishing an immutable content-addressed JPEG. Shared assets crop once,
+  while display-only Entry-to-Street fallback links remain excluded. Storage
+  health counts unique physical crop files and bytes, and cleanup plus bounded
+  reconciliation protect every registered derivative path. Full Overview
+  images remain retained. Current read-owned ReID, shadow-event behavior,
+  attributes, notifications, and external enrichment remain unchanged.
 Street LPR 1, Street Overview, and Entry Overview are installed. Street Overview
 and Entry Overview supply strong daytime vehicle images but are monochrome at
 night and are not expected to read a plate. Entry Overview is Blue Iris `Cam143`.
@@ -822,9 +832,12 @@ be restored. Monochrome nighttime captures do not receive a direction result.
   default-off automatic catalog for new Overview reads, recurring enabled-state
   storage projection, real PostgreSQL/filesystem cleanup gate, and default-off
   shadow correlation of conservative paired reads into provider-neutral
-  vehicle events are delivered. Next review shadow proposals and rejections
-  against live Entry and Street traffic, then create Overview-owned crops,
-  embeddings, attributes, and ReID v2 profiles. Shared
+  vehicle events and operator-controlled Overview-owned crop derivatives are
+  delivered. The pre-crop production review sampled current proposed and
+  rejected Entry and Street evidence, identified pre-Blue-Iris-zone-correction
+  direction contamination, and made no timing or matching threshold change.
+  Next create provider-neutral crop embeddings, then crop-owned attributes and
+  ReID v2 profiles. Shared
   Street images count once, and Entry-to-Street display fallbacks never become
   an additional identity observation. Keep the existing ReID path available
   until asset/event results have been reviewed and the cutover has an explicit

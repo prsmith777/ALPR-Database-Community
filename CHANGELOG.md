@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+- Added operator-controlled canonical vehicle crops for identity-eligible
+  Overview assets. A durable background preview freezes the exact source,
+  current evidence link, validated vehicle box, and rendered crop metadata
+  without writing files. Administrators then admit explicit 1, 5, 25, or
+  250-asset batches; execution revalidates and re-renders the frozen input
+  before publishing an immutable content-addressed JPEG derivative. Storage
+  reporting counts unique physical crop bytes, reconciliation and cleanup
+  protect registered derivatives, and a disposable PostgreSQL-plus-filesystem
+  gate verifies the full lifecycle. Full Overview images remain retained, and
+  current ReID, events, attributes, notifications, and external enrichment are
+  unchanged.
+
 - Added default-off shadow vehicle-event correlation for current canonical
   Overview observations. The bounded low-priority worker proposes only
   conservative two-read Entry or Street events with the same exact effective
