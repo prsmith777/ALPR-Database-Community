@@ -20,6 +20,8 @@ import {
   getVehicleImageAssetCatalogOverview,
   previewVehicleImageAssetCatalog,
   retryVehicleImageAssetCatalogJob,
+  retryVehicleImageAssetLiveCatalogJob,
+  setVehicleImageAssetLiveCatalogEnabled,
   setVehicleImageAssetCatalogPaused,
 } from "@/app/actions";
 import { Badge } from "@/components/ui/badge";
@@ -32,6 +34,14 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 const BATCH_SIZES = Object.freeze([1, 5, 25, 250]);
 const ACTIVE_RUN_STATUSES = new Set(["previewing", "running"]);
 const TERMINAL_RUN_STATUSES = new Set(["completed", "cancelled", "failed"]);
+
+const LIVE_STATUS_LABELS = Object.freeze({
+  active: "Active",
+  disabled: "Disabled",
+  waiting_for_initial_campaign: "Waiting for initial campaign",
+  paused_for_operator_campaign: "Paused for campaign",
+  unavailable: "Unavailable",
+});
 
 const STATUS_LABELS = Object.freeze({
   previewing: "Calculating preview",
@@ -63,6 +73,12 @@ function formatBytes(value) {
     unit += 1;
   }
   return `${amount.toLocaleString(undefined, { maximumFractionDigits: 1 })} ${units[unit]}`;
+}
+
+function formatDateTime(value) {
+  if (!value) return "Not yet";
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? "Unavailable" : date.toLocaleString();
 }
 
 function statusVariant(status) {
@@ -105,13 +121,24 @@ export default function VehicleImageAssetCatalogPanel({ initialOverview = null }
   const run = overview?.latestRun || null;
   const catalog = overview?.catalog || {};
   const retention = overview?.retention || {};
+  const live = overview?.live || {};
+  const liveCounts = live?.counts || {};
+  const liveRetryCandidates = Array.isArray(live?.retryCandidates)
+    ? live.retryCandidates.slice(0, 25)
+    : [];
   const counts = run?.counts || {};
   const retryCandidates = Array.isArray(overview?.retryCandidates)
     ? overview.retryCandidates.slice(0, 25)
     : [];
   const status = run?.status || "not_previewed";
   const activeJobs = count(counts.queued) + count(counts.processing) + count(counts.retryable);
-  const pollingActive = status === "previewing" || (status === "running" && activeJobs > 0);
+  const liveActiveJobs = count(liveCounts.queued)
+    + count(liveCounts.processing)
+    + count(liveCounts.retryable)
+    + count(liveCounts.pendingEligible);
+  const pollingActive = status === "previewing"
+    || (status === "running" && activeJobs > 0)
+    || (live.state === "active" && liveActiveJobs > 0);
   const previewRemaining = count(counts.previewed);
   const total = count(counts.total);
   const previewFinished = Math.max(
@@ -129,7 +156,9 @@ export default function VehicleImageAssetCatalogPanel({ initialOverview = null }
   ].reduce((sum, key) => sum + count(counts[key]), 0);
   const progressFinished = run?.phase === "preview" ? previewFinished : catalogFinished;
   const progress = total ? Math.min(100, Math.round(progressFinished / total * 100)) : 0;
-  const canPreview = overview && (!run || TERMINAL_RUN_STATUSES.has(status));
+  const canPreview = overview
+    && live.enabled !== true
+    && (!run || TERMINAL_RUN_STATUSES.has(status));
   const canCatalog = overview
     && ["ready", "running"].includes(status)
     && Boolean(run?.previewFingerprint)
@@ -272,6 +301,37 @@ export default function VehicleImageAssetCatalogPanel({ initialOverview = null }
       const result = await retryVehicleImageAssetCatalogJob({ jobId });
       setOverview(overviewFromResult(result));
       setMessage("The failed item was queued for its bounded operator retry.");
+    } catch (error) {
+      setMessage(error.message);
+    } finally {
+      setBusy("");
+    }
+  };
+
+  const toggleLiveCatalog = async () => {
+    const enabled = live.enabled !== true;
+    setBusy("live-toggle");
+    setMessage("");
+    try {
+      const result = await setVehicleImageAssetLiveCatalogEnabled({ enabled });
+      setOverview(overviewFromResult(result));
+      setMessage(enabled
+        ? "Automatic local cataloging is enabled. New ready Overview images will be linked without another delta campaign."
+        : "Automatic cataloging is disabled. Any item already being written may finish; no new work will be claimed.");
+    } catch (error) {
+      setMessage(error.message);
+    } finally {
+      setBusy("");
+    }
+  };
+
+  const retryLiveJob = async (jobId) => {
+    setBusy(`live-retry:${jobId}`);
+    setMessage("");
+    try {
+      const result = await retryVehicleImageAssetLiveCatalogJob({ jobId });
+      setOverview(overviewFromResult(result));
+      setMessage("The automatic catalog failure was queued for its one bounded operator retry.");
     } catch (error) {
       setMessage(error.message);
     } finally {
@@ -426,6 +486,84 @@ export default function VehicleImageAssetCatalogPanel({ initialOverview = null }
                 Create a durable preview before any canonical image or read link can be written.
               </p>
             )}
+
+            <div className="space-y-4 rounded-lg border p-4">
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <div className="font-medium">Automatic new Overview cataloging</div>
+                  <p className="mt-1 max-w-3xl text-xs text-muted-foreground">
+                    After the initial campaign, a durable low-priority worker discovers newly ready eligible Overview images, reuses exact existing assets, and repairs stale links. It never blocks Vehicle View readiness and makes no external provider or ReID call.
+                  </p>
+                </div>
+                <Badge variant={live.state === "active" ? "default" : "secondary"}>
+                  {LIVE_STATUS_LABELS[live.state] || "Unavailable"}
+                </Badge>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3 text-center sm:grid-cols-3 lg:grid-cols-6">
+                <Metric label="awaiting current link" value={formatCount(liveCounts.pendingEligible)} />
+                <Metric label="queued" value={formatCount(liveCounts.queued)} />
+                <Metric label="processing" value={formatCount(liveCounts.processing)} />
+                <Metric label="cataloged automatically" value={formatCount(liveCounts.cataloged)} />
+                <Metric label="source changed" value={formatCount(liveCounts.superseded)} />
+                <Metric label="last automatic link" value={formatDateTime(liveCounts.lastCatalogedAt)} />
+              </div>
+
+              <div className="flex flex-wrap gap-2">
+                <Button
+                  type="button"
+                  variant={live.enabled ? "secondary" : "default"}
+                  disabled={Boolean(busy) || (!live.enabled && !live.completedCampaign)}
+                  onClick={toggleLiveCatalog}
+                >
+                  {busy === "live-toggle"
+                    ? <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    : live.enabled
+                      ? <Pause className="mr-2 h-4 w-4" />
+                      : <Play className="mr-2 h-4 w-4" />}
+                  {live.enabled ? "Disable automatic cataloging" : "Enable automatic cataloging"}
+                </Button>
+              </div>
+
+              {count(liveCounts.unavailable) + count(liveCounts.invalid)
+                + count(liveCounts.failed) + liveRetryCandidates.length > 0 ? (
+                  <details className="rounded-md border">
+                    <summary className="cursor-pointer p-3 text-sm font-medium">
+                      Automatic catalog exceptions
+                    </summary>
+                    <div className="space-y-3 border-t p-3 text-sm">
+                      <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+                        <div><span className="font-medium">{formatCount(liveCounts.unavailable)}</span> unavailable</div>
+                        <div><span className="font-medium">{formatCount(liveCounts.invalid)}</span> invalid</div>
+                        <div><span className="font-medium">{formatCount(liveCounts.failed)}</span> failed</div>
+                        <div><span className="font-medium">{formatCount(liveCounts.retryable)}</span> retryable</div>
+                      </div>
+                      {liveRetryCandidates.map((candidate) => (
+                        <div key={candidate.jobId} className="flex flex-wrap items-center justify-between gap-3 rounded-md border p-3">
+                          <div>
+                            <div className="font-medium">Read #{candidate.readId}</div>
+                            <div className="text-xs text-muted-foreground">
+                              {candidate.errorCode || "Automatic catalog failure"} · {formatCount(candidate.operatorRetryCount)} operator retries
+                            </div>
+                          </div>
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="outline"
+                            disabled={Boolean(busy)}
+                            onClick={() => retryLiveJob(candidate.jobId)}
+                          >
+                            {busy === `live-retry:${candidate.jobId}`
+                              ? <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                              : <RotateCcw className="mr-2 h-4 w-4" />}
+                            Retry automatic item
+                          </Button>
+                        </div>
+                      ))}
+                    </div>
+                  </details>
+                ) : null}
+            </div>
 
             <div className="flex flex-wrap gap-2">
               {canPreview ? (

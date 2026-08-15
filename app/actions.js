@@ -3820,6 +3820,8 @@ function canonicalCatalogRunData(run) {
 
 function canonicalCatalogOverviewData(overview, worker) {
   const catalog = overview?.catalog || {};
+  const live = overview?.live || {};
+  const liveCounts = live?.counts || {};
   return {
     worker: {
       phase: worker?.phase || "starting",
@@ -3853,12 +3855,37 @@ function canonicalCatalogOverviewData(overview, worker) {
       failureStage: item.failure_stage || null,
       operatorRetryCount: canonicalCatalogCount(item.operator_retry_count),
     })),
+    live: {
+      state: live.state || "unavailable",
+      enabled: live.enabled === true,
+      completedCampaign: live.completedCampaign === true,
+      activeCampaign: live.activeCampaign === true,
+      counts: {
+        totalJobs: canonicalCatalogCount(liveCounts.total_jobs),
+        queued: canonicalCatalogCount(liveCounts.queued),
+        processing: canonicalCatalogCount(liveCounts.processing),
+        cataloged: canonicalCatalogCount(liveCounts.cataloged),
+        superseded: canonicalCatalogCount(liveCounts.superseded),
+        unavailable: canonicalCatalogCount(liveCounts.unavailable),
+        invalid: canonicalCatalogCount(liveCounts.invalid),
+        failed: canonicalCatalogCount(liveCounts.failed),
+        retryable: canonicalCatalogCount(liveCounts.retryable),
+        pendingEligible: canonicalCatalogCount(liveCounts.pending_eligible),
+        lastCatalogedAt: liveCounts.last_cataloged_at || null,
+      },
+      retryCandidates: (live.retryCandidates || []).map((item) => ({
+        jobId: Number(item.id),
+        readId: Number(item.read_id),
+        errorCode: item.error_code || "VEHICLE_IMAGE_ASSET_LIVE_CATALOG_FAILED",
+        operatorRetryCount: canonicalCatalogCount(item.operator_retry_count),
+      })),
+    },
   };
 }
 
 function canonicalCatalogActionFailure(error, fallback) {
   const message = String(error?.message || "").trim();
-  if (/^(Canonical Overview|The exact canonical Overview|Wait for (?:the current|active) canonical Overview|Only a terminal catalog|This catalog item|A cancelled canonical Overview)/.test(message)) {
+  if (/^(Canonical Overview|Automatic canonical Overview|Complete the initial canonical Overview|Disable automatic canonical Overview|The exact canonical Overview|Wait for (?:the current|active) canonical Overview|Only a terminal (?:catalog|automatic catalog)|This (?:catalog|automatic catalog) item|A cancelled canonical Overview)/.test(message)) {
     return { success: false, error: message };
   }
   console.error(fallback, { code: String(error?.code || "") });
@@ -3956,6 +3983,41 @@ export async function retryVehicleImageAssetCatalogJob(input = {}) {
     return { success: true, data: { overview: await loadCanonicalCatalogOverview(runtime) } };
   } catch (error) {
     return canonicalCatalogActionFailure(error, "Unable to retry this canonical Overview catalog item.");
+  }
+}
+
+export async function setVehicleImageAssetLiveCatalogEnabled(input = {}) {
+  const principal = await requirePermission("maintenance.manage");
+  try {
+    const runtime = await getVehicleImageAssetCatalogRuntime();
+    await runtime.service.setLiveEnabled({
+      enabled: input.enabled === true,
+      actorUserId: principal.id,
+    });
+    if (input.enabled === true) wakeVehicleImageAssetCatalogWorker();
+    revalidatePath("/settings/vehicle-intelligence/processing");
+    return { success: true, data: { overview: await loadCanonicalCatalogOverview(runtime) } };
+  } catch (error) {
+    return canonicalCatalogActionFailure(
+      error,
+      "Unable to update automatic canonical Overview cataloging."
+    );
+  }
+}
+
+export async function retryVehicleImageAssetLiveCatalogJob(input = {}) {
+  const principal = await requirePermission("maintenance.manage");
+  try {
+    const runtime = await getVehicleImageAssetCatalogRuntime();
+    await runtime.service.retryLiveJob({ jobId: input.jobId, actorUserId: principal.id });
+    wakeVehicleImageAssetCatalogWorker();
+    revalidatePath("/settings/vehicle-intelligence/processing");
+    return { success: true, data: { overview: await loadCanonicalCatalogOverview(runtime) } };
+  } catch (error) {
+    return canonicalCatalogActionFailure(
+      error,
+      "Unable to retry this automatic canonical Overview item."
+    );
   }
 }
 
