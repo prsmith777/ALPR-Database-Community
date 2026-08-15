@@ -2069,6 +2069,30 @@ export async function getVehicleOverviewSetup() {
   }
 }
 
+export async function getVehicleOverviewFramingAuditBatch(input = {}) {
+  await requirePermission("system.manage_settings");
+  try {
+    const [{ VehicleOverviewFramingAuditService }, runtime] = await Promise.all([
+      import("@/lib/vehicle-overview-framing-audit.mjs"),
+      getBlueIrisVehicleFrameRuntime(),
+    ]);
+    const service = new VehicleOverviewFramingAuditService({
+      repository: runtime.repository,
+      fileStorage: runtime.queue.fileStorage,
+    });
+    return {
+      success: true,
+      data: await service.auditBatch({
+        afterReadId: input?.afterReadId,
+        maxReadId: input?.maxReadId,
+        limit: input?.limit,
+      }),
+    };
+  } catch (error) {
+    return visualSearchFailure(error, "Unable to audit saved Overview framing.");
+  }
+}
+
 export async function saveVehicleEntryOverviewHistoryProfiles(input = {}) {
   await requirePermission("system.manage_settings");
   try {

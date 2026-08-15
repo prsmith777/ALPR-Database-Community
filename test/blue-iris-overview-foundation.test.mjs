@@ -262,6 +262,64 @@ test("maximum-resolution refetch uses the exact selected timestamp and preserves
   assert.ok(result.detectionOverlap >= 0.4);
 });
 
+test("final validation rejects a newly edge-clipped vehicle and returns actual final geometry", async () => {
+  const frame = await patternedFrame(960, 540);
+  const selected = selectedOverview(frame).best;
+  const service = new BlueIrisVehicleFrameService({
+    client: {},
+    repository: {},
+    fileStorage: {},
+    detector: {
+      async detectAll() {
+        return [{
+          confidence: 0.96,
+          area: 0.34,
+          left: 0.38,
+          top: 0.15,
+          right: 1,
+          bottom: 0.72,
+        }];
+      },
+    },
+  });
+
+  await assert.rejects(
+    service.validateOverviewFinalFrame({
+      buffer: frame,
+      timestamp: FRAME_TIMESTAMP,
+      selected,
+      mode: "timeline_export",
+    }),
+    (error) => {
+      assert.equal(error.code, "FINAL_FRAME_INCOMPLETE");
+      assert.equal(error.details.selectedCompletenessTier, 3);
+      assert.equal(error.details.finalCompletenessTier, 0);
+      assert.equal(error.details.finalEdgeContacts, 1);
+      return true;
+    }
+  );
+
+  service.detector = {
+    async detectAll() {
+      return [{ ...selected.detection, confidence: 0.93 }];
+    },
+  };
+  const accepted = await service.validateOverviewFinalFrame({
+    buffer: frame,
+    timestamp: FRAME_TIMESTAMP,
+    selected,
+    mode: "timeline_export",
+  });
+  assert.deepEqual(accepted.detectionBox, {
+    left: 0.12,
+    top: 0.15,
+    right: 0.78,
+    bottom: 0.72,
+  });
+  assert.equal(accepted.detectionConfidence, 0.93);
+  assert.equal(accepted.completenessTier, 3);
+});
+
 test("the third exact-timestamp refetch can succeed without changing frame ownership", async () => {
   const saved = [];
   let readyFrame = null;
@@ -491,6 +549,126 @@ test("direction-independent Entry history reuses the overview selector with a sy
     evaluated: true,
     monochrome: false,
   });
+});
+
+test("timeline Overview recovery publishes a nearby complete frame after the initial slot is clipped", async () => {
+  let readyFrame = null;
+  const extractedOffsets = [];
+  const selection = selectedOverview(Buffer.from("analysis-primary"));
+  const recoveredCandidate = {
+    ...selection.best,
+    buffer: Buffer.from("analysis-recovered"),
+    timestamp: "2026-08-09T14:00:04.900Z",
+    offsetMs: 400,
+    score: 0.89,
+    detection: {
+      confidence: 0.92,
+      area: 0.29,
+      left: 0.1,
+      top: 0.14,
+      right: 0.72,
+      bottom: 0.71,
+    },
+  };
+  selection.track = [selection.best, recoveredCandidate];
+  const service = new BlueIrisVehicleFrameService({
+    client: {},
+    repository: {
+      async markReady(_id, frame) { readyFrame = frame; return { id: 901 }; },
+      async markFailed() { assert.fail("nearby complete recovery must not fail the read"); },
+    },
+    fileStorage: {
+      async saveDerivedImageAtomic() {},
+      async deleteImage() {},
+    },
+    timelineExportService: {
+      async acquire() {
+        return {
+          exportToken: "20000000-0000-4000-8000-000000000082",
+          requestedStartMs: Date.parse("2026-08-09T13:59:57.500Z"),
+          remoteStartMs: Date.parse("2026-08-09T13:59:57.500Z"),
+          trimStartMs: 1_000,
+          utcVerified: true,
+          remoteRetentionManaged: true,
+          probe: { width: 2688, height: 1520, durationMs: 8_000, codec: "h264", fileSize: 40_000_000 },
+          frames: Array.from({ length: 61 }, (_, index) => ({ buffer: Buffer.from(`analysis-${index}`) })),
+          async extractFinalFrame({ selectedOffsetMs }) {
+            extractedOffsets.push(selectedOffsetMs);
+            return Buffer.from(selectedOffsetMs === 2_500 ? "clipped-final" : "complete-final");
+          },
+          async cleanup() {},
+        };
+      },
+    },
+  });
+  service.selectBestFrame = async () => selection;
+  service.validateOverviewFinalFrame = async ({ buffer, timestamp, selected, mode }) => {
+    if (buffer.toString() === "clipped-final") {
+      throw new BlueIrisError(
+        "FINAL_FRAME_INCOMPLETE",
+        "The selected full-resolution slot clipped the vehicle.",
+        { details: {
+          selectedCompletenessTier: 3,
+          finalCompletenessTier: 0,
+          selectedEdgeMargin: 0.12,
+          finalEdgeMargin: 0,
+          finalEdgeContacts: 1,
+          areaRetention: 0.7,
+        } }
+      );
+    }
+    return {
+      buffer,
+      timestamp,
+      width: 2688,
+      height: 1520,
+      detection: selected.detection,
+      detectionBox: {
+        left: selected.detection.left,
+        top: selected.detection.top,
+        right: selected.detection.right,
+        bottom: selected.detection.bottom,
+      },
+      detectionConfidence: selected.detection.confidence,
+      identitySimilarity: 0.99,
+      detectionOverlap: 0.96,
+      detectionContinuity: 0.98,
+      completenessTier: 3,
+      edgeMargin: 0.1,
+      edgeContacts: 0,
+      areaRetention: 1,
+      mode,
+    };
+  };
+
+  const result = await service.processOverviewRead({
+    read: overviewRead(),
+    profile: overviewProfile(),
+    camera: "Cam149",
+    alreadyClaimed: true,
+  });
+
+  assert.equal(result.status, "ready");
+  assert.equal(result.finalImageMode, "timeline_export_recovered");
+  assert.deepEqual(extractedOffsets, [2_500, 2_400]);
+  assert.equal(readyFrame.frameTimestamp, recoveredCandidate.timestamp);
+  assert.deepEqual(readyFrame.detectionBox, {
+    left: 0.1,
+    top: 0.14,
+    right: 0.72,
+    bottom: 0.71,
+  });
+  assert.equal(readyFrame.selectionMetadata.initialSelectedOffsetMs, 500);
+  assert.equal(readyFrame.selectionMetadata.selectedOffsetMs, 400);
+  assert.equal(readyFrame.selectionMetadata.finalImage.recoveredFromInitialSelection, true);
+  assert.deepEqual(
+    readyFrame.selectionMetadata.finalImage.attempts.map((attempt) => [
+      attempt.status,
+      attempt.candidateOffsetMs,
+      attempt.errorCode || null,
+    ]),
+    [["failed", 500, "FINAL_FRAME_INCOMPLETE"], ["ready", 400, null]]
+  );
 });
 
 test("three failed exact-timestamp validations fall back only to the selected analysis frame", async () => {

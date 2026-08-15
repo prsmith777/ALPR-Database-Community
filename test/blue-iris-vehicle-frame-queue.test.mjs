@@ -1344,6 +1344,47 @@ test("overview status reports the active read queue and stable export ledger", a
   assert.match(statements[5], /vehicle_overview_read_shares/);
 });
 
+test("overview framing audit inventory is frozen, bounded, and read-only", async () => {
+  const statements = [];
+  const parameters = [];
+  const responses = [
+    { rows: [{ max_read_id: 41121 }] },
+    { rows: [{ total: 1275 }] },
+    { rows: [{
+      id: 41117,
+      plate_number: "FIED65",
+      camera_name: "Street LPR 2",
+      timestamp: "2026-08-15T17:24:00.000Z",
+      vehicle_image_path: "derived/jeep.jpg",
+      vehicle_image_source_kind: "overview_primary",
+      vehicle_image_detection_box: { left: 0.12, top: 0.15, right: 0.78, bottom: 0.72 },
+    }] },
+    { rows: [{ remaining: 0 }] },
+  ];
+  const repository = new BlueIrisVehicleFrameRepository({
+    async query(sql, values) {
+      statements.push(sql);
+      parameters.push(values || []);
+      return responses[statements.length - 1];
+    },
+  });
+
+  const result = await repository.listOverviewFramingAuditCandidates({
+    afterReadId: 41000,
+    limit: 10,
+  });
+
+  assert.equal(result.maxReadId, 41121);
+  assert.equal(result.total, 1275);
+  assert.equal(result.remaining, 0);
+  assert.equal(result.reads[0].id, 41117);
+  assert.deepEqual(parameters[2], [41000, 41121, 10]);
+  assert.ok(statements.every((statement) => /^SELECT/i.test(statement.trim())));
+  assert.ok(statements.every((statement) => !/\b(?:UPDATE|INSERT|DELETE)\b/i.test(statement)));
+  assert.ok(statements[0].includes("entry_overview_history"));
+  assert.ok(statements[2].includes("overview_pair_share"));
+});
+
 test("expired second-attempt overview claims are terminalized instead of remaining stuck", async () => {
   let statement = "";
   const repository = new BlueIrisVehicleFrameRepository({

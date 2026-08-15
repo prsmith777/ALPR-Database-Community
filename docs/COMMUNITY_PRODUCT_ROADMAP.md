@@ -792,6 +792,21 @@ notes. Updates remain externally orchestrated.
   growth estimates only while the automatic worker is enabled. No Vehicle View,
   current ReID, shadow event, attribute, notification, or external-provider
   behavior changes.
+- Final full-resolution Overview framing validation is implemented before a
+  new Vehicle View is committed. The anchor-constrained selector prioritizes a
+  fully framed vehicle track over a higher numerical score near an image edge,
+  then re-runs the local vehicle detector against the exact final JPEG and
+  persists its actual geometry. A full-resolution slot that clips or materially
+  regresses the selected vehicle is rejected; timeline processing may recover
+  from at most six nearby candidates on the same already-validated track. If no
+  candidate passes, the current image remains unchanged and the bounded job
+  fails visibly. Vehicle Views also provides a read-only, bounded saved-pixel
+  audit across a frozen scope of ready Entry and Street Overview images. It
+  reports edge truncation, tight framing, missing or multiple vehicles, stale
+  stored geometry, sharpness, exposure, and per-file audit failures without
+  writing files, changing reads, queueing regeneration, or calling an external
+  provider. Historical corrections remain a separate reviewed and explicitly
+  authorized workflow; automatic canonical crop behavior remains unchanged.
 Street LPR 1, Street Overview, and Entry Overview are installed. Street Overview
 and Entry Overview supply strong daytime vehicle images but are monochrome at
 night and are not expected to read a plate. Entry Overview is Blue Iris `Cam143`.

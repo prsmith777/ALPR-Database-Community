@@ -419,6 +419,37 @@ test("a nonviable detector speck does not make a uniquely owned overview track a
   assert.equal(result.best.detection.left, 0.2);
 });
 
+test("overview anchoring prefers a fully framed tier-three view over a higher-scoring edge view", () => {
+  const centered = {
+    offsetMs: 0,
+    frameRank: 0,
+    detection: { confidence: 0.88, area: 0.3, left: 0.12, top: 0.1, right: 0.72, bottom: 0.65 },
+    embedding: Float32Array.from([1, 0]),
+    baselineScore: 0.78,
+    score: 0.82,
+  };
+  const nearEdge = {
+    offsetMs: 100,
+    frameRank: 0,
+    detection: { confidence: 0.98, area: 0.36, left: 0.38, top: 0.1, right: 0.99, bottom: 0.69 },
+    embedding: Float32Array.from([1, 0]),
+    baselineScore: 0.9,
+    score: 0.96,
+  };
+  const leadIn = {
+    ...centered,
+    offsetMs: -100,
+    detection: { ...centered.detection, left: 0.08, right: 0.68 },
+    score: 0.8,
+  };
+
+  const result = selectAnchoredOverviewVehicleFrame([leadIn, centered, nearEdge]);
+
+  assert.equal(result.status, "selected");
+  assert.equal(result.best.offsetMs, 0);
+  assert.equal(result.best.detection.right, 0.72);
+});
+
 test("a weak primary selection expands the timeline and selects a complete later view", async () => {
   const frames = new Map([
     [0, { confidence: 0.95, area: 0.4, left: 0, top: 0.1, right: 0.7, bottom: 0.8 }],
