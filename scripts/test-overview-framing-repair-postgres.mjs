@@ -107,7 +107,8 @@ try {
   const inserted = await pool.query(
     `INSERT INTO public.plate_reads (
        plate_number, camera_name, "timestamp", bi_trigger_direction_status,
-       bi_trigger_direction_label, vehicle_image_status, vehicle_image_path,
+       bi_trigger_direction_label, bi_trigger_direction_profile_version,
+       bi_trigger_direction_algorithm, vehicle_image_status, vehicle_image_path,
        vehicle_image_timestamp, vehicle_image_queue_kind, vehicle_image_attempt_count,
        vehicle_image_retryable, vehicle_image_source_kind,
        vehicle_image_detection_confidence, vehicle_image_detection_box,
@@ -115,6 +116,7 @@ try {
        vehicle_image_selection_metadata, vehicle_image_updated_at
      ) VALUES (
        'RPR123',$1,'2026-08-15 17:24:00.123456+00','ready','Westbound',
+       1,'blue-iris-zone-crossing-v2-primary',
        'ready',$2,'2026-08-15 17:24:08.623456+00','overview',1,FALSE,
        'overview_primary',0.95,$3::jsonb,2688,1520,11,$4::jsonb,
        '2026-08-15 17:25:00.654321+00'
