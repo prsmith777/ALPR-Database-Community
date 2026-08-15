@@ -181,7 +181,11 @@ test("canonical vehicle image assets run through a bounded reconciliation phase"
     batchSize: 25,
   });
 
-  assert.deepEqual(result, { status: "running", phase: "completed", runId: 19 });
+  assert.deepEqual(result, {
+    status: "running",
+    phase: "vehicle-image-derivatives",
+    runId: 19,
+  });
   const assetRead = statements.find(({ sql }) => (
     /SELECT id, storage_path FROM public\.vehicle_image_assets/.test(sql)
   ));
@@ -194,8 +198,59 @@ test("canonical vehicle image assets run through a bounded reconciliation phase"
   const cursorUpdate = statements.find(({ sql }) => (
     /SET vehicle_image_asset_cursor = \$2/.test(sql)
   ));
-  assert.deepEqual(cursorUpdate.values.slice(0, 3), ["19", "9", "completed"]);
+  assert.deepEqual(cursorUpdate.values.slice(0, 3), [
+    "19", "9", "vehicle-image-derivatives",
+  ]);
   assert.equal(released, true);
+});
+
+test("canonical vehicle crops run through the final bounded reconciliation phase", async () => {
+  const statements = [];
+  const run = {
+    id: "23",
+    status: "running",
+    phase: "vehicle-image-derivatives",
+    max_vehicle_image_derivative_id: "4",
+    vehicle_image_derivative_cursor: "0",
+  };
+  const client = {
+    async query(sql, values) {
+      statements.push({ sql, values });
+      if (/pg_try_advisory_lock/.test(sql)) return { rows: [{ locked: true }], rowCount: 1 };
+      if (/SELECT \* FROM public\.storage_reconciliation_runs[\s\S]*status = 'running'/.test(sql)) {
+        return { rows: [run], rowCount: 1 };
+      }
+      if (/SELECT id, storage_path FROM public\.vehicle_image_derivatives/.test(sql)) {
+        return {
+          rows: [{
+            id: "4",
+            storage_path: `derived/vehicle-crops/bb/${"b".repeat(64)}.jpg`,
+          }],
+          rowCount: 1,
+        };
+      }
+      if (/INSERT INTO public\.storage_reconciliation_items/.test(sql)) {
+        return { rows: [{ id: "1" }], rowCount: 1 };
+      }
+      return { rows: [], rowCount: 1 };
+    },
+    release() {},
+  };
+  const result = await runStorageReconciliationBatch({
+    pool: { connect: async () => client },
+    baseDir: "/storage-that-does-not-exist",
+    batchSize: 25,
+  });
+  assert.deepEqual(result, { status: "running", phase: "completed", runId: 23 });
+  const missingInsert = statements.find(({ sql }) => (
+    /INSERT INTO public\.storage_reconciliation_items/.test(sql)
+  ));
+  assert.deepEqual(missingInsert.values[2], ["vehicle-image-derivative"]);
+  assert.deepEqual(missingInsert.values[3], ["4"]);
+  const cursorUpdate = statements.find(({ sql }) => (
+    /SET vehicle_image_derivative_cursor = \$2/.test(sql)
+  ));
+  assert.deepEqual(cursorUpdate.values.slice(0, 3), ["23", "4", "completed"]);
 });
 
 test("reconciliation schema and UI expose inventory without cleanup controls", async () => {

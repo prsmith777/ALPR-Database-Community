@@ -16,6 +16,7 @@
     "test:vehicle-image-asset-cleanup:postgres": "node scripts/test-vehicle-image-asset-cleanup-postgres.mjs",
     "test:vehicle-image-asset:postgres": "node scripts/test-vehicle-image-asset-postgres.mjs",
     "test:vehicle-event-shadow:postgres": "node scripts/test-vehicle-event-shadow-postgres.mjs",
+    "test:vehicle-image-crop:postgres": "node scripts/test-vehicle-image-crop-postgres.mjs",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

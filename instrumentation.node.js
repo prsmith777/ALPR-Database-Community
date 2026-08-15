@@ -24,11 +24,12 @@ export async function registerNodeInstrumentation({
   loadStorageMonitorStartup = () => import("./lib/storage-maintenance-monitor-startup.mjs"),
   loadVehicleAssetCatalogStartup = () => import("./lib/vehicle-image-asset-catalog-startup.mjs"),
   loadVehicleEventShadowStartup = () => import("./lib/vehicle-event-shadow-startup.mjs"),
+  loadVehicleImageCropStartup = () => import("./lib/vehicle-image-crop-startup.mjs"),
 } = {}) {
-  if (typeof startMqtt !== "function" || typeof loadVisualStartup !== "function" || typeof loadVehicleFrameStartup !== "function" || typeof loadNotificationStartup !== "function" || typeof loadMaintenanceStartup !== "function" || typeof loadStorageMonitorStartup !== "function" || typeof loadVehicleAssetCatalogStartup !== "function" || typeof loadVehicleEventShadowStartup !== "function") {
+  if (typeof startMqtt !== "function" || typeof loadVisualStartup !== "function" || typeof loadVehicleFrameStartup !== "function" || typeof loadNotificationStartup !== "function" || typeof loadMaintenanceStartup !== "function" || typeof loadStorageMonitorStartup !== "function" || typeof loadVehicleAssetCatalogStartup !== "function" || typeof loadVehicleEventShadowStartup !== "function" || typeof loadVehicleImageCropStartup !== "function") {
     throw new Error("Node instrumentation loaders must be functions");
   }
-  const [mqttResult, visualResult, vehicleFrameResult, notificationResult, maintenanceResult, storageMonitorResult, vehicleAssetCatalogResult, vehicleEventShadowResult] = await Promise.allSettled([
+  const [mqttResult, visualResult, vehicleFrameResult, notificationResult, maintenanceResult, storageMonitorResult, vehicleAssetCatalogResult, vehicleEventShadowResult, vehicleImageCropResult] = await Promise.allSettled([
     startMqtt({ logger }),
     (async () => {
       const visualStartup = await loadVisualStartup();
@@ -79,6 +80,13 @@ export async function registerNodeInstrumentation({
       }
       return startup.startVehicleEventShadowRuntimeWithRetry({ logger });
     })(),
+    (async () => {
+      const startup = await loadVehicleImageCropStartup();
+      if (typeof startup?.startVehicleImageCropRuntimeWithRetry !== "function") {
+        throw new Error("Canonical Overview vehicle crop startup module did not expose startVehicleImageCropRuntimeWithRetry()");
+      }
+      return startup.startVehicleImageCropRuntimeWithRetry({ logger });
+    })(),
   ]);
   const normalizeResult = (result, name) => {
     if (result.status === "fulfilled") return result.value;
@@ -100,8 +108,9 @@ export async function registerNodeInstrumentation({
   const storageMonitor = normalizeResult(storageMonitorResult, "Storage maintenance monitor");
   const vehicleAssetCatalog = normalizeResult(vehicleAssetCatalogResult, "Canonical Overview catalog");
   const vehicleEventShadow = normalizeResult(vehicleEventShadowResult, "Shadow vehicle events");
+  const vehicleImageCrops = normalizeResult(vehicleImageCropResult, "Canonical Overview vehicle crops");
   return {
-    status: mqtt.status === "started" && visualIndex.status === "started" && vehicleFrames.status === "started" && notificationOperations.status === "started" && maintenance.status === "started" && storageMonitor.status === "started" && vehicleAssetCatalog.status === "started" && vehicleEventShadow.status === "started"
+    status: mqtt.status === "started" && visualIndex.status === "started" && vehicleFrames.status === "started" && notificationOperations.status === "started" && maintenance.status === "started" && storageMonitor.status === "started" && vehicleAssetCatalog.status === "started" && vehicleEventShadow.status === "started" && vehicleImageCrops.status === "started"
       ? "started"
       : "partial",
     mqtt,
@@ -112,5 +121,6 @@ export async function registerNodeInstrumentation({
     storageMonitor,
     vehicleAssetCatalog,
     vehicleEventShadow,
+    vehicleImageCrops,
   };
 }
