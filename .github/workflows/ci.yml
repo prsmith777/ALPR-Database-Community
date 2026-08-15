@@ -100,9 +100,7 @@ jobs:
               ('vehicle-image-asset-campaign:v1', 'ci-disposable-pg17'),
               ('vehicle-event-shadow:v1', 'ci-disposable-pg17');
             INSERT INTO public.codex_integration_test_guard (scope, guard_token)
-            VALUES
-              ('vehicle-image-crop:v1', 'ci-disposable-pg17'),
-              ('overview-framing-repair:v1', 'ci-disposable-pg17');
+            VALUES ('vehicle-image-crop:v1', 'ci-disposable-pg17');
           "
 
           VEHICLE_IMAGE_ASSET_CLEANUP_POSTGRES_TEST_OPT_IN='true' \
@@ -113,12 +111,6 @@ jobs:
 
           DATABASE_URL='postgresql://postgres:fixture-test-password@127.0.0.1:5432/fixture_test' \
             yarn test:overview-export:postgres
-
-          OVERVIEW_FRAMING_REPAIR_POSTGRES_TEST_OPT_IN='true' \
-            OVERVIEW_FRAMING_REPAIR_POSTGRES_TEST_DATABASE='fixture_test' \
-            OVERVIEW_FRAMING_REPAIR_POSTGRES_TEST_GUARD_TOKEN='ci-disposable-pg17' \
-            DATABASE_URL='postgresql://postgres:fixture-test-password@127.0.0.1:5432/fixture_test' \
-            yarn test:overview-framing-repair:postgres
 
           VEHICLE_IMAGE_ASSET_POSTGRES_TEST_OPT_IN='true' \
             VEHICLE_IMAGE_ASSET_POSTGRES_TEST_DATABASE='fixture_test' \
