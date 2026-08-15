@@ -818,6 +818,11 @@ notes. Updates remain externally orchestrated.
   blur, exposure, geometry-review, and multiple-vehicle findings never qualify
   by themselves. No ReID, event, crop, notification, or external-provider
   behavior changes.
+- Repair failure restoration now binds its status parameter as the exact
+  PostgreSQL `varchar(20)` job type. Export, media, or selection failures
+  therefore restore the prior ready read state and settle the durable repair
+  outcome without a parameter-inference error; the current image remains
+  available throughout.
 Street LPR 1, Street Overview, and Entry Overview are installed. Street Overview
 and Entry Overview supply strong daytime vehicle images but are monochrome at
 night and are not expected to read a plate. Entry Overview is Blue Iris `Cam143`.

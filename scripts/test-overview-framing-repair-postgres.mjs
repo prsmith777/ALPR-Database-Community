@@ -84,6 +84,14 @@ async function guard() {
 
 try {
   await guard();
+  const noOpFailureRestore = await repository.restoreOverviewFramingRepairFailure(-1, {
+    claimToken: crypto.randomUUID(),
+    status: "failed",
+    errorCode: "FIXTURE_NOOP",
+    retryable: false,
+  });
+  assert.equal(noOpFailureRestore, null,
+    "failure restoration SQL must type-check even when no repair claim matches");
   const profile = await pool.query(
     `INSERT INTO public.vehicle_overview_pair_profiles (
        source_camera_name, source_camera_short_name, plate_camera_name,

@@ -123,6 +123,8 @@ test("foundation is inert and preserves current images unless replacement comple
   assert.doesNotMatch(marker, /INSERT INTO public\.vehicle_overview_framing_repair_jobs/);
   assert.match(repository, /replacementTier >= 2/);
   assert.match(repository, /replacementMargin >= 0\.015/);
+  assert.match(repository, /SET status = \$3::varchar\(20\)/);
+  assert.match(repository, /CASE WHEN \$3::varchar\(20\) IN/);
   assert.match(repository, /Returning false tells the frame service/);
   assert.doesNotMatch(repository, /SET vehicle_image_status = 'processing', vehicle_image_queue_kind = 'overview_repair'/);
   assert.match(repository, /SET vehicle_image_queue_kind = 'overview_repair'/);
@@ -135,5 +137,6 @@ test("foundation is inert and preserves current images unless replacement comple
   assert.ok(postgresGate.indexOf("await guard()") < postgresGate.indexOf("INSERT INTO public.vehicle_overview_pair_profiles"));
   assert.match(postgresGate, /application environment identity must be absent/);
   assert.match(postgresGate, /REPLACEMENT_NOT_MORE_COMPLETE/);
+  assert.match(postgresGate, /failure restoration SQL must type-check/);
   assert.match(workflow, /yarn test:overview-framing-repair:postgres/);
 });
