@@ -1,14 +1,12 @@
 "use client";
 
 import NextImage from "next/image";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { BrainCircuit, Check, History, Images, Loader2, Pause, Play, RotateCcw, Save, ScanSearch, Settings2, Trash2, XCircle } from "lucide-react";
 
 import {
   getVehicleDirectionSetup,
   getVehicleOverviewSetup,
-  getVehicleOverviewFramingAuditBatch,
-  getVehicleOverviewFramingRepairStatus,
   getBlueIrisVehicleFrameQueueStatus,
   labelVehicleOrientation,
   previewVehicleDirectionReevaluation,
@@ -31,9 +29,6 @@ import {
   setVehicleEntryOverviewHistoryPaused,
   cancelVehicleEntryOverviewHistory,
   retryVehicleEntryOverviewHistoryImport,
-  previewVehicleOverviewFramingRepairs,
-  confirmVehicleOverviewFramingRepairBatch,
-  cancelVehicleOverviewFramingRepair,
   runBlueIrisVehicleFrameBatch,
   setBlueIrisVehicleFrameHistoryPaused,
   setVehicleDirectionReevaluationPaused,
@@ -139,24 +134,6 @@ export default function VehicleIntelligenceSettings({
   const [triggerRecoveryPreview, setTriggerRecoveryPreview] = useState(null);
   const [cancelFrameHistoryOpen, setCancelFrameHistoryOpen] = useState(false);
   const [overviewSetup, setOverviewSetup] = useState(initialOverviewSetup);
-  const overviewAuditStop = useRef(false);
-  const [overviewAudit, setOverviewAudit] = useState({
-    running: false,
-    completed: false,
-    inspected: 0,
-    total: 0,
-    maxReadId: null,
-    cursor: 0,
-    reviewCount: 0,
-    repairCandidateCount: 0,
-    failureCount: 0,
-    flaggedItems: [],
-    error: "",
-  });
-  const [overviewRepairRun, setOverviewRepairRun] = useState(null);
-  const [overviewRepairSelected, setOverviewRepairSelected] = useState([]);
-  const [overviewRepairBatchSize, setOverviewRepairBatchSize] = useState("1");
-  const [overviewRepairMessage, setOverviewRepairMessage] = useState("");
   const [entryHistoryDeltas, setEntryHistoryDeltas] = useState(() => (
     entryOverviewHistoryDeltas(initialOverviewSetup?.entryOverviewHistory?.profiles)
   ));
@@ -249,33 +226,6 @@ export default function VehicleIntelligenceSettings({
     setEntryHistoryDeltas(entryOverviewHistoryDeltas(overviewSetup?.entryOverviewHistory?.profiles));
   }, [overviewSetup?.entryOverviewHistory?.profiles]);
 
-  useEffect(() => () => {
-    overviewAuditStop.current = true;
-  }, []);
-
-  useEffect(() => {
-    let cancelled = false;
-    const load = async () => {
-      const result = await getVehicleOverviewFramingRepairStatus({});
-      if (!cancelled && result.success) setOverviewRepairRun(result.data.run || null);
-    };
-    load();
-    return () => { cancelled = true; };
-  }, []);
-
-  useEffect(() => {
-    const active = Number(overviewRepairRun?.counts?.queued || 0)
-      + Number(overviewRepairRun?.counts?.processing || 0)
-      + Number(overviewRepairRun?.counts?.retryable || 0);
-    if (!overviewRepairRun?.id || active <= 0) return undefined;
-    const timer = window.setInterval(async () => {
-      const result = await getVehicleOverviewFramingRepairStatus({ runId: overviewRepairRun.id });
-      if (result.success) setOverviewRepairRun(result.data.run || null);
-    }, 5000);
-    return () => window.clearInterval(timer);
-  }, [overviewRepairRun?.counts?.processing, overviewRepairRun?.counts?.queued,
-    overviewRepairRun?.counts?.retryable, overviewRepairRun?.id]);
-
   useEffect(() => {
     const pending = Number(data.backfill?.pending || 0)
       + Number(data.backfill?.imagesAwaitingIndex || 0);
@@ -365,132 +315,6 @@ export default function VehicleIntelligenceSettings({
     setOverviewSetup(result.data);
     setEntryHistoryRetryCandidates(result.data.entryOverviewHistory?.retryCandidates || []);
     return result.data;
-  };
-
-  const runOverviewFramingAudit = async () => {
-    overviewAuditStop.current = false;
-    let cursor = 0;
-    let maxReadId = null;
-    let inspected = 0;
-    let reviewCount = 0;
-    let repairCandidateCount = 0;
-    let failureCount = 0;
-    let flaggedItems = [];
-    setOverviewAudit({
-      running: true,
-      completed: false,
-      inspected: 0,
-      total: 0,
-      maxReadId: null,
-      cursor: 0,
-      reviewCount: 0,
-      repairCandidateCount: 0,
-      failureCount: 0,
-      flaggedItems: [],
-      error: "",
-    });
-    setOverviewRepairSelected([]);
-    setOverviewRepairMessage("");
-    try {
-      while (!overviewAuditStop.current) {
-        const result = await getVehicleOverviewFramingAuditBatch({
-          afterReadId: cursor,
-          maxReadId,
-          limit: 10,
-        });
-        if (!result.success) throw new Error(result.error);
-        const batch = result.data;
-        maxReadId = Number(batch.maxReadId || maxReadId || 0) || null;
-        cursor = Number(batch.nextCursor || cursor);
-        inspected += Number(batch.inspected || 0);
-        reviewCount += Number(batch.flagged || 0);
-        repairCandidateCount += Number(batch.repairCandidates ?? batch.unacceptable ?? 0);
-        failureCount += Number(batch.failures || 0);
-        flaggedItems = [
-          ...flaggedItems,
-          ...(batch.items || []).filter((item) => item.needsReview),
-        ];
-        const completed = Number(batch.remaining || 0) === 0;
-        setOverviewAudit({
-          running: !completed,
-          completed,
-          inspected,
-          total: Number(batch.total || 0),
-          maxReadId,
-          cursor,
-          reviewCount,
-          repairCandidateCount,
-          failureCount,
-          flaggedItems,
-          error: "",
-        });
-        if (completed || Number(batch.inspected || 0) === 0) break;
-      }
-      if (overviewAuditStop.current) {
-        setOverviewAudit((current) => ({ ...current, running: false }));
-      }
-    } catch (error) {
-      setOverviewAudit((current) => ({
-        ...current,
-        running: false,
-        error: error.message,
-      }));
-    }
-  };
-
-  const createOverviewRepairPreview = async () => {
-    setBusy("overview-repair-preview");
-    setOverviewRepairMessage("");
-    try {
-      const result = await previewVehicleOverviewFramingRepairs({
-        readIds: overviewRepairSelected,
-      });
-      if (!result.success) throw new Error(result.error);
-      setOverviewRepairRun(result.data.run);
-      setOverviewRepairMessage(
-        `Previewed ${Number(result.data.run?.candidateCount || 0).toLocaleString()} selected repair${result.data.run?.candidateCount === 1 ? "" : "s"}. No Vehicle View was changed.`
-      );
-    } catch (error) { setOverviewRepairMessage(error.message); }
-    finally { setBusy(""); }
-  };
-
-  const confirmOverviewRepairBatch = async () => {
-    if (!overviewRepairRun) return;
-    setBusy("overview-repair-confirm");
-    setOverviewRepairMessage("");
-    try {
-      const result = await confirmVehicleOverviewFramingRepairBatch({
-        runId: overviewRepairRun.id,
-        previewFingerprint: overviewRepairRun.previewFingerprint,
-        limit: Number(overviewRepairBatchSize),
-      });
-      if (!result.success) throw new Error(result.error);
-      setOverviewRepairRun(result.data.run);
-      setOverviewRepairMessage("Repair batch queued behind live Vehicle View work. Current images remain available while each candidate is checked.");
-    } catch (error) { setOverviewRepairMessage(error.message); }
-    finally { setBusy(""); }
-  };
-
-  const refreshOverviewRepair = async () => {
-    setBusy("overview-repair-refresh");
-    try {
-      const result = await getVehicleOverviewFramingRepairStatus({ runId: overviewRepairRun?.id || null });
-      if (!result.success) throw new Error(result.error);
-      setOverviewRepairRun(result.data.run || null);
-    } catch (error) { setOverviewRepairMessage(error.message); }
-    finally { setBusy(""); }
-  };
-
-  const cancelOverviewRepair = async () => {
-    if (!overviewRepairRun) return;
-    setBusy("overview-repair-cancel");
-    try {
-      const result = await cancelVehicleOverviewFramingRepair({ runId: overviewRepairRun.id });
-      if (!result.success) throw new Error(result.error);
-      setOverviewRepairRun(result.data.run);
-      setOverviewRepairMessage("Unstarted framing repairs were cancelled. Existing Vehicle Views were not changed.");
-    } catch (error) { setOverviewRepairMessage(error.message); }
-    finally { setBusy(""); }
   };
 
   const saveOverviewProfile = async () => {
@@ -1142,196 +966,6 @@ export default function VehicleIntelligenceSettings({
                 <div className="rounded-md border p-2"><div className="font-semibold">{Number(overviewSetup?.status?.nighttimeSkipped || 0).toLocaleString()}</div><div className="text-xs text-muted-foreground">nighttime skipped</div></div>
                 <div className="rounded-md border p-2"><div className="font-semibold">{Number(overviewSetup?.status?.failed || 0).toLocaleString()}</div><div className="text-xs text-muted-foreground">failures</div></div>
                 <div className="rounded-md border p-2"><div className="font-semibold">{Number(overviewSetup?.status?.exports?.automaticStarts || 0).toLocaleString()}</div><div className="text-xs text-muted-foreground">BI exports started</div></div>
-              </div>
-
-              <div className="space-y-4 rounded-lg border p-4">
-                <div className="flex flex-wrap items-start justify-between gap-4">
-                  <div className="max-w-3xl">
-                    <div className="font-medium">Saved Overview framing audit</div>
-                    <p className="mt-1 text-xs text-muted-foreground">
-                      Re-detect every frozen ready Overview image from its saved pixels. Edge contact and overly tight direct views can be selected for a separate repair preview. Blur, difficult sun or exposure, stationary workers, and multiple-vehicle scenes remain review evidence and do not disqualify the best available image.
-                    </p>
-                  </div>
-                  <Badge variant={overviewAudit.completed ? "default" : overviewAudit.running ? "secondary" : "outline"}>
-                    {overviewAudit.completed ? "Complete" : overviewAudit.running ? "Inspecting" : "Not run"}
-                  </Badge>
-                </div>
-                <div className="grid grid-cols-2 gap-3 text-center sm:grid-cols-5">
-                  <div className="rounded-md border p-2"><div className="font-semibold">{overviewAudit.inspected.toLocaleString()}</div><div className="text-xs text-muted-foreground">inspected</div></div>
-                  <div className="rounded-md border p-2"><div className="font-semibold">{overviewAudit.total.toLocaleString()}</div><div className="text-xs text-muted-foreground">frozen scope</div></div>
-                  <div className="rounded-md border p-2"><div className="font-semibold">{overviewAudit.reviewCount.toLocaleString()}</div><div className="text-xs text-muted-foreground">review flags</div></div>
-                  <div className="rounded-md border p-2"><div className="font-semibold">{overviewAudit.repairCandidateCount.toLocaleString()}</div><div className="text-xs text-muted-foreground">repair candidates</div></div>
-                  <div className="rounded-md border p-2"><div className="font-semibold">{overviewAudit.failureCount.toLocaleString()}</div><div className="text-xs text-muted-foreground">audit failures</div></div>
-                </div>
-                {overviewAudit.total > 0 ? (
-                  <Progress value={Math.min(100, (overviewAudit.inspected / overviewAudit.total) * 100)} />
-                ) : null}
-                <div className="flex flex-wrap gap-2">
-                  <Button type="button" onClick={runOverviewFramingAudit} disabled={overviewAudit.running || Boolean(busy)}>
-                    {overviewAudit.running ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <ScanSearch className="mr-2 h-4 w-4" />}
-                    {overviewAudit.completed ? "Run a new frozen audit" : "Audit all ready Overview images"}
-                  </Button>
-                  {overviewAudit.running ? (
-                    <Button type="button" variant="secondary" onClick={() => { overviewAuditStop.current = true; }}>
-                      <Pause className="mr-2 h-4 w-4" /> Stop after current batch
-                    </Button>
-                  ) : null}
-                </div>
-                {overviewAudit.error ? <p className="text-sm text-destructive">{overviewAudit.error}</p> : null}
-                {overviewAudit.flaggedItems.length ? (
-                  <details className="rounded-md border" open={overviewAudit.completed}>
-                    <summary className="cursor-pointer px-3 py-2 text-sm font-medium">
-                      Framing review list ({overviewAudit.flaggedItems.length.toLocaleString()})
-                    </summary>
-                    <div className="overflow-x-auto border-t">
-                      <table className="w-full min-w-[900px] text-left text-xs">
-                        <thead className="border-b text-muted-foreground">
-                          <tr><th className="px-3 py-2">Repair</th><th className="px-3 py-2">Read</th><th className="px-3 py-2">Camera / time</th><th className="px-3 py-2">Result</th><th className="px-3 py-2">Actual framing</th><th className="px-3 py-2">Reasons</th></tr>
-                        </thead>
-                        <tbody>
-                          {overviewAudit.flaggedItems.map((item) => (
-                            <tr key={item.readId} className="border-b last:border-0">
-                              <td className="px-3 py-2">
-                                {item.repairEligible ? (
-                                  <input
-                                    type="checkbox"
-                                    aria-label={`Select read ${item.readId} for framing repair`}
-                                    checked={overviewRepairSelected.includes(item.readId)}
-                                    onChange={(event) => setOverviewRepairSelected((current) => (
-                                      event.target.checked
-                                        ? [...new Set([...current, item.readId])]
-                                        : current.filter((readId) => readId !== item.readId)
-                                    ))}
-                                  />
-                                ) : <span className="text-muted-foreground">Review only</span>}
-                              </td>
-                              <td className="px-3 py-2">
-                                <a className="font-mono font-semibold text-blue-500 hover:underline" href={item.readUrl}>#{item.readId} {item.plateNumber}</a>
-                              </td>
-                              <td className="px-3 py-2">
-                                <div>{item.cameraName}</div>
-                                <div className="text-muted-foreground">{item.timestamp ? new Date(item.timestamp).toLocaleString() : "Unknown"}</div>
-                              </td>
-                              <td className="px-3 py-2">{String(item.classification || "review").replaceAll("_", " ")}</td>
-                              <td className="px-3 py-2">
-                                {item.edgeMargin == null
-                                  ? "Unavailable"
-                                  : `tier ${item.completenessTier} · ${(Number(item.edgeMargin) * 100).toFixed(1)}% edge margin`}
-                              </td>
-                              <td className="px-3 py-2">{item.error?.code || (item.reasons || []).join(", ").toLowerCase().replaceAll("_", " ")}</td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
-                  </details>
-                ) : overviewAudit.completed ? (
-                  <p className="text-sm text-muted-foreground">No saved Overview image required framing review.</p>
-                ) : null}
-                {overviewAudit.completed && overviewAudit.repairCandidateCount > 0 ? (
-                  <div className="space-y-3 rounded-md border p-3">
-                    <div>
-                      <div className="text-sm font-medium">Selected framing repairs</div>
-                      <p className="mt-1 text-xs text-muted-foreground">
-                        Select only confirmed edge-contact or overly tight errors. Preview rechecks the saved pixels and frozen acquisition profile. The worker keeps the current image unless a replacement has no edge contact, at least a 1.5% margin, and a higher completeness tier.
-                      </p>
-                    </div>
-                    <div className="flex flex-wrap gap-2">
-                      <Button
-                        type="button"
-                        onClick={createOverviewRepairPreview}
-                        disabled={!overviewRepairSelected.length || Boolean(busy)
-                          || ["previewed", "running"].includes(overviewRepairRun?.status)}
-                      >
-                        {busy === "overview-repair-preview" ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <ScanSearch className="mr-2 h-4 w-4" />}
-                        Create repair preview ({overviewRepairSelected.length})
-                      </Button>
-                    </div>
-                    {!overviewRepairRun && overviewRepairMessage ? (
-                      <p className="text-sm text-destructive">{overviewRepairMessage}</p>
-                    ) : null}
-                  </div>
-                ) : null}
-                {overviewRepairRun ? (
-                  <div className="space-y-3 rounded-md border p-3">
-                    <div className="flex flex-wrap items-start justify-between gap-3">
-                      <div>
-                        <div className="text-sm font-medium">Framing repair run #{overviewRepairRun.id}</div>
-                        <p className="mt-1 text-xs text-muted-foreground">
-                          Preview-first, one job at a time, behind live Vehicle Views. Preserved means the attempted replacement was not clearly better and the original image remained current.
-                        </p>
-                      </div>
-                      <Badge variant={overviewRepairRun.status === "completed" ? "default" : "secondary"}>
-                        {overviewRepairRun.status}
-                      </Badge>
-                    </div>
-                    <div className="grid grid-cols-2 gap-2 text-center sm:grid-cols-6">
-                      <div className="rounded-md border p-2"><div className="font-semibold">{Number(overviewRepairRun.counts?.previewed || 0)}</div><div className="text-xs text-muted-foreground">previewed</div></div>
-                      <div className="rounded-md border p-2"><div className="font-semibold">{Number(overviewRepairRun.counts?.queued || 0) + Number(overviewRepairRun.counts?.processing || 0) + Number(overviewRepairRun.counts?.retryable || 0)}</div><div className="text-xs text-muted-foreground">active</div></div>
-                      <div className="rounded-md border p-2"><div className="font-semibold">{Number(overviewRepairRun.counts?.repaired || 0)}</div><div className="text-xs text-muted-foreground">repaired</div></div>
-                      <div className="rounded-md border p-2"><div className="font-semibold">{Number(overviewRepairRun.counts?.preserved || 0)}</div><div className="text-xs text-muted-foreground">preserved</div></div>
-                      <div className="rounded-md border p-2"><div className="font-semibold">{Number(overviewRepairRun.counts?.sourceChanged || 0)}</div><div className="text-xs text-muted-foreground">source changed</div></div>
-                      <div className="rounded-md border p-2"><div className="font-semibold">{Number(overviewRepairRun.counts?.failed || 0) + Number(overviewRepairRun.counts?.unavailable || 0)}</div><div className="text-xs text-muted-foreground">exceptions</div></div>
-                    </div>
-                    <div className="flex flex-wrap items-end gap-2">
-                      <div className="w-32 space-y-1">
-                        <Label>Next batch</Label>
-                        <Select value={overviewRepairBatchSize} onValueChange={setOverviewRepairBatchSize}>
-                          <SelectTrigger><SelectValue /></SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="1">1 read</SelectItem>
-                            <SelectItem value="5">5 reads</SelectItem>
-                            <SelectItem value="25">25 reads</SelectItem>
-                          </SelectContent>
-                        </Select>
-                      </div>
-                      <Button
-                        type="button"
-                        onClick={confirmOverviewRepairBatch}
-                        disabled={Boolean(busy) || Number(overviewRepairRun.counts?.previewed || 0) <= 0
-                          || Number(overviewRepairRun.counts?.queued || 0) + Number(overviewRepairRun.counts?.processing || 0) > 0
-                          || Number(overviewRepairRun.counts?.retryable || 0) > 0
-                          || !["previewed", "running"].includes(overviewRepairRun.status)}
-                      >
-                        {busy === "overview-repair-confirm" ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Play className="mr-2 h-4 w-4" />}
-                        Repair next batch
-                      </Button>
-                      <Button type="button" variant="secondary" onClick={refreshOverviewRepair} disabled={Boolean(busy)}>
-                        {busy === "overview-repair-refresh" ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <RotateCcw className="mr-2 h-4 w-4" />}
-                        Refresh
-                      </Button>
-                      {["previewed", "running"].includes(overviewRepairRun.status) ? (
-                        <Button
-                          type="button"
-                          variant="destructive"
-                          onClick={cancelOverviewRepair}
-                          disabled={Boolean(busy) || Number(overviewRepairRun.counts?.processing || 0) > 0}
-                        >
-                          <XCircle className="mr-2 h-4 w-4" /> Cancel unstarted
-                        </Button>
-                      ) : null}
-                    </div>
-                    {overviewRepairMessage ? <p className="text-sm text-muted-foreground">{overviewRepairMessage}</p> : null}
-                    {overviewRepairRun.jobs?.length ? (
-                      <details className="rounded-md border">
-                        <summary className="cursor-pointer px-3 py-2 text-xs font-medium">Repair details</summary>
-                        <div className="overflow-x-auto border-t">
-                          <table className="w-full min-w-[720px] text-left text-xs">
-                            <thead className="border-b text-muted-foreground"><tr><th className="px-3 py-2">Read</th><th className="px-3 py-2">Prior framing</th><th className="px-3 py-2">Status</th><th className="px-3 py-2">Replacement</th></tr></thead>
-                            <tbody>{overviewRepairRun.jobs.map((job) => (
-                              <tr key={job.id} className="border-b last:border-0">
-                                <td className="px-3 py-2"><a className="font-mono text-blue-500 hover:underline" href={`/live_feed?readId=${job.readId}`}>#{job.readId} {job.plateNumber}</a></td>
-                                <td className="px-3 py-2">tier {job.priorCompletenessTier} · {(Number(job.priorEdgeMargin) * 100).toFixed(1)}%</td>
-                                <td className="px-3 py-2">{job.status}{job.errorCode ? ` · ${job.errorCode.toLowerCase().replaceAll("_", " ")}` : ""}</td>
-                                <td className="px-3 py-2">{job.replacementCompletenessTier == null ? "Not accepted" : `tier ${job.replacementCompletenessTier} · ${(Number(job.replacementEdgeMargin) * 100).toFixed(1)}%`}</td>
-                              </tr>
-                            ))}</tbody>
-                          </table>
-                        </div>
-                      </details>
-                    ) : null}
-                  </div>
-                ) : null}
               </div>
 
               {overviewSetup?.status?.recentJobs?.length ? (

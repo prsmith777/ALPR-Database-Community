@@ -800,44 +800,17 @@ notes. Updates remain externally orchestrated.
   regresses the selected vehicle is rejected; timeline processing may recover
   from at most six nearby candidates on the same already-validated track. If no
   candidate passes, the current image remains unchanged and the bounded job
-  fails visibly. Vehicle Views also provides a read-only, bounded saved-pixel
-  audit across a frozen scope of ready Entry and Street Overview images. It
-  reports edge truncation, tight framing, missing or multiple vehicles, stale
-  stored geometry, sharpness, exposure, and per-file audit failures. Blur,
-  difficult exposure, stationary workers, and multi-vehicle scenes are review
-  evidence only and remain usable when they are the best available image.
-- Operator-selected framing repair is implemented only for genuine edge-contact
-  or overly tight `overview_primary` and `entry_overview_primary` images.
-  Selection is explicit after a frozen saved-pixel audit; the server rechecks
-  the pixels and exact acquisition profile before creating an inert preview.
-  Explicit 1, 5, or 25-read batches run one at a time behind live work. The
-  current image path remains visible throughout processing and every failure.
-  A replacement commits only with zero edge contacts, at least 1.5 percent
-  image-edge margin, and a higher completeness tier; otherwise the attempted
-  file is discarded and the job records `preserved`. Shared/fallback copies,
-  blur, exposure, geometry-review, and multiple-vehicle findings never qualify
-  by themselves. No ReID, event, crop, notification, or external-provider
-  behavior changes.
-- Framing repair now binds its selector to local Vehicle ReID evidence derived
-  from the job's frozen prior image, detection box, and dimensions. The repair
-  may therefore choose a more complete frame of the reviewed vehicle while
-  ignoring a different vehicle later in the same validated six-second export.
-  Both the initially selected frame and bounded recovery candidates must remain
-  within a conservative relative similarity margin of the strongest frozen
-  target evidence. Missing target evidence or two similarly matched tracks fail
-  closed. Ordinary live Overview anchoring retains its existing multi-vehicle
-  ambiguity behavior.
-- Repair failure restoration now binds its status parameter as the exact
-  PostgreSQL `varchar(20)` job type. Export, media, or selection failures
-  therefore restore the prior ready read state and settle the durable repair
-  outcome without a parameter-inference error; the current image remains
-  available throughout.
-- Framing-repair timeline exports now use a stable identity derived from the
-  exact repair job rather than colliding with the read's original live export.
-  The export ledger explicitly accepts a claim-owned `ready` read only when its
-  queue kind is `overview_repair`; all ordinary live and historical export
-  ownership remains unchanged. Retries and restarts reuse the repair ledger,
-  while a later separately previewed repair receives a distinct identity.
+  fails visibly.
+- The saved-pixel Overview framing audit and operator repair campaign were
+  withdrawn after production review. Camera zoom, slow or stationary subjects,
+  sun, lens condition, and vehicles larger than the frame made many historical
+  flags non-actionable, and the bounded canaries did not produce an acceptable
+  replacement. The audit UI, repair actions, worker claims, export path, and
+  repair-only target selector are removed. Existing run and job rows remain as
+  inert audit history; a forward migration restores any interrupted read to its
+  frozen prior ready state and cancels all remaining repair work. Normal live
+  Overview acquisition, final-frame validation, canonical assets and crops,
+  ReID, shadow correlation, and current Vehicle Views remain unchanged.
 Street LPR 1, Street Overview, and Entry Overview are installed. Street Overview
 and Entry Overview supply strong daytime vehicle images but are monochrome at
 night and are not expected to read a plate. Entry Overview is Blue Iris `Cam143`.

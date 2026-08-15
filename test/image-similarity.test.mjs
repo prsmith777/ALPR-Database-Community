@@ -189,7 +189,9 @@ test("derived image paths are allowed without weakening traversal protection", (
 
 test("migration keeps image similarity inert and source images immutable", async () => {
   const migration = await readFile(new URL("../migrations.sql", import.meta.url), "utf8");
-  const section = migration.slice(migration.indexOf("Local-only visual search foundation"));
+  const sectionStart = migration.indexOf("Local-only visual search foundation");
+  const sectionEnd = migration.indexOf("2026072402_notification_operations", sectionStart);
+  const section = migration.slice(sectionStart, sectionEnd);
   assert.match(section, /CREATE TABLE IF NOT EXISTS public\.capture_assets/i);
   assert.match(section, /REFERENCES public\.plate_reads\(id\) ON DELETE CASCADE/i);
   assert.match(section, /source_image_path VARCHAR\(255\) NOT NULL/i);
