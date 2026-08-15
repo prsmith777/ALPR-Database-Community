@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import crypto from "node:crypto";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 
@@ -75,6 +76,9 @@ test("repair preview freezes only revalidated direct edge/tight candidates", asy
 });
 
 test("claimed repair profile reconstructs the frozen direct Overview acquisition", () => {
+  const expectedIdentity = crypto.createHash("sha256")
+    .update(JSON.stringify({ jobId: 9, kind: "overview_framing_repair" }))
+    .digest("hex");
   const profile = overviewFramingRepairProfileFromClaim({
     camera_name: "Street LPR 2",
     bi_trigger_direction_label: "Westbound",
@@ -92,7 +96,8 @@ test("claimed repair profile reconstructs the frozen direct Overview acquisition
   assert.deepEqual(profile, {
     id: 7,
     revision: 3,
-    profile_kind: "direction_profile",
+    profile_kind: "framing_repair",
+    profile_identity: expectedIdentity,
     source_kind: "overview_primary",
     source_camera_name: "Street Overview",
     source_camera_short_name: "Cam149",
@@ -104,6 +109,38 @@ test("claimed repair profile reconstructs the frozen direct Overview acquisition
     tolerance_ms: 1500,
     enabled: true,
   });
+});
+
+test("each repair job receives a stable distinct export identity", () => {
+  const claim = {
+    camera_name: "Street LPR 2",
+    bi_trigger_direction_label: "Westbound",
+    framing_repair_profile_id: 7,
+    framing_repair_profile_revision: 3,
+    framing_repair_source_kind: "overview_primary",
+    framing_repair_overview_context: "street",
+    framing_repair_source_camera_name: "Street Overview",
+    framing_repair_source_camera_short_name: "Cam149",
+    framing_repair_expected_delta_ms: 8500,
+    framing_repair_tolerance_ms: 1500,
+  };
+  const first = overviewFramingRepairProfileFromClaim({
+    ...claim,
+    framing_repair_job_id: 9,
+  });
+  const resumed = overviewFramingRepairProfileFromClaim({
+    ...claim,
+    framing_repair_job_id: 9,
+  });
+  const next = overviewFramingRepairProfileFromClaim({
+    ...claim,
+    framing_repair_job_id: 10,
+  });
+
+  assert.match(first.profile_identity, /^[0-9a-f]{64}$/);
+  assert.equal(resumed.profile_identity, first.profile_identity);
+  assert.notEqual(next.profile_identity, first.profile_identity);
+  assert.equal(overviewFramingRepairProfileFromClaim(claim), null);
 });
 
 test("foundation is inert and preserves current images unless replacement completeness improves", async () => {
@@ -120,6 +157,7 @@ test("foundation is inert and preserves current images unless replacement comple
 
   assert.match(migrations, /vehicle_overview_framing_repair_runs/);
   assert.match(migrations, /vehicle_overview_framing_repair_jobs/);
+  assert.match(migrations, /profile_kind IN \('pair','entry_history','framing_repair'\)/);
   assert.doesNotMatch(marker, /INSERT INTO public\.vehicle_overview_framing_repair_jobs/);
   assert.match(repository, /replacementTier >= 2/);
   assert.match(repository, /replacementMargin >= 0\.015/);
@@ -129,6 +167,7 @@ test("foundation is inert and preserves current images unless replacement comple
   assert.doesNotMatch(repository, /SET vehicle_image_status = 'processing', vehicle_image_queue_kind = 'overview_repair'/);
   assert.match(repository, /SET vehicle_image_queue_kind = 'overview_repair'/);
   assert.match(repository, /reads\.vehicle_image_status = 'ready'[\s\S]*reads\.vehicle_image_queue_kind = 'overview_repair'/);
+  assert.match(repository, /vehicle_image_status = 'processing'[\s\S]*vehicle_image_status = 'ready'[\s\S]*vehicle_image_queue_kind = 'overview_repair'/);
   assert.match(queue, /claimNextOverviewFramingRepairJob\(\{ requireNoLiveWork: true \}\)/);
   assert.match(actions, /previewVehicleOverviewFramingRepairs/);
   assert.match(actions, /requirePermission\("maintenance\.manage"\)/);
