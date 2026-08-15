@@ -55,12 +55,51 @@ test("pixel audit catches an edge-clipped saved frame even when stored geometry 
   assert.equal(result.flagged, 1);
   assert.equal(result.unacceptable, 1);
   assert.equal(result.failures, 0);
-  assert.equal(result.items[0].classification, "unacceptable");
+  assert.equal(result.items[0].classification, "repair_candidate");
+  assert.equal(result.items[0].repairEligible, true);
+  assert.equal(result.items[0].repairReason, "VEHICLE_TOUCHES_IMAGE_EDGE");
   assert.equal(result.items[0].edgeContacts, 1);
   assert.ok(result.items[0].reasons.includes("VEHICLE_TOUCHES_IMAGE_EDGE"));
   assert.ok(Number.isFinite(result.items[0].geometryOverlap));
   assert.equal(result.items[1].classification, "acceptable");
+  assert.equal(result.items[1].repairEligible, false);
   assert.equal(result.items[1].completenessTier, 3);
+});
+
+test("blur and difficult exposure stay usable and review-only when framing is complete", async () => {
+  const service = new VehicleOverviewFramingAuditService({
+    repository: {
+      async listOverviewFramingAuditCandidates() {
+        return {
+          maxReadId: 12,
+          total: 1,
+          remaining: 0,
+          reads: [read(12, "derived/blurry.jpg")],
+        };
+      },
+    },
+    fileStorage: {},
+    imageProcessor,
+    loadImage: async () => Buffer.from("blurry"),
+    detector: {
+      async detectAll() {
+        return [{ confidence: 0.9, left: 0.1, top: 0.1, right: 0.8, bottom: 0.8 }];
+      },
+    },
+    qualityAnalyzer: async () => ({
+      sharpnessScore: 0.1,
+      exposureScore: 0.1,
+      contrastScore: 0.2,
+    }),
+  });
+
+  const result = await service.auditBatch();
+
+  assert.equal(result.repairCandidates, 0);
+  assert.equal(result.unacceptable, 0);
+  assert.equal(result.items[0].classification, "review");
+  assert.equal(result.items[0].repairEligible, false);
+  assert.deepEqual(result.items[0].reasons, ["LOW_SHARPNESS", "POOR_EXPOSURE"]);
 });
 
 test("one unreadable image is reported without stopping the bounded audit", async () => {
@@ -108,6 +147,6 @@ test("the Administrator framing audit surface remains read-only and bounded", as
   assert.doesNotMatch(action, /\b(?:INSERT|UPDATE|DELETE)\b/i);
   assert.match(component, /limit: 10/);
   assert.match(component, /Audit all ready Overview images/);
-  assert.match(component, /This read-only audit/);
+  assert.match(component, /Blur, difficult sun or exposure/);
   assert.match(component, /Stop after current batch/);
 });

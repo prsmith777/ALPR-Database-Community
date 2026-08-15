@@ -13,6 +13,7 @@
     "test": "node --test --test-concurrency=1 test/*.test.mjs",
     "test:backup-catalog:postgres": "node scripts/test-host-backup-catalog-postgres.mjs",
     "test:overview-export:postgres": "node scripts/test-overview-export-postgres.mjs",
+    "test:overview-framing-repair:postgres": "node scripts/test-overview-framing-repair-postgres.mjs",
     "test:vehicle-image-asset-cleanup:postgres": "node scripts/test-vehicle-image-asset-cleanup-postgres.mjs",
     "test:vehicle-image-asset:postgres": "node scripts/test-vehicle-image-asset-postgres.mjs",
     "test:vehicle-event-shadow:postgres": "node scripts/test-vehicle-event-shadow-postgres.mjs",

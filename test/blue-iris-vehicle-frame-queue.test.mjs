@@ -534,6 +534,78 @@ test("historical Entry work uses the exact Cam143 binding after live queues are 
   assert.equal(typeof processed.lifecycle.markReady, "function");
 });
 
+test("operator framing repair runs after live reads and before historical work", async () => {
+  const claimOrder = [];
+  let processed = null;
+  const repairReads = [{
+    id: 41117,
+    camera_name: "Street LPR 2",
+    timestamp: "2026-08-15T17:24:00Z",
+    bi_trigger_direction_label: "Westbound",
+    vehicle_image_claim_token: "33333333-3333-4333-8333-333333333333",
+    vehicle_image_attempt_count: 1,
+    vehicle_image_queue_kind: "overview_repair",
+    framing_repair_job_id: 71,
+    framing_repair_profile_id: 42,
+    framing_repair_profile_revision: 7,
+    framing_repair_source_kind: "overview_primary",
+    framing_repair_overview_context: "street",
+    framing_repair_source_camera_name: "Street Overview",
+    framing_repair_source_camera_short_name: "Cam149",
+    framing_repair_expected_delta_ms: 4_500,
+    framing_repair_tolerance_ms: 1_500,
+  }];
+  const queue = new BlueIrisVehicleFrameQueue({
+    repository: {
+      async getQueueStatus() { return { historicalPaused: false }; },
+      async claimNextOverviewRead() { claimOrder.push("live_overview"); return null; },
+      async claimNext({ includeHistorical }) {
+        claimOrder.push(includeHistorical ? "legacy_history" : "live");
+        return null;
+      },
+      async claimNextOverviewFramingRepairJob() {
+        claimOrder.push("framing_repair");
+        return repairReads.shift() || null;
+      },
+      async heartbeatOverviewFramingRepairJob() { return { id: 71 }; },
+      async markOverviewFramingRepairReady() { return { id: 71 }; },
+      async markOverviewFramingRepairFailed() { assert.fail("valid repair must not fail"); },
+      async claimNextEntryOverviewBackfillJob() {
+        claimOrder.push("entry_history");
+        return null;
+      },
+    },
+    fileStorage: {},
+    loadConfig: async () => configured,
+    clientFactory: () => ({
+      async testConnection() {
+        return { cameras: [{ id: "Cam149", name: "Street Overview" }] };
+      },
+    }),
+    timelineExportFactory: () => ({
+      async sweepLocalWorkspaces() {},
+      async reconcileRemoteExports() {},
+    }),
+    serviceFactory: () => ({
+      async processOverviewRead(input) {
+        processed = input;
+        return { kind: "overview_framing_repair", status: "ready", readId: input.read.id };
+      },
+    }),
+    pairSharingFactory: () => ({ async processNext() { return null; } }),
+    entryFallbackFactory: () => ({ async processNext() { return null; } }),
+  });
+
+  const result = await queue.processBatch({ limit: 1 });
+
+  assert.deepEqual(claimOrder, ["live_overview", "live", "framing_repair"]);
+  assert.equal(result.succeeded, 1);
+  assert.equal(processed.camera, "Cam149");
+  assert.equal(processed.profile.id, 42);
+  assert.equal(processed.profile.revision, 7);
+  assert.equal(processed.lifecycle.kind, "overview_framing_repair");
+});
+
 test("historical Entry binding mismatch fails closed without timeline processing", async () => {
   const read = claimedEntryHistoryRead();
   let failed = null;
