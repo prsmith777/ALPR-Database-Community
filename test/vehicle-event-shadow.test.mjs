@@ -184,7 +184,9 @@ test("migration and repository keep the event slice additive, default-off, and p
     fs.readFile(path.join(ROOT, "lib/vehicle-event-shadow.mjs"), "utf8"),
     fs.readFile(path.join(ROOT, "instrumentation.node.js"), "utf8"),
   ]);
-  const slice = migration.slice(migration.indexOf("2026081404_vehicle_image_asset_live_catalog"));
+  const sliceStart = migration.indexOf("-- Provider-neutral shadow passage events");
+  const sliceEnd = migration.indexOf("-- Asset-owned vehicle crops", sliceStart);
+  const slice = migration.slice(sliceStart, sliceEnd);
   assert.match(slice, /2026081405_vehicle_event_shadow_correlation/);
   assert.match(slice, /vehicle_event_shadow_control/);
   assert.match(slice, /enabled BOOLEAN NOT NULL DEFAULT FALSE/);

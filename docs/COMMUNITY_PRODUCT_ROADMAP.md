@@ -803,10 +803,21 @@ notes. Updates remain externally orchestrated.
   fails visibly. Vehicle Views also provides a read-only, bounded saved-pixel
   audit across a frozen scope of ready Entry and Street Overview images. It
   reports edge truncation, tight framing, missing or multiple vehicles, stale
-  stored geometry, sharpness, exposure, and per-file audit failures without
-  writing files, changing reads, queueing regeneration, or calling an external
-  provider. Historical corrections remain a separate reviewed and explicitly
-  authorized workflow; automatic canonical crop behavior remains unchanged.
+  stored geometry, sharpness, exposure, and per-file audit failures. Blur,
+  difficult exposure, stationary workers, and multi-vehicle scenes are review
+  evidence only and remain usable when they are the best available image.
+- Operator-selected framing repair is implemented only for genuine edge-contact
+  or overly tight `overview_primary` and `entry_overview_primary` images.
+  Selection is explicit after a frozen saved-pixel audit; the server rechecks
+  the pixels and exact acquisition profile before creating an inert preview.
+  Explicit 1, 5, or 25-read batches run one at a time behind live work. The
+  current image path remains visible throughout processing and every failure.
+  A replacement commits only with zero edge contacts, at least 1.5 percent
+  image-edge margin, and a higher completeness tier; otherwise the attempted
+  file is discarded and the job records `preserved`. Shared/fallback copies,
+  blur, exposure, geometry-review, and multiple-vehicle findings never qualify
+  by themselves. No ReID, event, crop, notification, or external-provider
+  behavior changes.
 Street LPR 1, Street Overview, and Entry Overview are installed. Street Overview
 and Entry Overview supply strong daytime vehicle images but are monochrome at
 night and are not expected to read a plate. Entry Overview is Blue Iris `Cam143`.
