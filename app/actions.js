@@ -4040,6 +4040,7 @@ function vehicleCropOverviewData(overview) {
   const catalog = overview?.catalog || {};
   const counts = overview?.counts || {};
   const run = overview?.latestRun || null;
+  const live = overview?.live || null;
   return {
     algorithmVersion: overview?.algorithmVersion || null,
     catalog: {
@@ -4089,13 +4090,39 @@ function vehicleCropOverviewData(overview) {
       height: vehicleCropCount(item.image_height),
       createdAt: item.created_at || null,
     })),
+    live: live ? {
+      enabled: live.enabled === true,
+      state: live.state || "disabled",
+      completedCampaign: live.completedCampaign === true,
+      activeCampaign: live.activeCampaign === true,
+      counts: {
+        totalJobs: vehicleCropCount(live.counts?.total_jobs),
+        pendingEligible: vehicleCropCount(live.counts?.pending_eligible),
+        queued: vehicleCropCount(live.counts?.queued),
+        processing: vehicleCropCount(live.counts?.processing),
+        ready: vehicleCropCount(live.counts?.ready),
+        alreadyCurrent: vehicleCropCount(live.counts?.already_current),
+        sourceChanged: vehicleCropCount(live.counts?.source_changed),
+        unavailable: vehicleCropCount(live.counts?.unavailable),
+        invalid: vehicleCropCount(live.counts?.invalid),
+        failed: vehicleCropCount(live.counts?.failed),
+        retryable: vehicleCropCount(live.counts?.retryable),
+        lastCompletedAt: live.counts?.last_completed_at || null,
+      },
+      retryCandidates: (live.retryCandidates || []).map((item) => ({
+        jobId: Number(item.id),
+        assetId: Number(item.asset_id),
+        errorCode: item.error_code || "VEHICLE_IMAGE_CROP_LIVE_FAILED",
+        operatorRetryCount: vehicleCropCount(item.operator_retry_count),
+      })),
+    } : null,
     worker: getVehicleImageCropWorkerStatus(),
   };
 }
 
 function vehicleCropActionFailure(error, fallback) {
   const message = String(error?.message || "").trim();
-  if (/^(Vehicle crop|Canonical Overview crop|Wait for the current vehicle crop)/.test(message)) {
+  if (/^(Vehicle crop|Canonical Overview crop|Automatic vehicle crop|Complete the initial vehicle crop|Disable automatic vehicle crop|Wait for (?:the current|the active|an active) vehicle crop|Only a terminal automatic vehicle crop|This automatic vehicle crop)/.test(message)) {
     return { success: false, error: message };
   }
   console.error(fallback, { code: String(error?.code || "") });
@@ -4189,6 +4216,41 @@ export async function retryVehicleImageCropJob(input = {}) {
     return { success: true, data: { overview: await loadVehicleCropOverview(runtime) } };
   } catch (error) {
     return vehicleCropActionFailure(error, "Unable to retry this vehicle crop item.");
+  }
+}
+
+export async function setVehicleImageCropLiveEnabled(input = {}) {
+  const principal = await requirePermission("maintenance.manage");
+  try {
+    const runtime = await getVehicleImageCropRuntime();
+    await runtime.service.setLiveEnabled({
+      enabled: input.enabled === true,
+      actorUserId: principal.id,
+    });
+    if (input.enabled === true) wakeVehicleImageCropWorker();
+    revalidatePath("/settings/vehicle-intelligence/processing");
+    return { success: true, data: { overview: await loadVehicleCropOverview(runtime) } };
+  } catch (error) {
+    return vehicleCropActionFailure(error, "Unable to update automatic vehicle cropping.");
+  }
+}
+
+export async function retryVehicleImageCropLiveJob(input = {}) {
+  const principal = await requirePermission("maintenance.manage");
+  try {
+    const runtime = await getVehicleImageCropRuntime();
+    await runtime.service.retryLiveJob({
+      jobId: input.jobId,
+      actorUserId: principal.id,
+    });
+    wakeVehicleImageCropWorker();
+    revalidatePath("/settings/vehicle-intelligence/processing");
+    return { success: true, data: { overview: await loadVehicleCropOverview(runtime) } };
+  } catch (error) {
+    return vehicleCropActionFailure(
+      error,
+      "Unable to retry this automatic vehicle crop."
+    );
   }
 }
 

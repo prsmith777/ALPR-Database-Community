@@ -23,14 +23,17 @@ test("release information resolves a commit-pinned deployment image", () => {
   });
 
   assert.equal(release.version, "0.1.20");
-  assert.equal(release.manualVersion, "1.93");
-  assert.equal(release.manualUpdatedAt, "August 14, 2026");
+  assert.equal(release.manualVersion, "1.94");
+  assert.equal(release.manualUpdatedAt, "August 15, 2026");
   assert.equal(release.gitSha, "8cd2fa8");
   assert.equal(release.channel, "staging");
   assert.equal(release.source, "commit-pinned image");
   assert.equal(release.readOnly, true);
-  assert.equal(release.notes.title, "August 14, 2026 canonical Overview vehicle crops");
-  assert.equal(release.notes.publishedAt, "2026-08-14");
+  assert.equal(
+    release.notes.title,
+    "August 15, 2026 automatic canonical Overview vehicle crops"
+  );
+  assert.equal(release.notes.publishedAt, "2026-08-15");
   assert.ok(release.notes.items.length >= 4);
 });
 

@@ -9,6 +9,8 @@ import {
   STORAGE_HEALTH_CATALOG_CAMPAIGN_SQL,
   STORAGE_HEALTH_LIVE_CATALOG_RELATION_SQL,
   STORAGE_HEALTH_LIVE_CATALOG_SQL,
+  STORAGE_HEALTH_LIVE_CROP_RELATION_SQL,
+  STORAGE_HEALTH_LIVE_CROP_SQL,
   STORAGE_HEALTH_METRICS_SQL,
   STORAGE_HEALTH_SAMPLE_SQL,
 } from "../lib/storage-health.mjs";
@@ -67,6 +69,12 @@ test("storage health combines exact database and filesystem facts with a bounded
     vehicle_image_asset_stale_read_links: "1",
     vehicle_image_asset_zero_link_count: "1",
     vehicle_image_asset_zero_link_bytes: "300",
+    vehicle_image_crop_count: "2",
+    vehicle_image_crop_file_count: "2",
+    vehicle_image_crop_logical_bytes: "400",
+    vehicle_image_crop_physical_bytes: "400",
+    vehicle_image_crop_current_read_links: "2",
+    vehicle_image_crop_current_physical_bytes: "400",
   };
   const sampleRows = [
     { image_path: "images/a.jpg", thumbnail_path: "thumbnails/a.jpg", derived_path: "derived/a.jpg" },
@@ -107,6 +115,15 @@ test("storage health combines exact database and filesystem facts with a bounded
         }] };
       }
       if (sql === STORAGE_HEALTH_LIVE_CATALOG_SQL) {
+        return { rows: [{ enabled: false, completed_campaign: true }] };
+      }
+      if (sql === STORAGE_HEALTH_LIVE_CROP_RELATION_SQL) {
+        return { rows: [{
+          control_relation: "vehicle_image_crop_live_control",
+          runs_relation: "vehicle_image_crop_runs",
+        }] };
+      }
+      if (sql === STORAGE_HEALTH_LIVE_CROP_SQL) {
         return { rows: [{ enabled: false, completed_campaign: true }] };
       }
       assert.fail("Unexpected storage-health query");
@@ -157,10 +174,19 @@ test("storage health combines exact database and filesystem facts with a bounded
     enabled: false,
     completedCampaign: true,
   });
+  assert.equal(snapshot.assets.canonicalVehicleCropCount, 2);
+  assert.equal(snapshot.assets.canonicalVehicleCropPhysicalBytes, 400);
+  assert.equal(snapshot.assets.canonicalVehicleCropCurrentReadLinks, 2);
+  assert.equal(snapshot.assets.canonicalVehicleCropCurrentPhysicalBytes, 400);
+  assert.deepEqual(snapshot.assets.canonicalVehicleCropLive, {
+    enabled: false,
+    completedCampaign: true,
+  });
   assert.equal(snapshot.growth.estimatedBytesPerRead, 400);
   assert.equal(snapshot.growth.estimatedBytesPerDay, 4_000);
   assert.equal(snapshot.growth.canonicalBytesPerLinkedRead, 150);
   assert.equal(snapshot.growth.canonicalContributionIncludedInDailyEstimate, false);
+  assert.equal(snapshot.growth.cropContributionIncludedInDailyEstimate, false);
   assert.equal(snapshot.growth.activeCampaignProjectedCanonicalBytes, 2_500);
   assert.equal(snapshot.growth.projectedUsedBytesAfterActiveCampaign, 8_500);
   assert.equal(snapshot.growth.projections[0].days, 1);
@@ -217,6 +243,9 @@ test("catalog campaign projection is optional across migration boundaries", asyn
         if (sql === STORAGE_HEALTH_LIVE_CATALOG_RELATION_SQL) {
           return { rows: [{ control_relation: null, runs_relation: null }] };
         }
+        if (sql === STORAGE_HEALTH_LIVE_CROP_RELATION_SQL) {
+          return { rows: [{ control_relation: null, runs_relation: null }] };
+        }
         assert.fail("Unexpected storage-health query");
       },
       storagePath: "/capture-storage",
@@ -229,14 +258,16 @@ test("catalog campaign projection is optional across migration boundaries", asyn
     assert.deepEqual(snapshot.errors, [], campaignState);
     assert.equal(snapshot.assets.canonicalVehicleImageActiveCampaign, null, campaignState);
     assert.equal(snapshot.assets.canonicalVehicleImageLiveCatalog, null, campaignState);
+    assert.equal(snapshot.assets.canonicalVehicleCropLive, null, campaignState);
     assert.equal(snapshot.assets.canonicalVehicleImageZeroLinkCount, 1, campaignState);
     assert.equal(snapshot.growth.canonicalBytesPerLinkedRead, 0, campaignState);
     assert.equal(snapshot.growth.canonicalContributionIncludedInDailyEstimate, false, campaignState);
+    assert.equal(snapshot.growth.cropContributionIncludedInDailyEstimate, false, campaignState);
     assert.equal(snapshot.growth.projectionsAfterActiveCampaign, null, campaignState);
   }
 });
 
-test("enabled automatic catalog contributes observed canonical growth to capacity forecasts", async () => {
+test("enabled automatic catalog and crops contribute observed growth to capacity forecasts", async () => {
   const snapshot = await collectStorageHealth({
     query: async (sql) => {
       if (sql === STORAGE_HEALTH_METRICS_SQL) {
@@ -261,6 +292,12 @@ test("enabled automatic catalog contributes observed canonical growth to capacit
           vehicle_image_asset_stale_read_links: "0",
           vehicle_image_asset_zero_link_count: "0",
           vehicle_image_asset_zero_link_bytes: "0",
+          vehicle_image_crop_count: "10",
+          vehicle_image_crop_file_count: "10",
+          vehicle_image_crop_logical_bytes: "400",
+          vehicle_image_crop_physical_bytes: "400",
+          vehicle_image_crop_current_read_links: "10",
+          vehicle_image_crop_current_physical_bytes: "400",
         }] };
       }
       if (sql === STORAGE_HEALTH_SAMPLE_SQL) {
@@ -276,6 +313,15 @@ test("enabled automatic catalog contributes observed canonical growth to capacit
         }] };
       }
       if (sql === STORAGE_HEALTH_LIVE_CATALOG_SQL) {
+        return { rows: [{ enabled: true, completed_campaign: true }] };
+      }
+      if (sql === STORAGE_HEALTH_LIVE_CROP_RELATION_SQL) {
+        return { rows: [{
+          control_relation: "vehicle_image_crop_live_control",
+          runs_relation: "vehicle_image_crop_runs",
+        }] };
+      }
+      if (sql === STORAGE_HEALTH_LIVE_CROP_SQL) {
         return { rows: [{ enabled: true, completed_campaign: true }] };
       }
       assert.fail("Unexpected storage-health query");
@@ -294,9 +340,13 @@ test("enabled automatic catalog contributes observed canonical growth to capacit
   assert.equal(snapshot.growth.canonicalBytesPerLinkedRead, 100);
   assert.equal(snapshot.growth.canonicalEstimatedBytesPerDay, 200);
   assert.equal(snapshot.growth.canonicalBytesPerPlateRead, 20);
-  assert.equal(snapshot.growth.estimatedBytesPerRead, 140);
-  assert.equal(snapshot.growth.estimatedBytesPerDay, 1_400);
+  assert.equal(snapshot.growth.cropBytesPerLinkedRead, 40);
+  assert.equal(snapshot.growth.cropEstimatedBytesPerDay, 80);
+  assert.equal(snapshot.growth.cropBytesPerPlateRead, 8);
+  assert.equal(snapshot.growth.estimatedBytesPerRead, 148);
+  assert.equal(snapshot.growth.estimatedBytesPerDay, 1_480);
   assert.equal(snapshot.growth.canonicalContributionIncludedInDailyEstimate, true);
+  assert.equal(snapshot.growth.cropContributionIncludedInDailyEstimate, true);
   assert.match(snapshot.growth.basis, /eligible Overview rate/);
 });
 
