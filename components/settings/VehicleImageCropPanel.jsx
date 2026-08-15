@@ -10,6 +10,8 @@ import {
   getVehicleImageCropOverview,
   previewVehicleImageCrops,
   retryVehicleImageCropJob,
+  retryVehicleImageCropLiveJob,
+  setVehicleImageCropLiveEnabled,
   setVehicleImageCropPaused,
 } from "@/app/actions";
 import { Badge } from "@/components/ui/badge";
@@ -65,6 +67,8 @@ export default function VehicleImageCropPanel({ initialOverview = null }) {
   const run = overview?.latestRun || null;
   const catalog = overview?.catalog || {};
   const counts = run?.counts || {};
+  const live = overview?.live || {};
+  const liveCounts = live.counts || {};
   const status = run?.status || "not_previewed";
   const active = count(counts.queued) + count(counts.processing) + count(counts.retryable);
   const total = count(counts.total);
@@ -76,8 +80,11 @@ export default function VehicleImageCropPanel({ initialOverview = null }) {
   const pixelReduction = count(counts.sourcePixels)
     ? Math.max(0, 100 - Math.round(count(counts.cropPixels) / count(counts.sourcePixels) * 100))
     : 0;
-  const polling = status === "previewing" || (status === "running" && active > 0);
-  const canPreview = !run || TERMINAL.has(status);
+  const liveActive = count(liveCounts.queued) + count(liveCounts.processing)
+    + count(liveCounts.retryable);
+  const polling = status === "previewing" || (status === "running" && active > 0)
+    || (live.enabled === true && (count(liveCounts.pendingEligible) > 0 || liveActive > 0));
+  const canPreview = (!run || TERMINAL.has(status)) && live.enabled !== true;
   const canCatalog = ["ready", "running"].includes(status)
     && Boolean(run?.previewFingerprint)
     && count(counts.previewed) > 0 && active === 0;
@@ -154,6 +161,27 @@ export default function VehicleImageCropPanel({ initialOverview = null }) {
     try {
       setOverview(overviewFrom(await retryVehicleImageCropJob({ jobId })));
       setMessage("Vehicle crop item was queued for its one bounded operator retry.");
+    } catch (error) { setMessage(error.message); }
+    finally { setBusy(""); }
+  };
+
+  const toggleLive = async () => {
+    const enabled = live.enabled !== true;
+    setBusy("live-toggle"); setMessage("");
+    try {
+      setOverview(overviewFrom(await setVehicleImageCropLiveEnabled({ enabled })));
+      setMessage(enabled
+        ? "Automatic local cropping is enabled. New identity-eligible canonical assets will be cropped one at a time."
+        : "Automatic cropping is disabled. An item already being written may finish; no new work will be claimed.");
+    } catch (error) { setMessage(error.message); }
+    finally { setBusy(""); }
+  };
+
+  const retryLive = async (jobId) => {
+    setBusy(`live-retry:${jobId}`); setMessage("");
+    try {
+      setOverview(overviewFrom(await retryVehicleImageCropLiveJob({ jobId })));
+      setMessage("The automatic crop failure was queued for its one bounded operator retry.");
     } catch (error) { setMessage(error.message); }
     finally { setBusy(""); }
   };
@@ -252,6 +280,70 @@ export default function VehicleImageCropPanel({ initialOverview = null }) {
             <RefreshCw className="mr-2 h-4 w-4" />Refresh status
           </Button>
         </div>
+
+        <div className="space-y-4 rounded-md border p-4">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <div className="font-medium">Automatic new canonical vehicle cropping</div>
+              <p className="mt-1 max-w-3xl text-xs text-muted-foreground">
+                After the inspected campaign, a durable low-priority worker crops newly cataloged identity assets one at a time. It reuses the same exact source checks and never blocks Vehicle Views, changes ReID, or calls an external provider.
+              </p>
+            </div>
+            <Badge variant={live.enabled ? "default" : "secondary"}>
+              {live.enabled ? live.state?.replaceAll("_", " ") : "disabled"}
+            </Badge>
+          </div>
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
+            <Metric label="awaiting current crop" value={count(liveCounts.pendingEligible).toLocaleString()} />
+            <Metric label="queued" value={count(liveCounts.queued).toLocaleString()} />
+            <Metric label="processing" value={count(liveCounts.processing).toLocaleString()} />
+            <Metric label="cropped automatically" value={(count(liveCounts.ready) + count(liveCounts.alreadyCurrent)).toLocaleString()} />
+            <Metric
+              label="exceptions"
+              value={(count(liveCounts.sourceChanged) + count(liveCounts.unavailable)
+                + count(liveCounts.invalid) + count(liveCounts.failed)).toLocaleString()}
+              detail={`${count(liveCounts.sourceChanged).toLocaleString()} source changed`}
+            />
+            <Metric
+              label="last automatic crop"
+              value={liveCounts.lastCompletedAt
+                ? new Date(liveCounts.lastCompletedAt).toLocaleString()
+                : "Not yet"}
+            />
+          </div>
+          <Button onClick={toggleLive} disabled={Boolean(busy)} variant={live.enabled ? "secondary" : "default"}>
+            {busy === "live-toggle"
+              ? <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              : live.enabled
+                ? <Pause className="mr-2 h-4 w-4" />
+                : <Play className="mr-2 h-4 w-4" />}
+            {live.enabled ? "Disable automatic cropping" : "Enable automatic cropping"}
+          </Button>
+          {live.enabled ? (
+            <p className="text-xs text-muted-foreground">
+              Disable automatic cropping before creating another operator delta crop preview.
+            </p>
+          ) : null}
+        </div>
+
+        {(live.retryCandidates || []).length ? (
+          <details className="rounded-md border">
+            <summary className="cursor-pointer p-4 font-medium">Advanced automatic crop exceptions</summary>
+            <div className="space-y-2 border-t p-4">
+              {live.retryCandidates.map((item) => (
+                <div key={item.jobId} className="flex flex-wrap items-center gap-2 rounded-md border p-3 text-sm">
+                  <span>Asset #{item.assetId}</span>
+                  <Badge variant="secondary">{item.errorCode}</Badge>
+                  <Button size="sm" variant="outline" className="ml-auto"
+                    disabled={Boolean(busy) || item.operatorRetryCount >= 1}
+                    onClick={() => retryLive(item.jobId)}>
+                    <RotateCcw className="mr-2 h-4 w-4" />Retry once
+                  </Button>
+                </div>
+              ))}
+            </div>
+          </details>
+        ) : null}
 
         {(overview?.retryCandidates || []).length ? (
           <details className="rounded-md border">

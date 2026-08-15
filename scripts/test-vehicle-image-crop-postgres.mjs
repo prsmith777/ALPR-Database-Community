@@ -10,6 +10,8 @@ import sharp from "sharp";
 import { FileStorage } from "../lib/fileStorage.js";
 import { validateAndDeleteCleanupCandidate } from "../lib/storage-cleanup.mjs";
 import { VehicleImageCropCampaignService } from "../lib/vehicle-image-crop-campaign.mjs";
+import { VehicleImageCropLiveService } from "../lib/vehicle-image-crop-live.mjs";
+import { VehicleImageCropLiveRepository } from "../lib/vehicle-image-crop-live-repository.mjs";
 import { VehicleImageCropRepository } from "../lib/vehicle-image-crop-repository.mjs";
 import { VehicleImageCropService } from "../lib/vehicle-image-crop.mjs";
 import { canonicalVehicleImageAssetPath } from "../lib/vehicle-image-asset-model.mjs";
@@ -55,6 +57,8 @@ let actorId = null;
 let readId = null;
 let assetId = null;
 let runId = null;
+let liveReadId = null;
+let liveAssetId = null;
 
 async function guard() {
   lockClient = await pool.connect();
@@ -85,10 +89,11 @@ async function guard() {
        (SELECT COUNT(*)::integer FROM public.vehicle_image_asset_reads) AS links,
        (SELECT COUNT(*)::integer FROM public.vehicle_image_derivatives) AS derivatives,
        (SELECT COUNT(*)::integer FROM public.vehicle_image_crop_runs) AS runs,
-       (SELECT COUNT(*)::integer FROM public.vehicle_image_crop_jobs) AS jobs`
+       (SELECT COUNT(*)::integer FROM public.vehicle_image_crop_jobs) AS jobs,
+       (SELECT COUNT(*)::integer FROM public.vehicle_image_crop_live_jobs) AS live_jobs`
   );
   assert.deepEqual(empty.rows[0], {
-    reads: 0, assets: 0, links: 0, derivatives: 0, runs: 0, jobs: 0,
+    reads: 0, assets: 0, links: 0, derivatives: 0, runs: 0, jobs: 0, live_jobs: 0,
   });
   const lock = await lockClient.query(
     "SELECT pg_try_advisory_lock(hashtextextended($1, 0)) AS locked",
@@ -212,6 +217,89 @@ async function runCampaign(storage) {
   );
 }
 
+async function runAutomaticCrop(storage) {
+  const image = await sharp({
+    create: { width: 360, height: 200, channels: 3, background: "#775544" },
+  }).jpeg({ quality: 91 }).toBuffer();
+  const sourceHash = crypto.createHash("sha256").update(image).digest("hex");
+  const sourcePath = canonicalVehicleImageAssetPath(sourceHash);
+  await storage.saveDerivedImageIfAbsent(sourcePath, image);
+  const asset = await pool.query(
+    `INSERT INTO public.vehicle_image_assets (
+       content_sha256, storage_path, media_type, byte_size, image_width, image_height
+     ) VALUES ($1, $2, 'image/jpeg', $3, 360, 200) RETURNING id`,
+    [sourceHash, sourcePath, image.length]
+  );
+  liveAssetId = Number(asset.rows[0].id);
+  const evidencePath = `derived/codex-live-crop-evidence-${suffix}.jpg`;
+  const read = await pool.query(
+    `INSERT INTO public.plate_reads (
+       plate_number, camera_name, "timestamp", vehicle_image_status,
+       vehicle_image_path, vehicle_image_timestamp, vehicle_image_source_kind,
+       vehicle_image_detection_confidence, vehicle_image_detection_box,
+       vehicle_image_width, vehicle_image_height, vehicle_image_retryable,
+       vehicle_image_updated_at
+     ) VALUES (
+       'LIV123', 'Entry LPR 1', CURRENT_TIMESTAMP, 'ready', $1,
+       CURRENT_TIMESTAMP, 'entry_overview_primary', 0.95,
+       '{"left":0.18,"top":0.2,"right":0.82,"bottom":0.82}'::jsonb,
+       360, 200, FALSE, '2026-08-15T12:00:00.654321Z'::timestamptz
+     ) RETURNING id, vehicle_image_updated_at::text AS updated_at`,
+    [evidencePath]
+  );
+  liveReadId = Number(read.rows[0].id);
+  await pool.query(
+    `INSERT INTO public.vehicle_image_asset_reads (
+       asset_id, read_id, source_kind, relationship, identity_eligible,
+       overview_context, captured_at, read_camera_name, source_camera_name,
+       source_path_snapshot, source_updated_at, detection_confidence,
+       detection_box, selection_metadata
+     ) VALUES (
+       $1, $2, 'entry_overview_primary', 'primary', TRUE, 'entry', CURRENT_TIMESTAMP,
+       'Entry LPR 1', 'Entry Overview', $3, $4::timestamptz, 0.95,
+       '{"left":0.18,"top":0.2,"right":0.82,"bottom":0.82}'::jsonb, '{}'::jsonb
+     )`,
+    [liveAssetId, liveReadId, evidencePath, read.rows[0].updated_at]
+  );
+
+  const repository = new VehicleImageCropRepository({ pool });
+  const cropService = new VehicleImageCropService({ repository, fileStorage: storage });
+  const liveRepository = new VehicleImageCropLiveRepository(pool);
+  const liveCrop = new VehicleImageCropLiveService({ repository: liveRepository, cropService });
+  const campaign = new VehicleImageCropCampaignService({ repository, cropService, liveCrop });
+  await liveCrop.setEnabled({ enabled: true, actorUserId: actorId });
+  await assert.rejects(
+    campaign.createPreview({ actorUserId: actorId }),
+    /Disable automatic vehicle cropping/
+  );
+  const processed = await liveCrop.processBatch({ limit: 1 });
+  assert.equal(processed.discovered, 1);
+  assert.equal(processed.processed, 1);
+  assert.equal(processed.succeeded, 1);
+  const result = await pool.query(
+    `SELECT jobs.status, jobs.attempt_count,
+            jobs.evidence_source_updated_at::text AS evidence_updated_at,
+            derivatives.id AS derivative_id, derivatives.storage_path,
+            derivatives.content_sha256
+     FROM public.vehicle_image_crop_live_jobs jobs
+     JOIN public.vehicle_image_derivatives derivatives
+       ON derivatives.id = jobs.derivative_id
+     WHERE jobs.asset_id = $1`,
+    [liveAssetId]
+  );
+  assert.equal(result.rowCount, 1);
+  assert.equal(result.rows[0].status, "ready");
+  assert.match(result.rows[0].evidence_updated_at, /\.654321\+00$/);
+  const cropPath = await storage.resolveExistingImagePath(result.rows[0].storage_path);
+  const cropBytes = await fs.readFile(cropPath);
+  assert.equal(
+    crypto.createHash("sha256").update(cropBytes).digest("hex"),
+    result.rows[0].content_sha256
+  );
+  await liveCrop.setEnabled({ enabled: false, actorUserId: actorId });
+  assert.equal((await liveCrop.getOverview()).enabled, false);
+}
+
 async function cleanup() {
   if (actorId != null) {
     await pool.query(
@@ -224,13 +312,15 @@ async function cleanup() {
               event_type, resource_type, resource_id, outcome, reason, request_id,
               metadata, occurred_at, NULL
        FROM public.audit_events
-       WHERE resource_type = 'vehicle_image_crop' AND actor_user_id = $1
+        WHERE resource_type IN ('vehicle_image_crop','vehicle_image_crop_live')
+          AND actor_user_id = $1
        ON CONFLICT (source_event_id, occurred_at) DO NOTHING`,
       [actorId]
     );
     await pool.query(
       `DELETE FROM public.audit_events
-       WHERE resource_type = 'vehicle_image_crop' AND actor_user_id = $1`,
+       WHERE resource_type IN ('vehicle_image_crop','vehicle_image_crop_live')
+         AND actor_user_id = $1`,
       [actorId]
     );
   }
@@ -238,11 +328,26 @@ async function cleanup() {
     await pool.query("DELETE FROM public.vehicle_image_crop_jobs WHERE run_id = $1", [runId]);
     await pool.query("DELETE FROM public.vehicle_image_crop_runs WHERE id = $1", [runId]);
   }
+  if (liveAssetId != null) {
+    await pool.query(
+      "DELETE FROM public.vehicle_image_crop_live_jobs WHERE asset_id = $1",
+      [liveAssetId]
+    );
+    await pool.query("DELETE FROM public.vehicle_image_derivatives WHERE asset_id = $1", [liveAssetId]);
+  }
   if (assetId != null) {
     await pool.query("DELETE FROM public.vehicle_image_derivatives WHERE asset_id = $1", [assetId]);
   }
   if (readId != null) await pool.query("DELETE FROM public.plate_reads WHERE id = $1", [readId]);
+  if (liveReadId != null) await pool.query("DELETE FROM public.plate_reads WHERE id = $1", [liveReadId]);
   if (assetId != null) await pool.query("DELETE FROM public.vehicle_image_assets WHERE id = $1", [assetId]);
+  if (liveAssetId != null) await pool.query("DELETE FROM public.vehicle_image_assets WHERE id = $1", [liveAssetId]);
+  await pool.query(
+    `UPDATE public.vehicle_image_crop_live_control
+     SET enabled = FALSE, enabled_by_user_id = NULL, enabled_at = NULL,
+         disabled_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
+     WHERE singleton = TRUE`
+  );
   if (actorId != null) await pool.query("DELETE FROM public.users WHERE id = $1", [actorId]);
   const residue = await pool.query(
     `SELECT
@@ -251,10 +356,11 @@ async function cleanup() {
        (SELECT COUNT(*)::integer FROM public.vehicle_image_asset_reads) AS links,
        (SELECT COUNT(*)::integer FROM public.vehicle_image_derivatives) AS derivatives,
        (SELECT COUNT(*)::integer FROM public.vehicle_image_crop_runs) AS runs,
-       (SELECT COUNT(*)::integer FROM public.vehicle_image_crop_jobs) AS jobs`
+       (SELECT COUNT(*)::integer FROM public.vehicle_image_crop_jobs) AS jobs,
+       (SELECT COUNT(*)::integer FROM public.vehicle_image_crop_live_jobs) AS live_jobs`
   );
   assert.deepEqual(residue.rows[0], {
-    reads: 0, assets: 0, links: 0, derivatives: 0, runs: 0, jobs: 0,
+    reads: 0, assets: 0, links: 0, derivatives: 0, runs: 0, jobs: 0, live_jobs: 0,
   });
 }
 
@@ -263,6 +369,7 @@ try {
   await guard();
   const storage = await createFixture();
   await runCampaign(storage);
+  await runAutomaticCrop(storage);
   succeeded = true;
 } finally {
   try {

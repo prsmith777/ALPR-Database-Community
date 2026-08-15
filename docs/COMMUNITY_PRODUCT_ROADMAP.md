@@ -18,7 +18,7 @@ reliable background processing.
 6. Audit sensitive searches, exports, corrections, rule changes, and
    destructive maintenance.
 
-## Release candidate baseline — August 14, 2026
+## Release candidate baseline — August 15, 2026
 
 - Application `0.1.20` candidate includes named users and roles, evidence-preserving plate
   review, filter-respecting exports, the searchable help center, local privacy
@@ -779,6 +779,19 @@ notes. Updates remain externally orchestrated.
   reconciliation protect every registered derivative path. Full Overview
   images remain retained. Current read-owned ReID, shadow-event behavior,
   attributes, notifications, and external enrichment remain unchanged.
+- Default-off automatic canonical Overview vehicle cropping is implemented for
+  identity-eligible assets that arrive after the inspected operator campaign.
+  An Administrator must explicitly enable it after a completed crop campaign.
+  The durable low-priority queue processes one asset at a time, uses the exact
+  campaign crop algorithm, rechecks the immutable source bytes and current
+  evidence link before registration, retries transient failures at most five
+  times, and exposes one bounded operator retry. Operator crop campaigns always
+  take priority and require automatic cropping to be disabled first. Disabling
+  stops new claims while allowing an already-writing item to finish truthfully.
+  Storage Health includes observed crop bytes per current link in recurring
+  growth estimates only while the automatic worker is enabled. No Vehicle View,
+  current ReID, shadow event, attribute, notification, or external-provider
+  behavior changes.
 Street LPR 1, Street Overview, and Entry Overview are installed. Street Overview
 and Entry Overview supply strong daytime vehicle images but are monochrome at
 night and are not expected to read a plate. Entry Overview is Blue Iris `Cam143`.
@@ -832,8 +845,9 @@ be restored. Monochrome nighttime captures do not receive a direction result.
   default-off automatic catalog for new Overview reads, recurring enabled-state
   storage projection, real PostgreSQL/filesystem cleanup gate, and default-off
   shadow correlation of conservative paired reads into provider-neutral
-  vehicle events and operator-controlled Overview-owned crop derivatives are
-  delivered. The pre-crop production review sampled current proposed and
+  vehicle events, operator-controlled Overview-owned crop derivatives, and the
+  default-off low-priority automatic crop queue are delivered. The pre-crop
+  production review sampled current proposed and
   rejected Entry and Street evidence, identified pre-Blue-Iris-zone-correction
   direction contamination, and made no timing or matching threshold change.
   Next create provider-neutral crop embeddings, then crop-owned attributes and
