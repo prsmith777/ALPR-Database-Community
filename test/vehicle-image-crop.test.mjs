@@ -210,6 +210,7 @@ test("cleanup, reconciliation, runtime, actions, and Processing UI include crops
   assert.match(repository, /unique_preview_files/);
   assert.match(repository, /GROUP BY preview_sha256/);
   assert.match(repository, /ORDER BY created_at DESC, id DESC LIMIT 8/);
+  assert.equal((repository.match(/status = \$2::varchar\(16\)/g) || []).length, 2);
   assert.match(instrumentation, /loadVehicleImageCropStartup/);
   for (const action of [
     "getVehicleImageCropOverview",
