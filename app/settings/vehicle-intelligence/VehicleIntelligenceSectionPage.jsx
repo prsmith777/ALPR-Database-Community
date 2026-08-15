@@ -1,6 +1,7 @@
 import VehicleIntelligenceSettings from "@/components/settings/VehicleIntelligenceSettings";
 import {
   getBlueIrisVehicleFrameQueueStatus,
+  getVehicleEventShadowOverview,
   getVehicleImageAssetCatalogOverview,
   getVehicleOverviewSetup,
   getVehicleDirectionSetup,
@@ -79,10 +80,13 @@ export default async function VehicleIntelligenceSectionPage({ section = "camera
     );
   }
 
-  const [result, vehicleImageCatalog] = await Promise.all([
+  const [result, vehicleImageCatalog, vehicleEventShadow] = await Promise.all([
     getVehicleDirectionSetup(null, directionOptions(section)),
     section === "processing"
       ? getVehicleImageAssetCatalogOverview()
+      : Promise.resolve(null),
+    section === "processing"
+      ? getVehicleEventShadowOverview()
       : Promise.resolve(null),
   ]);
   if (!result.success) throw new Error(result.error);
@@ -93,6 +97,9 @@ export default async function VehicleIntelligenceSectionPage({ section = "camera
       initialOverviewSetup={null}
       initialVehicleImageCatalog={vehicleImageCatalog?.success
         ? vehicleImageCatalog.data.overview
+        : null}
+      initialVehicleEventShadow={vehicleEventShadow?.success
+        ? vehicleEventShadow.data.overview
         : null}
     />
   );

@@ -1,6 +1,6 @@
 {
   "name": "blueiris-alpr-database",
-  "version": "0.1.19",
+  "version": "0.1.20",
   "private": true,
   "engines": {
     "node": ">=24.0.0 <25"
@@ -15,6 +15,7 @@
     "test:overview-export:postgres": "node scripts/test-overview-export-postgres.mjs",
     "test:vehicle-image-asset-cleanup:postgres": "node scripts/test-vehicle-image-asset-cleanup-postgres.mjs",
     "test:vehicle-image-asset:postgres": "node scripts/test-vehicle-image-asset-postgres.mjs",
+    "test:vehicle-event-shadow:postgres": "node scripts/test-vehicle-event-shadow-postgres.mjs",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

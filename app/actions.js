@@ -87,6 +87,11 @@ import {
   wakeVehicleImageAssetCatalogWorker,
 } from "@/lib/vehicle-image-asset-catalog-runtime.mjs";
 import {
+  getVehicleEventShadowRuntime,
+  getVehicleEventShadowWorkerStatus,
+  wakeVehicleEventShadowWorker,
+} from "@/lib/vehicle-event-shadow-runtime.mjs";
+import {
   applyVisualIndexPace,
   normalizeVisualIndexSettings,
   visualIndexPace,
@@ -4018,6 +4023,117 @@ export async function retryVehicleImageAssetLiveCatalogJob(input = {}) {
       error,
       "Unable to retry this automatic canonical Overview item."
     );
+  }
+}
+
+function vehicleEventShadowCount(value) {
+  const number = Number(value || 0);
+  return Number.isFinite(number) && number >= 0 ? number : 0;
+}
+
+function vehicleEventShadowOverviewData(overview, worker) {
+  const counts = overview?.counts || {};
+  return {
+    control: {
+      enabled: overview?.control?.enabled === true,
+      settleSeconds: vehicleEventShadowCount(overview?.control?.settleSeconds),
+      batchSize: vehicleEventShadowCount(overview?.control?.batchSize),
+      enabledAt: overview?.control?.enabledAt || null,
+      disabledAt: overview?.control?.disabledAt || null,
+    },
+    counts: {
+      eligibleObservations: vehicleEventShadowCount(counts.eligible_observations),
+      unpairedObservations: vehicleEventShadowCount(counts.unpaired_observations),
+      activeEvents: vehicleEventShadowCount(counts.active_events),
+      retiredEvents: vehicleEventShadowCount(counts.retired_events),
+      sharedAssetEvents: vehicleEventShadowCount(counts.shared_asset_events),
+      timedPairEvents: vehicleEventShadowCount(counts.timed_pair_events),
+      correlatedReads: vehicleEventShadowCount(counts.correlated_reads),
+      rejectedDecisions: vehicleEventShadowCount(counts.rejected_decisions),
+      lastEventAt: counts.last_event_at || null,
+    },
+    recentDecisions: (overview?.recentDecisions || []).map((item) => ({
+      id: Number(item.id),
+      outcome: item.outcome || "rejected",
+      reason: item.reason || "UNKNOWN",
+      overviewContext: item.overview_context || null,
+      anchorReadId: Number(item.anchor_read_id),
+      companionReadId: item.companion_read_id == null
+        ? null
+        : Number(item.companion_read_id),
+      candidateCount: vehicleEventShadowCount(item.candidate_count),
+      correlationClass: item.correlation_class || null,
+      createdAt: item.created_at || null,
+    })),
+    worker: worker || {
+      running: false,
+      startedAt: null,
+      lastBatch: null,
+      lastError: null,
+    },
+  };
+}
+
+function vehicleEventShadowActionFailure(error, fallback) {
+  const message = String(error?.message || "").trim();
+  if (/^(Complete the canonical Overview catalog|Shadow vehicle event)/.test(message)) {
+    return { success: false, error: message };
+  }
+  console.error(fallback, { code: String(error?.code || "") });
+  return { success: false, error: fallback };
+}
+
+async function loadVehicleEventShadowOverview(runtime) {
+  return vehicleEventShadowOverviewData(
+    await runtime.service.getOverview(),
+    getVehicleEventShadowWorkerStatus()
+  );
+}
+
+export async function getVehicleEventShadowOverview() {
+  await requirePermission("system.manage_settings");
+  try {
+    const runtime = await getVehicleEventShadowRuntime();
+    return { success: true, data: { overview: await loadVehicleEventShadowOverview(runtime) } };
+  } catch (error) {
+    return vehicleEventShadowActionFailure(error, "Unable to load shadow vehicle events.");
+  }
+}
+
+export async function setVehicleEventShadowEnabled(input = {}) {
+  const principal = await requirePermission("maintenance.manage");
+  try {
+    const runtime = await getVehicleEventShadowRuntime();
+    await runtime.service.setEnabled({
+      enabled: input.enabled === true,
+      actorUserId: principal.id,
+    });
+    if (input.enabled === true) wakeVehicleEventShadowWorker();
+    revalidatePath("/settings/vehicle-intelligence/processing");
+    return { success: true, data: { overview: await loadVehicleEventShadowOverview(runtime) } };
+  } catch (error) {
+    return vehicleEventShadowActionFailure(
+      error,
+      "Unable to update shadow vehicle event correlation."
+    );
+  }
+}
+
+export async function runVehicleEventShadowBatch() {
+  await requirePermission("maintenance.manage");
+  try {
+    const runtime = await getVehicleEventShadowRuntime();
+    const result = await runtime.service.processBatch();
+    revalidatePath("/settings/vehicle-intelligence/processing");
+    return {
+      success: true,
+      data: {
+        result,
+        overview: await loadVehicleEventShadowOverview(runtime),
+      },
+    };
+  } catch (error) {
+    return vehicleEventShadowActionFailure(error, "Unable to run the shadow event batch.");
   }
 }
 

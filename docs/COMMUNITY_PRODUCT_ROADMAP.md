@@ -20,7 +20,7 @@ reliable background processing.
 
 ## Release candidate baseline — August 14, 2026
 
-- Application `0.1.19` candidate includes named users and roles, evidence-preserving plate
+- Application `0.1.20` candidate includes named users and roles, evidence-preserving plate
   review, filter-respecting exports, the searchable help center, local privacy
   controls, and viewport-safe date/help navigation. Monitored Plates now lives
   inside Known Plates with reason, priority, monitoring-since, and read-history
@@ -752,6 +752,23 @@ notes. Updates remain externally orchestrated.
   already in progress. The recurring storage forecast includes observed
   canonical growth only while automatic cataloging is enabled. No Plate
   Recognizer, external provider, ReID v2, cluster, or attribute work is started.
+- Default-off provider-neutral shadow vehicle-event correlation is implemented
+  on current identity-eligible canonical Overview links. It proposes only
+  conservative two-read Entry or Street events with an exact effective plate,
+  different LPR cameras, bounded context-specific read timing, and no
+  conflicting direction. Exact shared assets are preferred; distinct assets
+  additionally require matching ready direction and Overview capture anchors
+  within 1.5 seconds. Ambiguous, cross-context, display-only fallback, stale,
+  or otherwise uncorroborated evidence fails closed into a durable decision.
+  Each proposed event owns immutable read and asset snapshots; a later plate,
+  camera, direction, asset, capture-time, source-read, path, kind, or revision
+  change retires the event and releases its reads for reevaluation. Processing
+  controls expose current, paired, rejected, and retired totals plus recent
+  linked read evidence. The worker waits through a settling horizon, runs in
+  bounded low-priority batches, and is inert until an Administrator enables it
+  after a completed canonical catalog campaign. It does not gate ingestion or
+  change Vehicle Views, current ReID, clusters, attributes, review, or
+  notifications, and it makes no external provider call.
 Street LPR 1, Street Overview, and Entry Overview are installed. Street Overview
 and Entry Overview supply strong daytime vehicle images but are monochrome at
 night and are not expected to read a plate. Entry Overview is Blue Iris `Cam143`.
@@ -803,10 +820,11 @@ be restored. Monochrome nighttime captures do not receive a direction result.
   preview-first, resumable catalog campaign, exact source-revision checks,
   archival zero-link policy, one-time active-campaign storage projections,
   default-off automatic catalog for new Overview reads, recurring enabled-state
-  storage projection, and real PostgreSQL/filesystem cleanup gate are delivered.
-  Next correlate paired reads into shadow vehicle events without gating
-  ingestion; then create
-  Overview-owned crops, embeddings, attributes, and ReID v2 profiles. Shared
+  storage projection, real PostgreSQL/filesystem cleanup gate, and default-off
+  shadow correlation of conservative paired reads into provider-neutral
+  vehicle events are delivered. Next review shadow proposals and rejections
+  against live Entry and Street traffic, then create Overview-owned crops,
+  embeddings, attributes, and ReID v2 profiles. Shared
   Street images count once, and Entry-to-Street display fallbacks never become
   an additional identity observation. Keep the existing ReID path available
   until asset/event results have been reviewed and the cutover has an explicit

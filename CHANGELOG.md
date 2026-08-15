@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+- Added default-off shadow vehicle-event correlation for current canonical
+  Overview observations. The bounded low-priority worker proposes only
+  conservative two-read Entry or Street events with the same exact effective
+  plate, different LPR cameras, bounded timing, and no conflicting direction.
+  Exact shared assets are preferred; distinct assets require corroborating
+  ready direction and capture anchors within 1.5 seconds. Ambiguous or stale
+  evidence fails closed, changed source snapshots retire prior events, and the
+  Processing page exposes controls, totals, and recent linked-read decisions.
+  This evidence does not gate ingestion or change Vehicle Views, current ReID,
+  clusters, attributes, notifications, or review, and it makes no external
+  provider call.
+
 - Added an operator-controlled canonical Overview image catalog under Vehicle
   Setup > Processing. A durable background preview freezes eligible ready Entry
   and Street Overview source revisions, validates exact JPEG hashes without
