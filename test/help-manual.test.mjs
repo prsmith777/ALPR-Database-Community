@@ -14,7 +14,7 @@ async function source(path) {
 }
 
 test("the user guide is structured, searchable, and role-aware", () => {
-  assert.equal(HELP_MANUAL.manualVersion, "2.00");
+  assert.equal(HELP_MANUAL.manualVersion, "2.01");
   assert.ok(HELP_MANUAL.sections.length >= 14);
 
   const ids = HELP_MANUAL.sections.map((section) => section.id);
@@ -73,6 +73,9 @@ test("the guide covers required workflows and clearly labels planned features", 
     "makes no plate recognizer",
     "repair controls have been withdrawn",
     "no background repair worker",
+    "create canonical crop embeddings",
+    "has no automatic embedding queue",
+    "crop embeddings are not reid v2 yet",
   ]) {
     assert.match(text, new RegExp(required, "i"));
   }
