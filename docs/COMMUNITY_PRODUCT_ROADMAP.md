@@ -1003,11 +1003,20 @@ be restored. Monochrome nighttime captures do not receive a direction result.
   prior-review exclusion, and diversity rules, the campaign exhausted the
   available independent unresolved pairs after 22 human decisions rather than
   recycling old vehicles. Immutable evidence-backed shadow profile candidate
-  snapshots are now delivered without replacing current assignments. The next
-  ReID v2 slice should compare currently ungrouped crops against established
-  multi-member shadow candidates, using embedding similarity only to propose a
-  bounded review candidate. It must not assign a crop, promote a threshold, or
-  let a single weak comparison override plate or human conflict evidence.
+  snapshots are now delivered without replacing current assignments. The
+  bounded ungrouped-to-profile suggestion slice is also delivered: it compares
+  at most the newest 48 currently ungrouped crops with exact-current
+  multi-member candidates from the latest immutable snapshot and displays at
+  most 12 one-profile review suggestions. Ranking averages the closest two or
+  three current profile members instead of trusting one comparison. Exact plate
+  matches and audited Same evidence wait for a refreshed immutable snapshot;
+  incompatible or ambiguous plate evidence, snapshot conflicts, stale members,
+  and existing Different or Unsure labels fail closed. The suggestion surface
+  assigns no crop, applies no threshold, and changes no current profile.
+  Review a bounded sample of these suggestions and create a refreshed snapshot
+  after new Same evidence. Any later promotion into a new assignment path must
+  remain a separate explicit cutover decision with current-link revalidation,
+  observable shadow-versus-current results, and a rollback plan.
   Shared Street images must continue to
   count once, and Entry-to-Street display fallbacks must never become an
   additional identity observation. Keep the existing ReID path available until

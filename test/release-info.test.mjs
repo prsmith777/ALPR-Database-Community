@@ -23,7 +23,7 @@ test("release information resolves a commit-pinned deployment image", () => {
   });
 
   assert.equal(release.version, "0.1.20");
-  assert.equal(release.manualVersion, "2.10");
+  assert.equal(release.manualVersion, "2.11");
   assert.equal(release.manualUpdatedAt, "August 16, 2026");
   assert.equal(release.gitSha, "8cd2fa8");
   assert.equal(release.channel, "staging");
@@ -31,7 +31,7 @@ test("release information resolves a commit-pinned deployment image", () => {
   assert.equal(release.readOnly, true);
   assert.equal(
     release.notes.title,
-    "August 16, 2026 ReID v2 shadow profile candidates"
+    "August 16, 2026 ReID v2 shadow profile suggestions"
   );
   assert.equal(release.notes.publishedAt, "2026-08-16");
   assert.ok(release.notes.items.length >= 4);
