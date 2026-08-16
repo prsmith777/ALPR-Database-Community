@@ -97,6 +97,11 @@ import {
   wakeVehicleImageCropWorker,
 } from "@/lib/vehicle-image-crop-runtime.mjs";
 import {
+  getVehicleAssetEmbeddingRuntime,
+  getVehicleAssetEmbeddingWorkerStatus,
+  wakeVehicleAssetEmbeddingWorker,
+} from "@/lib/vehicle-asset-embedding-runtime.mjs";
+import {
   applyVisualIndexPace,
   normalizeVisualIndexSettings,
   visualIndexPace,
@@ -4251,6 +4256,160 @@ export async function retryVehicleImageCropLiveJob(input = {}) {
       error,
       "Unable to retry this automatic vehicle crop."
     );
+  }
+}
+
+function vehicleAssetEmbeddingCount(value) {
+  const number = Number(value || 0);
+  return Number.isFinite(number) && number >= 0 ? number : 0;
+}
+
+function vehicleAssetEmbeddingOverviewData(overview) {
+  const catalog = overview?.catalog || {};
+  const counts = overview?.counts || {};
+  const run = overview?.latestRun || null;
+  return {
+    modelName: overview?.modelName || null,
+    algorithmVersion: overview?.algorithmVersion || null,
+    catalog: {
+      eligibleCrops: vehicleAssetEmbeddingCount(catalog.eligible_crops),
+      embeddingCount: vehicleAssetEmbeddingCount(catalog.embedding_count),
+      embeddingBytes: vehicleAssetEmbeddingCount(catalog.embedding_bytes),
+    },
+    latestRun: run ? {
+      id: Number(run.id),
+      status: run.status,
+      maxDerivativeId: vehicleAssetEmbeddingCount(run.max_derivative_id),
+      modelName: run.model_name,
+      algorithmVersion: run.algorithm_version,
+      previewFingerprint: run.preview_fingerprint || null,
+      batchSize: vehicleAssetEmbeddingCount(run.batch_size),
+      createdAt: run.created_at || null,
+      completedAt: run.completed_at || null,
+      counts: {
+        total: vehicleAssetEmbeddingCount(counts.total),
+        pendingPreview: vehicleAssetEmbeddingCount(counts.pending_preview),
+        previewing: vehicleAssetEmbeddingCount(counts.previewing),
+        previewed: vehicleAssetEmbeddingCount(counts.previewed),
+        queued: vehicleAssetEmbeddingCount(counts.queued),
+        processing: vehicleAssetEmbeddingCount(counts.processing),
+        ready: vehicleAssetEmbeddingCount(counts.ready),
+        alreadyCurrent: vehicleAssetEmbeddingCount(counts.already_current),
+        sourceChanged: vehicleAssetEmbeddingCount(counts.source_changed),
+        invalid: vehicleAssetEmbeddingCount(counts.invalid),
+        failed: vehicleAssetEmbeddingCount(counts.failed),
+        retryable: vehicleAssetEmbeddingCount(counts.retryable),
+      },
+    } : null,
+    retryCandidates: (overview?.retryCandidates || []).map((item) => ({
+      jobId: Number(item.id),
+      derivativeId: Number(item.derivative_id),
+      assetId: Number(item.asset_id),
+      failureStage: item.failure_stage || null,
+      errorCode: item.error_code || "VEHICLE_ASSET_EMBEDDING_FAILED",
+      errorMessage: item.error_details?.message || null,
+      operatorRetryCount: vehicleAssetEmbeddingCount(item.operator_retry_count),
+    })),
+    worker: getVehicleAssetEmbeddingWorkerStatus(),
+  };
+}
+
+function vehicleAssetEmbeddingActionFailure(error, fallback) {
+  const message = String(error?.message || "").trim();
+  if (/^(Crop embedding|Canonical crop embedding|Embedding batches|Wait for the current crop embedding)/.test(message)) {
+    return { success: false, error: message };
+  }
+  console.error(fallback, { code: String(error?.code || "") });
+  return { success: false, error: fallback };
+}
+
+async function loadVehicleAssetEmbeddingOverview(runtime) {
+  return vehicleAssetEmbeddingOverviewData(await runtime.service.getOverview());
+}
+
+export async function getVehicleAssetEmbeddingOverview() {
+  await requirePermission("system.manage_settings");
+  try {
+    const runtime = await getVehicleAssetEmbeddingRuntime();
+    return { success: true, data: { overview: await loadVehicleAssetEmbeddingOverview(runtime) } };
+  } catch (error) {
+    return vehicleAssetEmbeddingActionFailure(error, "Unable to load canonical crop embeddings.");
+  }
+}
+
+export async function previewVehicleAssetEmbeddings() {
+  const principal = await requirePermission("maintenance.manage");
+  try {
+    const runtime = await getVehicleAssetEmbeddingRuntime();
+    await runtime.service.createPreview({ actorUserId: principal.id });
+    wakeVehicleAssetEmbeddingWorker();
+    revalidatePath("/settings/vehicle-intelligence/processing");
+    return { success: true, data: { overview: await loadVehicleAssetEmbeddingOverview(runtime) } };
+  } catch (error) {
+    return vehicleAssetEmbeddingActionFailure(error, "Unable to create the crop embedding preview.");
+  }
+}
+
+export async function confirmVehicleAssetEmbeddingBatch(input = {}) {
+  const principal = await requirePermission("maintenance.manage");
+  try {
+    const runtime = await getVehicleAssetEmbeddingRuntime();
+    const confirmation = await runtime.service.confirmBatch({
+      runId: input.runId,
+      previewFingerprint: input.previewFingerprint,
+      limit: input.limit,
+      actorUserId: principal.id,
+    });
+    wakeVehicleAssetEmbeddingWorker();
+    revalidatePath("/settings/vehicle-intelligence/processing");
+    return {
+      success: true,
+      data: { confirmation, overview: await loadVehicleAssetEmbeddingOverview(runtime) },
+    };
+  } catch (error) {
+    return vehicleAssetEmbeddingActionFailure(error, "Unable to confirm this crop embedding batch.");
+  }
+}
+
+export async function setVehicleAssetEmbeddingPaused(input = {}) {
+  const principal = await requirePermission("maintenance.manage");
+  try {
+    const runtime = await getVehicleAssetEmbeddingRuntime();
+    await runtime.service.setPaused({
+      runId: input.runId,
+      paused: input.paused === true,
+      actorUserId: principal.id,
+    });
+    if (input.paused !== true) wakeVehicleAssetEmbeddingWorker();
+    revalidatePath("/settings/vehicle-intelligence/processing");
+    return { success: true, data: { overview: await loadVehicleAssetEmbeddingOverview(runtime) } };
+  } catch (error) {
+    return vehicleAssetEmbeddingActionFailure(error, "Unable to change crop embedding processing.");
+  }
+}
+
+export async function cancelVehicleAssetEmbeddingCampaign(input = {}) {
+  const principal = await requirePermission("maintenance.manage");
+  try {
+    const runtime = await getVehicleAssetEmbeddingRuntime();
+    await runtime.service.cancel({ runId: input.runId, actorUserId: principal.id });
+    revalidatePath("/settings/vehicle-intelligence/processing");
+    return { success: true, data: { overview: await loadVehicleAssetEmbeddingOverview(runtime) } };
+  } catch (error) {
+    return vehicleAssetEmbeddingActionFailure(error, "Unable to cancel crop embedding processing.");
+  }
+}
+
+export async function retryVehicleAssetEmbeddingJob(input = {}) {
+  const principal = await requirePermission("maintenance.manage");
+  try {
+    const runtime = await getVehicleAssetEmbeddingRuntime();
+    await runtime.service.retryJob({ jobId: input.jobId, actorUserId: principal.id });
+    wakeVehicleAssetEmbeddingWorker();
+    revalidatePath("/settings/vehicle-intelligence/processing");
+    return { success: true, data: { overview: await loadVehicleAssetEmbeddingOverview(runtime) } };
+  } catch (error) {
+    return vehicleAssetEmbeddingActionFailure(error, "Unable to retry this crop embedding item.");
   }
 }
 

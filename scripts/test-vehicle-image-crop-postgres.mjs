@@ -15,6 +15,12 @@ import { VehicleImageCropLiveRepository } from "../lib/vehicle-image-crop-live-r
 import { VehicleImageCropRepository } from "../lib/vehicle-image-crop-repository.mjs";
 import { VehicleImageCropService } from "../lib/vehicle-image-crop.mjs";
 import { canonicalVehicleImageAssetPath } from "../lib/vehicle-image-asset-model.mjs";
+import { VehicleAssetEmbeddingCampaignService } from "../lib/vehicle-asset-embedding-campaign.mjs";
+import { VehicleAssetEmbeddingRepository } from "../lib/vehicle-asset-embedding-repository.mjs";
+import {
+  VEHICLE_ASSET_EMBEDDING_ALGORITHM,
+  VEHICLE_ASSET_EMBEDDING_MODEL,
+} from "../lib/vehicle-asset-embedding.mjs";
 
 const OPT_IN = "VEHICLE_IMAGE_CROP_POSTGRES_TEST_OPT_IN";
 const EXPECTED_DATABASE = "VEHICLE_IMAGE_CROP_POSTGRES_TEST_DATABASE";
@@ -59,6 +65,7 @@ let assetId = null;
 let runId = null;
 let liveReadId = null;
 let liveAssetId = null;
+let embeddingRunId = null;
 
 async function guard() {
   lockClient = await pool.connect();
@@ -90,10 +97,14 @@ async function guard() {
        (SELECT COUNT(*)::integer FROM public.vehicle_image_derivatives) AS derivatives,
        (SELECT COUNT(*)::integer FROM public.vehicle_image_crop_runs) AS runs,
        (SELECT COUNT(*)::integer FROM public.vehicle_image_crop_jobs) AS jobs,
-       (SELECT COUNT(*)::integer FROM public.vehicle_image_crop_live_jobs) AS live_jobs`
+       (SELECT COUNT(*)::integer FROM public.vehicle_image_crop_live_jobs) AS live_jobs,
+       (SELECT COUNT(*)::integer FROM public.vehicle_asset_embeddings) AS embeddings,
+       (SELECT COUNT(*)::integer FROM public.vehicle_asset_embedding_runs) AS embedding_runs,
+       (SELECT COUNT(*)::integer FROM public.vehicle_asset_embedding_jobs) AS embedding_jobs`
   );
   assert.deepEqual(empty.rows[0], {
     reads: 0, assets: 0, links: 0, derivatives: 0, runs: 0, jobs: 0, live_jobs: 0,
+    embeddings: 0, embedding_runs: 0, embedding_jobs: 0,
   });
   const lock = await lockClient.query(
     "SELECT pg_try_advisory_lock(hashtextextended($1, 0)) AS locked",
@@ -300,6 +311,93 @@ async function runAutomaticCrop(storage) {
   assert.equal((await liveCrop.getOverview()).enabled, false);
 }
 
+async function runEmbeddingCampaign() {
+  const repository = new VehicleAssetEmbeddingRepository({ pool });
+  const embeddingBytes = Buffer.alloc(2048);
+  for (let index = 0; index < 512; index += 1) {
+    embeddingBytes.writeFloatLE((index + 1) / 512, index * 4);
+  }
+  const embeddingSha256 = crypto.createHash("sha256").update(embeddingBytes).digest("hex");
+  const rendered = Object.freeze({
+    embedding: embeddingBytes,
+    embeddingSha256,
+    embeddingDimensions: 512,
+    embeddingBytes: 2048,
+    modelName: VEHICLE_ASSET_EMBEDDING_MODEL,
+    algorithmVersion: VEHICLE_ASSET_EMBEDDING_ALGORITHM,
+  });
+  const embeddingService = {
+    async preview() {
+      const { embedding: _embedding, ...preview } = rendered;
+      return preview;
+    },
+    async catalog(job) {
+      assert.equal(job.preview_embedding_sha256, embeddingSha256);
+      return repository.registerEmbedding(job, rendered);
+    },
+  };
+  const campaign = new VehicleAssetEmbeddingCampaignService({ repository, embeddingService });
+  const run = await campaign.createPreview({ actorUserId: actorId });
+  embeddingRunId = Number(run.id);
+  const preview = await campaign.processBatch({ limit: 5 });
+  assert.equal(preview.processed, 2);
+  let overview = await campaign.getOverview();
+  assert.equal(overview.latestRun.status, "ready");
+  assert.equal(Number(overview.counts.previewed), 2);
+  assert.match(overview.latestRun.preview_fingerprint, /^[0-9a-f]{64}$/);
+
+  const first = await campaign.confirmBatch({
+    runId: embeddingRunId,
+    previewFingerprint: overview.latestRun.preview_fingerprint,
+    limit: 1,
+    actorUserId: actorId,
+  });
+  assert.equal(first.queued, 1);
+  assert.equal((await campaign.processBatch({ limit: 5 })).processed, 1);
+  overview = await campaign.getOverview();
+  assert.equal(overview.latestRun.status, "ready");
+  assert.equal(Number(overview.counts.previewed), 1);
+
+  const second = await campaign.confirmBatch({
+    runId: embeddingRunId,
+    previewFingerprint: overview.latestRun.preview_fingerprint,
+    limit: 5,
+    actorUserId: actorId,
+  });
+  assert.equal(second.queued, 1);
+  assert.equal((await campaign.processBatch({ limit: 5 })).processed, 1);
+  overview = await campaign.getOverview();
+  assert.equal(overview.latestRun.status, "completed");
+  assert.equal(Number(overview.catalog.embedding_count), 2);
+  assert.equal(Number(overview.catalog.embedding_bytes), 4096);
+
+  const stored = await pool.query(
+    `SELECT embeddings.*, jobs.*, runs.model_name, runs.algorithm_version,
+            jobs.evidence_source_updated_at::text AS evidence_updated_at
+     FROM public.vehicle_asset_embeddings embeddings
+     JOIN public.vehicle_asset_embedding_jobs jobs ON jobs.embedding_id = embeddings.id
+     JOIN public.vehicle_asset_embedding_runs runs ON runs.id = jobs.run_id
+     WHERE jobs.run_id = $1 ORDER BY embeddings.id`,
+    [embeddingRunId]
+  );
+  assert.equal(stored.rowCount, 2);
+  assert.equal(Number(stored.rows[0].embedding_dimensions), 512);
+  assert.equal(stored.rows[0].embedding.length, 2048);
+  assert.match(stored.rows[0].evidence_updated_at, /\.(123456|654321)\+00$/);
+  const reused = await repository.registerEmbedding({
+    ...stored.rows[0],
+    evidence_source_updated_at: stored.rows[0].evidence_updated_at,
+  }, rendered);
+  assert.equal(reused.embeddingCreated, false);
+  await assert.rejects(
+    pool.query(
+      "UPDATE public.vehicle_asset_embeddings SET source_sha256 = $2 WHERE id = $1",
+      [stored.rows[0].embedding_id, "0".repeat(64)]
+    ),
+    /immutable/
+  );
+}
+
 async function cleanup() {
   if (actorId != null) {
     await pool.query(
@@ -312,16 +410,27 @@ async function cleanup() {
               event_type, resource_type, resource_id, outcome, reason, request_id,
               metadata, occurred_at, NULL
        FROM public.audit_events
-        WHERE resource_type IN ('vehicle_image_crop','vehicle_image_crop_live')
+        WHERE resource_type IN ('vehicle_image_crop','vehicle_image_crop_live','vehicle_asset_embedding')
           AND actor_user_id = $1
        ON CONFLICT (source_event_id, occurred_at) DO NOTHING`,
       [actorId]
     );
     await pool.query(
       `DELETE FROM public.audit_events
-       WHERE resource_type IN ('vehicle_image_crop','vehicle_image_crop_live')
+       WHERE resource_type IN ('vehicle_image_crop','vehicle_image_crop_live','vehicle_asset_embedding')
          AND actor_user_id = $1`,
       [actorId]
+    );
+  }
+  if (embeddingRunId != null) {
+    await pool.query(
+      "DELETE FROM public.vehicle_asset_embedding_jobs WHERE run_id = $1",
+      [embeddingRunId]
+    );
+    await pool.query("DELETE FROM public.vehicle_asset_embeddings");
+    await pool.query(
+      "DELETE FROM public.vehicle_asset_embedding_runs WHERE id = $1",
+      [embeddingRunId]
     );
   }
   if (runId != null) {
@@ -357,10 +466,14 @@ async function cleanup() {
        (SELECT COUNT(*)::integer FROM public.vehicle_image_derivatives) AS derivatives,
        (SELECT COUNT(*)::integer FROM public.vehicle_image_crop_runs) AS runs,
        (SELECT COUNT(*)::integer FROM public.vehicle_image_crop_jobs) AS jobs,
-       (SELECT COUNT(*)::integer FROM public.vehicle_image_crop_live_jobs) AS live_jobs`
+       (SELECT COUNT(*)::integer FROM public.vehicle_image_crop_live_jobs) AS live_jobs,
+       (SELECT COUNT(*)::integer FROM public.vehicle_asset_embeddings) AS embeddings,
+       (SELECT COUNT(*)::integer FROM public.vehicle_asset_embedding_runs) AS embedding_runs,
+       (SELECT COUNT(*)::integer FROM public.vehicle_asset_embedding_jobs) AS embedding_jobs`
   );
   assert.deepEqual(residue.rows[0], {
     reads: 0, assets: 0, links: 0, derivatives: 0, runs: 0, jobs: 0, live_jobs: 0,
+    embeddings: 0, embedding_runs: 0, embedding_jobs: 0,
   });
 }
 
@@ -370,6 +483,7 @@ try {
   const storage = await createFixture();
   await runCampaign(storage);
   await runAutomaticCrop(storage);
+  await runEmbeddingCampaign();
   succeeded = true;
 } finally {
   try {

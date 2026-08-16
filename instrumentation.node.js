@@ -25,11 +25,12 @@ export async function registerNodeInstrumentation({
   loadVehicleAssetCatalogStartup = () => import("./lib/vehicle-image-asset-catalog-startup.mjs"),
   loadVehicleEventShadowStartup = () => import("./lib/vehicle-event-shadow-startup.mjs"),
   loadVehicleImageCropStartup = () => import("./lib/vehicle-image-crop-startup.mjs"),
+  loadVehicleAssetEmbeddingStartup = () => import("./lib/vehicle-asset-embedding-startup.mjs"),
 } = {}) {
-  if (typeof startMqtt !== "function" || typeof loadVisualStartup !== "function" || typeof loadVehicleFrameStartup !== "function" || typeof loadNotificationStartup !== "function" || typeof loadMaintenanceStartup !== "function" || typeof loadStorageMonitorStartup !== "function" || typeof loadVehicleAssetCatalogStartup !== "function" || typeof loadVehicleEventShadowStartup !== "function" || typeof loadVehicleImageCropStartup !== "function") {
+  if (typeof startMqtt !== "function" || typeof loadVisualStartup !== "function" || typeof loadVehicleFrameStartup !== "function" || typeof loadNotificationStartup !== "function" || typeof loadMaintenanceStartup !== "function" || typeof loadStorageMonitorStartup !== "function" || typeof loadVehicleAssetCatalogStartup !== "function" || typeof loadVehicleEventShadowStartup !== "function" || typeof loadVehicleImageCropStartup !== "function" || typeof loadVehicleAssetEmbeddingStartup !== "function") {
     throw new Error("Node instrumentation loaders must be functions");
   }
-  const [mqttResult, visualResult, vehicleFrameResult, notificationResult, maintenanceResult, storageMonitorResult, vehicleAssetCatalogResult, vehicleEventShadowResult, vehicleImageCropResult] = await Promise.allSettled([
+  const [mqttResult, visualResult, vehicleFrameResult, notificationResult, maintenanceResult, storageMonitorResult, vehicleAssetCatalogResult, vehicleEventShadowResult, vehicleImageCropResult, vehicleAssetEmbeddingResult] = await Promise.allSettled([
     startMqtt({ logger }),
     (async () => {
       const visualStartup = await loadVisualStartup();
@@ -87,6 +88,13 @@ export async function registerNodeInstrumentation({
       }
       return startup.startVehicleImageCropRuntimeWithRetry({ logger });
     })(),
+    (async () => {
+      const startup = await loadVehicleAssetEmbeddingStartup();
+      if (typeof startup?.startVehicleAssetEmbeddingRuntimeWithRetry !== "function") {
+        throw new Error("Canonical crop embedding startup module did not expose startVehicleAssetEmbeddingRuntimeWithRetry()");
+      }
+      return startup.startVehicleAssetEmbeddingRuntimeWithRetry({ logger });
+    })(),
   ]);
   const normalizeResult = (result, name) => {
     if (result.status === "fulfilled") return result.value;
@@ -109,8 +117,9 @@ export async function registerNodeInstrumentation({
   const vehicleAssetCatalog = normalizeResult(vehicleAssetCatalogResult, "Canonical Overview catalog");
   const vehicleEventShadow = normalizeResult(vehicleEventShadowResult, "Shadow vehicle events");
   const vehicleImageCrops = normalizeResult(vehicleImageCropResult, "Canonical Overview vehicle crops");
+  const vehicleAssetEmbeddings = normalizeResult(vehicleAssetEmbeddingResult, "Canonical crop embeddings");
   return {
-    status: mqtt.status === "started" && visualIndex.status === "started" && vehicleFrames.status === "started" && notificationOperations.status === "started" && maintenance.status === "started" && storageMonitor.status === "started" && vehicleAssetCatalog.status === "started" && vehicleEventShadow.status === "started" && vehicleImageCrops.status === "started"
+    status: mqtt.status === "started" && visualIndex.status === "started" && vehicleFrames.status === "started" && notificationOperations.status === "started" && maintenance.status === "started" && storageMonitor.status === "started" && vehicleAssetCatalog.status === "started" && vehicleEventShadow.status === "started" && vehicleImageCrops.status === "started" && vehicleAssetEmbeddings.status === "started"
       ? "started"
       : "partial",
     mqtt,
@@ -122,5 +131,6 @@ export async function registerNodeInstrumentation({
     vehicleAssetCatalog,
     vehicleEventShadow,
     vehicleImageCrops,
+    vehicleAssetEmbeddings,
   };
 }

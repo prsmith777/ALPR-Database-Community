@@ -180,7 +180,9 @@ test("vehicle crop migration is additive, inert, and asset owned", async () => {
   const migrations = await source("migrations.sql");
   const marker = migrations.indexOf("2026081406_vehicle_image_crop_campaign");
   assert.ok(marker > 0);
-  const slice = migrations.slice(migrations.lastIndexOf("-- Asset-owned vehicle crops", marker));
+  const sliceStart = migrations.lastIndexOf("-- Asset-owned vehicle crops", marker);
+  const sliceEnd = migrations.indexOf("-- Provider-neutral embeddings", marker);
+  const slice = migrations.slice(sliceStart, sliceEnd > marker ? sliceEnd : undefined);
   assert.match(slice, /CREATE TABLE IF NOT EXISTS public\.vehicle_image_derivatives/);
   assert.match(slice, /UNIQUE \(asset_id, derivative_kind, algorithm_version\)/);
   assert.match(slice, /CREATE TABLE IF NOT EXISTS public\.vehicle_image_crop_runs/);

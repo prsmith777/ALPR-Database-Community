@@ -3,6 +3,7 @@ import {
   getBlueIrisVehicleFrameQueueStatus,
   getVehicleEventShadowOverview,
   getVehicleImageCropOverview,
+  getVehicleAssetEmbeddingOverview,
   getVehicleImageAssetCatalogOverview,
   getVehicleOverviewSetup,
   getVehicleDirectionSetup,
@@ -81,7 +82,8 @@ export default async function VehicleIntelligenceSectionPage({ section = "camera
     );
   }
 
-  const [result, vehicleImageCatalog, vehicleEventShadow, vehicleImageCrops] = await Promise.all([
+  const [result, vehicleImageCatalog, vehicleEventShadow, vehicleImageCrops,
+    vehicleAssetEmbeddings] = await Promise.all([
     getVehicleDirectionSetup(null, directionOptions(section)),
     section === "processing"
       ? getVehicleImageAssetCatalogOverview()
@@ -91,6 +93,9 @@ export default async function VehicleIntelligenceSectionPage({ section = "camera
       : Promise.resolve(null),
     section === "processing"
       ? getVehicleImageCropOverview()
+      : Promise.resolve(null),
+    section === "processing"
+      ? getVehicleAssetEmbeddingOverview()
       : Promise.resolve(null),
   ]);
   if (!result.success) throw new Error(result.error);
@@ -107,6 +112,9 @@ export default async function VehicleIntelligenceSectionPage({ section = "camera
         : null}
       initialVehicleImageCrops={vehicleImageCrops?.success
         ? vehicleImageCrops.data.overview
+        : null}
+      initialVehicleAssetEmbeddings={vehicleAssetEmbeddings?.success
+        ? vehicleAssetEmbeddings.data.overview
         : null}
     />
   );

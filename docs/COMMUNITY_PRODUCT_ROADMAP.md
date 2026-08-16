@@ -792,6 +792,19 @@ notes. Updates remain externally orchestrated.
   growth estimates only while the automatic worker is enabled. No Vehicle View,
   current ReID, shadow event, attribute, notification, or external-provider
   behavior changes.
+- Provider-neutral canonical crop embeddings are implemented as immutable
+  2,048-byte, 512-value local vectors owned by each canonical vehicle crop,
+  model, and algorithm version. A preview-first operator campaign freezes the
+  exact crop bytes and current identity-evidence link, runs the existing local
+  vehicle-reid-0001 model without inserting a vector, and binds confirmation to
+  the resulting output hash, dimensions, and byte length. Explicit 1, 5, 25,
+  or 250-crop batches reread and re-hash the crop, revalidate its current link,
+  rerun inference, and insert only an exact preview match. Pause, resume,
+  cancellation, lease recovery, bounded transient retry, one operator retry,
+  audit evidence, and a disposable real-PostgreSQL lifecycle gate are included.
+  This first embedding slice has no automatic queue and no ReID v2 consumer;
+  current search, clusters, profiles, assignments, attributes, events,
+  directions, notifications, and external-provider behavior remain unchanged.
 - Final full-resolution Overview framing validation is implemented before a
   new Vehicle View is committed. The anchor-constrained selector prioritizes a
   fully framed vehicle track over a higher numerical score near an image edge,
@@ -864,13 +877,14 @@ be restored. Monochrome nighttime captures do not receive a direction result.
   default-off automatic catalog for new Overview reads, recurring enabled-state
   storage projection, real PostgreSQL/filesystem cleanup gate, and default-off
   shadow correlation of conservative paired reads into provider-neutral
-  vehicle events, operator-controlled Overview-owned crop derivatives, and the
-  default-off low-priority automatic crop queue are delivered. The pre-crop
+  vehicle events, operator-controlled Overview-owned crop derivatives, the
+  default-off low-priority automatic crop queue, and provider-neutral canonical
+  crop embeddings are delivered. The pre-crop
   production review sampled current proposed and
   rejected Entry and Street evidence, identified pre-Blue-Iris-zone-correction
   direction contamination, and made no timing or matching threshold change.
-  Next create provider-neutral crop embeddings, then crop-owned attributes and
-  ReID v2 profiles. Shared
+  Next create crop-owned attribute observations, then build ReID v2 profiles
+  and comparison/search consumers in shadow. Shared
   Street images count once, and Entry-to-Street display fallbacks never become
   an additional identity observation. Keep the existing ReID path available
   until asset/event results have been reviewed and the cutover has an explicit
