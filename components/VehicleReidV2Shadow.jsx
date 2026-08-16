@@ -19,6 +19,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import VehicleReidV2PairReviewControls from "@/components/VehicleReidV2PairReviewControls";
+import VehicleReidV2ProfileCandidateControls from "@/components/VehicleReidV2ProfileCandidateControls";
 import VehicleReidV2ReviewCampaignControls from "@/components/VehicleReidV2ReviewCampaignControls";
 
 function dateTime(value) {
@@ -309,6 +310,92 @@ function ReviewCampaignCard({ data }) {
       <p className="text-xs text-muted-foreground">
         Each decision labels one displayed crop pair; 500 pair decisions does not mean 500 vehicles. A smaller final total is acceptable when the frozen inventory has no more independent unresolved pairs; familiar plates and previously reviewed crops are never recycled merely to reach 500.
       </p>
+    </div>
+  );
+}
+
+function profileBasisText(value) {
+  if (value === "exact_effective_plate") return "Exact corrected plate";
+  if (value === "human_same") return "Human Same labels";
+  return "Plate + human evidence";
+}
+
+function ProfileCandidateCard({ data }) {
+  const snapshot = data.profileCandidates;
+  return (
+    <div className="space-y-4 rounded-lg border border-emerald-500/30 bg-emerald-500/5 p-4">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <p className="font-medium">Evidence-backed shadow profile candidates</p>
+          <p className="mt-1 max-w-4xl text-xs text-muted-foreground">
+            Candidate membership uses only exact effective/corrected plate agreement and audited human Same-vehicle labels. Human Different labels and incompatible effective plates fail closed. Cosine scores never add a member, and this snapshot creates no current profile, cluster, or vehicle assignment.
+          </p>
+        </div>
+        <Badge variant="outline">Shadow only</Badge>
+      </div>
+      {snapshot ? (
+        <>
+          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+            <Card><CardContent className="p-3"><div className="text-xl font-semibold">{snapshot.candidateProfiles.toLocaleString()}</div><div className="text-xs text-muted-foreground">candidate profiles</div></CardContent></Card>
+            <Card><CardContent className="p-3"><div className="text-xl font-semibold">{snapshot.candidateMembers.toLocaleString()}</div><div className="text-xs text-muted-foreground">evidence-backed members</div></CardContent></Card>
+            <Card><CardContent className="p-3"><div className="text-xl font-semibold">{snapshot.ungroupedSources.toLocaleString()}</div><div className="text-xs text-muted-foreground">unassigned in shadow</div></CardContent></Card>
+            <Card><CardContent className="p-3"><div className="text-xl font-semibold">{snapshot.conflictedComponents.toLocaleString()}</div><div className="text-xs text-muted-foreground">conflicts excluded</div></CardContent></Card>
+            <Card><CardContent className="p-3"><div className="text-xl font-semibold">{snapshot.totalSources.toLocaleString()}</div><div className="text-xs text-muted-foreground">frozen current crops</div></CardContent></Card>
+          </div>
+          <p className="text-xs text-muted-foreground">
+            Snapshot #{snapshot.id.toLocaleString()} · frozen through crop #{snapshot.frozenMaxDerivativeId.toLocaleString()} · {dateTime(snapshot.createdAt)}
+          </p>
+          {snapshot.profiles.length ? (
+            <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-3">
+              {snapshot.profiles.map((profile) => (
+                <div key={profile.id} className="space-y-2 rounded-md border bg-background p-3 text-xs">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="font-medium">{profile.memberCount.toLocaleString()} crop members</span>
+                    <Badge variant="secondary">{profileBasisText(profile.evidenceBasis)}</Badge>
+                  </div>
+                  <p className="text-muted-foreground">
+                    {profile.anchorPlates.length
+                      ? `Plate evidence: ${profile.anchorPlates.join(" / ")}`
+                      : "No complete plate anchor; audited Same evidence only"}
+                  </p>
+                  <p className="text-muted-foreground">
+                    {profile.cameraNames.join(", ") || "Unknown camera"} · {profile.overviewContexts.join(" / ") || "unknown context"}
+                  </p>
+                  <Link
+                    className="inline-flex text-blue-500 hover:underline"
+                    href={`/visual_search/reid-v2?source=${profile.representativeDerivativeId}&browse=1`}
+                  >
+                    Inspect representative crop #{profile.representativeDerivativeId}
+                  </Link>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="text-xs text-muted-foreground">No conflict-free multi-crop profile candidate was available.</p>
+          )}
+          {snapshot.conflicts.length ? (
+            <details className="rounded-md border border-amber-500/30 bg-amber-500/5 p-3 text-xs">
+              <summary className="cursor-pointer font-medium">Inspect excluded conflicts</summary>
+              <div className="mt-2 space-y-1 text-muted-foreground">
+                {snapshot.conflicts.map((conflict) => (
+                  <p key={conflict.conflictKey}>
+                    Crops {conflict.derivativeIds.join(" / ")} · {conflict.reason.replaceAll("_", " ")}
+                    {conflict.effectivePlates.length ? ` · ${conflict.effectivePlates.join(" / ")}` : ""}
+                  </p>
+                ))}
+              </div>
+            </details>
+          ) : null}
+        </>
+      ) : (
+        <p className="text-xs text-muted-foreground">
+          No persistent snapshot exists yet. Creating one freezes the current evidence in an immutable, assignment-safe record.
+        </p>
+      )}
+      <VehicleReidV2ProfileCandidateControls
+        canReview={data.canReview}
+        hasSnapshot={Boolean(snapshot)}
+      />
     </div>
   );
 }
@@ -773,6 +860,7 @@ export default function VehicleReidV2Shadow({ result }) {
         ) : null}
         <StratifiedEvaluation data={data} evaluation={data.evaluation} />
         <ReviewCampaignCard data={data} />
+        <ProfileCandidateCard data={data} />
       </section>
 
       <TargetedReviewBanner data={data} />

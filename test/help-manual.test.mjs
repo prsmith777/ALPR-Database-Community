@@ -14,7 +14,7 @@ async function source(path) {
 }
 
 test("the user guide is structured, searchable, and role-aware", () => {
-  assert.equal(HELP_MANUAL.manualVersion, "2.09");
+  assert.equal(HELP_MANUAL.manualVersion, "2.10");
   assert.ok(HELP_MANUAL.sections.length >= 14);
 
   const ids = HELP_MANUAL.sections.map((section) => section.id);
@@ -77,6 +77,8 @@ test("the guide covers required workflows and clearly labels planned features", 
     "has no automatic embedding queue",
     "review reid v2 shadow comparisons",
     "reid v2 pair labels make no assignments",
+    "create evidence-backed shadow profile candidates",
+    "shadow candidates are not current vehicle profiles",
   ]) {
     assert.match(text, new RegExp(required, "i"));
   }

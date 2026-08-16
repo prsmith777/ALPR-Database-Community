@@ -882,6 +882,18 @@ notes. Updates remain externally orchestrated.
   recycling familiar vehicles. Every campaign submission is revalidated
   against the current queue; no threshold, profile, cluster, assignment,
   notification, or provider result is written.
+- Immutable evidence-backed ReID v2 shadow profile candidate snapshots are
+  delivered. An operator action freezes the current identity-eligible crop,
+  embedding, corrected/effective-plate, and audited pair-review evidence inside
+  one repeatable-read transaction. Exact normalized effective-plate agreement
+  and audited human Same-vehicle labels are the only evidence permitted to join
+  crops. Cosine score, color, body type, current v1 grouping, event proximity,
+  and camera context cannot add a member. Human Different labels, incompatible
+  plate evidence, ambiguous multi-plate evidence, stale links, and a truncated
+  bounded scan fail closed; excluded conflicts remain visible. Identical
+  evidence reuses the prior deterministic fingerprint. The snapshot is stored
+  separately from current vehicle profiles and writes no threshold, cluster,
+  assignment, notification, or external-provider result.
 - Final full-resolution Overview framing validation is implemented before a
   new Vehicle View is committed. The anchor-constrained selector prioritizes a
   fully framed vehicle track over a higher numerical score near an image edge,
@@ -946,11 +958,12 @@ be restored. Monochrome nighttime captures do not receive a direction result.
   missing, stale, nighttime, processing, conflicting-direction, short-fuzzy, or
   ambiguous evidence unchanged. Never let the overview image establish identity
   or synthesize a missing Street read.
-- Complete the single frozen ReID v2 diversity campaign, evaluate its human
-  unresolved labels together with separately identified automatic plate
-  outcomes, and retain camera/context reporting before considering any
-  stronger label or threshold. Do not substitute repeated captures of a small
-  number of vehicles for independent review evidence.
+- Continue evaluating new, independent ReID v2 evidence without recycling
+  familiar crop pairs. The single frozen campaign exhausted its actual
+  unresolved inventory after automatic corrected-plate resolution and prior
+  review exclusions; its smaller-than-target human total is an inventory result,
+  not a reason to repeat vehicles or weaken evidence rules. Retain separate
+  camera/context reporting and do not infer one global cosine cutoff.
 - Continue the canonical-asset rollout in conservative stages. The
   preview-first, resumable catalog campaign, exact source-revision checks,
   archival zero-link policy, one-time active-campaign storage projections,
@@ -976,17 +989,25 @@ be restored. Monochrome nighttime captures do not receive a direction result.
   implemented against the exact immutable crop pair and embedding contract,
   with current-link revalidation and descriptive context/camera score ranges.
   These labels recommend and apply no threshold and create no profile or
-  assignment. A subsequent production review recorded 106 exact-pair labels:
-  27 Same vehicle, 74 Different vehicle, and 5 Unsure. Same scores span
-  58.4%–99.7% while Different scores span 33.5%–86.1%, confirming substantial
-  overlap and ruling out one safe global cosine threshold. The review surface
+  assignment. Production now has 130 decisive exact-pair labels: 44 Same
+  vehicle and 86 Different vehicle, with no unresolved label in the current
+  evaluation. Same scores span 56.3%–100.0% while Different scores span
+  8.0%–92.7%; the shared 56.3%–92.7% score region contains 35 Same and 40
+  Different labels. This confirms substantial overlap and rules out one safe
+  global cosine threshold. The review surface
   now supplies direct and conservative companion LPR plate captures so Entry
   and plate-obscured Street Overview evidence can be judged from its linked
   read context. The stratified offline evaluation of these labels is now
-  delivered and remains read-only. The bounded guided review queue for those
-  camera/time/score gaps is delivered; collect only its targeted labels, then
-  design persistent v2 profile candidates without replacing current
-  assignments.
+  delivered and remains read-only. The bounded guided review queue and the
+  frozen diversity campaign are delivered; after corrected-plate automation,
+  prior-review exclusion, and diversity rules, the campaign exhausted the
+  available independent unresolved pairs after 22 human decisions rather than
+  recycling old vehicles. Immutable evidence-backed shadow profile candidate
+  snapshots are now delivered without replacing current assignments. The next
+  ReID v2 slice should compare currently ungrouped crops against established
+  multi-member shadow candidates, using embedding similarity only to propose a
+  bounded review candidate. It must not assign a crop, promote a threshold, or
+  let a single weak comparison override plate or human conflict evidence.
   Shared Street images must continue to
   count once, and Entry-to-Street display fallbacks must never become an
   additional identity observation. Keep the existing ReID path available until
@@ -997,6 +1018,10 @@ be restored. Monochrome nighttime captures do not receive a direction result.
   and ReID v2 pipeline is stable. When that later phase is approved, send each
   eligible canonical Overview asset at most once and reuse its result for every
   linked read; do not submit Entry or Street plate-camera captures.
+- Keep the optional plate-and-state vehicle-attribute lookup on the back burner.
+  If it is revisited, require an explicit manual operator action and manually
+  supplied jurisdiction, cache one result per normalized plate plus jurisdiction
+  and provider/version, and do not turn it into an automatic read-time lookup.
 - Consider pgvector only when the bounded in-process cosine scan no longer
   meets latency targets.
 - Render configurable overlays at view/export time and cache derived assets;

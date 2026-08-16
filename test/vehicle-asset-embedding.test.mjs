@@ -237,7 +237,9 @@ test("embedding migration is additive, inert, asset-owned, and immutable", async
   const migrations = await source("migrations.sql");
   const marker = migrations.indexOf("2026081505_vehicle_asset_embedding_campaign");
   assert.ok(marker > 0);
-  const slice = migrations.slice(migrations.lastIndexOf("-- Provider-neutral embeddings", marker));
+  const start = migrations.lastIndexOf("-- Provider-neutral embeddings", marker);
+  const end = migrations.indexOf("\n-- ", marker);
+  const slice = migrations.slice(start, end > marker ? end : migrations.length);
   assert.match(slice, /CREATE TABLE IF NOT EXISTS public\.vehicle_asset_embeddings/);
   assert.match(slice, /embedding_dimensions = 512/);
   assert.match(slice, /OCTET_LENGTH\(embedding\) = 2048/);
