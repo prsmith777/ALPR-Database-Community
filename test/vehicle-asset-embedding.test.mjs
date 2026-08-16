@@ -10,10 +10,12 @@ import {
   VehicleAssetEmbeddingCampaignService,
 } from "../lib/vehicle-asset-embedding-campaign.mjs";
 import {
-  VEHICLE_ASSET_EMBEDDING_ALGORITHM,
-  VEHICLE_ASSET_EMBEDDING_MODEL,
   VehicleAssetEmbeddingService,
 } from "../lib/vehicle-asset-embedding.mjs";
+import {
+  VEHICLE_ASSET_EMBEDDING_ALGORITHM,
+  VEHICLE_ASSET_EMBEDDING_MODEL,
+} from "../lib/vehicle-asset-embedding-contract.mjs";
 import { VehicleAssetEmbeddingWorker } from "../lib/vehicle-asset-embedding-worker.mjs";
 
 const root = new URL("..", import.meta.url);
@@ -60,6 +62,25 @@ function engine() {
     },
   };
 }
+
+test("embedding contract stays independent from the native inference runtime", async () => {
+  const [contract, repository, postgresGate, reid] = await Promise.all([
+    source("lib/vehicle-asset-embedding-contract.mjs"),
+    source("lib/vehicle-asset-embedding-repository.mjs"),
+    source("scripts/test-vehicle-image-crop-postgres.mjs"),
+    source("lib/vehicle-reid.mjs"),
+  ]);
+  assert.doesNotMatch(contract, /\bfrom\s+["'][^"']+vehicle-reid/);
+  assert.doesNotMatch(contract, /openvino-node/);
+  assert.match(repository, /from "\.\/vehicle-asset-embedding-contract\.mjs"/);
+  assert.doesNotMatch(repository, /from "\.\/vehicle-asset-embedding\.mjs"/);
+  assert.match(postgresGate, /from "\.\.\/lib\/vehicle-asset-embedding-contract\.mjs"/);
+  assert.doesNotMatch(postgresGate, /from "\.\.\/lib\/vehicle-asset-embedding\.mjs"/);
+  assert.match(
+    reid,
+    new RegExp(`VEHICLE_REID_MODEL = ${JSON.stringify(VEHICLE_ASSET_EMBEDDING_MODEL)}`)
+  );
+});
 
 test("canonical crop embedding preview is local and stores no row", async () => {
   const image = await fixture();

@@ -20,7 +20,7 @@ import { VehicleAssetEmbeddingRepository } from "../lib/vehicle-asset-embedding-
 import {
   VEHICLE_ASSET_EMBEDDING_ALGORITHM,
   VEHICLE_ASSET_EMBEDDING_MODEL,
-} from "../lib/vehicle-asset-embedding.mjs";
+} from "../lib/vehicle-asset-embedding-contract.mjs";
 
 const OPT_IN = "VEHICLE_IMAGE_CROP_POSTGRES_TEST_OPT_IN";
 const EXPECTED_DATABASE = "VEHICLE_IMAGE_CROP_POSTGRES_TEST_DATABASE";
