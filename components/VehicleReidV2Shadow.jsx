@@ -400,6 +400,100 @@ function ProfileCandidateCard({ data }) {
   );
 }
 
+function ProfileSuggestionCard({ data }) {
+  const result = data.profileSuggestions;
+  if (!result) return null;
+  const stats = result.stats;
+  return (
+    <div className="space-y-4 rounded-lg border border-blue-500/30 bg-blue-500/5 p-4">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <p className="font-medium">Ungrouped-to-profile shadow suggestions</p>
+          <p className="mt-1 max-w-4xl text-xs text-muted-foreground">
+            Each currently ungrouped crop receives at most one bounded comparison against a current multi-member candidate from immutable snapshot #{result.snapshotId.toLocaleString()}. Embeddings rank review suggestions only. Exact plate or human Same evidence waits for the next snapshot, while conflicting plate, Different, or Unsure evidence vetoes a suggestion. Nothing here assigns a vehicle or creates a threshold.
+          </p>
+        </div>
+        <Badge variant="outline">Review suggestions only</Badge>
+      </div>
+      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+        <Card><CardContent className="p-3"><div className="text-xl font-semibold">{stats.ungroupedSources.toLocaleString()}</div><div className="text-xs text-muted-foreground">currently ungrouped</div></CardContent></Card>
+        <Card><CardContent className="p-3"><div className="text-xl font-semibold">{stats.consideredSources.toLocaleString()}</div><div className="text-xs text-muted-foreground">newest crops considered</div></CardContent></Card>
+        <Card><CardContent className="p-3"><div className="text-xl font-semibold">{stats.currentProfiles.toLocaleString()}</div><div className="text-xs text-muted-foreground">current multi-member profiles</div></CardContent></Card>
+        <Card><CardContent className="p-3"><div className="text-xl font-semibold">{result.suggestions.length.toLocaleString()}</div><div className="text-xs text-muted-foreground">bounded suggestions shown</div></CardContent></Card>
+        <Card><CardContent className="p-3"><div className="text-xl font-semibold">{(stats.exactPlatePendingSnapshot + stats.humanSamePendingSnapshot).toLocaleString()}</div><div className="text-xs text-muted-foreground">awaiting updated snapshot</div></CardContent></Card>
+      </div>
+      <p className="text-xs text-muted-foreground">
+        The scan is capped at the newest {stats.sourceLimit.toLocaleString()} ungrouped crops and displays at most {stats.suggestionLimit.toLocaleString()} suggestions. Profile scores average the closest two or three current members; there is deliberately no pass score or automatic winner.
+      </p>
+      {result.suggestions.length ? (
+        <div className="space-y-4">
+          {result.suggestions.map((suggestion) => (
+            <Card key={`${suggestion.source.derivativeId}:${suggestion.profile.id}`}>
+              <CardHeader className="space-y-2 pb-3">
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div>
+                    <CardTitle className="text-lg">
+                      Crop #{suggestion.source.derivativeId.toLocaleString()} → candidate profile #{suggestion.profile.id.toLocaleString()}
+                    </CardTitle>
+                    <CardDescription>
+                      {suggestion.profile.currentMemberCount.toLocaleString()} current members · {profileBasisText(suggestion.profile.evidenceBasis)}
+                    </CardDescription>
+                  </div>
+                  <div className="text-right text-xs text-muted-foreground">
+                    <div className="text-2xl font-semibold tabular-nums text-foreground">{percent(suggestion.profileSimilarity)}</div>
+                    <div>multi-member comparison score</div>
+                  </div>
+                </div>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="grid gap-4 lg:grid-cols-2">
+                  <div className="space-y-3 rounded-md border bg-background p-3">
+                    <div>
+                      <p className="font-medium">Ungrouped crop · {sourceTitle(suggestion.source)}</p>
+                      <p className="text-xs text-muted-foreground">Vehicle A for this review</p>
+                    </div>
+                    <VehicleImage source={suggestion.source} />
+                    <LprEvidencePanel source={suggestion.source} />
+                    <SourceMetadata source={suggestion.source} />
+                  </div>
+                  <div className="space-y-3 rounded-md border bg-background p-3">
+                    <div>
+                      <p className="font-medium">Closest current profile member · {sourceTitle(suggestion.representative)}</p>
+                      <p className="text-xs text-muted-foreground">
+                        Best pair {percent(suggestion.bestSimilarity)} · weakest of {suggestion.supportMembers} support members {percent(suggestion.weakestSupportSimilarity)}
+                      </p>
+                    </div>
+                    <VehicleImage source={suggestion.representative} />
+                    <LprEvidencePanel source={suggestion.representative} />
+                    <SourceMetadata source={suggestion.representative} />
+                  </div>
+                </div>
+                <div className="rounded-md border bg-muted/30 p-3 text-xs text-muted-foreground">
+                  Candidate evidence: {suggestion.profile.anchorPlates.length
+                    ? suggestion.profile.anchorPlates.join(" / ")
+                    : "audited human Same labels without a complete plate anchor"}. Cameras: {suggestion.profile.cameraNames.join(", ") || "unknown"}. Saving a pair label adds evidence only; it does not assign this crop to the candidate.
+                </div>
+                <VehicleReidV2PairReviewControls
+                  sourceDerivativeId={suggestion.source.derivativeId}
+                  candidateDerivativeId={suggestion.representative.derivativeId}
+                  initialReview={null}
+                  canReview={data.canReview}
+                />
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+      ) : (
+        <p className="text-xs text-muted-foreground">
+          {stats.truncated
+            ? "The current identity inventory exceeds the bounded 10,000-crop scan, so profile suggestions fail closed until the complete current inventory can be evaluated."
+            : "No safe bounded suggestion remains in the current scan. This can mean exact or human Same evidence is waiting for a refreshed immutable snapshot, or conflict and prior-review rules excluded the comparison."}
+        </p>
+      )}
+    </div>
+  );
+}
+
 function ReviewCampaignBanner({ data }) {
   const state = data.reviewCampaign;
   if (!state?.active) return null;
@@ -861,6 +955,7 @@ export default function VehicleReidV2Shadow({ result }) {
         <StratifiedEvaluation data={data} evaluation={data.evaluation} />
         <ReviewCampaignCard data={data} />
         <ProfileCandidateCard data={data} />
+        <ProfileSuggestionCard data={data} />
       </section>
 
       <TargetedReviewBanner data={data} />
