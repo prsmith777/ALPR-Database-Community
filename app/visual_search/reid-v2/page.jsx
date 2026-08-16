@@ -21,6 +21,8 @@ export default async function VehicleReidV2ShadowPage({ searchParams }) {
     pageSize: positiveInteger(parameters?.pageSize, 12),
     resultLimit: positiveInteger(parameters?.resultLimit, 12),
     sourceDerivativeId: positiveInteger(parameters?.source, null),
+    candidateDerivativeId: positiveInteger(parameters?.candidate, null),
+    targetedReview: parameters?.targeted === "1",
     search: parameters?.search || "",
   });
 

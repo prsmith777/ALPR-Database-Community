@@ -18,7 +18,7 @@ reliable background processing.
 6. Audit sensitive searches, exports, corrections, rule changes, and
    destructive maintenance.
 
-## Release candidate baseline — August 15, 2026
+## Release candidate baseline — August 16, 2026
 
 - Application `0.1.20` candidate includes named users and roles, evidence-preserving plate
   review, filter-respecting exports, the searchable help center, local privacy
@@ -849,6 +849,16 @@ notes. Updates remain externally orchestrated.
   score strata for the next targeted review sample. The evaluator applies no
   cutoff, recommends no threshold, and writes no profile, cluster, or vehicle
   assignment.
+- A guided targeted-review queue is delivered for the current descriptive
+  ReID v2 gaps. It deterministically samples at most 32 current source crops,
+  excludes every previously reviewed pair, and presents a bounded exact
+  candidate for the requested camera, local-period, or overlapping-score
+  stratum. Effective-plate agreement may prioritize a Same or Different
+  coverage aim, but the aim is visibly not a prediction and never affects the
+  stored cosine score or actual rank. Saving Same, Different, or Unsure
+  recomputes the gaps and advances to another current recommendation. The
+  queue writes no threshold, profile, cluster, assignment, notification, or
+  provider result.
 - Final full-resolution Overview framing validation is implemented before a
   new Vehicle View is committed. The anchor-constrained selector prioritizes a
   fully framed vehicle track over a higher numerical score near an image edge,
@@ -947,9 +957,10 @@ be restored. Monochrome nighttime captures do not receive a direction result.
   now supplies direct and conservative companion LPR plate captures so Entry
   and plate-obscured Street Overview evidence can be judged from its linked
   read context. The stratified offline evaluation of these labels is now
-  delivered and remains read-only. Next collect only the targeted
-  camera/time/score cases it identifies, then design persistent v2 profile
-  candidates without replacing current assignments.
+  delivered and remains read-only. The bounded guided review queue for those
+  camera/time/score gaps is delivered; collect only its targeted labels, then
+  design persistent v2 profile candidates without replacing current
+  assignments.
   Shared Street images must continue to
   count once, and Entry-to-Street display fallbacks must never become an
   additional identity observation. Keep the existing ReID path available until
