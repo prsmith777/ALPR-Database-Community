@@ -80,6 +80,7 @@ let liveAssetId = null;
 let embeddingRunId = null;
 let attributeRunId = null;
 let pairReviewId = null;
+let profileCandidateRunId = null;
 
 async function guard() {
   lockClient = await pool.connect();
@@ -119,12 +120,15 @@ async function guard() {
          AS attribute_observations,
        (SELECT COUNT(*)::integer FROM public.vehicle_asset_attribute_runs) AS attribute_runs,
        (SELECT COUNT(*)::integer FROM public.vehicle_asset_attribute_jobs) AS attribute_jobs,
-       (SELECT COUNT(*)::integer FROM public.vehicle_reid_v2_pair_reviews) AS pair_reviews`
+       (SELECT COUNT(*)::integer FROM public.vehicle_reid_v2_pair_reviews) AS pair_reviews,
+       (SELECT COUNT(*)::integer FROM public.vehicle_reid_v2_profile_candidate_runs)
+         AS profile_candidate_runs`
   );
   assert.deepEqual(empty.rows[0], {
     reads: 0, assets: 0, links: 0, derivatives: 0, runs: 0, jobs: 0, live_jobs: 0,
     embeddings: 0, embedding_runs: 0, embedding_jobs: 0,
     attribute_observations: 0, attribute_runs: 0, attribute_jobs: 0, pair_reviews: 0,
+    profile_candidate_runs: 0,
   });
   const lock = await lockClient.query(
     "SELECT pg_try_advisory_lock(hashtextextended($1, 0)) AS locked",
@@ -271,7 +275,7 @@ async function runAutomaticCrop(storage) {
        vehicle_image_width, vehicle_image_height, vehicle_image_retryable,
        vehicle_image_updated_at
      ) VALUES (
-       'LIV123', 'Entry LPR 1', CURRENT_TIMESTAMP, 'ready', $1,
+       'CRP123', 'Entry LPR 1', CURRENT_TIMESTAMP, 'ready', $1,
        CURRENT_TIMESTAMP, 'entry_overview_primary', 0.95,
        '{"left":0.18,"top":0.2,"right":0.82,"bottom":0.82}'::jsonb,
        360, 200, FALSE, '2026-08-15T12:00:00.654321Z'::timestamptz
@@ -486,6 +490,57 @@ async function runReidV2PairReview() {
   assert.equal(Number(stored.rows[0].derivative_id_high), Math.max(sourceDerivativeId, candidateDerivativeId));
 }
 
+async function runReidV2ProfileCandidates() {
+  const repository = new VehicleReidV2ShadowRepository({ pool });
+  const service = new VehicleReidV2ShadowService({ repository });
+  const actor = {
+    id: actorId,
+    username: `codex_crop_${suffix}`,
+    displayName: "Codex vehicle crop smoke",
+  };
+  const created = await service.createProfileCandidateSnapshot({ actor });
+  profileCandidateRunId = Number(created.id);
+  assert.equal(created.reused, false);
+  assert.equal(created.totalSources, 2);
+  assert.equal(created.candidateProfiles, 1);
+  assert.equal(created.candidateMembers, 2);
+  assert.equal(created.conflictedComponents, 0);
+  assert.equal(created.profiles[0]?.evidenceBasis, "exact_effective_plate");
+  assert.deepEqual(created.profiles[0]?.anchorPlates, ["CRP123"]);
+
+  const reused = await service.createProfileCandidateSnapshot({ actor });
+  assert.equal(reused.id, profileCandidateRunId);
+  assert.equal(reused.reused, true);
+  const stored = await pool.query(
+    `SELECT runs.*,
+            (SELECT COUNT(*)::integer
+             FROM public.vehicle_reid_v2_profile_candidates profiles
+             WHERE profiles.run_id = runs.id) AS profiles,
+            (SELECT COUNT(*)::integer
+             FROM public.vehicle_reid_v2_profile_candidate_members members
+             WHERE members.run_id = runs.id) AS members,
+            (SELECT COUNT(*)::integer
+             FROM public.audit_events audit
+             WHERE audit.resource_type = 'vehicle_reid_v2_profile_candidate_run'
+               AND audit.resource_id = runs.id::text) AS audit_count
+     FROM public.vehicle_reid_v2_profile_candidate_runs runs
+     WHERE runs.id = $1`,
+    [profileCandidateRunId]
+  );
+  assert.equal(stored.rowCount, 1);
+  assert.equal(Number(stored.rows[0].profiles), 1);
+  assert.equal(Number(stored.rows[0].members), 2);
+  assert.equal(Number(stored.rows[0].audit_count), 1);
+  await assert.rejects(
+    pool.query(
+      `UPDATE public.vehicle_reid_v2_profile_candidate_runs
+       SET total_sources = total_sources + 1 WHERE id = $1`,
+      [profileCandidateRunId]
+    ),
+    /immutable/
+  );
+}
+
 async function runAttributeCampaign() {
   const repository = new VehicleAssetAttributeRepository({ pool });
   const result = Object.freeze({
@@ -613,14 +668,14 @@ async function cleanup() {
               event_type, resource_type, resource_id, outcome, reason, request_id,
               metadata, occurred_at, NULL
        FROM public.audit_events
-        WHERE resource_type IN ('vehicle_image_crop','vehicle_image_crop_live','vehicle_asset_embedding','vehicle_asset_attribute','vehicle_reid_v2_pair_review')
+         WHERE resource_type IN ('vehicle_image_crop','vehicle_image_crop_live','vehicle_asset_embedding','vehicle_asset_attribute','vehicle_reid_v2_pair_review','vehicle_reid_v2_profile_candidate_run')
           AND actor_user_id = $1
        ON CONFLICT (source_event_id, occurred_at) DO NOTHING`,
       [actorId]
     );
     await pool.query(
       `DELETE FROM public.audit_events
-       WHERE resource_type IN ('vehicle_image_crop','vehicle_image_crop_live','vehicle_asset_embedding','vehicle_asset_attribute','vehicle_reid_v2_pair_review')
+       WHERE resource_type IN ('vehicle_image_crop','vehicle_image_crop_live','vehicle_asset_embedding','vehicle_asset_attribute','vehicle_reid_v2_pair_review','vehicle_reid_v2_profile_candidate_run')
          AND actor_user_id = $1`,
       [actorId]
     );
@@ -691,12 +746,22 @@ async function cleanup() {
          AS attribute_observations,
        (SELECT COUNT(*)::integer FROM public.vehicle_asset_attribute_runs) AS attribute_runs,
        (SELECT COUNT(*)::integer FROM public.vehicle_asset_attribute_jobs) AS attribute_jobs,
-       (SELECT COUNT(*)::integer FROM public.vehicle_reid_v2_pair_reviews) AS pair_reviews`
+       (SELECT COUNT(*)::integer FROM public.vehicle_reid_v2_pair_reviews) AS pair_reviews,
+       (SELECT COUNT(*)::integer FROM public.vehicle_reid_v2_profile_candidate_runs)
+         AS profile_candidate_runs,
+       (SELECT COUNT(*)::integer FROM public.vehicle_reid_v2_profile_candidates)
+         AS profile_candidates,
+       (SELECT COUNT(*)::integer FROM public.vehicle_reid_v2_profile_candidate_members)
+         AS profile_candidate_members,
+       (SELECT COUNT(*)::integer FROM public.vehicle_reid_v2_profile_candidate_conflicts)
+         AS profile_candidate_conflicts`
   );
   assert.deepEqual(residue.rows[0], {
     reads: 0, assets: 0, links: 0, derivatives: 0, runs: 0, jobs: 0, live_jobs: 0,
     embeddings: 0, embedding_runs: 0, embedding_jobs: 0,
     attribute_observations: 0, attribute_runs: 0, attribute_jobs: 0, pair_reviews: 0,
+    profile_candidate_runs: 1, profile_candidates: 1,
+    profile_candidate_members: 2, profile_candidate_conflicts: 0,
   });
 }
 
@@ -708,6 +773,7 @@ try {
   await runAutomaticCrop(storage);
   await runEmbeddingCampaign();
   await runReidV2PairReview();
+  await runReidV2ProfileCandidates();
   await runAttributeCampaign();
   succeeded = true;
 } finally {

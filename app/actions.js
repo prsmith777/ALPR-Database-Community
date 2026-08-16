@@ -4881,6 +4881,21 @@ export async function startVehicleReidV2ReviewCampaign() {
   }
 }
 
+export async function createVehicleReidV2ProfileCandidateSnapshot() {
+  const principal = await requirePermission("plate.review");
+  try {
+    const data = await (await getVehicleReidV2ShadowService())
+      .createProfileCandidateSnapshot({ actor: principal });
+    revalidatePath("/visual_search/reid-v2");
+    return { success: true, data };
+  } catch (error) {
+    return visualSearchFailure(
+      error,
+      "Unable to create the ReID v2 shadow profile candidate snapshot."
+    );
+  }
+}
+
 export async function getVehicleProfile(clusterId) {
   const principal = await requirePermission("plate.read");
   try {

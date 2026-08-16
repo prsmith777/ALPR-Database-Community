@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+- Added operator-created immutable ReID v2 shadow profile candidate snapshots.
+  Membership is evidence-backed only: exact effective/corrected plate agreement
+  and audited human Same-vehicle labels may connect current canonical crops,
+  while human Different labels, incompatible effective plates, multi-plate
+  ambiguity, stale links, and bounded-scan truncation fail closed. Each
+  repeatable-read snapshot is fingerprinted, audited, retains excluded conflict
+  evidence, and is shown separately from current v1 profiles. Cosine scores do
+  not add members, and no threshold, cluster, vehicle assignment, notification,
+  or external-provider result is created.
+
 - Added one explicit 500-human-review ReID v2 diversity campaign. The run
   freezes the current embedding inventory, excludes every crop pair and
   effective-plate group used by earlier reviews (including Balanced-close OCR

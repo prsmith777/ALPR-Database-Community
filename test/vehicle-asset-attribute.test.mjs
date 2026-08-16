@@ -233,9 +233,11 @@ test("attribute migration is additive, inert, crop-owned, and immutable", async 
   const marker = migrations.indexOf("2026081506_vehicle_asset_attribute_campaign");
   const embeddingMarker = migrations.indexOf("2026081505_vehicle_asset_embedding_campaign");
   assert.ok(marker > embeddingMarker);
-  const slice = migrations.slice(migrations.lastIndexOf(
+  const start = migrations.lastIndexOf(
     "-- Provider-neutral local attribute observations", marker
-  ));
+  );
+  const end = migrations.indexOf("\n-- ", marker);
+  const slice = migrations.slice(start, end > marker ? end : migrations.length);
   assert.match(slice, /CREATE TABLE IF NOT EXISTS public\.vehicle_asset_attribute_observations/);
   assert.match(slice, /attribute_key IN \('color','body_type'\)/);
   assert.match(slice, /UNIQUE \(\s*derivative_id, attribute_key, provider, model_version, algorithm_version/);
