@@ -23,17 +23,17 @@ test("release information resolves a commit-pinned deployment image", () => {
   });
 
   assert.equal(release.version, "0.1.20");
-  assert.equal(release.manualVersion, "2.05");
-  assert.equal(release.manualUpdatedAt, "August 15, 2026");
+  assert.equal(release.manualVersion, "2.06");
+  assert.equal(release.manualUpdatedAt, "August 16, 2026");
   assert.equal(release.gitSha, "8cd2fa8");
   assert.equal(release.channel, "staging");
   assert.equal(release.source, "commit-pinned image");
   assert.equal(release.readOnly, true);
   assert.equal(
     release.notes.title,
-    "August 15, 2026 ReID v2 linked LPR evidence"
+    "August 16, 2026 stratified ReID v2 evaluation"
   );
-  assert.equal(release.notes.publishedAt, "2026-08-15");
+  assert.equal(release.notes.publishedAt, "2026-08-16");
   assert.ok(release.notes.items.length >= 4);
 });
 
