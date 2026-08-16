@@ -21,6 +21,16 @@ import {
   VEHICLE_ASSET_EMBEDDING_ALGORITHM,
   VEHICLE_ASSET_EMBEDDING_MODEL,
 } from "../lib/vehicle-asset-embedding-contract.mjs";
+import { VehicleAssetAttributeCampaignService } from "../lib/vehicle-asset-attribute-campaign.mjs";
+import {
+  VEHICLE_ASSET_ATTRIBUTE_ALGORITHM,
+  VEHICLE_ASSET_BODY_TYPE_ATTRIBUTE,
+  VEHICLE_ASSET_COLOR_ATTRIBUTE,
+} from "../lib/vehicle-asset-attribute-contract.mjs";
+import {
+  VehicleAssetAttributeRepository,
+  vehicleAssetAttributeRepositoryInternals,
+} from "../lib/vehicle-asset-attribute-repository.mjs";
 
 const OPT_IN = "VEHICLE_IMAGE_CROP_POSTGRES_TEST_OPT_IN";
 const EXPECTED_DATABASE = "VEHICLE_IMAGE_CROP_POSTGRES_TEST_DATABASE";
@@ -66,6 +76,7 @@ let runId = null;
 let liveReadId = null;
 let liveAssetId = null;
 let embeddingRunId = null;
+let attributeRunId = null;
 
 async function guard() {
   lockClient = await pool.connect();
@@ -100,11 +111,16 @@ async function guard() {
        (SELECT COUNT(*)::integer FROM public.vehicle_image_crop_live_jobs) AS live_jobs,
        (SELECT COUNT(*)::integer FROM public.vehicle_asset_embeddings) AS embeddings,
        (SELECT COUNT(*)::integer FROM public.vehicle_asset_embedding_runs) AS embedding_runs,
-       (SELECT COUNT(*)::integer FROM public.vehicle_asset_embedding_jobs) AS embedding_jobs`
+       (SELECT COUNT(*)::integer FROM public.vehicle_asset_embedding_jobs) AS embedding_jobs,
+       (SELECT COUNT(*)::integer FROM public.vehicle_asset_attribute_observations)
+         AS attribute_observations,
+       (SELECT COUNT(*)::integer FROM public.vehicle_asset_attribute_runs) AS attribute_runs,
+       (SELECT COUNT(*)::integer FROM public.vehicle_asset_attribute_jobs) AS attribute_jobs`
   );
   assert.deepEqual(empty.rows[0], {
     reads: 0, assets: 0, links: 0, derivatives: 0, runs: 0, jobs: 0, live_jobs: 0,
     embeddings: 0, embedding_runs: 0, embedding_jobs: 0,
+    attribute_observations: 0, attribute_runs: 0, attribute_jobs: 0,
   });
   const lock = await lockClient.query(
     "SELECT pg_try_advisory_lock(hashtextextended($1, 0)) AS locked",
@@ -398,6 +414,121 @@ async function runEmbeddingCampaign() {
   );
 }
 
+async function runAttributeCampaign() {
+  const repository = new VehicleAssetAttributeRepository({ pool });
+  const result = Object.freeze({
+    algorithmVersion: VEHICLE_ASSET_ATTRIBUTE_ALGORITHM,
+    observations: [
+      Object.freeze({
+        attributeKey: VEHICLE_ASSET_COLOR_ATTRIBUTE.attributeKey,
+        provider: VEHICLE_ASSET_COLOR_ATTRIBUTE.provider,
+        modelVersion: VEHICLE_ASSET_COLOR_ATTRIBUTE.modelVersion,
+        status: "ready",
+        value: "red",
+        confidence: 0.88,
+        rawResult: { reliability: 0.9, reason: null },
+      }),
+      Object.freeze({
+        attributeKey: VEHICLE_ASSET_BODY_TYPE_ATTRIBUTE.attributeKey,
+        provider: VEHICLE_ASSET_BODY_TYPE_ATTRIBUTE.provider,
+        modelVersion: VEHICLE_ASSET_BODY_TYPE_ATTRIBUTE.modelVersion,
+        status: "ready",
+        value: "truck",
+        confidence: 0.91,
+        rawResult: { scores: { car: 0.04, bus: 0.01, truck: 0.91, van: 0.04 } },
+      }),
+    ],
+  });
+  const rendered = Object.freeze({
+    result,
+    resultSha256: vehicleAssetAttributeRepositoryInternals.sha256(result),
+    resultBytes: Buffer.byteLength(
+      vehicleAssetAttributeRepositoryInternals.canonicalJson(result)
+    ),
+    algorithmVersion: VEHICLE_ASSET_ATTRIBUTE_ALGORITHM,
+  });
+  const attributeService = {
+    async preview() { return rendered; },
+    async catalog(job) {
+      assert.equal(job.preview_result_sha256, rendered.resultSha256);
+      assert.equal(
+        vehicleAssetAttributeRepositoryInternals.canonicalJson(job.preview_result),
+        vehicleAssetAttributeRepositoryInternals.canonicalJson(result)
+      );
+      return repository.registerObservations(job, rendered);
+    },
+  };
+  const campaign = new VehicleAssetAttributeCampaignService({ repository, attributeService });
+  const run = await campaign.createPreview({ actorUserId: actorId });
+  attributeRunId = Number(run.id);
+  const preview = await campaign.processBatch({ limit: 5 });
+  assert.equal(preview.processed, 2);
+  let overview = await campaign.getOverview();
+  assert.equal(overview.latestRun.status, "ready");
+  assert.equal(Number(overview.counts.previewed), 2);
+  assert.match(overview.latestRun.preview_fingerprint, /^[0-9a-f]{64}$/);
+
+  const first = await campaign.confirmBatch({
+    runId: attributeRunId,
+    previewFingerprint: overview.latestRun.preview_fingerprint,
+    limit: 1,
+    actorUserId: actorId,
+  });
+  assert.equal(first.queued, 1);
+  assert.equal((await campaign.processBatch({ limit: 5 })).processed, 1);
+  overview = await campaign.getOverview();
+  assert.equal(overview.latestRun.status, "ready");
+  assert.equal(Number(overview.counts.previewed), 1);
+
+  const second = await campaign.confirmBatch({
+    runId: attributeRunId,
+    previewFingerprint: overview.latestRun.preview_fingerprint,
+    limit: 5,
+    actorUserId: actorId,
+  });
+  assert.equal(second.queued, 1);
+  assert.equal((await campaign.processBatch({ limit: 5 })).processed, 1);
+  overview = await campaign.getOverview();
+  assert.equal(overview.latestRun.status, "completed");
+  assert.equal(Number(overview.catalog.fully_observed_crops), 2);
+  assert.equal(Number(overview.catalog.observation_count), 4);
+  assert.equal(Number(overview.catalog.color_ready), 2);
+  assert.equal(Number(overview.catalog.body_type_ready), 2);
+
+  const stored = await pool.query(
+    `SELECT observations.*, observations.id AS observation_id, jobs.*,
+            jobs.evidence_source_updated_at::text AS evidence_updated_at
+     FROM public.vehicle_asset_attribute_observations observations
+     JOIN public.vehicle_asset_attribute_jobs jobs
+       ON jobs.derivative_id = observations.derivative_id
+     WHERE jobs.run_id = $1
+     ORDER BY observations.derivative_id, observations.attribute_key`,
+    [attributeRunId]
+  );
+  assert.equal(stored.rowCount, 4);
+  assert.deepEqual(
+    [...new Set(stored.rows.map((row) => row.attribute_key))].sort(),
+    ["body_type", "color"]
+  );
+  assert.ok(stored.rows.every((row) => row.status === "ready"));
+  assert.ok(stored.rows.every((row) => /\.(123456|654321)\+00$/.test(row.evidence_updated_at)));
+  const firstJob = stored.rows[0];
+  const reused = await repository.registerObservations({
+    ...firstJob,
+    evidence_source_updated_at: firstJob.evidence_updated_at,
+    algorithm_version: VEHICLE_ASSET_ATTRIBUTE_ALGORITHM,
+  }, rendered);
+  assert.equal(reused.observationsCreated, 0);
+  await assert.rejects(
+    pool.query(
+      `UPDATE public.vehicle_asset_attribute_observations
+       SET source_sha256 = $2 WHERE id = $1`,
+      [stored.rows[0].observation_id, "0".repeat(64)]
+    ),
+    /immutable/
+  );
+}
+
 async function cleanup() {
   if (actorId != null) {
     await pool.query(
@@ -410,16 +541,27 @@ async function cleanup() {
               event_type, resource_type, resource_id, outcome, reason, request_id,
               metadata, occurred_at, NULL
        FROM public.audit_events
-        WHERE resource_type IN ('vehicle_image_crop','vehicle_image_crop_live','vehicle_asset_embedding')
+        WHERE resource_type IN ('vehicle_image_crop','vehicle_image_crop_live','vehicle_asset_embedding','vehicle_asset_attribute')
           AND actor_user_id = $1
        ON CONFLICT (source_event_id, occurred_at) DO NOTHING`,
       [actorId]
     );
     await pool.query(
       `DELETE FROM public.audit_events
-       WHERE resource_type IN ('vehicle_image_crop','vehicle_image_crop_live','vehicle_asset_embedding')
+       WHERE resource_type IN ('vehicle_image_crop','vehicle_image_crop_live','vehicle_asset_embedding','vehicle_asset_attribute')
          AND actor_user_id = $1`,
       [actorId]
+    );
+  }
+  if (attributeRunId != null) {
+    await pool.query(
+      "DELETE FROM public.vehicle_asset_attribute_jobs WHERE run_id = $1",
+      [attributeRunId]
+    );
+    await pool.query("DELETE FROM public.vehicle_asset_attribute_observations");
+    await pool.query(
+      "DELETE FROM public.vehicle_asset_attribute_runs WHERE id = $1",
+      [attributeRunId]
     );
   }
   if (embeddingRunId != null) {
@@ -469,11 +611,16 @@ async function cleanup() {
        (SELECT COUNT(*)::integer FROM public.vehicle_image_crop_live_jobs) AS live_jobs,
        (SELECT COUNT(*)::integer FROM public.vehicle_asset_embeddings) AS embeddings,
        (SELECT COUNT(*)::integer FROM public.vehicle_asset_embedding_runs) AS embedding_runs,
-       (SELECT COUNT(*)::integer FROM public.vehicle_asset_embedding_jobs) AS embedding_jobs`
+       (SELECT COUNT(*)::integer FROM public.vehicle_asset_embedding_jobs) AS embedding_jobs,
+       (SELECT COUNT(*)::integer FROM public.vehicle_asset_attribute_observations)
+         AS attribute_observations,
+       (SELECT COUNT(*)::integer FROM public.vehicle_asset_attribute_runs) AS attribute_runs,
+       (SELECT COUNT(*)::integer FROM public.vehicle_asset_attribute_jobs) AS attribute_jobs`
   );
   assert.deepEqual(residue.rows[0], {
     reads: 0, assets: 0, links: 0, derivatives: 0, runs: 0, jobs: 0, live_jobs: 0,
     embeddings: 0, embedding_runs: 0, embedding_jobs: 0,
+    attribute_observations: 0, attribute_runs: 0, attribute_jobs: 0,
   });
 }
 
@@ -484,6 +631,7 @@ try {
   await runCampaign(storage);
   await runAutomaticCrop(storage);
   await runEmbeddingCampaign();
+  await runAttributeCampaign();
   succeeded = true;
 } finally {
   try {

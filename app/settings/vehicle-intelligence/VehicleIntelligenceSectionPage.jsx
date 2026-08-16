@@ -4,6 +4,7 @@ import {
   getVehicleEventShadowOverview,
   getVehicleImageCropOverview,
   getVehicleAssetEmbeddingOverview,
+  getVehicleAssetAttributeOverview,
   getVehicleImageAssetCatalogOverview,
   getVehicleOverviewSetup,
   getVehicleDirectionSetup,
@@ -83,7 +84,7 @@ export default async function VehicleIntelligenceSectionPage({ section = "camera
   }
 
   const [result, vehicleImageCatalog, vehicleEventShadow, vehicleImageCrops,
-    vehicleAssetEmbeddings] = await Promise.all([
+    vehicleAssetEmbeddings, vehicleAssetAttributes] = await Promise.all([
     getVehicleDirectionSetup(null, directionOptions(section)),
     section === "processing"
       ? getVehicleImageAssetCatalogOverview()
@@ -96,6 +97,9 @@ export default async function VehicleIntelligenceSectionPage({ section = "camera
       : Promise.resolve(null),
     section === "processing"
       ? getVehicleAssetEmbeddingOverview()
+      : Promise.resolve(null),
+    section === "processing"
+      ? getVehicleAssetAttributeOverview()
       : Promise.resolve(null),
   ]);
   if (!result.success) throw new Error(result.error);
@@ -115,6 +119,9 @@ export default async function VehicleIntelligenceSectionPage({ section = "camera
         : null}
       initialVehicleAssetEmbeddings={vehicleAssetEmbeddings?.success
         ? vehicleAssetEmbeddings.data.overview
+        : null}
+      initialVehicleAssetAttributes={vehicleAssetAttributes?.success
+        ? vehicleAssetAttributes.data.overview
         : null}
     />
   );
