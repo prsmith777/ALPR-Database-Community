@@ -4560,7 +4560,7 @@ ALTER TABLE public.storage_reconciliation_runs
   ADD CONSTRAINT storage_reconciliation_phase CHECK (
     phase IN (
       'filesystem', 'plate-reads', 'capture-assets',
-      'vehicle-image-assets', 'completed'
+      'vehicle-image-assets', 'vehicle-image-derivatives', 'completed'
     )
   );
 
