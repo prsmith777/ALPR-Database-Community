@@ -97,7 +97,7 @@ export default function VehicleReidV2PairReviewControls({
       </p>
       {canReview && nextHref && !review?.automatic ? (
         <p className="text-xs text-muted-foreground">
-          Saving any label advances to the next current targeted recommendation.
+          Saving one label records one pair decision and advances to the next current unresolved pair.
         </p>
       ) : null}
       {error ? <p role="alert" className="text-xs text-destructive">{error}</p> : null}

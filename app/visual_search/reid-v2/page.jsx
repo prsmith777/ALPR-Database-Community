@@ -24,6 +24,7 @@ export default async function VehicleReidV2ShadowPage({ searchParams }) {
     candidateDerivativeId: positiveInteger(parameters?.candidate, null),
     targetedReview: parameters?.targeted === "1",
     campaignReview: parameters?.campaign === "1",
+    browseMode: parameters?.browse === "1",
     search: parameters?.search || "",
   });
 

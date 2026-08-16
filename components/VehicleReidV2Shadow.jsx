@@ -189,6 +189,7 @@ function queryHref(data, overrides = {}) {
     candidate: data?.targetedReview?.current?.candidateDerivativeId || "",
     targeted: data?.targetedReview?.active ? 1 : "",
     campaign: data?.reviewCampaign?.active ? 1 : "",
+    browse: data?.reviewCampaign?.browseMode ? 1 : "",
     ...overrides,
   };
   const parameters = new URLSearchParams();
@@ -263,7 +264,7 @@ function ReviewCampaignCard({ data }) {
     return (
       <div className="space-y-3 rounded-lg border border-blue-500/30 bg-blue-500/5 p-4">
         <div>
-          <p className="font-medium">One 500-review diversity campaign</p>
+          <p className="font-medium">One 500-pair-decision diversity campaign</p>
           <p className="mt-1 text-xs text-muted-foreground">
             Freeze the current crop inventory and review only previously unseen vehicle evidence. Entry views are included with their linked LPR and conservative companion evidence. Exact effective/corrected plate matches are automatically Same, clearly dissimilar plates are automatically Different, and neither is sent to you.
           </p>
@@ -277,12 +278,12 @@ function ReviewCampaignCard({ data }) {
     <div className="space-y-3 rounded-lg border border-blue-500/30 bg-blue-500/5 p-4">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <p className="font-medium">500-review diversity campaign #{campaign.id}</p>
+          <p className="font-medium">500-pair-decision diversity campaign #{campaign.id}</p>
           <p className="mt-1 text-xs text-muted-foreground">
-            Frozen through crop #{campaign.frozenMaxDerivativeId.toLocaleString()} · {campaign.humanReviews.toLocaleString()} of {campaign.targetHumanReviews.toLocaleString()} human reviews completed.
+            Frozen through crop #{campaign.frozenMaxDerivativeId.toLocaleString()} · {campaign.humanReviews.toLocaleString()} of {campaign.targetHumanReviews.toLocaleString()} human pair decisions completed.
           </p>
         </div>
-        <Badge variant={complete ? "default" : "outline"}>{complete ? "Complete" : `${campaign.remainingHumanReviews.toLocaleString()} remaining`}</Badge>
+        <Badge variant={complete ? "default" : "outline"}>{complete ? "Complete" : `${campaign.remainingHumanReviews.toLocaleString()} pair decisions remaining`}</Badge>
       </div>
       <div className="h-2 overflow-hidden rounded-full bg-muted">
         <div
@@ -294,6 +295,7 @@ function ReviewCampaignCard({ data }) {
         <Button asChild size="sm">
           <Link href={queryHref(data, {
             campaign: 1,
+            browse: "",
             targeted: "",
             search: "",
             page: 1,
@@ -305,7 +307,7 @@ function ReviewCampaignCard({ data }) {
         </Button>
       ) : null}
       <p className="text-xs text-muted-foreground">
-        A smaller final total is acceptable when the frozen inventory has no more independent unresolved pairs; familiar plates and previously reviewed crops are never recycled merely to reach 500.
+        Each decision labels one displayed crop pair; 500 pair decisions does not mean 500 vehicles. A smaller final total is acceptable when the frozen inventory has no more independent unresolved pairs; familiar plates and previously reviewed crops are never recycled merely to reach 500.
       </p>
     </div>
   );
@@ -323,13 +325,12 @@ function ReviewCampaignBanner({ data }) {
           The frozen inventory is currently exhausted after automatic plate resolution and prior-review diversity exclusions. The campaign will not recycle familiar vehicles to fill the target.
         </p>
         <Button asChild className="mt-3" variant="outline" size="sm">
-          <Link href="/visual_search/reid-v2">Return to ReID v2 overview</Link>
+          <Link href="/visual_search/reid-v2?browse=1">Browse ReID v2 instead</Link>
         </Button>
       </div>
     );
   }
   const current = state.current;
-  const next = state.next;
   return (
     <div className="space-y-3 rounded-lg border border-blue-500/40 bg-blue-500/5 p-4">
       <div className="flex flex-wrap items-start justify-between gap-3">
@@ -339,26 +340,14 @@ function ReviewCampaignBanner({ data }) {
             {current.contextPair} · {current.scoreBand} · {current.reviewReason.replaceAll("_", " ")}
           </p>
         </div>
-        <Badge variant="outline">{campaign.humanReviews.toLocaleString()} of {campaign.targetHumanReviews.toLocaleString()}</Badge>
+        <Badge variant="outline">{campaign.humanReviews.toLocaleString()} of {campaign.targetHumanReviews.toLocaleString()} pair decisions</Badge>
       </div>
       <p className="text-xs text-muted-foreground">
         This pair survived exact-match and clearly-different plate resolution. Judge the Overview crops and all linked Entry or Street LPR evidence; choose Unsure when that evidence cannot settle the physical vehicle.
       </p>
       <div className="flex flex-wrap gap-2">
-        {next ? (
-          <Button asChild variant="outline" size="sm">
-            <Link href={queryHref(data, {
-              source: next.sourceDerivativeId,
-              candidate: next.candidateDerivativeId,
-              campaign: 1,
-              targeted: "",
-            })}>
-              Skip to next new pair<ArrowRight className="ml-1 h-4 w-4" />
-            </Link>
-          </Button>
-        ) : null}
         <Button asChild variant="ghost" size="sm">
-          <Link href="/visual_search/reid-v2">Exit campaign review</Link>
+          <Link href="/visual_search/reid-v2?browse=1">Browse ReID v2 instead</Link>
         </Button>
       </div>
     </div>
@@ -587,11 +576,11 @@ function MatchCard({ data, selected, match, canReview }) {
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
             <CardTitle className="flex flex-wrap items-center gap-2 text-lg">
-              #{match.rank} · {sourceTitle(match)}
+              {campaign ? "Vehicle B" : `#${match.rank}`} · {sourceTitle(match)}
               {targeted ? <Badge>Targeted pair</Badge> : null}
               {campaign ? <Badge>New campaign pair</Badge> : null}
             </CardTitle>
-            <CardDescription>Embedding-only cosine ranking</CardDescription>
+            <CardDescription>{campaign ? "The one current unresolved campaign candidate" : "Embedding-only cosine ranking"}</CardDescription>
           </div>
           <div className="text-right">
             <div className="text-2xl font-semibold tabular-nums">{percent(match.similarity)}</div>
@@ -623,6 +612,7 @@ function MatchCard({ data, selected, match, canReview }) {
           nextHref={guided ? queryHref(data, {
             targeted: targeted ? 1 : "",
             campaign: campaign ? 1 : "",
+            browse: "",
             search: "",
             page: 1,
             source: "",
@@ -633,7 +623,7 @@ function MatchCard({ data, selected, match, canReview }) {
           <Button asChild variant="outline" size="sm">
             <Link href={`/live_feed?readId=${match.readId}`}><Eye className="mr-1 h-4 w-4" />Open read</Link>
           </Button>
-          <Button asChild variant="ghost" size="sm">
+          {!campaign ? <Button asChild variant="ghost" size="sm">
             <Link href={queryHref({ filters: { search: "" }, pagination: { page: 1, pageSize: 12 }, selected }, {
               source: match.derivativeId,
               candidate: "",
@@ -642,7 +632,7 @@ function MatchCard({ data, selected, match, canReview }) {
             })}>
               Use as source<ArrowRight className="ml-1 h-4 w-4" />
             </Link>
-          </Button>
+          </Button> : null}
         </div>
       </CardContent>
     </Card>
@@ -654,14 +644,18 @@ function ShadowNeighborhood({ data }) {
   return (
     <section className="space-y-5">
       <div>
-        <h2 className="text-xl font-semibold">Shadow neighborhood for {sourceTitle(data.selected)}</h2>
+        <h2 className="text-xl font-semibold">
+          {data.reviewCampaign?.active ? "Current campaign pair" : `Shadow neighborhood for ${sourceTitle(data.selected)}`}
+        </h2>
         <p className="text-sm text-muted-foreground">
-          The top-two margin is {data.winnerMargin == null ? "unavailable" : percent(data.winnerMargin, 2)}. This is comparison evidence, not an automatic match decision.
+          {data.reviewCampaign?.active
+            ? "Exactly one human decision is requested for the two vehicles below. Saving it advances to a new independent unresolved pair."
+            : `The top-two margin is ${data.winnerMargin == null ? "unavailable" : percent(data.winnerMargin, 2)}. This is comparison evidence, not an automatic match decision.`}
         </p>
       </div>
       <div className="grid gap-5 lg:grid-cols-[minmax(280px,0.8fr)_minmax(0,2fr)]">
         <Card className="h-fit lg:sticky lg:top-4">
-          <CardHeader><CardTitle>{sourceTitle(data.selected)}</CardTitle><CardDescription>Selected canonical source</CardDescription></CardHeader>
+          <CardHeader><CardTitle>{data.reviewCampaign?.active ? "Vehicle A · " : ""}{sourceTitle(data.selected)}</CardTitle><CardDescription>{data.reviewCampaign?.active ? "Campaign source" : "Selected canonical source"}</CardDescription></CardHeader>
           <CardContent className="space-y-4">
             <VehicleImage source={data.selected} priority />
             <LprEvidencePanel source={data.selected} />
@@ -679,6 +673,36 @@ function ShadowNeighborhood({ data }) {
   );
 }
 
+function CampaignReviewFlow({ data }) {
+  const campaign = data.reviewCampaign.campaign;
+  return (
+    <div className="space-y-6">
+      <section className="space-y-3">
+        <div className="flex flex-wrap items-start justify-between gap-4">
+          <div>
+            <div className="mb-2 flex items-center gap-2">
+              <BrainCircuit className="h-6 w-6" />
+              <h1 className="text-2xl font-semibold">ReID v2 pair review</h1>
+              <Badge>One pair at a time</Badge>
+            </div>
+            <p className="max-w-4xl text-sm text-muted-foreground">
+              One decision reviews the one displayed crop pair and then advances. The {campaign.targetHumanReviews.toLocaleString()} target counts pair decisions, not vehicles.
+            </p>
+          </div>
+          <Button asChild variant="outline" size="sm">
+            <Link href="/visual_search/reid-v2?browse=1">Browse ReID v2 instead</Link>
+          </Button>
+        </div>
+        <div className="rounded-lg border border-blue-500/30 bg-blue-500/5 p-4 text-sm text-muted-foreground">
+          Previously reviewed evidence and close OCR plate groups are excluded. Exact effective or corrected plate matches and clearly dissimilar plates are resolved automatically and never appear here. Entry crops include direct and companion LPR evidence when available.
+        </div>
+      </section>
+      <ReviewCampaignBanner data={data} />
+      {data.reviewCampaign.current ? <ShadowNeighborhood data={data} /> : null}
+    </div>
+  );
+}
+
 export default function VehicleReidV2Shadow({ result }) {
   if (!result?.success) {
     return (
@@ -689,6 +713,9 @@ export default function VehicleReidV2Shadow({ result }) {
   }
 
   const data = result.data;
+  if (data.reviewCampaign?.active) {
+    return <CampaignReviewFlow data={data} />;
+  }
   return (
     <div className="space-y-8">
       <section className="space-y-3">
@@ -760,9 +787,10 @@ export default function VehicleReidV2Shadow({ result }) {
           <p className="text-sm text-muted-foreground">Search by plate, camera, read ID, asset ID, or crop ID.</p>
         </div>
         <form method="get" action="/visual_search/reid-v2" className="flex max-w-2xl gap-2">
+          {data.reviewCampaign?.browseMode ? <input type="hidden" name="browse" value="1" /> : null}
           <Input name="search" defaultValue={data.filters.search} maxLength={80} placeholder="Search current canonical crops" />
           <Button type="submit"><Search className="mr-2 h-4 w-4" />Search</Button>
-          {data.filters.search ? <Button asChild type="button" variant="outline"><Link href="/visual_search/reid-v2">Clear</Link></Button> : null}
+          {data.filters.search ? <Button asChild type="button" variant="outline"><Link href={data.reviewCampaign?.browseMode ? "/visual_search/reid-v2?browse=1" : "/visual_search/reid-v2"}>Clear</Link></Button> : null}
         </form>
         <SourcePicker data={data} />
       </section>
