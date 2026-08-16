@@ -2,6 +2,20 @@
 
 ## Unreleased
 
+- Added one explicit 500-human-review ReID v2 diversity campaign. The run
+  freezes the current embedding inventory, excludes every crop pair and
+  effective-plate group used by earlier reviews (including Balanced-close OCR
+  variants), represents Entry
+  Overview crops with linked LPR and conservative companion evidence, and
+  stops at the available independent unresolved inventory instead of
+  recycling familiar vehicles. Exact effective plates, including corrected
+  plates, are automatically resolved Same; clearly dissimilar effective
+  plates outside the existing Balanced fuzzy tolerance are automatically
+  resolved Different. Only close OCR variants, missing plates, or incomplete
+  evidence consume a human review. Campaign-bound submissions are revalidated
+  before counting, and no threshold, profile, cluster, assignment,
+  notification, or external-provider result is created.
+
 - Added operator-controlled, crop-owned local color and coarse body-type
   observations for current identity-eligible canonical vehicle crops. A
   durable preview freezes exact crop bytes and current evidence, evaluates the
