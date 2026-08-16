@@ -34,7 +34,7 @@ export default function VehicleReidV2ReviewCampaignControls({ canReview = false 
         {starting
           ? <Loader2 className="mr-1 h-4 w-4 animate-spin" />
           : <Play className="mr-1 h-4 w-4" />}
-        Start one 500-review campaign
+        Start one 500-pair-decision campaign
       </Button>
       {!canReview ? (
         <p className="text-xs text-muted-foreground">Plate review permission is required.</p>

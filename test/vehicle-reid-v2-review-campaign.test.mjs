@@ -161,7 +161,175 @@ test("shadow results mark exact and far effective plates as automatic reviews", 
   assert.equal(close.pairReview, null);
 });
 
-test("campaign migration, actions, and UI keep one frozen 500-review run", async () => {
+function activeCampaign(overrides = {}) {
+  return {
+    id: 1,
+    status: "active",
+    target_human_reviews: 500,
+    human_reviews: "0",
+    frozen_max_derivative_id: 100,
+    embedding_model: "vehicle-reid-0001-ir-fp16-v1",
+    algorithm_version: "canonical-overview-crop-embedding-v1",
+    created_at: "2026-08-16T20:00:00Z",
+    ...overrides,
+  };
+}
+
+function unresolvedRows(count = 6) {
+  return Array.from({ length: count }, (_, index) => row(index + 1, 1 - (index * 0.07), {
+    plate_number: null,
+    observed_plate: null,
+    plate_numbers: [],
+    camera_name: index % 2 ? "Street LPR 1" : "Entry LPR 1",
+    camera_names: [index % 2 ? "Street LPR 1" : "Entry LPR 1"],
+    overview_context: index % 2 ? "street" : "entry",
+    lpr_evidence: index % 2 === 0 ? [{
+      readId: 900 + index,
+      plateNumber: `ENTRY${index}`,
+      cameraName: "Entry LPR 1",
+    }] : [],
+    companion_lpr_evidence: index % 2 === 0 ? [{
+      readId: 950 + index,
+      plateNumber: `ENTRY${index}A`,
+      cameraName: "Street LPR 2",
+    }] : [],
+  }));
+}
+
+test("an active campaign owns the default route and returns exactly one review pair", async () => {
+  const rows = unresolvedRows();
+  const service = new VehicleReidV2ShadowService({
+    repository: {
+      async listCurrentSources() { return rows; },
+      async getCurrentSource(id) {
+        return rows.find((item) => Number(item.derivative_id) === Number(id)) || null;
+      },
+      async listPairReviewCalibration() { return []; },
+      async listPairReviewsForSource() { return []; },
+      async getLatestReviewCampaign() { return activeCampaign(); },
+    },
+  });
+
+  const defaultView = await service.getOverview({ resultLimit: 12 });
+  assert.equal(defaultView.reviewCampaign.active, true);
+  assert.equal(defaultView.sources.length, 0, "campaign data must not expose the old source chooser");
+  assert.equal(defaultView.matches.length, 1, "campaign data must expose one candidate only");
+  assert.equal(defaultView.selected.derivativeId,
+    defaultView.reviewCampaign.current.sourceDerivativeId);
+  assert.equal(defaultView.matches[0].derivativeId,
+    defaultView.reviewCampaign.current.candidateDerivativeId);
+  assert.ok(defaultView.selected.lprEvidence.direct.length > 0
+    || defaultView.matches[0].lprEvidence.direct.length > 0
+    || defaultView.selected.lprEvidence.companions.length > 0
+    || defaultView.matches[0].lprEvidence.companions.length > 0,
+  "Entry campaign evidence must retain its direct or companion LPR context");
+
+  const staleIds = await service.getOverview({
+    sourceDerivativeId: 5,
+    candidateDerivativeId: 6,
+    campaignReview: true,
+  });
+  assert.equal(staleIds.reviewCampaign.current.pairIdentity,
+    defaultView.reviewCampaign.current.pairIdentity,
+  "old source/candidate URLs must not select a different campaign pair");
+
+  const browseView = await service.getOverview({ browseMode: true, resultLimit: 3 });
+  assert.equal(browseView.reviewCampaign.active, false);
+  assert.equal(browseView.reviewCampaign.browseMode, true);
+  assert.ok(browseView.sources.length > 0);
+  assert.equal(browseView.matches.length, 3);
+});
+
+test("campaign submission accepts only the displayed pair and advances after one decision", async () => {
+  const rows = unresolvedRows(8).map((item) => ({
+    ...item,
+    lpr_evidence: [],
+    companion_lpr_evidence: [],
+  }));
+  const reviews = [];
+  let saveCalls = 0;
+  const repository = {
+    async listCurrentSources() { return rows; },
+    async getCurrentSource(id) {
+      return rows.find((item) => Number(item.derivative_id) === Number(id)) || null;
+    },
+    async listPairReviewCalibration() { return reviews; },
+    async listPairReviewsForSource() { return []; },
+    async getLatestReviewCampaign() {
+      return activeCampaign({ human_reviews: String(reviews.length) });
+    },
+    async savePairReview(input) {
+      saveCalls += 1;
+      const low = rows.find((item) => item.derivative_id === input.derivativeIdLow);
+      const high = rows.find((item) => item.derivative_id === input.derivativeIdHigh);
+      const saved = {
+        id: reviews.length + 1,
+        derivative_id_low: input.derivativeIdLow,
+        derivative_id_high: input.derivativeIdHigh,
+        label: input.label,
+        similarity_score: input.similarityScore,
+        embedding_model: "vehicle-reid-0001-ir-fp16-v1",
+        algorithm_version: "canonical-overview-crop-embedding-v1",
+        revision: 1,
+        campaign_id: input.campaignId,
+        evidence_context_low: low.overview_context,
+        evidence_context_high: high.overview_context,
+        evidence_camera_low: low.camera_name,
+        evidence_camera_high: high.camera_name,
+        evidence_plate_low: low.plate_number,
+        evidence_plate_high: high.plate_number,
+        evidence_timestamp_low: low.read_timestamp,
+        evidence_timestamp_high: high.read_timestamp,
+        evaluation_time_zone: "America/Denver",
+      };
+      reviews.push(saved);
+      return saved;
+    },
+  };
+  const service = new VehicleReidV2ShadowService({ repository });
+  const before = await service.getOverview();
+  assert.ok(before.reviewCampaign.next, "fixture must contain more than one campaign pair");
+
+  await assert.rejects(service.recordPairReview({
+    sourceDerivativeId: before.reviewCampaign.next.sourceDerivativeId,
+    candidateDerivativeId: before.reviewCampaign.next.candidateDerivativeId,
+    label: "unsure",
+    campaignId: 1,
+    actor: { id: 4, username: "operator" },
+  }), /no longer the current unresolved campaign recommendation/i);
+  assert.equal(saveCalls, 0, "a non-displayed queued pair must fail server revalidation");
+
+  const current = before.reviewCampaign.current;
+  await service.recordPairReview({
+    sourceDerivativeId: current.sourceDerivativeId,
+    candidateDerivativeId: current.candidateDerivativeId,
+    label: "unsure",
+    campaignId: 1,
+    actor: { id: 4, username: "operator" },
+  });
+  assert.equal(saveCalls, 1);
+  assert.equal(reviews.length, 1, "one decision must create exactly one campaign review");
+
+  const after = await service.getOverview();
+  assert.equal(after.reviewCampaign.campaign.humanReviews, 1);
+  assert.notEqual(after.reviewCampaign.current.pairIdentity, current.pairIdentity);
+  assert.equal([
+    after.reviewCampaign.current.sourceDerivativeId,
+    after.reviewCampaign.current.candidateDerivativeId,
+  ].some((id) => [current.sourceDerivativeId, current.candidateDerivativeId].includes(id)), false,
+  "the next pair must not recycle either just-reviewed crop");
+
+  await assert.rejects(service.recordPairReview({
+    sourceDerivativeId: current.sourceDerivativeId,
+    candidateDerivativeId: current.candidateDerivativeId,
+    label: "unsure",
+    campaignId: 1,
+    actor: { id: 4, username: "operator" },
+  }), /no longer the current unresolved campaign recommendation/i);
+  assert.equal(saveCalls, 1, "the old pair cannot be counted twice");
+});
+
+test("campaign migration, actions, and UI keep one frozen 500-pair-decision run", async () => {
   const [migration, actions, page, component, controls, repository] = await Promise.all([
     source("migrations.sql"),
     source("app/actions.js"),
@@ -177,10 +345,20 @@ test("campaign migration, actions, and UI keep one frozen 500-review run", async
   assert.match(actions, /startVehicleReidV2ReviewCampaign[\s\S]*requirePermission\("plate\.review"\)/);
   assert.match(actions, /targetHumanReviews: 500/);
   assert.match(page, /campaignReview: parameters\?\.campaign === "1"/);
-  assert.match(component, /One 500-review diversity campaign/);
+  assert.match(page, /browseMode: parameters\?\.browse === "1"/);
+  assert.match(component, /One 500-pair-decision diversity campaign/);
   assert.match(component, /Exact effective\/corrected plate matches are automatically Same/);
   assert.match(component, /clearly dissimilar plates are automatically Different/);
-  assert.match(controls, /Start one 500-review campaign/);
+  assert.match(component, /The .* target counts pair decisions, not vehicles/);
+  assert.match(component, /if \(data\.reviewCampaign\?\.active\) \{[\s\S]*return <CampaignReviewFlow data=\{data\} \/>/);
+  const campaignFlow = component.slice(
+    component.indexOf("function CampaignReviewFlow"),
+    component.indexOf("export default function VehicleReidV2Shadow")
+  );
+  assert.match(campaignFlow, /One pair at a time/);
+  assert.match(campaignFlow, /<ShadowNeighborhood data=\{data\} \/>/);
+  assert.doesNotMatch(campaignFlow, /SourcePicker|StratifiedEvaluation|Choose a source crop/);
+  assert.match(controls, /Start one 500-pair-decision campaign/);
   assert.match(repository, /frozen_max_derivative_id/);
   assert.match(repository, /campaign_id = EXCLUDED\.campaign_id/);
   assert.doesNotMatch(`${component}\n${repository}`, /plate recognizer|plates?recognizer\.com/i);

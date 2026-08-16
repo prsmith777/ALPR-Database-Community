@@ -194,7 +194,7 @@ test("targeted UI advances after labels and remains profile and assignment safe"
   assert.match(page, /candidateDerivativeId/);
   assert.match(component, /Review targeted pairs/);
   assert.match(component, /coverage aim is not a predicted label/i);
-  assert.match(controls, /Saving any label advances/);
+  assert.match(controls, /Saving one label records one pair decision and advances/);
   assert.match(controls, /router\.push\(nextHref\)/);
   assert.match(repository, /reviews\.derivative_id_low, reviews\.derivative_id_high/);
   assert.doesNotMatch(sampler, /plate recognizer|plates?recognizer\.com/i);

@@ -859,10 +859,16 @@ notes. Updates remain externally orchestrated.
   recomputes the gaps and advances to another current recommendation. The
   queue writes no threshold, profile, cluster, assignment, notification, or
   provider result.
-- One explicit 500-human-review diversity campaign is delivered for the next
+- One explicit 500-pair-decision diversity campaign is delivered for the next
   calibration pass. Starting it freezes the current maximum crop derivative
   and embedding contract; labels saved through it carry the campaign identity
-  and durable progress. Its bounded recommendation sets exclude every exact
+  and durable progress. An active campaign owns the default ReID v2 route and
+  renders exactly one source crop and one candidate crop with their direct and
+  companion LPR evidence. One saved label records one pair decision and then
+  advances; the 500 target counts pair decisions, not vehicles. Ordinary
+  neighborhood browsing is available only through an explicit browse action,
+  and stale source/candidate URLs cannot select another campaign pair. Its
+  bounded recommendation sets exclude every exact
   crop pair and effective-plate group already represented by a review,
   including Balanced-close OCR variants, use each new plate group at most once
   per set, deliberately include
