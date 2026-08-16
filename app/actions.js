@@ -106,6 +106,7 @@ import {
   getVehicleAssetAttributeWorkerStatus,
   wakeVehicleAssetAttributeWorker,
 } from "@/lib/vehicle-asset-attribute-runtime.mjs";
+import { getVehicleReidV2ShadowService } from "@/lib/vehicle-reid-v2-shadow-runtime.mjs";
 import {
   applyVisualIndexPace,
   normalizeVisualIndexSettings,
@@ -4825,6 +4826,18 @@ export async function getVehicleClusterOverview(options = {}) {
     };
   } catch (error) {
     return visualSearchFailure(error, "Unable to load shadow vehicle clusters.");
+  }
+}
+
+export async function getVehicleReidV2Shadow(input = {}) {
+  await requirePermission("plate.read");
+  try {
+    return {
+      success: true,
+      data: await (await getVehicleReidV2ShadowService()).getOverview(input),
+    };
+  } catch (error) {
+    return visualSearchFailure(error, "Unable to load ReID v2 shadow comparisons.");
   }
 }
 

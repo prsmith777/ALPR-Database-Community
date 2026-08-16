@@ -355,6 +355,7 @@ test("every vehicle intelligence route shares the complete top navigation", asyn
     { title: "Visual Search", href: "/visual_search" },
     { title: "Vehicle Profiles", href: "/visual_search/vehicles" },
     { title: "Needs Review", href: "/visual_search/vehicles/review" },
+    { title: "ReID v2 Shadow", href: "/visual_search/reid-v2" },
   ]);
 
   const routes = [
@@ -362,6 +363,7 @@ test("every vehicle intelligence route shares the complete top navigation", asyn
     "app/visual_search/vehicles/page.jsx",
     "app/visual_search/vehicles/review/page.jsx",
     "app/visual_search/vehicles/[clusterId]/page.jsx",
+    "app/visual_search/reid-v2/page.jsx",
   ];
   for (const route of routes) {
     const page = await source(route);

@@ -14,7 +14,7 @@ async function source(path) {
 }
 
 test("the user guide is structured, searchable, and role-aware", () => {
-  assert.equal(HELP_MANUAL.manualVersion, "2.02");
+  assert.equal(HELP_MANUAL.manualVersion, "2.03");
   assert.ok(HELP_MANUAL.sections.length >= 14);
 
   const ids = HELP_MANUAL.sections.map((section) => section.id);
@@ -75,7 +75,8 @@ test("the guide covers required workflows and clearly labels planned features", 
     "no background repair worker",
     "create canonical crop embeddings",
     "has no automatic embedding queue",
-    "crop embeddings are not reid v2 yet",
+    "review reid v2 shadow comparisons",
+    "reid v2 shadow makes no assignments",
   ]) {
     assert.match(text, new RegExp(required, "i"));
   }

@@ -802,9 +802,10 @@ notes. Updates remain externally orchestrated.
   rerun inference, and insert only an exact preview match. Pause, resume,
   cancellation, lease recovery, bounded transient retry, one operator retry,
   audit evidence, and a disposable real-PostgreSQL lifecycle gate are included.
-  This first embedding slice has no automatic queue and no ReID v2 consumer;
-  current search, clusters, profiles, assignments, attributes, events,
-  directions, notifications, and external-provider behavior remain unchanged.
+  Embedding creation has no automatic queue. The later read-only ReID v2
+  Shadow comparison surface consumes these vectors without changing current
+  clusters, profiles, assignments, attributes, events, directions,
+  notifications, or external-provider behavior.
 - Crop-owned local attribute observations are implemented as immutable color
   and coarse body-type evidence owned by each canonical crop, attribute key,
   provider, model, and algorithm version. A preview-first operator campaign
@@ -821,6 +822,16 @@ notes. Updates remain externally orchestrated.
   coverage are included. Current read-owned attributes and every current ReID,
   search, profile, cluster, assignment, event, direction, notification, and
   external-provider behavior remain unchanged.
+- A read-only ReID v2 Shadow comparison surface is delivered for exact current
+  identity-eligible canonical crops. It performs a bounded in-process cosine
+  scan over the immutable 512-value crop embeddings, returns deterministic
+  nearest-neighbor ranks and margins, and presents plate, existing v1 grouping,
+  color, and body-type agreement only as separate human review evidence. Those
+  fields never affect candidate inclusion, score, or order. Every source query
+  rechecks the current link path, source kind, revision, and ready state; shared
+  assets count once and display-only Entry-to-Street fallbacks are excluded.
+  This first consumer writes no v2 profile, threshold, cluster, review label,
+  or assignment and does not alter current ReID or contact an external provider.
 - Final full-resolution Overview framing validation is implemented before a
   new Vehicle View is committed. The anchor-constrained selector prioritizes a
   fully framed vehicle track over a higher numerical score near an image edge,
@@ -900,15 +911,15 @@ be restored. Monochrome nighttime captures do not receive a direction result.
   production review sampled current proposed and
   rejected Entry and Street evidence, identified pre-Blue-Iris-zone-correction
   direction contamination, and made no timing or matching threshold change.
-  Next build ReID v2 profiles and comparison/search consumers in shadow,
-  using the immutable crop embeddings and attributes without replacing current
-  assignments. Shared
-  Street images count once, and Entry-to-Street display fallbacks never become
-  an additional identity observation. Keep the existing ReID path available
-  until asset/event results have been reviewed and the cutover has an explicit
-  rollback plan. Before any ReID v2 consumer is enabled, complete the bounded
-  staging catalog canary, review stale/superseded outcomes and disk growth, and
-  verify that every consumer rechecks the current link contract.
+  The first bounded ReID v2 comparison/search consumer is now delivered in
+  read-only shadow. Next review real score neighborhoods and margins, then
+  design persistent v2 profile candidates and an explicit human review path
+  without replacing current assignments. Shared Street images must continue to
+  count once, and Entry-to-Street display fallbacks must never become an
+  additional identity observation. Keep the existing ReID path available until
+  asset/event results have been reviewed and any cutover has an explicit
+  rollback plan. Every later consumer must continue to recheck the current link
+  contract.
 - Keep external make/model/color enrichment deferred until the canonical asset
   and ReID v2 pipeline is stable. When that later phase is approved, send each
   eligible canonical Overview asset at most once and reuse its result for every

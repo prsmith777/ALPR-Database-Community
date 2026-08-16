@@ -23,7 +23,7 @@ test("release information resolves a commit-pinned deployment image", () => {
   });
 
   assert.equal(release.version, "0.1.20");
-  assert.equal(release.manualVersion, "2.02");
+  assert.equal(release.manualVersion, "2.03");
   assert.equal(release.manualUpdatedAt, "August 15, 2026");
   assert.equal(release.gitSha, "8cd2fa8");
   assert.equal(release.channel, "staging");
@@ -31,7 +31,7 @@ test("release information resolves a commit-pinned deployment image", () => {
   assert.equal(release.readOnly, true);
   assert.equal(
     release.notes.title,
-    "August 15, 2026 canonical crop embeddings"
+    "August 15, 2026 ReID v2 shadow comparisons"
   );
   assert.equal(release.notes.publishedAt, "2026-08-15");
   assert.ok(release.notes.items.length >= 4);
