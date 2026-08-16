@@ -3604,6 +3604,12 @@ function visualSearchFailure(error, fallback) {
     "INVALID_VEHICLE_MATCH_PAIR",
     "VEHICLE_MATCH_ASSET_UNAVAILABLE",
     "VEHICLE_MATCH_MODEL_MISMATCH",
+    "INVALID_VEHICLE_REID_V2_REVIEW_LABEL",
+    "INVALID_VEHICLE_REID_V2_REVIEW_PAIR",
+    "VEHICLE_REID_V2_REVIEW_UNAVAILABLE",
+    "VEHICLE_REID_V2_REVIEW_SOURCE_CHANGED",
+    "VEHICLE_REID_V2_REVIEW_MODEL_MISMATCH",
+    "VEHICLE_REID_V2_REVIEW_EMBEDDING_INVALID",
     "INVALID_DIRECTION_PROFILE",
     "INVALID_VEHICLE_ORIENTATION",
     "VEHICLE_DIRECTION_ASSET_UNAVAILABLE",
@@ -4830,14 +4836,33 @@ export async function getVehicleClusterOverview(options = {}) {
 }
 
 export async function getVehicleReidV2Shadow(input = {}) {
-  await requirePermission("plate.read");
+  const principal = await requirePermission("plate.read");
   try {
     return {
       success: true,
-      data: await (await getVehicleReidV2ShadowService()).getOverview(input),
+      data: {
+        ...(await (await getVehicleReidV2ShadowService()).getOverview(input)),
+        canReview: hasPermission(principal, "plate.review"),
+      },
     };
   } catch (error) {
     return visualSearchFailure(error, "Unable to load ReID v2 shadow comparisons.");
+  }
+}
+
+export async function submitVehicleReidV2PairReview(input = {}) {
+  const principal = await requirePermission("plate.review");
+  try {
+    const data = await (await getVehicleReidV2ShadowService()).recordPairReview({
+      sourceDerivativeId: input.sourceDerivativeId,
+      candidateDerivativeId: input.candidateDerivativeId,
+      label: input.label,
+      actor: principal,
+    });
+    revalidatePath("/visual_search/reid-v2");
+    return { success: true, data };
+  } catch (error) {
+    return visualSearchFailure(error, "Unable to save this ReID v2 pair review.");
   }
 }
 

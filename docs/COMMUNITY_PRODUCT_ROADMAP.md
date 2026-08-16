@@ -911,10 +911,22 @@ be restored. Monochrome nighttime captures do not receive a direction result.
   production review sampled current proposed and
   rejected Entry and Street evidence, identified pre-Blue-Iris-zone-correction
   direction contamination, and made no timing or matching threshold change.
-  The first bounded ReID v2 comparison/search consumer is now delivered in
-  read-only shadow. Next review real score neighborhoods and margins, then
-  design persistent v2 profile candidates and an explicit human review path
-  without replacing current assignments. Shared Street images must continue to
+  The first bounded ReID v2 comparison/search consumer is delivered in shadow.
+  A production review sampled ten Entry and Street neighborhoods spanning
+  paired passages, repeat visitors, OCR variants, and apparent one-offs. Exact
+  paired observations ranged from 86.0% to 99.9%, while repeat same-plate
+  observations extended down to 58.4%; different-plate and likely OCR-variant
+  neighbors reached the low 90s. Raw top-two margin and one global score cutoff
+  are therefore not safe identity rules. The crop display now bypasses the
+  incompatible Next.js optimizer and serves the protected stored images
+  directly. Audited Same vehicle, Different vehicle, and Unsure labels are
+  implemented against the exact immutable crop pair and embedding contract,
+  with current-link revalidation and descriptive context/camera score ranges.
+  These labels recommend and apply no threshold and create no profile or
+  assignment. Next collect a larger visually reviewed labeled sample, evaluate
+  camera/context-specific score overlap and class-level margins, then design
+  persistent v2 profile candidates without replacing current assignments.
+  Shared Street images must continue to
   count once, and Entry-to-Street display fallbacks must never become an
   additional identity observation. Keep the existing ReID path available until
   asset/event results have been reviewed and any cutover has an explicit

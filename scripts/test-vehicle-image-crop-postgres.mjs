@@ -31,6 +31,8 @@ import {
   VehicleAssetAttributeRepository,
   vehicleAssetAttributeRepositoryInternals,
 } from "../lib/vehicle-asset-attribute-repository.mjs";
+import { VehicleReidV2ShadowService } from "../lib/vehicle-reid-v2-shadow.mjs";
+import { VehicleReidV2ShadowRepository } from "../lib/vehicle-reid-v2-shadow-repository.mjs";
 
 const OPT_IN = "VEHICLE_IMAGE_CROP_POSTGRES_TEST_OPT_IN";
 const EXPECTED_DATABASE = "VEHICLE_IMAGE_CROP_POSTGRES_TEST_DATABASE";
@@ -77,6 +79,7 @@ let liveReadId = null;
 let liveAssetId = null;
 let embeddingRunId = null;
 let attributeRunId = null;
+let pairReviewId = null;
 
 async function guard() {
   lockClient = await pool.connect();
@@ -115,12 +118,13 @@ async function guard() {
        (SELECT COUNT(*)::integer FROM public.vehicle_asset_attribute_observations)
          AS attribute_observations,
        (SELECT COUNT(*)::integer FROM public.vehicle_asset_attribute_runs) AS attribute_runs,
-       (SELECT COUNT(*)::integer FROM public.vehicle_asset_attribute_jobs) AS attribute_jobs`
+       (SELECT COUNT(*)::integer FROM public.vehicle_asset_attribute_jobs) AS attribute_jobs,
+       (SELECT COUNT(*)::integer FROM public.vehicle_reid_v2_pair_reviews) AS pair_reviews`
   );
   assert.deepEqual(empty.rows[0], {
     reads: 0, assets: 0, links: 0, derivatives: 0, runs: 0, jobs: 0, live_jobs: 0,
     embeddings: 0, embedding_runs: 0, embedding_jobs: 0,
-    attribute_observations: 0, attribute_runs: 0, attribute_jobs: 0,
+    attribute_observations: 0, attribute_runs: 0, attribute_jobs: 0, pair_reviews: 0,
   });
   const lock = await lockClient.query(
     "SELECT pg_try_advisory_lock(hashtextextended($1, 0)) AS locked",
@@ -414,6 +418,64 @@ async function runEmbeddingCampaign() {
   );
 }
 
+async function runReidV2PairReview() {
+  const sources = await pool.query(
+    `SELECT derivative_id
+     FROM public.vehicle_asset_embeddings
+     WHERE model_name = $1 AND algorithm_version = $2
+     ORDER BY derivative_id`,
+    [VEHICLE_ASSET_EMBEDDING_MODEL, VEHICLE_ASSET_EMBEDDING_ALGORITHM]
+  );
+  assert.equal(sources.rowCount, 2);
+  const sourceDerivativeId = Number(sources.rows[0].derivative_id);
+  const candidateDerivativeId = Number(sources.rows[1].derivative_id);
+  const repository = new VehicleReidV2ShadowRepository({ pool });
+  const service = new VehicleReidV2ShadowService({ repository });
+  const actor = {
+    id: actorId,
+    username: `codex_crop_${suffix}`,
+    displayName: "Codex vehicle crop smoke",
+  };
+  const first = await service.recordPairReview({
+    sourceDerivativeId,
+    candidateDerivativeId,
+    label: "same_vehicle",
+    actor,
+  });
+  pairReviewId = Number(first.review.id);
+  assert.equal(first.review.label, "same_vehicle");
+  assert.equal(first.review.similarity, 1);
+  assert.equal(first.calibration.sameVehicle, 1);
+  assert.equal(first.calibration.recommendation, null);
+
+  const corrected = await service.recordPairReview({
+    sourceDerivativeId: candidateDerivativeId,
+    candidateDerivativeId: sourceDerivativeId,
+    label: "unsure",
+    actor,
+  });
+  assert.equal(corrected.review.id, pairReviewId);
+  assert.equal(corrected.review.label, "unsure");
+  assert.equal(corrected.review.revision, 2);
+  assert.equal(corrected.calibration.unsure, 1);
+  const stored = await pool.query(
+    `SELECT reviews.*, COUNT(audit.id)::integer AS audit_count
+     FROM public.vehicle_reid_v2_pair_reviews reviews
+     LEFT JOIN public.audit_events audit
+       ON audit.resource_type = 'vehicle_reid_v2_pair_review'
+      AND audit.resource_id = reviews.id::text
+     WHERE reviews.id = $1
+     GROUP BY reviews.id`,
+    [pairReviewId]
+  );
+  assert.equal(stored.rowCount, 1);
+  assert.equal(stored.rows[0].label, "unsure");
+  assert.equal(Number(stored.rows[0].revision), 2);
+  assert.equal(Number(stored.rows[0].audit_count), 2);
+  assert.equal(Number(stored.rows[0].derivative_id_low), Math.min(sourceDerivativeId, candidateDerivativeId));
+  assert.equal(Number(stored.rows[0].derivative_id_high), Math.max(sourceDerivativeId, candidateDerivativeId));
+}
+
 async function runAttributeCampaign() {
   const repository = new VehicleAssetAttributeRepository({ pool });
   const result = Object.freeze({
@@ -541,14 +603,14 @@ async function cleanup() {
               event_type, resource_type, resource_id, outcome, reason, request_id,
               metadata, occurred_at, NULL
        FROM public.audit_events
-        WHERE resource_type IN ('vehicle_image_crop','vehicle_image_crop_live','vehicle_asset_embedding','vehicle_asset_attribute')
+        WHERE resource_type IN ('vehicle_image_crop','vehicle_image_crop_live','vehicle_asset_embedding','vehicle_asset_attribute','vehicle_reid_v2_pair_review')
           AND actor_user_id = $1
        ON CONFLICT (source_event_id, occurred_at) DO NOTHING`,
       [actorId]
     );
     await pool.query(
       `DELETE FROM public.audit_events
-       WHERE resource_type IN ('vehicle_image_crop','vehicle_image_crop_live','vehicle_asset_embedding','vehicle_asset_attribute')
+       WHERE resource_type IN ('vehicle_image_crop','vehicle_image_crop_live','vehicle_asset_embedding','vehicle_asset_attribute','vehicle_reid_v2_pair_review')
          AND actor_user_id = $1`,
       [actorId]
     );
@@ -565,6 +627,9 @@ async function cleanup() {
     );
   }
   if (embeddingRunId != null) {
+    if (pairReviewId != null) {
+      await pool.query("DELETE FROM public.vehicle_reid_v2_pair_reviews WHERE id = $1", [pairReviewId]);
+    }
     await pool.query(
       "DELETE FROM public.vehicle_asset_embedding_jobs WHERE run_id = $1",
       [embeddingRunId]
@@ -615,12 +680,13 @@ async function cleanup() {
        (SELECT COUNT(*)::integer FROM public.vehicle_asset_attribute_observations)
          AS attribute_observations,
        (SELECT COUNT(*)::integer FROM public.vehicle_asset_attribute_runs) AS attribute_runs,
-       (SELECT COUNT(*)::integer FROM public.vehicle_asset_attribute_jobs) AS attribute_jobs`
+       (SELECT COUNT(*)::integer FROM public.vehicle_asset_attribute_jobs) AS attribute_jobs,
+       (SELECT COUNT(*)::integer FROM public.vehicle_reid_v2_pair_reviews) AS pair_reviews`
   );
   assert.deepEqual(residue.rows[0], {
     reads: 0, assets: 0, links: 0, derivatives: 0, runs: 0, jobs: 0, live_jobs: 0,
     embeddings: 0, embedding_runs: 0, embedding_jobs: 0,
-    attribute_observations: 0, attribute_runs: 0, attribute_jobs: 0,
+    attribute_observations: 0, attribute_runs: 0, attribute_jobs: 0, pair_reviews: 0,
   });
 }
 
@@ -631,6 +697,7 @@ try {
   await runCampaign(storage);
   await runAutomaticCrop(storage);
   await runEmbeddingCampaign();
+  await runReidV2PairReview();
   await runAttributeCampaign();
   succeeded = true;
 } finally {
