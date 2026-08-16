@@ -805,6 +805,22 @@ notes. Updates remain externally orchestrated.
   This first embedding slice has no automatic queue and no ReID v2 consumer;
   current search, clusters, profiles, assignments, attributes, events,
   directions, notifications, and external-provider behavior remain unchanged.
+- Crop-owned local attribute observations are implemented as immutable color
+  and coarse body-type evidence owned by each canonical crop, attribute key,
+  provider, model, and algorithm version. A preview-first operator campaign
+  freezes the exact crop bytes and current identity-evidence link, evaluates
+  the existing local HSV color logic and OpenVINO body-type model without
+  inserting observations, and binds confirmation to the exact normalized
+  result hash and JSON evidence. Explicit 1, 5, 25, or 250-crop batches reread
+  and re-hash the crop, revalidate its current link, rerun both evaluations,
+  and insert one immutable observation per attribute only when the combined
+  output matches the confirmed preview. Ready and Unknown are both durable
+  outcomes, so monochrome nighttime color evidence remains Unknown rather than
+  failing or being discarded. Pause, resume, cancellation, lease recovery,
+  bounded retry, audit evidence, and disposable real-PostgreSQL lifecycle
+  coverage are included. Current read-owned attributes and every current ReID,
+  search, profile, cluster, assignment, event, direction, notification, and
+  external-provider behavior remain unchanged.
 - Final full-resolution Overview framing validation is implemented before a
   new Vehicle View is committed. The anchor-constrained selector prioritizes a
   fully framed vehicle track over a higher numerical score near an image edge,
@@ -879,12 +895,14 @@ be restored. Monochrome nighttime captures do not receive a direction result.
   shadow correlation of conservative paired reads into provider-neutral
   vehicle events, operator-controlled Overview-owned crop derivatives, the
   default-off low-priority automatic crop queue, and provider-neutral canonical
-  crop embeddings are delivered. The pre-crop
+  crop embeddings and crop-owned local color/body-type observations are
+  delivered. The pre-crop
   production review sampled current proposed and
   rejected Entry and Street evidence, identified pre-Blue-Iris-zone-correction
   direction contamination, and made no timing or matching threshold change.
-  Next create crop-owned attribute observations, then build ReID v2 profiles
-  and comparison/search consumers in shadow. Shared
+  Next build ReID v2 profiles and comparison/search consumers in shadow,
+  using the immutable crop embeddings and attributes without replacing current
+  assignments. Shared
   Street images count once, and Entry-to-Street display fallbacks never become
   an additional identity observation. Keep the existing ReID path available
   until asset/event results have been reviewed and the cutover has an explicit

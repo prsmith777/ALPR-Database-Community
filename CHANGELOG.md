@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+- Added operator-controlled, crop-owned local color and coarse body-type
+  observations for current identity-eligible canonical vehicle crops. A
+  durable preview freezes exact crop bytes and current evidence, evaluates the
+  local HSV color logic and OpenVINO body-type model without inserting rows,
+  and binds explicit 1, 5, 25, or 250-crop batches to the exact normalized
+  result. Execution revalidates the crop and link, reruns both models, and
+  stores one immutable observation per attribute only on an exact preview
+  match. Monochrome and low-confidence outcomes remain durable Unknown
+  evidence. Current read-owned attributes, ReID, assignments, events,
+  notifications, and external enrichment remain unchanged.
+
 - Added operator-controlled canonical vehicle crops for identity-eligible
   Overview assets. A durable background preview freezes the exact source,
   current evidence link, validated vehicle box, and rendered crop metadata
