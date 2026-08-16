@@ -859,6 +859,23 @@ notes. Updates remain externally orchestrated.
   recomputes the gaps and advances to another current recommendation. The
   queue writes no threshold, profile, cluster, assignment, notification, or
   provider result.
+- One explicit 500-human-review diversity campaign is delivered for the next
+  calibration pass. Starting it freezes the current maximum crop derivative
+  and embedding contract; labels saved through it carry the campaign identity
+  and durable progress. Its bounded recommendation sets exclude every exact
+  crop pair and effective-plate group already represented by a review,
+  including Balanced-close OCR variants, use each new plate group at most once
+  per set, deliberately include
+  Entry Overview evidence, and show the directly linked or conservatively
+  correlated LPR captures needed to judge an Entry image. Exact normalized
+  effective plates, including reviewed corrections, resolve visibly as Same;
+  plate values outside the existing Balanced fuzzy-match tolerance resolve
+  visibly as Different. Only close OCR variants, missing plates, or incomplete
+  evidence consume a human review. If the frozen inventory cannot supply 500
+  independent unresolved cases, the UI reports exhaustion instead of
+  recycling familiar vehicles. Every campaign submission is revalidated
+  against the current queue; no threshold, profile, cluster, assignment,
+  notification, or provider result is written.
 - Final full-resolution Overview framing validation is implemented before a
   new Vehicle View is committed. The anchor-constrained selector prioritizes a
   fully framed vehicle track over a higher numerical score near an image edge,
@@ -923,8 +940,11 @@ be restored. Monochrome nighttime captures do not receive a direction result.
   missing, stale, nighttime, processing, conflicting-direction, short-fuzzy, or
   ambiguous evidence unchanged. Never let the overview image establish identity
   or synthesize a missing Street read.
-- Expand Vehicle ReID calibration with larger labeled local samples and
-  camera-pair reporting before making stronger labels or applying thresholds.
+- Complete the single frozen ReID v2 diversity campaign, evaluate its human
+  unresolved labels together with separately identified automatic plate
+  outcomes, and retain camera/context reporting before considering any
+  stronger label or threshold. Do not substitute repeated captures of a small
+  number of vehicles for independent review evidence.
 - Continue the canonical-asset rollout in conservative stages. The
   preview-first, resumable catalog campaign, exact source-revision checks,
   archival zero-link policy, one-time active-campaign storage projections,

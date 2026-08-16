@@ -20,6 +20,12 @@ function reviewText(review) {
     different_vehicle: "Different vehicle",
     unsure: "Unsure",
   };
+  if (review.automatic) {
+    const basis = review.reviewBasis === "exact_effective_plate"
+      ? "exact effective/corrected plate match"
+      : "effective plates are outside the conservative fuzzy-match tolerance";
+    return `${labels[review.label] || review.label} · automatically reviewed from ${basis}`;
+  }
   const reviewer = review.reviewer?.displayName || review.reviewer?.username;
   return `${labels[review.label] || review.label}${reviewer ? ` · ${reviewer}` : ""} · revision ${review.revision}`;
 }
@@ -30,6 +36,7 @@ export default function VehicleReidV2PairReviewControls({
   initialReview = null,
   canReview = false,
   nextHref = null,
+  campaignId = null,
 }) {
   const router = useRouter();
   const [review, setReview] = useState(initialReview);
@@ -44,6 +51,7 @@ export default function VehicleReidV2PairReviewControls({
         sourceDerivativeId,
         candidateDerivativeId,
         label,
+        campaignId,
       });
       if (!result?.success) {
         setError(result?.error || "Unable to save this pair review.");
@@ -64,9 +72,9 @@ export default function VehicleReidV2PairReviewControls({
   return (
     <div className="space-y-2 rounded-md border p-3">
       <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-        Human pair review — calibration only
+        {review?.automatic ? "Automatic plate review" : "Human pair review — calibration only"}
       </p>
-      <div className="flex flex-wrap gap-2">
+      {!review?.automatic ? <div className="flex flex-wrap gap-2">
         {OPTIONS.map(({ label, text, Icon }) => (
           <Button
             key={label}
@@ -83,11 +91,11 @@ export default function VehicleReidV2PairReviewControls({
             {text}
           </Button>
         ))}
-      </div>
+      </div> : null}
       <p className="text-xs text-muted-foreground">
         {canReview ? reviewText(review) : "Plate review permission is required to label this pair."}
       </p>
-      {canReview && nextHref ? (
+      {canReview && nextHref && !review?.automatic ? (
         <p className="text-xs text-muted-foreground">
           Saving any label advances to the next current targeted recommendation.
         </p>

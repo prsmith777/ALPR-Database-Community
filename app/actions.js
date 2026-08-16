@@ -4858,11 +4858,26 @@ export async function submitVehicleReidV2PairReview(input = {}) {
       candidateDerivativeId: input.candidateDerivativeId,
       label: input.label,
       actor: principal,
+      campaignId: input.campaignId,
     });
     revalidatePath("/visual_search/reid-v2");
     return { success: true, data };
   } catch (error) {
     return visualSearchFailure(error, "Unable to save this ReID v2 pair review.");
+  }
+}
+
+export async function startVehicleReidV2ReviewCampaign() {
+  const principal = await requirePermission("plate.review");
+  try {
+    const data = await (await getVehicleReidV2ShadowService()).startReviewCampaign({
+      actor: principal,
+      targetHumanReviews: 500,
+    });
+    revalidatePath("/visual_search/reid-v2");
+    return { success: true, data };
+  } catch (error) {
+    return visualSearchFailure(error, "Unable to start the ReID v2 review campaign.");
   }
 }
 
