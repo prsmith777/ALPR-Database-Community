@@ -16,6 +16,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import VehicleReidV2PairReviewControls from "@/components/VehicleReidV2PairReviewControls";
 
 function dateTime(value) {
   if (!value) return "Unknown time";
@@ -25,6 +26,11 @@ function dateTime(value) {
 
 function percent(value, digits = 1) {
   return Number.isFinite(value) ? `${(value * 100).toFixed(digits)}%` : "Unavailable";
+}
+
+function scoreRange(summary) {
+  if (summary?.minimum == null || summary?.maximum == null) return "No labels yet";
+  return `${summary.minimum.toFixed(1)}%–${summary.maximum.toFixed(1)}%`;
 }
 
 function sourceTitle(source) {
@@ -73,6 +79,7 @@ function VehicleImage({ source, priority = false }) {
         src={source.imageUrl}
         alt={`Canonical vehicle crop for ${sourceTitle(source)}`}
         fill
+        unoptimized
         priority={priority}
         sizes="(max-width: 768px) 100vw, 420px"
         className="object-contain"
@@ -132,6 +139,7 @@ function SourcePicker({ data }) {
                   src={source.imageUrl}
                   alt={`Choose ${sourceTitle(source)} as the shadow source`}
                   fill
+                  unoptimized
                   sizes="(max-width: 768px) 50vw, 280px"
                   className="object-contain"
                 />
@@ -161,7 +169,7 @@ function SourcePicker({ data }) {
   );
 }
 
-function MatchCard({ selected, match }) {
+function MatchCard({ selected, match, canReview }) {
   return (
     <Card>
       <CardHeader className="space-y-2 pb-3">
@@ -190,6 +198,12 @@ function MatchCard({ selected, match }) {
             <EvidenceBadge label="Body" state={match.reviewEvidence.bodyTypeAgreement} />
           </div>
         </div>
+        <VehicleReidV2PairReviewControls
+          sourceDerivativeId={selected.derivativeId}
+          candidateDerivativeId={match.derivativeId}
+          initialReview={match.pairReview}
+          canReview={canReview}
+        />
         <div className="flex flex-wrap gap-2">
           <Button asChild variant="outline" size="sm">
             <Link href={`/live_feed?readId=${match.readId}`}><Eye className="mr-1 h-4 w-4" />Open read</Link>
@@ -223,10 +237,10 @@ export default function VehicleReidV2Shadow({ result }) {
             <div className="mb-2 flex items-center gap-2">
               <BrainCircuit className="h-6 w-6" />
               <h1 className="text-2xl font-semibold">ReID v2 Shadow</h1>
-              <Badge>Read-only</Badge>
+              <Badge>Assignment-safe review</Badge>
             </div>
             <p className="max-w-4xl text-sm text-muted-foreground">
-              Compare each current canonical Overview crop against the local crop-embedding catalog. This page does not create or change a vehicle profile, assignment, notification, or external-provider result.
+              Compare each current canonical Overview crop against the local crop-embedding catalog. Human pair labels are retained for calibration, but this page does not create or change a vehicle profile, assignment, threshold, notification, or external-provider result.
             </p>
           </div>
         </div>
@@ -238,12 +252,36 @@ export default function VehicleReidV2Shadow({ result }) {
         <div className="rounded-lg border border-blue-500/30 bg-blue-500/5 p-4 text-sm">
           <p className="font-medium"><Info className="mr-2 inline h-4 w-4" />How to read this page</p>
           <p className="mt-1 text-muted-foreground">
-            Candidate order uses only cosine similarity from {data.modelName}. Plate, current v1 grouping, color, and body-type agreement are displayed afterward for human review and never alter the score or order. Shared images are scanned once; display-only Entry fallbacks are excluded.
+            Candidate order uses only cosine similarity from {data.modelName}. Plate, current v1 grouping, color, body type, and saved human labels are displayed afterward for review and never alter the score or order. Shared images are scanned once; display-only Entry fallbacks are excluded.
           </p>
         </div>
         {data.stats.truncated ? (
           <div className="rounded-lg border border-amber-500/30 bg-amber-500/5 p-4 text-sm text-muted-foreground">
             This installation has more than 10,000 current crops. Search and ranking are intentionally bounded to the newest {data.stats.scannedSources.toLocaleString()} sources.
+          </div>
+        ) : null}
+      </section>
+
+      <section className="space-y-3">
+        <div>
+          <h2 className="text-xl font-semibold">Human-labeled calibration evidence</h2>
+          <p className="text-sm text-muted-foreground">
+            Labels are bound to the exact immutable crop pair and embedding contract. Score ranges are descriptive only; no threshold is recommended or applied.
+          </p>
+        </div>
+        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+          <Card><CardContent className="p-4"><div className="text-xl font-semibold">{data.calibration.total.toLocaleString()}</div><div className="text-xs text-muted-foreground">reviewed pairs</div></CardContent></Card>
+          <Card><CardContent className="p-4"><div className="text-xl font-semibold">{data.calibration.sameVehicle.toLocaleString()}</div><div className="text-xs text-muted-foreground">same vehicle · {scoreRange(data.calibration.sameScores)}</div></CardContent></Card>
+          <Card><CardContent className="p-4"><div className="text-xl font-semibold">{data.calibration.differentVehicle.toLocaleString()}</div><div className="text-xs text-muted-foreground">different vehicle · {scoreRange(data.calibration.differentScores)}</div></CardContent></Card>
+          <Card><CardContent className="p-4"><div className="text-xl font-semibold">{data.calibration.unsure.toLocaleString()}</div><div className="text-xs text-muted-foreground">unsure</div></CardContent></Card>
+        </div>
+        {data.calibration.byCameraPair.length ? (
+          <div className="flex flex-wrap gap-2 text-xs">
+            {data.calibration.byCameraPair.map((pair) => (
+              <Badge key={pair.key} variant="outline">
+                {pair.key}: {pair.total} review{pair.total === 1 ? "" : "s"}
+              </Badge>
+            ))}
           </div>
         ) : null}
       </section>
@@ -280,7 +318,7 @@ export default function VehicleReidV2Shadow({ result }) {
             </Card>
             <div className="grid gap-4 xl:grid-cols-2">
               {data.matches.length
-                ? data.matches.map((match) => <MatchCard key={match.derivativeId} selected={data.selected} match={match} />)
+                ? data.matches.map((match) => <MatchCard key={match.derivativeId} selected={data.selected} match={match} canReview={data.canReview} />)
                 : <div className="rounded-lg border border-dashed p-6 text-sm text-muted-foreground">No other valid current crop embeddings are available for comparison.</div>}
             </div>
           </div>
