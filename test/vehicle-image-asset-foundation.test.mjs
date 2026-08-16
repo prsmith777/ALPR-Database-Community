@@ -576,6 +576,10 @@ test("foundation migration is additive, inert, provider-neutral, and storage-saf
   assert.match(foundation, /source_kind = 'entry_overview_history'[\s\S]*relationship = 'history'/);
   assert.match(foundation, /source_updated_at TIMESTAMPTZ/);
   assert.match(foundation, /overview_fallback/);
+  assert.match(
+    foundation,
+    /'vehicle-image-assets', 'vehicle-image-derivatives', 'completed'/
+  );
   assert.doesNotMatch(foundation, /legacy_plate_camera|entry_lpr_fallback/);
   assert.doesNotMatch(foundation, /UPDATE public\.plate_reads|INSERT INTO public\.vehicle_image_assets[\s\S]*SELECT/);
   assert.doesNotMatch(foundation.toLowerCase(), /plate recognizer|snapshot sdk|make.?model/);

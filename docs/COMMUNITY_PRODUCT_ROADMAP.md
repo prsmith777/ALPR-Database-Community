@@ -832,6 +832,15 @@ notes. Updates remain externally orchestrated.
   assets count once and display-only Entry-to-Street fallbacks are excluded.
   This first consumer writes no v2 profile, threshold, cluster, review label,
   or assignment and does not alter current ReID or contact an external provider.
+- ReID v2 human review now shows every current directly linked LPR plate
+  capture beside its canonical Overview crop, including effective and observed
+  plate text, camera, time, and direction. Shared canonical assets expose all
+  current linked reads. When a second canonical asset is currently joined by
+  the conservative shadow vehicle-event layer, its LPR read appears separately
+  as correlated companion evidence. Plate and direction conflicts warn the
+  reviewer to use Unsure unless the stored images resolve the exact physical
+  vehicle. These images and fields remain post-ranking review evidence and do
+  not change cosine scoring, ordering, pair labels, profiles, or assignments.
 - Final full-resolution Overview framing validation is implemented before a
   new Vehicle View is committed. The anchor-constrained selector prioritizes a
   fully framed vehicle track over a higher numerical score near an image edge,
@@ -923,8 +932,14 @@ be restored. Monochrome nighttime captures do not receive a direction result.
   implemented against the exact immutable crop pair and embedding contract,
   with current-link revalidation and descriptive context/camera score ranges.
   These labels recommend and apply no threshold and create no profile or
-  assignment. Next collect a larger visually reviewed labeled sample, evaluate
-  camera/context-specific score overlap and class-level margins, then design
+  assignment. A subsequent production review recorded 106 exact-pair labels:
+  27 Same vehicle, 74 Different vehicle, and 5 Unsure. Same scores span
+  58.4%–99.7% while Different scores span 33.5%–86.1%, confirming substantial
+  overlap and ruling out one safe global cosine threshold. The review surface
+  now supplies direct and conservative companion LPR plate captures so Entry
+  and plate-obscured Street Overview evidence can be judged from its linked
+  read context. Next compute a stratified offline evaluation from these labels,
+  collect only the targeted camera/time/score cases it identifies, then design
   persistent v2 profile candidates without replacing current assignments.
   Shared Street images must continue to
   count once, and Entry-to-Street display fallbacks must never become an

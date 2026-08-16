@@ -3,6 +3,7 @@ import Link from "next/link";
 import {
   ArrowLeft,
   ArrowRight,
+  AlertTriangle,
   BrainCircuit,
   Camera,
   Database,
@@ -84,6 +85,99 @@ function VehicleImage({ source, priority = false }) {
         sizes="(max-width: 768px) 100vw, 420px"
         className="object-contain"
       />
+    </div>
+  );
+}
+
+function LprEvidenceCard({ evidence }) {
+  const companion = evidence.evidenceType === "shadow_event_companion";
+  const observedDiffers = evidence.observedPlate
+    && evidence.plateNumber
+    && evidence.observedPlate.toLowerCase() !== evidence.plateNumber.toLowerCase();
+  return (
+    <div className="overflow-hidden rounded-md border bg-background">
+      <div className="relative aspect-video bg-muted">
+        {evidence.imageUrl ? (
+          <NextImage
+            src={evidence.imageUrl}
+            alt={`LPR plate capture for ${evidence.plateNumber || `read ${evidence.readId}`}`}
+            fill
+            unoptimized
+            sizes="(max-width: 768px) 50vw, 220px"
+            className="object-contain"
+          />
+        ) : (
+          <div className="flex h-full items-center justify-center px-3 text-center text-xs text-muted-foreground">
+            Stored plate-capture image unavailable
+          </div>
+        )}
+      </div>
+      <div className="space-y-1.5 p-2 text-xs">
+        <div className="flex flex-wrap items-center justify-between gap-1">
+          <span className="font-semibold">{evidence.plateNumber || "Unknown plate"}</span>
+          <Badge variant={companion ? "secondary" : "outline"}>
+            {companion ? "Event companion" : "Direct link"}
+          </Badge>
+        </div>
+        {observedDiffers ? (
+          <p className="text-muted-foreground">Observed {evidence.observedPlate}</p>
+        ) : null}
+        <p className="text-muted-foreground">
+          {evidence.cameraName || "Unknown camera"} · {dateTime(evidence.timestamp)}
+        </p>
+        <p className="text-muted-foreground">
+          {evidence.directionLabel || "Direction unavailable"}
+          {companion && evidence.eventId ? ` · shadow event #${evidence.eventId}` : ""}
+        </p>
+        <Link className="inline-flex items-center text-blue-500 hover:underline" href={`/live_feed?readId=${evidence.readId}`}>
+          Open LPR read #{evidence.readId}
+        </Link>
+      </div>
+    </div>
+  );
+}
+
+function LprEvidencePanel({ source }) {
+  const direct = source?.lprEvidence?.direct || [];
+  const companions = source?.lprEvidence?.companions || [];
+  const conflicts = source?.lprEvidence?.conflicts || {};
+  const hasConflict = conflicts.plate || conflicts.direction;
+  return (
+    <div className="space-y-3 rounded-md border bg-muted/20 p-3">
+      <div>
+        <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+          Associated LPR evidence — review only
+        </p>
+        <p className="mt-1 text-xs text-muted-foreground">
+          Plate captures and conservative shadow-event companions never affect similarity or candidate order.
+        </p>
+      </div>
+      {hasConflict ? (
+        <div className="rounded-md border border-amber-500/40 bg-amber-500/10 p-2 text-xs text-amber-700 dark:text-amber-300">
+          <AlertTriangle className="mr-1 inline h-4 w-4" />
+          Linked evidence conflicts on {conflicts.plate && conflicts.direction
+            ? "plate and direction"
+            : conflicts.plate ? "plate" : "direction"}. Use Unsure unless the images resolve it.
+        </div>
+      ) : null}
+      {direct.length ? (
+        <div className="space-y-2">
+          <p className="text-xs font-medium">Directly linked LPR read{direct.length === 1 ? "" : "s"}</p>
+          <div className="grid gap-2 sm:grid-cols-2">
+            {direct.map((evidence) => <LprEvidenceCard key={`direct:${evidence.readId}`} evidence={evidence} />)}
+          </div>
+        </div>
+      ) : (
+        <p className="text-xs text-muted-foreground">No current directly linked LPR evidence is available.</p>
+      )}
+      {companions.length ? (
+        <div className="space-y-2">
+          <p className="text-xs font-medium">Correlated companion LPR read{companions.length === 1 ? "" : "s"}</p>
+          <div className="grid gap-2 sm:grid-cols-2">
+            {companions.map((evidence) => <LprEvidenceCard key={`companion:${evidence.readId}`} evidence={evidence} />)}
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -188,6 +282,7 @@ function MatchCard({ selected, match, canReview }) {
       </CardHeader>
       <CardContent className="space-y-4">
         <VehicleImage source={match} />
+        <LprEvidencePanel source={match} />
         <SourceMetadata source={match} />
         <div className="space-y-2 rounded-md border bg-muted/30 p-3">
           <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Review evidence — not scoring inputs</p>
@@ -312,6 +407,7 @@ export default function VehicleReidV2Shadow({ result }) {
               <CardHeader><CardTitle>{sourceTitle(data.selected)}</CardTitle><CardDescription>Selected canonical source</CardDescription></CardHeader>
               <CardContent className="space-y-4">
                 <VehicleImage source={data.selected} priority />
+                <LprEvidencePanel source={data.selected} />
                 <SourceMetadata source={data.selected} />
                 <Button asChild variant="outline" size="sm"><Link href={`/live_feed?readId=${data.selected.readId}`}><Eye className="mr-1 h-4 w-4" />Open source read</Link></Button>
               </CardContent>
