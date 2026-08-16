@@ -841,6 +841,14 @@ notes. Updates remain externally orchestrated.
   reviewer to use Unsure unless the stored images resolve the exact physical
   vehicle. These images and fields remain post-ranking review evidence and do
   not change cosine scoring, ordering, pair labels, profiles, or assignments.
+- A read-only stratified ReID v2 evaluation is delivered over the audited pair
+  labels. It reports counts and Same/Different score ranges by fixed cosine
+  band, frozen review-time camera pair and Overview context, effective-plate
+  evidence, and local daytime or overnight capture period. It also identifies
+  a bounded descriptive set of underrepresented camera/time and overlapping
+  score strata for the next targeted review sample. The evaluator applies no
+  cutoff, recommends no threshold, and writes no profile, cluster, or vehicle
+  assignment.
 - Final full-resolution Overview framing validation is implemented before a
   new Vehicle View is committed. The anchor-constrained selector prioritizes a
   fully framed vehicle track over a higher numerical score near an image edge,
@@ -938,9 +946,10 @@ be restored. Monochrome nighttime captures do not receive a direction result.
   overlap and ruling out one safe global cosine threshold. The review surface
   now supplies direct and conservative companion LPR plate captures so Entry
   and plate-obscured Street Overview evidence can be judged from its linked
-  read context. Next compute a stratified offline evaluation from these labels,
-  collect only the targeted camera/time/score cases it identifies, then design
-  persistent v2 profile candidates without replacing current assignments.
+  read context. The stratified offline evaluation of these labels is now
+  delivered and remains read-only. Next collect only the targeted
+  camera/time/score cases it identifies, then design persistent v2 profile
+  candidates without replacing current assignments.
   Shared Street images must continue to
   count once, and Entry-to-Street display fallbacks must never become an
   additional identity observation. Keep the existing ReID path available until

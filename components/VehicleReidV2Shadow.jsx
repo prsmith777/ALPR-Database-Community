@@ -4,6 +4,7 @@ import {
   ArrowLeft,
   ArrowRight,
   AlertTriangle,
+  BarChart3,
   BrainCircuit,
   Camera,
   Database,
@@ -32,6 +33,125 @@ function percent(value, digits = 1) {
 function scoreRange(summary) {
   if (summary?.minimum == null || summary?.maximum == null) return "No labels yet";
   return `${summary.minimum.toFixed(1)}%–${summary.maximum.toFixed(1)}%`;
+}
+
+function evaluationCount(group) {
+  return `${group.sameVehicle} same · ${group.differentVehicle} different · ${group.unsure} unsure`;
+}
+
+function EvaluationTable({ title, description, rows = [] }) {
+  return (
+    <details className="rounded-lg border bg-muted/20 p-3">
+      <summary className="cursor-pointer text-sm font-medium">{title}</summary>
+      <p className="mt-2 text-xs text-muted-foreground">{description}</p>
+      <div className="mt-3 overflow-x-auto">
+        <table className="w-full min-w-[520px] text-left text-xs">
+          <thead className="text-muted-foreground">
+            <tr className="border-b">
+              <th className="px-2 py-2 font-medium">Stratum</th>
+              <th className="px-2 py-2 text-right font-medium">Total</th>
+              <th className="px-2 py-2 text-right font-medium">Same / range</th>
+              <th className="px-2 py-2 text-right font-medium">Different / range</th>
+              <th className="px-2 py-2 text-right font-medium">Unsure</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((row) => (
+              <tr key={row.key} className="border-b last:border-0">
+                <td className="px-2 py-2 font-medium">{row.key}</td>
+                <td className="px-2 py-2 text-right tabular-nums">{row.total}</td>
+                <td className="px-2 py-2 text-right tabular-nums">
+                  <div>{row.sameVehicle}</div>
+                  <div className="text-muted-foreground">{scoreRange(row.sameScores)}</div>
+                </td>
+                <td className="px-2 py-2 text-right tabular-nums">
+                  <div>{row.differentVehicle}</div>
+                  <div className="text-muted-foreground">{scoreRange(row.differentScores)}</div>
+                </td>
+                <td className="px-2 py-2 text-right tabular-nums">{row.unsure}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </details>
+  );
+}
+
+function StratifiedEvaluation({ evaluation }) {
+  if (!evaluation) return null;
+  const separation = evaluation.separation || {};
+  const overlap = separation.overlapMinimum != null && separation.overlapMaximum != null
+    ? `${separation.overlapMinimum.toFixed(1)}%–${separation.overlapMaximum.toFixed(1)}%`
+    : "No observed overlap";
+  return (
+    <div className="space-y-4 rounded-lg border p-4">
+      <div>
+        <h3 className="flex items-center gap-2 text-lg font-semibold">
+          <BarChart3 className="h-5 w-5" />Stratified offline evaluation
+        </h3>
+        <p className="text-sm text-muted-foreground">
+          Read-only analysis of the reviewed pairs. It applies no threshold and writes no profile, cluster, or assignment.
+        </p>
+      </div>
+      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        <Card><CardContent className="p-4"><div className="text-xl font-semibold">{evaluation.decisive.toLocaleString()}</div><div className="text-xs text-muted-foreground">decisive labels evaluated</div></CardContent></Card>
+        <Card><CardContent className="p-4"><div className="text-xl font-semibold">{overlap}</div><div className="text-xs text-muted-foreground">observed same/different overlap</div></CardContent></Card>
+        <Card><CardContent className="p-4"><div className="text-xl font-semibold">{separation.perfectGlobalSeparation === false ? "No" : separation.perfectGlobalSeparation === true ? "Yes" : "Not enough data"}</div><div className="text-xs text-muted-foreground">perfect global cutoff separation</div></CardContent></Card>
+        <Card><CardContent className="p-4"><div className="text-xl font-semibold">0</div><div className="text-xs text-muted-foreground">thresholds or assignments applied</div></CardContent></Card>
+      </div>
+      {separation.perfectGlobalSeparation === false ? (
+        <div className="rounded-md border border-amber-500/30 bg-amber-500/5 p-3 text-sm">
+          No single cosine cutoff perfectly separates these reviewed examples. Inside the observed {overlap} overlap are {separation.sameInOverlap} Same, {separation.differentInOverlap} Different, and {separation.unsureInOverlap} Unsure labels.
+        </div>
+      ) : null}
+      <div className="grid gap-3 lg:grid-cols-2">
+        <EvaluationTable
+          title="Score bands"
+          description="Cosine score is grouped descriptively; labels never alter score or order."
+          rows={evaluation.byScoreBand}
+        />
+        <EvaluationTable
+          title="Camera pairs"
+          description="Frozen review-time camera evidence, independent of current assignments."
+          rows={evaluation.byCameraPair}
+        />
+        <EvaluationTable
+          title="Overview contexts"
+          description="Entry and Street evidence combinations retained with each pair review."
+          rows={evaluation.byContext}
+        />
+        <EvaluationTable
+          title={`Local capture periods · ${evaluation.timeZone}`}
+          description={evaluation.localPeriodDefinition}
+          rows={evaluation.byLocalPeriod}
+        />
+        <EvaluationTable
+          title="Effective-plate evidence"
+          description="Plate agreement is review context only and is never used by ReID v2 scoring."
+          rows={evaluation.byPlateEvidence}
+        />
+      </div>
+      <div className="space-y-2 rounded-md border bg-muted/20 p-3">
+        <p className="text-sm font-medium">Targeted coverage gaps</p>
+        <p className="text-xs text-muted-foreground">
+          These identify the next small review sample; they are not a request to review every remaining pair. The camera/time floor is {evaluation.targetedCoverageFloor} examples per decisive label, and overlapping score bands use {evaluation.targetedOverlapBandFloor}.
+        </p>
+        {evaluation.targetedGaps.length ? (
+          <ul className="space-y-1 text-xs">
+            {evaluation.targetedGaps.map((gap) => (
+              <li key={`${gap.dimension}:${gap.key}`}>
+                <span className="font-medium">{gap.dimension} · {gap.key}</span>
+                {` — ${evaluationCount(gap)}; target ${gap.neededSameVehicle} more Same and ${gap.neededDifferentVehicle} more Different.`}
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p className="text-xs text-muted-foreground">No coverage gap was identified at the descriptive sample floors.</p>
+        )}
+      </div>
+    </div>
+  );
 }
 
 function sourceTitle(source) {
@@ -379,6 +499,7 @@ export default function VehicleReidV2Shadow({ result }) {
             ))}
           </div>
         ) : null}
+        <StratifiedEvaluation evaluation={data.evaluation} />
       </section>
 
       <section className="space-y-4">
