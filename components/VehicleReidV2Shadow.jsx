@@ -78,7 +78,7 @@ function EvaluationTable({ title, description, rows = [] }) {
   );
 }
 
-function StratifiedEvaluation({ evaluation }) {
+function StratifiedEvaluation({ data, evaluation }) {
   if (!evaluation) return null;
   const separation = evaluation.separation || {};
   const overlap = separation.overlapMinimum != null && separation.overlapMaximum != null
@@ -138,14 +138,27 @@ function StratifiedEvaluation({ evaluation }) {
           These identify the next small review sample; they are not a request to review every remaining pair. The camera/time floor is {evaluation.targetedCoverageFloor} examples per decisive label, and overlapping score bands use {evaluation.targetedOverlapBandFloor}.
         </p>
         {evaluation.targetedGaps.length ? (
-          <ul className="space-y-1 text-xs">
-            {evaluation.targetedGaps.map((gap) => (
-              <li key={`${gap.dimension}:${gap.key}`}>
-                <span className="font-medium">{gap.dimension} · {gap.key}</span>
-                {` — ${evaluationCount(gap)}; target ${gap.neededSameVehicle} more Same and ${gap.neededDifferentVehicle} more Different.`}
-              </li>
-            ))}
-          </ul>
+          <div className="space-y-3">
+            <ul className="space-y-1 text-xs">
+              {evaluation.targetedGaps.map((gap) => (
+                <li key={`${gap.dimension}:${gap.key}`}>
+                  <span className="font-medium">{gap.dimension} · {gap.key}</span>
+                  {` — ${evaluationCount(gap)}; target ${gap.neededSameVehicle} more Same and ${gap.neededDifferentVehicle} more Different.`}
+                </li>
+              ))}
+            </ul>
+            <Button asChild size="sm">
+              <Link href={queryHref(data, {
+                targeted: 1,
+                search: "",
+                page: 1,
+                source: "",
+                candidate: "",
+              })}>
+                Review targeted pairs<ArrowRight className="ml-1 h-4 w-4" />
+              </Link>
+            </Button>
+          </div>
         ) : (
           <p className="text-xs text-muted-foreground">No coverage gap was identified at the descriptive sample floors.</p>
         )}
@@ -166,6 +179,8 @@ function queryHref(data, overrides = {}) {
     page: data?.pagination?.page || 1,
     pageSize: data?.pagination?.pageSize || 12,
     source: data?.selected?.derivativeId || "",
+    candidate: data?.targetedReview?.current?.candidateDerivativeId || "",
+    targeted: data?.targetedReview?.active ? 1 : "",
     ...overrides,
   };
   const parameters = new URLSearchParams();
@@ -175,6 +190,62 @@ function queryHref(data, overrides = {}) {
     }
   }
   return `/visual_search/reid-v2?${parameters.toString()}`;
+}
+
+function coverageAimText(value) {
+  return value === "same_vehicle" ? "Same" : "Different";
+}
+
+function TargetedReviewBanner({ data }) {
+  const targeted = data.targetedReview;
+  if (!targeted?.active) return null;
+  if (!targeted.current) {
+    return (
+      <div className="rounded-lg border border-blue-500/30 bg-blue-500/5 p-4 text-sm">
+        <p className="font-medium">Targeted review is caught up</p>
+        <p className="mt-1 text-muted-foreground">
+          No current unlabeled pair was found for the remaining descriptive gaps. This does not create a threshold or assignment.
+        </p>
+        <Button asChild className="mt-3" variant="outline" size="sm">
+          <Link href="/visual_search/reid-v2">Exit targeted review</Link>
+        </Button>
+      </div>
+    );
+  }
+  const current = targeted.current;
+  const next = targeted.next;
+  return (
+    <div className="space-y-3 rounded-lg border border-blue-500/40 bg-blue-500/5 p-4">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <p className="font-medium">Guided targeted review</p>
+          <p className="text-sm text-muted-foreground">
+            {current.dimension} · {current.gapKey} · coverage aim {coverageAimText(current.coverageAim)}
+          </p>
+        </div>
+        <Badge variant="outline">{targeted.available} bounded recommendation{targeted.available === 1 ? "" : "s"}</Badge>
+      </div>
+      <p className="text-xs text-muted-foreground">
+        The coverage aim is not a predicted label. Judge the exact vehicle from the crops and linked LPR evidence; use Unsure when the evidence cannot resolve it. Effective-plate evidence only prioritizes review order and never changes cosine score or candidate rank.
+      </p>
+      <div className="flex flex-wrap gap-2">
+        {next ? (
+          <Button asChild variant="outline" size="sm">
+            <Link href={queryHref(data, {
+              source: next.sourceDerivativeId,
+              candidate: next.candidateDerivativeId,
+              targeted: 1,
+            })}>
+              Skip to next recommendation<ArrowRight className="ml-1 h-4 w-4" />
+            </Link>
+          </Button>
+        ) : null}
+        <Button asChild variant="ghost" size="sm">
+          <Link href="/visual_search/reid-v2">Exit targeted review</Link>
+        </Button>
+      </div>
+    </div>
+  );
 }
 
 function AttributeBadge({ label, attribute }) {
@@ -345,7 +416,11 @@ function SourcePicker({ data }) {
           return (
             <Link
               key={source.derivativeId}
-              href={queryHref(data, { source: source.derivativeId })}
+              href={queryHref(data, {
+                source: source.derivativeId,
+                candidate: "",
+                targeted: "",
+              })}
               className={`rounded-lg border p-3 transition-colors hover:border-primary ${selected ? "border-primary bg-primary/5" : ""}`}
             >
               <div className="relative mb-3 aspect-[16/9] overflow-hidden rounded-md bg-muted">
@@ -383,13 +458,18 @@ function SourcePicker({ data }) {
   );
 }
 
-function MatchCard({ selected, match, canReview }) {
+function MatchCard({ data, selected, match, canReview }) {
+  const targeted = data.targetedReview?.active
+    && data.targetedReview.current?.candidateDerivativeId === match.derivativeId;
   return (
-    <Card>
+    <Card className={targeted ? "border-blue-500/60" : undefined}>
       <CardHeader className="space-y-2 pb-3">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
-            <CardTitle className="text-lg">#{match.rank} · {sourceTitle(match)}</CardTitle>
+            <CardTitle className="flex flex-wrap items-center gap-2 text-lg">
+              #{match.rank} · {sourceTitle(match)}
+              {targeted ? <Badge>Targeted pair</Badge> : null}
+            </CardTitle>
             <CardDescription>Embedding-only cosine ranking</CardDescription>
           </div>
           <div className="text-right">
@@ -418,19 +498,60 @@ function MatchCard({ selected, match, canReview }) {
           candidateDerivativeId={match.derivativeId}
           initialReview={match.pairReview}
           canReview={canReview}
+          nextHref={targeted ? queryHref(data, {
+            targeted: 1,
+            search: "",
+            page: 1,
+            source: "",
+            candidate: "",
+          }) : null}
         />
         <div className="flex flex-wrap gap-2">
           <Button asChild variant="outline" size="sm">
             <Link href={`/live_feed?readId=${match.readId}`}><Eye className="mr-1 h-4 w-4" />Open read</Link>
           </Button>
           <Button asChild variant="ghost" size="sm">
-            <Link href={queryHref({ filters: { search: "" }, pagination: { page: 1, pageSize: 12 }, selected }, { source: match.derivativeId })}>
+            <Link href={queryHref({ filters: { search: "" }, pagination: { page: 1, pageSize: 12 }, selected }, {
+              source: match.derivativeId,
+              candidate: "",
+              targeted: "",
+            })}>
               Use as source<ArrowRight className="ml-1 h-4 w-4" />
             </Link>
           </Button>
         </div>
       </CardContent>
     </Card>
+  );
+}
+
+function ShadowNeighborhood({ data }) {
+  if (!data.selected) return null;
+  return (
+    <section className="space-y-5">
+      <div>
+        <h2 className="text-xl font-semibold">Shadow neighborhood for {sourceTitle(data.selected)}</h2>
+        <p className="text-sm text-muted-foreground">
+          The top-two margin is {data.winnerMargin == null ? "unavailable" : percent(data.winnerMargin, 2)}. This is comparison evidence, not an automatic match decision.
+        </p>
+      </div>
+      <div className="grid gap-5 lg:grid-cols-[minmax(280px,0.8fr)_minmax(0,2fr)]">
+        <Card className="h-fit lg:sticky lg:top-4">
+          <CardHeader><CardTitle>{sourceTitle(data.selected)}</CardTitle><CardDescription>Selected canonical source</CardDescription></CardHeader>
+          <CardContent className="space-y-4">
+            <VehicleImage source={data.selected} priority />
+            <LprEvidencePanel source={data.selected} />
+            <SourceMetadata source={data.selected} />
+            <Button asChild variant="outline" size="sm"><Link href={`/live_feed?readId=${data.selected.readId}`}><Eye className="mr-1 h-4 w-4" />Open source read</Link></Button>
+          </CardContent>
+        </Card>
+        <div className="grid gap-4 xl:grid-cols-2">
+          {data.matches.length
+            ? data.matches.map((match) => <MatchCard key={match.derivativeId} data={data} selected={data.selected} match={match} canReview={data.canReview} />)
+            : <div className="rounded-lg border border-dashed p-6 text-sm text-muted-foreground">No other valid current crop embeddings are available for comparison.</div>}
+        </div>
+      </div>
+    </section>
   );
 }
 
@@ -499,8 +620,12 @@ export default function VehicleReidV2Shadow({ result }) {
             ))}
           </div>
         ) : null}
-        <StratifiedEvaluation evaluation={data.evaluation} />
+        <StratifiedEvaluation data={data} evaluation={data.evaluation} />
       </section>
+
+      <TargetedReviewBanner data={data} />
+
+      {data.targetedReview?.active ? <ShadowNeighborhood data={data} /> : null}
 
       <section className="space-y-4">
         <div>
@@ -515,32 +640,7 @@ export default function VehicleReidV2Shadow({ result }) {
         <SourcePicker data={data} />
       </section>
 
-      {data.selected ? (
-        <section className="space-y-5">
-          <div>
-            <h2 className="text-xl font-semibold">Shadow neighborhood for {sourceTitle(data.selected)}</h2>
-            <p className="text-sm text-muted-foreground">
-              The top-two margin is {data.winnerMargin == null ? "unavailable" : percent(data.winnerMargin, 2)}. This is comparison evidence, not an automatic match decision.
-            </p>
-          </div>
-          <div className="grid gap-5 lg:grid-cols-[minmax(280px,0.8fr)_minmax(0,2fr)]">
-            <Card className="h-fit lg:sticky lg:top-4">
-              <CardHeader><CardTitle>{sourceTitle(data.selected)}</CardTitle><CardDescription>Selected canonical source</CardDescription></CardHeader>
-              <CardContent className="space-y-4">
-                <VehicleImage source={data.selected} priority />
-                <LprEvidencePanel source={data.selected} />
-                <SourceMetadata source={data.selected} />
-                <Button asChild variant="outline" size="sm"><Link href={`/live_feed?readId=${data.selected.readId}`}><Eye className="mr-1 h-4 w-4" />Open source read</Link></Button>
-              </CardContent>
-            </Card>
-            <div className="grid gap-4 xl:grid-cols-2">
-              {data.matches.length
-                ? data.matches.map((match) => <MatchCard key={match.derivativeId} selected={data.selected} match={match} canReview={data.canReview} />)
-                : <div className="rounded-lg border border-dashed p-6 text-sm text-muted-foreground">No other valid current crop embeddings are available for comparison.</div>}
-            </div>
-          </div>
-        </section>
-      ) : null}
+      {!data.targetedReview?.active ? <ShadowNeighborhood data={data} /> : null}
     </div>
   );
 }

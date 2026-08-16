@@ -29,6 +29,7 @@ export default function VehicleReidV2PairReviewControls({
   candidateDerivativeId,
   initialReview = null,
   canReview = false,
+  nextHref = null,
 }) {
   const router = useRouter();
   const [review, setReview] = useState(initialReview);
@@ -49,7 +50,12 @@ export default function VehicleReidV2PairReviewControls({
         return;
       }
       setReview(result.data.review);
-      router.refresh();
+      if (nextHref) {
+        router.push(nextHref);
+        router.refresh();
+      } else {
+        router.refresh();
+      }
     } finally {
       setSaving(null);
     }
@@ -81,6 +87,11 @@ export default function VehicleReidV2PairReviewControls({
       <p className="text-xs text-muted-foreground">
         {canReview ? reviewText(review) : "Plate review permission is required to label this pair."}
       </p>
+      {canReview && nextHref ? (
+        <p className="text-xs text-muted-foreground">
+          Saving any label advances to the next current targeted recommendation.
+        </p>
+      ) : null}
       {error ? <p role="alert" className="text-xs text-destructive">{error}</p> : null}
     </div>
   );
