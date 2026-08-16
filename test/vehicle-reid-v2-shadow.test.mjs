@@ -5,6 +5,7 @@ import test from "node:test";
 import {
   cosineSimilarityFromBytes,
   VehicleReidV2ShadowService,
+  vehicleReidV2ShadowInternals,
 } from "../lib/vehicle-reid-v2-shadow.mjs";
 import {
   VehicleReidV2ShadowRepository,
@@ -72,6 +73,59 @@ test("cosine comparison requires valid finite 512-value embeddings", () => {
   const invalid = embedding([1, 0]);
   invalid.writeFloatLE(Number.NaN, 0);
   assert.equal(cosineSimilarityFromBytes(invalid, embedding([1, 0])), null);
+});
+
+test("shadow sources expose direct and conservative companion LPR evidence with conflicts", () => {
+  const mapped = vehicleReidV2ShadowInternals.mapSource(row({
+    lpr_evidence: [
+      {
+        readId: 301,
+        plateNumber: "ABC123",
+        observedPlate: "A8C123",
+        imagePath: "images\\plate-301.jpg",
+        thumbnailPath: "thumbnails/plate-301.jpg",
+        cameraName: "Entry LPR 1",
+        timestamp: "2026-08-15 12:00:00+00",
+        directionLabel: "Entering",
+        directionSource: "blue_iris",
+        reviewStatus: "corrected",
+        sourceKind: "entry_overview_primary",
+        relationship: "primary",
+      },
+    ],
+    companion_lpr_evidence: [
+      {
+        readId: 301,
+        plateNumber: "ABC123",
+        cameraName: "Entry LPR 1",
+        relationship: "shadow_event_companion",
+      },
+      {
+        readId: 302,
+        plateNumber: "XYZ789",
+        observedPlate: "XYZ789",
+        thumbnailPath: "thumbnails/plate-302.jpg",
+        cameraName: "Street LPR 2",
+        timestamp: "2026-08-15 12:00:08+00",
+        directionLabel: "Exiting",
+        directionSource: "blue_iris",
+        reviewStatus: "confirmed",
+        sourceKind: "overview_primary",
+        relationship: "shadow_event_companion",
+        eventId: 77,
+        correlationClass: "timed_pair",
+      },
+    ],
+  }));
+  assert.equal(mapped.lprEvidence.direct.length, 1);
+  assert.equal(mapped.lprEvidence.direct[0].imageUrl, "/images/images/plate-301.jpg");
+  assert.equal(mapped.lprEvidence.direct[0].observedPlate, "A8C123");
+  assert.equal(mapped.lprEvidence.companions.length, 1);
+  assert.equal(mapped.lprEvidence.companions[0].readId, 302);
+  assert.equal(mapped.lprEvidence.companions[0].imageUrl, "/images/thumbnails/plate-302.jpg");
+  assert.equal(mapped.lprEvidence.companions[0].eventId, 77);
+  assert.equal(mapped.lprEvidence.conflicts.plate, true);
+  assert.equal(mapped.lprEvidence.conflicts.direction, true);
 });
 
 test("v2 pair reviews canonicalize crop pairs and summarize labels without recommending a threshold", () => {
@@ -249,6 +303,13 @@ test("repository scans only exact current identity links and performs no writes"
     assert.match(call.text, /embeddings\.source_sha256 = derivatives\.content_sha256/);
     assert.match(call.text, /color\.source_sha256 = derivatives\.content_sha256/);
     assert.match(call.text, /body\.source_sha256 = derivatives\.content_sha256/);
+    assert.match(call.text, /reads\.image_path/);
+    assert.match(call.text, /reads\.thumbnail_path/);
+    assert.match(call.text, /vehicle_event_reads/);
+    assert.match(call.text, /events\.status = 'shadow'/);
+    assert.match(call.text, /direct_event\.source_path_snapshot = direct_links\.source_path_snapshot/);
+    assert.match(call.text, /companion_event\.source_path_snapshot = companion_links\.source_path_snapshot/);
+    assert.match(call.text, /companion_links\.asset_id <> derivatives\.asset_id/);
     assert.doesNotMatch(call.text, /\b(?:INSERT INTO|UPDATE public|DELETE FROM)\b/);
   }
   assert.equal(vehicleReidV2ShadowRepositoryInternals.MAX_SCAN_SOURCES, 10_000);
@@ -322,7 +383,11 @@ test("shadow review surface keeps assignments unchanged, gates pair labels, and 
   assert.match(page, /requirePagePermission\("plate\.read"\)/);
   assert.match(navigation, /ReID v2 Shadow/);
   assert.match(component, /Assignment-safe review/);
-  assert.equal((component.match(/\bunoptimized\b/g) || []).length, 2);
+  assert.equal((component.match(/\bunoptimized\b/g) || []).length, 3);
+  assert.match(component, /Associated LPR evidence — review only/);
+  assert.match(component, /Directly linked LPR read/);
+  assert.match(component, /Correlated companion LPR read/);
+  assert.match(component, /Use Unsure unless the images resolve it/);
   assert.match(component, /never alter the score or order/);
   assert.match(component, /does not create or change a vehicle profile, assignment, threshold, notification/);
   assert.match(controls, /Same vehicle/);

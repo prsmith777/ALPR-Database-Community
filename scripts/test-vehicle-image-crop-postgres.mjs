@@ -431,6 +431,16 @@ async function runReidV2PairReview() {
   const candidateDerivativeId = Number(sources.rows[1].derivative_id);
   const repository = new VehicleReidV2ShadowRepository({ pool });
   const service = new VehicleReidV2ShadowService({ repository });
+  const shadow = await service.getOverview({
+    sourceDerivativeId,
+    resultLimit: 1,
+  });
+  assert.equal(shadow.selected.lprEvidence.direct.length, 1);
+  assert.equal(shadow.selected.lprEvidence.direct[0].evidenceType, "direct");
+  assert.equal(shadow.selected.lprEvidence.direct[0].imageUrl, null);
+  assert.equal(shadow.selected.lprEvidence.companions.length, 0);
+  assert.equal(shadow.matches.length, 1);
+  assert.equal(shadow.matches[0].lprEvidence.direct.length, 1);
   const actor = {
     id: actorId,
     username: `codex_crop_${suffix}`,
