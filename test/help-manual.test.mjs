@@ -14,7 +14,7 @@ async function source(path) {
 }
 
 test("the user guide is structured, searchable, and role-aware", () => {
-  assert.equal(HELP_MANUAL.manualVersion, "2.11");
+  assert.equal(HELP_MANUAL.manualVersion, "2.12");
   assert.ok(HELP_MANUAL.sections.length >= 14);
 
   const ids = HELP_MANUAL.sections.map((section) => section.id);
@@ -79,6 +79,12 @@ test("the guide covers required workflows and clearly labels planned features", 
     "reid v2 pair labels make no assignments",
     "create evidence-backed shadow profile candidates",
     "shadow candidates are not current vehicle profiles",
+    "stage 1 authoritative reid v2 foundation",
+    "stage 1 preview cannot become an assignment",
+    "legacy reid v1 visual search and profiles",
+    "one transition-control row starts in v2_shadow",
+    "cosine similarity can rank review candidates but cannot join a profile",
+    "no action, worker, or user control to accept or materialize",
   ]) {
     assert.match(text, new RegExp(required, "i"));
   }
@@ -121,6 +127,10 @@ test("production releases require help and roadmap updates", async () => {
     assert.match(text, /docs\/COMMUNITY_PRODUCT_ROADMAP\.md/);
   }
   assert.match(roadmap, /Release candidate baseline — August 16, 2026/);
+  assert.match(roadmap, /tables are created empty/i);
+  assert.match(roadmap, /no acceptance or materialization\s+path/i);
+  assert.match(roadmap, /Stage 2 materialization[\s\S]*remain planned/i);
+  assert.match(roadmap, /has not been merged or deployed/i);
   assert.doesNotMatch(roadmap, /current production release is `[0-9a-f]{7,40}`/i);
 });
 

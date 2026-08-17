@@ -233,7 +233,7 @@ test("visual-search actions enforce read and maintenance permissions", async () 
 test("camera fallback setup is advanced, measured, and version-aware", async () => {
   const component = await readFile(new URL("../components/VisualSearch.jsx", import.meta.url), "utf8");
   const repository = await readFile(new URL("../lib/capture-asset-repository.mjs", import.meta.url), "utf8");
-  assert.match(component, /Automatic vehicle detection/);
+  assert.match(component, /Legacy plate-image vehicle detection/);
   assert.match(component, /Advanced camera fallback settings/);
   assert.match(component, /Full image \(recommended\)/);
   assert.match(component, /Fallback context/);
@@ -247,7 +247,7 @@ test("camera fallback setup is advanced, measured, and version-aware", async () 
   assert.match(repository, /LOWER\(BTRIM\(pr\.camera_name\)\) = LOWER\(BTRIM\(\$\$\{values\.length\}\)\)/);
   assert.match(component, /Drop a vehicle image here, or choose a file/);
   assert.match(component, /processed transiently/);
-  assert.match(component, /ranked only by learned Vehicle ReID image embeddings/);
+  assert.match(component, /ranked only by legacy ReID v1 plate-image embeddings/);
   assert.match(component, /Is this the same vehicle\?/);
   assert.match(component, /Same vehicle/);
   assert.match(component, /Match calibration/);
@@ -294,6 +294,7 @@ test("detector statistics recommend fallback review only after meaningful misses
 
 test("plate tables render the visual-search link only for an open image", async () => {
   const plateTable = await readFile(new URL("../components/PlateTable.jsx", import.meta.url), "utf8");
+  assert.match(plateTable, /Find similar using legacy ReID v1 plate-image search/);
   assert.match(
     plateTable,
     /\{canRead && selectedImage && <Button[\s\S]*?href=\{`\/visual_search\?readId=\$\{selectedImage\.id\}`\}/

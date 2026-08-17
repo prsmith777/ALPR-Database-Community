@@ -54,16 +54,22 @@ jobs:
         run: |
           set -euo pipefail
 
-          psql_fixture() {
+          psql_database() {
+            local database="$1"
+            shift
             docker run --rm --network host \
               --volume "$PWD:/workspace:ro" \
               --env PGPASSWORD=fixture-test-password \
               postgres:17.10 psql \
               --host 127.0.0.1 \
               --username postgres \
-              --dbname fixture_test \
+              --dbname "$database" \
               --set ON_ERROR_STOP=1 \
               "$@"
+          }
+
+          psql_fixture() {
+            psql_database fixture_test "$@"
           }
 
           fixture() {
@@ -129,6 +135,33 @@ jobs:
             VEHICLE_IMAGE_CROP_POSTGRES_TEST_GUARD_TOKEN='ci-disposable-pg17' \
             DATABASE_URL='postgresql://postgres:fixture-test-password@127.0.0.1:5432/fixture_test' \
             yarn test:vehicle-image-crop:postgres
+
+          reid_database='codex_vehicle_reid_v2_1a2b3c4d'
+          cleanup_reid_database() {
+            psql_database postgres --command \
+              "DROP DATABASE IF EXISTS ${reid_database} WITH (FORCE);"
+          }
+          trap cleanup_reid_database EXIT
+          cleanup_reid_database
+          psql_database postgres --command "CREATE DATABASE ${reid_database};"
+          psql_database "$reid_database" --file /workspace/schema.sql
+          psql_database "$reid_database" --file /workspace/migrations.sql
+          psql_database "$reid_database" --file /workspace/migrations.sql
+          psql_database "$reid_database" --command "
+            CREATE TABLE public.codex_integration_test_guard (
+              scope TEXT PRIMARY KEY,
+              guard_token TEXT NOT NULL
+            );
+            INSERT INTO public.codex_integration_test_guard (scope, guard_token)
+            VALUES ('vehicle-reid-v2-authoritative-stage1:v1', 'ci-disposable-pg17');
+          "
+          VEHICLE_REID_V2_POSTGRES_TEST_OPT_IN='true' \
+            VEHICLE_REID_V2_POSTGRES_TEST_DATABASE="$reid_database" \
+            VEHICLE_REID_V2_POSTGRES_TEST_GUARD_TOKEN='ci-disposable-pg17' \
+            DATABASE_URL="postgresql://postgres:fixture-test-password@127.0.0.1:5432/${reid_database}" \
+            yarn test:vehicle-reid-v2-authoritative:postgres
+          cleanup_reid_database
+          trap - EXIT
 
           fixture status | grep -F 'fixture_state=absent'
           fixture load | grep -F 'fixture_state=loaded'

@@ -17,6 +17,7 @@
     "test:vehicle-image-asset:postgres": "node scripts/test-vehicle-image-asset-postgres.mjs",
     "test:vehicle-event-shadow:postgres": "node scripts/test-vehicle-event-shadow-postgres.mjs",
     "test:vehicle-image-crop:postgres": "node scripts/test-vehicle-image-crop-postgres.mjs",
+    "test:vehicle-reid-v2-authoritative:postgres": "node scripts/test-vehicle-reid-v2-authoritative-postgres.mjs",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

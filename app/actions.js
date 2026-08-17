@@ -107,6 +107,7 @@ import {
   wakeVehicleAssetAttributeWorker,
 } from "@/lib/vehicle-asset-attribute-runtime.mjs";
 import { getVehicleReidV2ShadowService } from "@/lib/vehicle-reid-v2-shadow-runtime.mjs";
+import { getVehicleReidV2ConversionService } from "@/lib/vehicle-reid-v2-conversion-runtime.mjs";
 import {
   applyVisualIndexPace,
   normalizeVisualIndexSettings,
@@ -4579,6 +4580,133 @@ export async function retryVehicleAssetAttributeJob(input = {}) {
     return { success: true, data: { overview: await loadVehicleAssetAttributeOverview(runtime) } };
   } catch (error) {
     return vehicleAssetAttributeActionFailure(error, "Unable to retry this crop attribute item.");
+  }
+}
+
+function vehicleReidV2ConversionActionFailure(error, fallback) {
+  const code = String(error?.code || "");
+  if (code.startsWith("VEHICLE_REID_V2_CONVERSION_")) {
+    return { success: false, error: String(error.message || fallback) };
+  }
+  console.error(fallback, { code });
+  return { success: false, error: fallback };
+}
+
+export async function getVehicleReidV2ConversionPreviewOverview() {
+  await requirePermission("system.manage_settings");
+  try {
+    const overview = await (await getVehicleReidV2ConversionService()).getOverview();
+    return { success: true, data: { overview } };
+  } catch (error) {
+    return vehicleReidV2ConversionActionFailure(
+      error,
+      "Unable to load the ReID v2 conversion preview."
+    );
+  }
+}
+
+export async function startVehicleReidV2ConversionPreview(input = {}) {
+  const principal = await requirePermission("maintenance.manage");
+  try {
+    const data = await (await getVehicleReidV2ConversionService()).startPreview({
+      actor: principal,
+      batchSize: input.batchSize,
+    });
+    revalidatePath("/settings/vehicle-intelligence/processing");
+    return { success: true, data };
+  } catch (error) {
+    return vehicleReidV2ConversionActionFailure(
+      error,
+      "Unable to start the ReID v2 conversion preview."
+    );
+  }
+}
+
+export async function processVehicleReidV2ConversionPreviewBatch(input = {}) {
+  const principal = await requirePermission("maintenance.manage");
+  try {
+    const data = await (await getVehicleReidV2ConversionService()).processBatch({
+      runId: input.runId,
+      limit: input.limit,
+      actor: principal,
+    });
+    revalidatePath("/settings/vehicle-intelligence/processing");
+    return { success: true, data };
+  } catch (error) {
+    return vehicleReidV2ConversionActionFailure(
+      error,
+      "Unable to process this bounded ReID v2 preview batch."
+    );
+  }
+}
+
+export async function setVehicleReidV2ConversionPreviewPaused(input = {}) {
+  const principal = await requirePermission("maintenance.manage");
+  try {
+    const data = await (await getVehicleReidV2ConversionService()).setPaused({
+      runId: input.runId,
+      paused: input.paused === true,
+      actor: principal,
+    });
+    revalidatePath("/settings/vehicle-intelligence/processing");
+    return { success: true, data };
+  } catch (error) {
+    return vehicleReidV2ConversionActionFailure(
+      error,
+      "Unable to pause or resume the ReID v2 conversion preview."
+    );
+  }
+}
+
+export async function cancelVehicleReidV2ConversionPreview(input = {}) {
+  const principal = await requirePermission("maintenance.manage");
+  try {
+    const data = await (await getVehicleReidV2ConversionService()).cancel({
+      runId: input.runId,
+      actor: principal,
+    });
+    revalidatePath("/settings/vehicle-intelligence/processing");
+    return { success: true, data };
+  } catch (error) {
+    return vehicleReidV2ConversionActionFailure(
+      error,
+      "Unable to cancel the ReID v2 conversion preview."
+    );
+  }
+}
+
+export async function retryVehicleReidV2ConversionPreviewJob(input = {}) {
+  const principal = await requirePermission("maintenance.manage");
+  try {
+    const data = await (await getVehicleReidV2ConversionService()).retryJob({
+      jobId: input.jobId,
+      actor: principal,
+    });
+    revalidatePath("/settings/vehicle-intelligence/processing");
+    return { success: true, data };
+  } catch (error) {
+    return vehicleReidV2ConversionActionFailure(
+      error,
+      "Unable to retry this ReID v2 conversion preview item."
+    );
+  }
+}
+
+export async function verifyVehicleReidV2ConversionPreview(input = {}) {
+  const principal = await requirePermission("maintenance.manage");
+  try {
+    const data = await (await getVehicleReidV2ConversionService()).verifyCurrent({
+      runId: input.runId,
+      previewFingerprint: input.previewFingerprint,
+      actor: principal,
+    });
+    revalidatePath("/settings/vehicle-intelligence/processing");
+    return { success: true, data };
+  } catch (error) {
+    return vehicleReidV2ConversionActionFailure(
+      error,
+      "Unable to verify the ReID v2 conversion preview fingerprint."
+    );
   }
 }
 

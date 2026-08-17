@@ -49,6 +49,7 @@ import VehicleEventShadowPanel from "@/components/settings/VehicleEventShadowPan
 import VehicleImageCropPanel from "@/components/settings/VehicleImageCropPanel";
 import VehicleAssetEmbeddingPanel from "@/components/settings/VehicleAssetEmbeddingPanel";
 import VehicleAssetAttributePanel from "@/components/settings/VehicleAssetAttributePanel";
+import VehicleReidV2ConversionPanel from "@/components/settings/VehicleReidV2ConversionPanel";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -120,6 +121,7 @@ export default function VehicleIntelligenceSettings({
   initialVehicleImageCrops = null,
   initialVehicleAssetEmbeddings = null,
   initialVehicleAssetAttributes = null,
+  initialVehicleReidV2ConversionPreview = null,
 }) {
   const routeTab = useRouteTab(VEHICLE_SETUP_ROUTES, "cameras");
   const [data, setData] = useState(initialData);
@@ -1820,6 +1822,7 @@ export default function VehicleIntelligenceSettings({
           <VehicleImageCropPanel initialOverview={initialVehicleImageCrops} />
           <VehicleAssetEmbeddingPanel initialOverview={initialVehicleAssetEmbeddings} />
           <VehicleAssetAttributePanel initialOverview={initialVehicleAssetAttributes} />
+          <VehicleReidV2ConversionPanel initialOverview={initialVehicleReidV2ConversionPreview} />
           <Card className="mt-6">
           <CardHeader>
             <CardTitle>Historical direction backfill</CardTitle>

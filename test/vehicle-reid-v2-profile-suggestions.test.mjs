@@ -255,7 +255,11 @@ test("repository and UI keep suggestions read-only, current-revalidated, and thr
   assert.ok(calls.every((call) => call.values[0] === 7));
   assert.match(calls[0].text, /vehicle_reid_v2_profile_candidate_members/);
   assert.match(calls[0].text, /vehicle_reid_v2_profile_candidates/);
+  assert.match(calls[0].text, /candidates\.status = 'shadow'/);
+  assert.doesNotMatch(calls[0].text, /candidates\.status = 'candidate'/);
   assert.match(calls[1].text, /vehicle_reid_v2_profile_candidate_conflicts/);
+  assert.match(calls[1].text, /ORDER BY conflict_key/);
+  assert.doesNotMatch(calls[1].text, /ORDER BY id/);
 
   const [builder, service, panel] = await Promise.all([
     readFile(new URL("../lib/vehicle-reid-v2-profile-suggestions.mjs", import.meta.url), "utf8"),

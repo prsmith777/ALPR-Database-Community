@@ -14,7 +14,7 @@ export default async function VehicleProfilePage({ params }) {
   const result = await getVehicleProfile(clusterId);
   return (
     <DashboardLayout>
-      <TitleNavbar title={result?.success ? `Vehicle #${result.data.id}` : "Vehicle profile"} navigation={VEHICLE_INTELLIGENCE_NAVIGATION}>
+      <TitleNavbar title={result?.success ? `Legacy Vehicle #${result.data.id}` : "Legacy vehicle profile"} navigation={VEHICLE_INTELLIGENCE_NAVIGATION}>
         <VehicleProfile initialResult={result} />
       </TitleNavbar>
     </DashboardLayout>

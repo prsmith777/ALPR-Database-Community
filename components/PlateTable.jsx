@@ -3008,12 +3008,12 @@ export default function PlateTable({
                   )}
                 </div>
                 <div>
-                  <div className="text-xs uppercase text-muted-foreground">Vehicle</div>
+                  <div className="text-xs uppercase text-muted-foreground">Legacy vehicle (ReID v1)</div>
                   {selectedImage.vehicleClusterId ? (
                     <Link href={`/visual_search/vehicles/${selectedImage.vehicleClusterId}`} className="text-blue-500 hover:underline">
-                      Vehicle #{selectedImage.vehicleClusterId}
+                      Legacy Vehicle #{selectedImage.vehicleClusterId}
                     </Link>
-                  ) : <div className="text-muted-foreground">Unassigned</div>}
+                  ) : <div className="text-muted-foreground">Unassigned in legacy ReID v1</div>}
                 </div>
                   </div>
                   <div className="relative h-[40vh] w-full overflow-hidden rounded-md border bg-black sm:h-auto sm:min-h-0">
@@ -3219,12 +3219,12 @@ export default function PlateTable({
                         variant="outline"
                         size="sm"
                         className={POPUP_ACTION_BUTTON_CLASS}
-                        aria-label="Find similar vehicle"
-                        title="Find similar vehicle"
+                        aria-label="Find similar using legacy ReID v1"
+                        title="Find similar using legacy ReID v1 plate-image search"
                       >
                         <Link href={`/visual_search?readId=${selectedImage.id}`}>
                           <ScanSearch className={POPUP_ACTION_ICON_CLASS} />
-                          <span className={POPUP_ACTION_LABEL_CLASS}>Find similar vehicle</span>
+                          <span className={POPUP_ACTION_LABEL_CLASS}>Find similar (legacy v1)</span>
                         </Link>
                       </Button>}
                     </PopupActionSlot>
@@ -3235,11 +3235,11 @@ export default function PlateTable({
                         className={POPUP_ACTION_BUTTON_CLASS}
                         disabled={Boolean(pendingVehicleReview) || confirmNextBusy}
                         onClick={() => handleVehicleReview("confirm")}
-                        aria-label="Confirm suggested vehicle match"
-                        title="Confirm suggested vehicle match"
+                        aria-label="Confirm suggested legacy vehicle match"
+                        title="Confirm suggested legacy ReID v1 vehicle match"
                       >
                         <CircleCheck className={POPUP_ACTION_ICON_CLASS} />
-                        <span className={POPUP_ACTION_LABEL_CLASS}>Confirm vehicle</span>
+                        <span className={POPUP_ACTION_LABEL_CLASS}>Confirm legacy vehicle</span>
                       </Button>}
                     </PopupActionSlot>
                     <PopupActionSlot>
@@ -3249,11 +3249,11 @@ export default function PlateTable({
                         className={POPUP_ACTION_BUTTON_CLASS}
                         disabled={Boolean(pendingVehicleReview) || confirmNextBusy}
                         onClick={() => handleVehicleReview("separate")}
-                        aria-label="Mark as a different vehicle"
-                        title="Mark as a different vehicle"
+                        aria-label="Mark as a different legacy vehicle"
+                        title="Mark as a different legacy ReID v1 vehicle"
                       >
                         <Split className={POPUP_ACTION_ICON_CLASS} />
-                        <span className={POPUP_ACTION_LABEL_CLASS}>Different vehicle</span>
+                        <span className={POPUP_ACTION_LABEL_CLASS}>Different legacy vehicle</span>
                       </Button>}
                     </PopupActionSlot>
                     <PopupActionSlot>
