@@ -124,9 +124,9 @@ test("live feed image review advances visibly and starts focused on the plate", 
     }
   };
   assertOrdered(firstActionRow, [
-    "Find similar vehicle",
-    "Confirm vehicle",
-    "Different vehicle",
+    "Find similar (legacy v1)",
+    "Confirm legacy vehicle",
+    "Different legacy vehicle",
     "Correct Plate",
     "Review History",
     "Add to Known",
@@ -148,9 +148,9 @@ test("live feed image review advances visibly and starts focused on the plate", 
   assert.doesNotMatch(firstActionRow, /<PopupActionSlot reserve/);
   assert.equal([...secondActionRow.matchAll(/<PopupActionSlot reserve/g)].length, 2);
   const firstRowSlotLabels = [
-    /Find similar vehicle/,
-    /Confirm vehicle/,
-    /Different vehicle/,
+    /Find similar \(legacy v1\)/,
+    /Confirm legacy vehicle/,
+    /Different legacy vehicle/,
     /Correct Plate/,
     /Review History/,
     /Add to Known/,
@@ -170,7 +170,7 @@ test("live feed image review advances visibly and starts focused on the plate", 
   assert.match(secondRowSlots[1], /Confirm detected plate/);
   assert.match(secondActionRow, /<PopupActionSlot reserve className="col-start-6">[\s\S]*?Blue Iris/);
   assert.match(secondActionRow, /<PopupActionSlot reserve>[\s\S]*?Download/);
-  assert.match(plateTable, /aria-label="Find similar vehicle"[\s\S]*?>Find similar vehicle</);
+  assert.match(plateTable, /aria-label="Find similar using legacy ReID v1"[\s\S]*?>Find similar \(legacy v1\)</);
   assert.match(plateTable, /aria-label="Correct detected plate"[\s\S]*?>Correct Plate</);
   assert.match(plateTable, /aria-label="Open review history"[\s\S]*?>Review History</);
   assert.match(plateTable, /aria-label="Open recording in Blue Iris"[\s\S]*?>Blue Iris</);

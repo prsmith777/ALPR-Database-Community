@@ -65,7 +65,7 @@ if (expectedDatabase !== "fixture_test"
 const pool = new pg.Pool({
   connectionString: databaseUrl,
   max: 5,
-  options: "-c lock_timeout=5000 -c statement_timeout=30000",
+  options: "-c timezone=UTC -c lock_timeout=5000 -c statement_timeout=30000",
 });
 const suffix = crypto.randomUUID().replaceAll("-", "").slice(0, 12);
 let lockClient = null;
@@ -498,6 +498,18 @@ async function runReidV2ProfileCandidates() {
     username: `codex_crop_${suffix}`,
     displayName: "Codex vehicle crop smoke",
   };
+  const reviewedPair = await pool.query(
+    `SELECT derivative_id_low, derivative_id_high
+     FROM public.vehicle_reid_v2_pair_reviews WHERE id = $1`,
+    [pairReviewId]
+  );
+  const confirmedSame = await service.recordPairReview({
+    sourceDerivativeId: Number(reviewedPair.rows[0].derivative_id_low),
+    candidateDerivativeId: Number(reviewedPair.rows[0].derivative_id_high),
+    label: "same_vehicle",
+    actor,
+  });
+  assert.equal(confirmedSame.review.revision, 3);
   const created = await service.createProfileCandidateSnapshot({ actor });
   profileCandidateRunId = Number(created.id);
   assert.equal(created.reused, false);
@@ -505,7 +517,7 @@ async function runReidV2ProfileCandidates() {
   assert.equal(created.candidateProfiles, 1);
   assert.equal(created.candidateMembers, 2);
   assert.equal(created.conflictedComponents, 0);
-  assert.equal(created.profiles[0]?.evidenceBasis, "exact_effective_plate");
+  assert.equal(created.profiles[0]?.evidenceBasis, "mixed");
   assert.deepEqual(created.profiles[0]?.anchorPlates, ["CRP123"]);
 
   const reused = await service.createProfileCandidateSnapshot({ actor });
@@ -531,6 +543,12 @@ async function runReidV2ProfileCandidates() {
   assert.equal(Number(stored.rows[0].profiles), 1);
   assert.equal(Number(stored.rows[0].members), 2);
   assert.equal(Number(stored.rows[0].audit_count), 1);
+  const suggestionInputs = await repository.getProfileCandidateSuggestionInputs(
+    profileCandidateRunId
+  );
+  assert.equal(suggestionInputs.members.length, 2);
+  assert.ok(suggestionInputs.members.every((row) => row.candidate_key));
+  assert.deepEqual(suggestionInputs.conflicts, []);
   await assert.rejects(
     pool.query(
       `UPDATE public.vehicle_reid_v2_profile_candidate_runs
@@ -760,8 +778,10 @@ async function cleanup() {
     reads: 0, assets: 0, links: 0, derivatives: 0, runs: 0, jobs: 0, live_jobs: 0,
     embeddings: 0, embedding_runs: 0, embedding_jobs: 0,
     attribute_observations: 0, attribute_runs: 0, attribute_jobs: 0, pair_reviews: 0,
-    profile_candidate_runs: 1, profile_candidates: 1,
-    profile_candidate_members: 2, profile_candidate_conflicts: 0,
+    profile_candidate_runs: profileCandidateRunId == null ? 0 : 1,
+    profile_candidates: profileCandidateRunId == null ? 0 : 1,
+    profile_candidate_members: profileCandidateRunId == null ? 0 : 2,
+    profile_candidate_conflicts: 0,
   });
 }
 

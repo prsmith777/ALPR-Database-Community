@@ -126,7 +126,7 @@ reliable background processing.
   occupies a primary-sidebar slot. Migrated MQTT and Pushover
   copies use the same shadow approval, atomic cutover, rollback, and verified
   finalization workflow.
-- Vehicle ReID visual search, uploaded-image queries, camera fallback profiles,
+- Legacy Vehicle ReID v1 visual search, uploaded-image queries, camera fallback profiles,
   calibration feedback, and the resumable safety-aware background index worker
   are available. Administrators can also configure camera-specific front/rear
   direction meanings with custom labels and a confidence threshold, then
@@ -183,6 +183,12 @@ reliable background processing.
   proposed separately and require explicit audited confirmation or rejection;
   only confirmed associations become trusted future mismatch baselines.
   Automatic named-feature classification and mismatch alerts remain disabled.
+- The current Stage 1 source candidate clearly labels every still-read-owned
+  identity surface as legacy ReID v1: Legacy Visual Search, Legacy Profiles,
+  Legacy Needs Review, Live Feed Legacy Vehicle numbers and review actions,
+  Find similar (legacy v1), and legacy direction/calibration work. These label
+  changes do not switch an identity consumer or make a v1 cluster ID look like
+  an authoritative ReID v2 profile ID.
 - Administrators now have a read-only Storage Health view in Data & Privacy.
   It reports mounted-filesystem capacity, PostgreSQL and plate-read size,
   record/image-path counts, recent ingestion, visual-index state,
@@ -885,15 +891,43 @@ notes. Updates remain externally orchestrated.
 - Immutable evidence-backed ReID v2 shadow profile candidate snapshots are
   delivered. An operator action freezes the current identity-eligible crop,
   embedding, corrected/effective-plate, and audited pair-review evidence inside
-  one repeatable-read transaction. Exact normalized effective-plate agreement
-  and audited human Same-vehicle labels are the only evidence permitted to join
-  crops. Cosine score, color, body type, current v1 grouping, event proximity,
-  and camera context cannot add a member. Human Different labels, incompatible
-  plate evidence, ambiguous multi-plate evidence, stale links, and a truncated
-  bounded scan fail closed; excluded conflicts remain visible. Identical
+  one repeatable-read transaction. Exact normalized non-rejected effective-plate
+  agreement and audited exact-current human Same-vehicle labels are the only
+  evidence permitted to join crops. Cosine score, color, body type, current v1
+  grouping, event proximity, rejected or display-only companion plates, and
+  camera context cannot add a member. Human Different or Unsure labels, stale
+  pair-review contracts, incompatible plate evidence, ambiguous multi-plate
+  evidence, stale links, and a truncated bounded scan fail closed; excluded
+  conflicts remain visible. Identical
   evidence reuses the prior deterministic fingerprint. The snapshot is stored
   separately from current vehicle profiles and writes no threshold, cluster,
   assignment, notification, or external-provider result.
+- The current Stage 1 authoritative ReID v2 source candidate adds only an
+  additive, reversible foundation. Stable `vehicle_reid_v2_profiles`,
+  `vehicle_reid_v2_profile_members`, and
+  `vehicle_reid_v2_read_assignments` tables are created empty; immutable
+  shadow snapshot candidate IDs remain evidence references and never become
+  authoritative IDs. The single `vehicle_reid_control` row defaults to
+  `v2_shadow`, while legacy v1 remains the primary identity source and all
+  existing consumers, writers, rollback data, and files remain unchanged.
+  Immutable conversion evidence, projection, conflict, per-read disposition,
+  bounded job-state, fingerprint, and observation-only v1-comparison records
+  are accompanied by a deterministic preview projector. Exact normalized
+  effective plates and audited exact-current human Same reviews are the only
+  positive joins. Different or Unsure reviews, clearly different or ambiguous
+  plates, conflicts, stale or replaced source links, incomplete evidence, and
+  display-only Entry-to-Street fallbacks fail closed; cosine similarity and v1
+  grouping never create v2 identity. The candidate exposes no accept or
+  materialization path, so it creates no authoritative profile, member, or
+  read assignment. The Processing page does expose the preview-only lifecycle:
+  start one frozen run, process bounded 1, 5, 25, or 250-read batches, pause or
+  resume, cancel remaining work, retry one listed failure once, inspect
+  conflicts and v1 comparison metrics, and verify the frozen fingerprints.
+  None of those controls accepts or materializes the projection. The candidate
+  also corrects the production-schema
+  mismatch in candidate suggestions by selecting persisted `shadow` candidates
+  and ordering conflicts by `conflict_key`. This candidate has not begun Stage
+  2 and has not been merged or deployed to staging or production.
 - Final full-resolution Overview framing validation is implemented before a
   new Vehicle View is committed. The anchor-constrained selector prioritizes a
   fully framed vehicle track over a higher numerical score near an image edge,
@@ -1017,6 +1051,14 @@ be restored. Monochrome nighttime captures do not receive a direction result.
   after new Same evidence. Any later promotion into a new assignment path must
   remain a separate explicit cutover decision with current-link revalidation,
   observable shadow-versus-current results, and a rollback plan.
+  The additive Stage 1 source candidate now supplies empty authoritative tables,
+  a default `v2_shadow` control, immutable preview evidence/projection records,
+  deterministic fail-closed projection logic, and observation-only v1
+  comparison metrics. It deliberately supplies no acceptance or materialization
+  path. Stage 2 materialization, compatibility reads, primary cutover, live v2
+  assignment, consumer replacement, and later v1 retirement remain planned and
+  require separate review and approval; no merge or deployment is implied by
+  this roadmap entry.
   Shared Street images must continue to
   count once, and Entry-to-Street display fallbacks must never become an
   additional identity observation. Keep the existing ReID path available until
@@ -1119,7 +1161,13 @@ required concepts:
 - `notification_rules`, condition groups/conditions, actions/channels,
   executions, deliveries, and attempts;
 - `vehicle_observations` and leased enrichment jobs;
-- `capture_assets` for original/crop/thumbnail hashes and embeddings;
+- legacy `capture_assets`, `vehicle_clusters`, and
+  `vehicle_cluster_assignments` remain temporary v1 rollback data until the
+  separately approved final retirement stage;
+- canonical `vehicle_image_assets`, `vehicle_image_derivatives`, crop-owned
+  embeddings and attributes, plus empty authoritative
+  `vehicle_reid_v2_profiles`, `vehicle_reid_v2_profile_members`, and
+  `vehicle_reid_v2_read_assignments` ownership and `vehicle_reid_control`;
 - export and maintenance jobs with progress, actor, result, and expiry;
 - a numbered `schema_migrations` ledger.
 

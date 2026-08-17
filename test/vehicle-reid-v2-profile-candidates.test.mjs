@@ -8,6 +8,8 @@ import {
 } from "../lib/vehicle-reid-v2-profile-candidates.mjs";
 
 const sha = (character) => character.repeat(64);
+const EMBEDDING_MODEL = "vehicle-reid-0001-ir-fp16-v1";
+const EMBEDDING_ALGORITHM = "canonical-overview-crop-embedding-v1";
 
 function source(id, plate = null, overrides = {}) {
   return {
@@ -27,11 +29,25 @@ function source(id, plate = null, overrides = {}) {
 }
 
 function build(sourceRows, reviewRows = []) {
+  const sourcesById = new Map(sourceRows.map((row) => [Number(row.derivative_id), row]));
+  const contractedReviews = reviewRows.map((row) => {
+    const low = sourcesById.get(Number(row.derivative_id_low));
+    const high = sourcesById.get(Number(row.derivative_id_high));
+    return {
+      source_sha256_low: low?.content_sha256,
+      source_sha256_high: high?.content_sha256,
+      embedding_id_low: low?.embedding_id,
+      embedding_id_high: high?.embedding_id,
+      embedding_model: EMBEDDING_MODEL,
+      algorithm_version: EMBEDDING_ALGORITHM,
+      ...row,
+    };
+  });
   return buildVehicleReidV2ProfileCandidateSnapshot({
     sourceRows: sourceRows.map((row) => ({ ...row, total_sources: sourceRows.length })),
-    reviewRows,
-    embeddingModel: "vehicle-reid-0001-ir-fp16-v1",
-    embeddingAlgorithmVersion: "canonical-overview-crop-embedding-v1",
+    reviewRows: contractedReviews,
+    embeddingModel: EMBEDDING_MODEL,
+    embeddingAlgorithmVersion: EMBEDDING_ALGORITHM,
   });
 }
 
@@ -120,7 +136,78 @@ test("multi-plate source evidence cannot bridge two automatic plate groups", () 
   ]);
 
   assert.equal(result.candidateProfiles, 0);
-  assert.equal(result.ungroupedSources, 3);
+  assert.equal(result.conflictedComponents, 1);
+  assert.equal(result.conflictedMembers, 1);
+  assert.equal(result.ungroupedSources, 2);
+  assert.equal(result.conflicts[0].reason, "ambiguous_effective_plates");
+});
+
+test("Unsure evidence vetoes an otherwise exact-plate candidate", () => {
+  const result = build([
+    source(1, "ABC123"),
+    source(2, "ABC123"),
+  ], [{
+    id: 14,
+    derivative_id_low: 1,
+    derivative_id_high: 2,
+    label: "unsure",
+  }]);
+
+  assert.equal(result.candidateProfiles, 0);
+  assert.equal(result.conflictedMembers, 2);
+  assert.equal(result.conflicts[0].reason, "human_unsure");
+});
+
+test("stale negative review contracts quarantine both current endpoints", () => {
+  const result = build([
+    source(1, "ABC123"),
+    source(2, "ABC123"),
+  ], [{
+    id: 15,
+    derivative_id_low: 1,
+    derivative_id_high: 2,
+    source_sha256_low: sha("f"),
+    label: "different_vehicle",
+  }]);
+
+  assert.equal(result.candidateProfiles, 0);
+  assert.equal(result.conflictedMembers, 2);
+  assert.ok(result.conflicts.some((conflict) => conflict.reason === "stale_review_evidence"));
+  assert.equal(result.humanDifferentReviews, 0);
+});
+
+test("rejected effective plates cannot create candidate edges", () => {
+  const rejectedEvidence = (id) => [{
+    readId: id + 1_000,
+    plateNumber: "ABC123",
+    reviewStatus: "rejected",
+    reviewRevision: 2,
+  }];
+  const result = build([
+    source(1, "ABC123", { lpr_evidence: rejectedEvidence(1) }),
+    source(2, "ABC123", { lpr_evidence: rejectedEvidence(2) }),
+  ]);
+
+  assert.equal(result.candidateProfiles, 0);
+  assert.equal(result.exactPlateEligibleSources, 0);
+  assert.equal(result.ungroupedSources, 2);
+});
+
+test("display-only companion plates cannot seed candidate identity", () => {
+  const companion = (id) => [{
+    readId: id + 2_000,
+    plateNumber: "CMP123",
+    reviewStatus: "corrected",
+    relationship: "shadow_event_companion",
+  }];
+  const result = build([
+    source(1, null, { companion_lpr_evidence: companion(1) }),
+    source(2, null, { companion_lpr_evidence: companion(2) }),
+  ]);
+
+  assert.equal(result.candidateProfiles, 0);
+  assert.equal(result.exactPlateEligibleSources, 0);
+  assert.equal(result.ungroupedSources, 2);
 });
 
 test("snapshot fingerprint is deterministic and changes with review or current provenance", () => {

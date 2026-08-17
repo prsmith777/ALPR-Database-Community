@@ -23,7 +23,7 @@ test("release information resolves a commit-pinned deployment image", () => {
   });
 
   assert.equal(release.version, "0.1.20");
-  assert.equal(release.manualVersion, "2.11");
+  assert.equal(release.manualVersion, "2.12");
   assert.equal(release.manualUpdatedAt, "August 16, 2026");
   assert.equal(release.gitSha, "8cd2fa8");
   assert.equal(release.channel, "staging");
@@ -31,10 +31,19 @@ test("release information resolves a commit-pinned deployment image", () => {
   assert.equal(release.readOnly, true);
   assert.equal(
     release.notes.title,
-    "August 16, 2026 ReID v2 shadow profile suggestions"
+    "August 16, 2026 ReID v2 authoritative Stage 1 foundation"
   );
   assert.equal(release.notes.publishedAt, "2026-08-16");
   assert.ok(release.notes.items.length >= 4);
+  const notes = release.notes.items.join(" ");
+  assert.match(notes, /deliberately empty stable profile/i);
+  assert.match(notes, /single initial row is v2_shadow/i);
+  assert.match(notes, /no action, worker, or UI accepts or materializes/i);
+  assert.match(notes, /preview-only batches of 1, 5, 25, or 250 reads/i);
+  assert.match(notes, /cosine similarity never establishes identity/i);
+  assert.match(notes, /explicitly labeled legacy/i);
+  assert.match(notes, /production-schema query mismatch/i);
+  assert.match(notes, /stops before Stage 2/i);
 });
 
 test("an explicit valid SHA overrides the image tag", () => {

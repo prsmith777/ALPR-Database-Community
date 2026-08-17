@@ -102,10 +102,10 @@ test("live-feed vehicle descriptors use a side rail without reducing image heigh
   const directionSection = table.slice(table.indexOf("<span>Direction</span>"), table.indexOf("<aside"));
   assert.doesNotMatch(directionSection, /vehicleColor|vehicleBodyType/);
   const vehicleMetadata = table.slice(
-    table.indexOf('<div className="text-xs uppercase text-muted-foreground">Vehicle</div>'),
+    table.indexOf('<div className="text-xs uppercase text-muted-foreground">Legacy vehicle (ReID v1)</div>'),
     table.indexOf('<div className="relative h-[40vh]')
   );
-  assert.match(vehicleMetadata, /Vehicle #\{selectedImage\.vehicleClusterId\}/);
+  assert.match(vehicleMetadata, /Legacy Vehicle #\{selectedImage\.vehicleClusterId\}/);
   assert.doesNotMatch(vehicleMetadata, /vehicleClusterStatus|vehicleClusterSimilarity/);
 });
 
@@ -262,19 +262,20 @@ test("vehicle intelligence keeps ReID grouping separate from reviewed plate asso
   assert.match(migration, /CREATE TABLE IF NOT EXISTS public\.vehicle_plate_associations/i);
   assert.match(migration, /2026072702_vehicle_plate_associations/i);
   assert.match(migration, /WHERE assignments\.assignment_status = 'confirmed'/i);
-  assert.match(component, /Choose one queue/i);
-  assert.match(component, /Plate associations/);
-  assert.match(component, /Direction reviews/);
+  assert.match(component, /Choose one legacy v1 queue/i);
+  assert.match(component, /Legacy plate associations/i);
+  assert.match(component, /Legacy direction-fallback reviews/i);
   assert.match(component, /Camera setup needs attention/);
   assert.match(component, /Showing \{first\.toLocaleString\(\)\}/);
   assert.match(component, /view === "review"/);
   assert.match(component, /queue=plates/);
   assert.match(component, /queue=direction/);
   assert.match(component, /queue=setup/);
-  assert.match(await source("lib/vehicle-intelligence-navigation.mjs"), /title: "Needs Review"/);
-  assert.match(component, /Open vehicle profile/i);
-  assert.match(component, /Confirm vehicle/);
-  assert.match(component, /Different vehicle/);
+  assert.match(await source("lib/vehicle-intelligence-navigation.mjs"), /title: "Legacy Needs Review"/);
+  assert.match(component, /Legacy Needs Review \(ReID v1\)/);
+  assert.match(component, /Open legacy profile/i);
+  assert.match(component, /Confirm legacy vehicle/);
+  assert.match(component, /Different legacy vehicle/);
   assert.match(profileComponent, /Confirm association/);
   assert.match(profileComponent, /Reject association/);
   assert.match(profileComponent, /Plate text is shown as evidence and was not used/i);
@@ -352,9 +353,9 @@ test("vehicle intelligence settings always navigate to their dedicated route", a
 
 test("every vehicle intelligence route shares the complete top navigation", async () => {
   assert.deepEqual(VEHICLE_INTELLIGENCE_NAVIGATION.map(({ title, href }) => ({ title, href })), [
-    { title: "Visual Search", href: "/visual_search" },
-    { title: "Vehicle Profiles", href: "/visual_search/vehicles" },
-    { title: "Needs Review", href: "/visual_search/vehicles/review" },
+    { title: "Legacy Visual Search", href: "/visual_search" },
+    { title: "Legacy Profiles", href: "/visual_search/vehicles" },
+    { title: "Legacy Needs Review", href: "/visual_search/vehicles/review" },
     { title: "ReID v2 Shadow", href: "/visual_search/reid-v2" },
   ]);
 

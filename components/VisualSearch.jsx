@@ -104,7 +104,7 @@ function CaptureCard({
         <div className="flex flex-wrap gap-2">
           {onSearch && capture.readId && (
             <Button size="sm" onClick={() => onSearch(capture.readId)}>
-              <Search className="mr-2 h-4 w-4" /> Find matches
+              <Search className="mr-2 h-4 w-4" /> Find legacy matches
             </Button>
           )}
           {capture.readId && (
@@ -164,7 +164,7 @@ function CalibrationSummary({ summary }) {
         <CardTitle className="flex items-center gap-2 text-base">
           <Gauge className="h-4 w-4" /> Match calibration
         </CardTitle>
-        <CardDescription>Human labels for the current Vehicle ReID model.</CardDescription>
+        <CardDescription>Human labels for the legacy ReID v1 plate-image model.</CardDescription>
       </CardHeader>
       <CardContent className="space-y-3">
         <div className="grid grid-cols-3 gap-2 text-center text-xs">
@@ -259,7 +259,7 @@ function CameraDetectorSetup({ profiles, onSaved }) {
     <Card>
       <CardHeader>
         <CardTitle className="flex items-center gap-2">
-          <Camera className="h-5 w-5" /> Automatic vehicle detection
+          <Camera className="h-5 w-5" /> Legacy plate-image vehicle detection
         </CardTitle>
         <CardDescription>
           Every full capture is scanned first. Fallback framing is used only when no vehicle is detected.
@@ -602,15 +602,21 @@ export default function VisualSearch({ initialResult, initialReadId }) {
 
   return (
     <div className="mx-auto max-w-7xl space-y-6">
+      <div className="rounded-lg border border-amber-500/40 bg-amber-500/10 p-4 text-sm">
+        <div className="font-semibold">Legacy ReID v1 plate-image search</div>
+        <p className="mt-1 text-muted-foreground">
+          This page searches read-owned plate-camera images and legacy embeddings. It does not use canonical Overview crops, ReID v2 profiles, or ReID v2 assignments.
+        </p>
+      </div>
       <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_360px]">
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
-              <Images className="h-5 w-5" /> Find visually similar vehicles
+              <Images className="h-5 w-5" /> Legacy ReID v1 plate-image search
             </CardTitle>
             <CardDescription>
-              Choose an indexed capture below, or open any plate image and select Find similar vehicle.
-              Search uses local derived crops and never changes the original image.
+              Choose a legacy indexed capture below, or open any plate image and select Find similar (legacy v1).
+              Search uses local v1 derived crops and never changes the original image.
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
@@ -678,8 +684,8 @@ export default function VisualSearch({ initialResult, initialReadId }) {
         <div className="space-y-4">
           <Card>
             <CardHeader className="pb-3">
-              <CardTitle className="text-base">Local index</CardTitle>
-              <CardDescription>Newest unindexed captures are processed first in resumable batches.</CardDescription>
+              <CardTitle className="text-base">Legacy local index</CardTitle>
+              <CardDescription>Newest unindexed plate-camera captures are processed first in resumable v1 batches.</CardDescription>
             </CardHeader>
             <CardContent className="space-y-3">
               <div className="flex justify-between text-sm">
@@ -816,7 +822,7 @@ export default function VisualSearch({ initialResult, initialReadId }) {
             <h2 className="text-xl font-semibold">Results</h2>
             <p className="text-sm text-muted-foreground">
               {searchResult.matches.length} candidates from {searchResult.searchedCandidates.toLocaleString()} filtered indexed captures.
-              Results are ranked only by learned Vehicle ReID image embeddings. Plate text never affects inclusion, score, or order; candidates still require human review.
+              Results are ranked only by legacy ReID v1 plate-image embeddings. Plate text never affects inclusion, score, or order; candidates still require human review.
             </p>
           </div>
           {searchResult.matches.length ? (
@@ -836,7 +842,7 @@ export default function VisualSearch({ initialResult, initialReadId }) {
             </div>
           ) : (
             <div className="rounded-lg border border-dashed p-8 text-center text-sm text-muted-foreground">
-              No captures with current Vehicle ReID embeddings matched these filters. Index more captures and try again.
+              No captures with legacy ReID v1 embeddings matched these filters. Index more captures and try again.
             </div>
           )}
         </section>
@@ -844,7 +850,7 @@ export default function VisualSearch({ initialResult, initialReadId }) {
 
       {!searchResult && bootstrap?.recent?.length > 0 && (
         <section className="space-y-3">
-          <h2 className="text-xl font-semibold">Recent indexed captures</h2>
+          <h2 className="text-xl font-semibold">Recent legacy indexed captures</h2>
           <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
             {bootstrap.recent.map((capture) => <CaptureCard key={capture.readId} capture={capture} onSearch={runSearch} />)}
           </div>
