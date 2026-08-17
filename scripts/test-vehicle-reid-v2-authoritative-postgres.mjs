@@ -1141,7 +1141,7 @@ async function testAuthorityAndRollbackSchema(fixtures, templateRunId) {
            profile_revision, normalized_effective_plate, plate_review_status,
            plate_review_revision, evidence_fingerprint
          ) VALUES (
-           $1, $2, 'exact_effective_plate', 'provisional_singleton', 1,
+           $1, $2, 'exact_effective_plate', 'exact_effective_plate', 1,
            'COR123', 'unreviewed', 0, $3
          )`,
         [fixtures.historicalReadId, Number(profile.rows[0].id),
