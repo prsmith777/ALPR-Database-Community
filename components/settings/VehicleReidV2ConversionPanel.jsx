@@ -753,14 +753,14 @@ export default function VehicleReidV2ConversionPanel({ initialOverview = null })
             <div>
               <p className="font-medium">Authoritative ReID health</p>
               <p className="text-xs text-muted-foreground">
-                Current-contract counts exclude stale source links. Live processing remains in standby unless v2 is primary.
+                Stored, reconciled authority counts. Identity consumers still revalidate exact current source links, embeddings, and review evidence on every read.
               </p>
             </div>
             <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
               <Metric label="current profiles" value={authorityCounts.profiles} detail={`${formatCount(authorityCounts.multiMemberProfiles)} multi-member · ${formatCount(authorityCounts.singletonProfiles)} singleton`} />
               <Metric label="assigned reads" value={authorityCounts.assignments} detail={`${formatCount(authorityCounts.unassignedReads)} safely unassigned`} />
               <Metric label="exact-plate-only" value={authorityCounts.exactPlateAssignments} detail={`${formatCount(authorityCounts.sharedAssetAssignments)} shared-asset assignments`} />
-              <Metric label="stale assignments excluded" value={authorityCounts.staleAssignments} detail={`${formatCount(liveJobs.conflict)} live conflicts`} />
+              <Metric label="plate anchors" value={authorityCounts.plateAnchors} detail={`${formatCount(liveJobs.conflict)} live conflicts`} />
             </div>
             <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
               <Metric label="live pending" value={liveJobs.pending} />
