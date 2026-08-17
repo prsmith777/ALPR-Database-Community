@@ -216,6 +216,59 @@ test("authoritative profile browsing binds exact-current evidence to the page id
   for (const query of queries.slice(3)) assert.deepEqual(query.values, [[10, 20]]);
 });
 
+test("authoritative profile detail scopes merged evidence by physical source profile ids", async () => {
+  const queries = [];
+  const repository = new VehicleReidV2AuthorityRepository({
+    executor: {
+      async query(sql, values) {
+        queries.push({ sql, values });
+        if (/SELECT COALESCE\(merges\.target_profile_id, profiles\.id\) AS id/.test(sql)) {
+          return { rows: [{ id: 10 }] };
+        }
+        if (/SELECT merges\.source_profile_id[\s\S]*merges\.target_profile_id = \$1/.test(sql)) {
+          return { rows: [{ source_profile_id: 20 }] };
+        }
+        if (/SELECT profiles\.\*[\s\S]*WHERE profiles\.id = \$1/.test(sql)) {
+          return { rows: [{ id: 10, status: "provisional", revision: 1 }] };
+        }
+        if (/current_profile_members/.test(sql)) {
+          return { rows: [
+            { id: 100, profile_id: 10, canonical_profile_id: 10 },
+            { id: 200, profile_id: 20, canonical_profile_id: 10 },
+          ] };
+        }
+        if (/current_read_assignments/.test(sql)) {
+          return { rows: [{ id: 300, read_id: 30, profile_id: 20, canonical_profile_id: 10 }] };
+        }
+        if (/current_plate_anchors/.test(sql)) {
+          return { rows: [{ anchor_count: 1, anchor_plates: ["ABC123"] }] };
+        }
+        return { rows: [] };
+      },
+    },
+  });
+
+  const detail = await repository.getProfile(20);
+  assert.equal(queries.length, 6);
+  assert.deepEqual(queries[0].values, [20]);
+  assert.match(queries[0].sql, /current_profile_merges[\s\S]*source_profile_id = profiles\.id/);
+  assert.deepEqual(queries[1].values, [10]);
+  assert.match(queries[1].sql, /current_profile_merges[\s\S]*target_profile_id = \$1/);
+  assert.deepEqual(queries[2].values, [10]);
+  for (const query of queries.slice(3)) assert.deepEqual(query.values, [[10, 20]]);
+  assert.match(queries[3].sql, /current_profile_members[\s\S]*members\.profile_id = ANY\(\$1::bigint\[\]\)/);
+  assert.doesNotMatch(queries[3].sql, /members\.canonical_profile_id\s*=/);
+  assert.match(queries[4].sql, /current_read_assignments[\s\S]*assignments\.profile_id = ANY\(\$1::bigint\[\]\)/);
+  assert.doesNotMatch(queries[4].sql, /assignments\.canonical_profile_id\s*=/);
+  assert.match(queries[5].sql, /current_plate_anchors[\s\S]*anchors\.profile_id = ANY\(\$1::bigint\[\]\)/);
+  assert.doesNotMatch(queries[5].sql, /anchors\.canonical_profile_id\s*=/);
+  assert.equal(detail.profile.id, 10);
+  assert.equal(detail.profile.effective_status, "active");
+  assert.deepEqual(detail.profile.anchor_plates, ["ABC123"]);
+  assert.deepEqual(detail.members.map((row) => row.id), [100, 200]);
+  assert.deepEqual(detail.reads.map((row) => row.read_id), [30]);
+});
+
 test("live processor is deterministic, bounded, and never uses cosine as identity", async () => {
   const live = await source("lib/vehicle-reid-v2-live.mjs");
   assert.match(live, /MAX_BATCH_SIZE = 25/);
