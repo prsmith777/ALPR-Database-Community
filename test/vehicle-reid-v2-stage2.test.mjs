@@ -97,6 +97,26 @@ test("accepted materialization revalidates and exactly writes profiles, members,
   assert.match(migration, /2026081702_vehicle_reid_v2_materialization_scale/);
 });
 
+test("authority overview evaluates each exact-current evidence view only once", async () => {
+  const repository = await source("lib/vehicle-reid-v2-authority-repository.mjs");
+  const overview = repository.slice(
+    repository.indexOf("async getOverview()"),
+    repository.indexOf("async listProfiles(")
+  );
+  for (const view of [
+    "vehicle_reid_v2_current_profile_members",
+    "vehicle_reid_v2_current_plate_anchors",
+    "vehicle_reid_v2_current_read_assignments",
+  ]) {
+    assert.equal((overview.match(new RegExp(view, "g")) || []).length, 1);
+  }
+  assert.match(overview, /valid_members AS MATERIALIZED/);
+  assert.match(overview, /valid_anchors AS MATERIALIZED/);
+  assert.match(overview, /valid_assignments AS MATERIALIZED/);
+  assert.match(overview, /assignment_counts AS MATERIALIZED/);
+  assert.doesNotMatch(overview, /SELECT assignments\.\*/);
+});
+
 test("live processor is deterministic, bounded, and never uses cosine as identity", async () => {
   const live = await source("lib/vehicle-reid-v2-live.mjs");
   assert.match(live, /MAX_BATCH_SIZE = 25/);
