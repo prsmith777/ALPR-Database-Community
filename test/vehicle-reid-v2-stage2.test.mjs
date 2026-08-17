@@ -160,13 +160,14 @@ test("authoritative profile browsing binds exact-current evidence to the page id
             ],
           };
         }
-        if (/current_profile_merges/.test(sql)) return { rows: [] };
+        if (/current_profile_merges/.test(sql)) {
+          return { rows: [{ source_profile_id: 20, target_profile_id: 10 }] };
+        }
         if (/SELECT DISTINCT anchors\.canonical_profile_id/.test(sql)) {
           return { rows: [{ canonical_profile_id: 10 }] };
         }
         if (/WITH page_members AS MATERIALIZED/.test(sql)) {
           return { rows: [
-            { canonical_profile_id: 20, member_count: 1, representative_storage_path: "20.jpg" },
             { canonical_profile_id: 10, member_count: 2, representative_storage_path: "10.jpg" },
           ] };
         }
@@ -186,11 +187,13 @@ test("authoritative profile browsing binds exact-current evidence to the page id
   assert.deepEqual(queries[0].values, []);
   assert.doesNotMatch(queries[0].sql, /vehicle_reid_v2_current_/);
   assert.doesNotMatch(queries[0].sql, /ILIKE/);
-  for (const query of queries.slice(1)) assert.deepEqual(query.values, [[20, 10]]);
+  assert.deepEqual(queries[1].values, [[20, 10]]);
+  for (const query of queries.slice(2)) assert.deepEqual(query.values, [[10, 20]]);
   assert.match(queries[1].sql, /current_profile_merges[\s\S]*source_profile_id = ANY\(\$1::bigint\[\]\)/);
-  assert.match(queries[2].sql, /current_profile_members[\s\S]*canonical_profile_id = ANY\(\$1::bigint\[\]\)/);
-  assert.match(queries[3].sql, /current_read_assignments[\s\S]*canonical_profile_id = ANY\(\$1::bigint\[\]\)/);
-  assert.match(queries[4].sql, /current_plate_anchors[\s\S]*canonical_profile_id = ANY\(\$1::bigint\[\]\)/);
+  assert.match(queries[1].sql, /SELECT merges\.source_profile_id, merges\.target_profile_id/);
+  assert.match(queries[2].sql, /current_profile_members[\s\S]*members\.profile_id = ANY\(\$1::bigint\[\]\)/);
+  assert.match(queries[3].sql, /current_read_assignments[\s\S]*assignments\.profile_id = ANY\(\$1::bigint\[\]\)/);
+  assert.match(queries[4].sql, /current_plate_anchors[\s\S]*anchors\.profile_id = ANY\(\$1::bigint\[\]\)/);
   assert.deepEqual(page.rows.map((row) => ({
     id: row.id,
     status: row.status,
@@ -198,9 +201,9 @@ test("authoritative profile browsing binds exact-current evidence to the page id
     reads: row.read_count,
     anchors: row.anchor_plates,
   })), [
-    { id: 20, status: "provisional", members: 1, reads: 0, anchors: [] },
     { id: 10, status: "active", members: 2, reads: 3, anchors: ["ABC123"] },
   ]);
+  assert.equal(page.total, 1);
 
   queries.length = 0;
   await repository.listProfiles({ page: 1, pageSize: 12, search: " ABC123 " });
@@ -209,7 +212,8 @@ test("authoritative profile browsing binds exact-current evidence to the page id
   assert.deepEqual(queries[1].values, [[20, 10]]);
   assert.deepEqual(queries[2].values, [[20, 10], "ABC123"]);
   assert.match(queries[2].sql, /normalized_plate ILIKE '%' \|\| \$2 \|\| '%'/);
-  for (const query of queries.slice(3)) assert.deepEqual(query.values, [[10]]);
+  assert.match(queries[2].sql, /anchors\.profile_id = ANY\(\$1::bigint\[\]\)/);
+  for (const query of queries.slice(3)) assert.deepEqual(query.values, [[10, 20]]);
 });
 
 test("live processor is deterministic, bounded, and never uses cosine as identity", async () => {
