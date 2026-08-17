@@ -1221,7 +1221,7 @@ async function testAuthorityAndRollbackSchema(fixtures, templateRunId) {
              transitioned_at = clock_timestamp(), updated_at = clock_timestamp()
          WHERE singleton = TRUE`
       ),
-      /requires one completed, exactly revalidated conversion run/
+      /exact materialization requires one conversion run|requires one completed, exactly revalidated conversion run/
     );
     await client.query("ROLLBACK TO SAVEPOINT premature_cutover_check");
 
