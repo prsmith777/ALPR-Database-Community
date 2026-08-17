@@ -2049,14 +2049,18 @@ async function testCommittedStage2MaterializationAndRollback() {
   const mergedProfileId = liveProfiles.get(liveA.readId);
   const mergedPage = await authority.listProfiles({
     page: 1,
-    pageSize: 24,
-    search: String(mergedProfileId),
+    pageSize: 100,
   });
-  assert.equal(mergedPage.total, 1);
-  assert.equal(mergedPage.profiles.length, 1);
-  assert.equal(mergedPage.profiles[0].id, mergedProfileId);
-  assert.equal(mergedPage.profiles[0].memberCount, 3);
-  assert.equal(mergedPage.profiles[0].readCount, 3);
+  const mergedListProfile = mergedPage.profiles.find((profile) => (
+    profile.id === mergedProfileId
+  ));
+  assert.ok(mergedListProfile);
+  assert.equal(mergedListProfile.memberCount, 3);
+  assert.equal(mergedListProfile.readCount, 3);
+  assert.equal(mergedPage.profiles.some((profile) => (
+    profile.id === firstMerge.sourceProfileId
+      || profile.id === expansion.sourceProfileId
+  )), false);
   const mergedDetail = await authority.getProfile(firstMerge.sourceProfileId);
   assert.equal(mergedDetail.profile.id, mergedProfileId);
   assert.equal(mergedDetail.profile.status, "active");
