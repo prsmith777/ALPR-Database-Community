@@ -1900,6 +1900,27 @@ async function testCommittedStage2MaterializationAndRollback() {
   assert.equal(cutover.overview.control.mode, "v2_primary");
   assert.equal(cutover.overview.control.transitionRunId, conversion.runId);
 
+  const profilePage = await authority.listProfiles({ page: 1, pageSize: 24 });
+  assert.ok(profilePage.total > 0);
+  assert.ok(profilePage.profiles.length > 0);
+  assert.ok(profilePage.profiles.length <= 24);
+  assert.ok(profilePage.profiles.every((profile) => profile.memberCount > 0));
+  const searchableAnchor = await pool.query(
+    `SELECT normalized_plate
+     FROM public.vehicle_reid_v2_current_plate_anchors
+     ORDER BY normalized_plate LIMIT 1`
+  );
+  assert.equal(searchableAnchor.rowCount, 1);
+  const searchedProfiles = await authority.listProfiles({
+    page: 1,
+    pageSize: 24,
+    search: searchableAnchor.rows[0].normalized_plate,
+  });
+  assert.ok(searchedProfiles.profiles.length > 0);
+  assert.ok(searchedProfiles.profiles.every((profile) => (
+    profile.anchorPlates.includes(searchableAnchor.rows[0].normalized_plate)
+  )));
+
   const live = newLiveService();
   const replacementTarget = await pool.query(
     `SELECT assignments.read_id, assignments.asset_id
