@@ -1,9 +1,11 @@
-import { getVehicleClusterOverview } from "@/app/actions";
+import { redirect } from "next/navigation";
+
+import { getVehicleClusterOverview, getVehicleReidAuthorityMode } from "@/app/actions";
 import VehicleClusters from "@/components/VehicleClusters";
 import DashboardLayout from "@/components/layout/MainLayout";
 import TitleNavbar from "@/components/layout/TitleNav";
 import { requirePagePermission } from "@/lib/page-permission.mjs";
-import { VEHICLE_INTELLIGENCE_NAVIGATION } from "@/lib/vehicle-intelligence-navigation.mjs";
+import { vehicleIntelligenceNavigationForMode } from "@/lib/vehicle-intelligence-navigation.mjs";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -21,6 +23,9 @@ function reviewQueue(value, canManageSettings) {
 export default async function VehicleReviewPage({ searchParams }) {
   await requirePagePermission("plate.read");
   const parameters = await searchParams;
+  const modeResult = await getVehicleReidAuthorityMode();
+  const mode = modeResult?.success ? modeResult.data.control?.mode : "v1_primary";
+  if (mode === "v2_primary") redirect("/visual_search/review");
   const requestedQueue = reviewQueue(parameters?.queue, true);
   const result = await getVehicleClusterOverview({
     view: "review",
@@ -32,7 +37,7 @@ export default async function VehicleReviewPage({ searchParams }) {
   const queue = reviewQueue(requestedQueue, result?.success && result.data.canManageSettings);
   return (
     <DashboardLayout>
-      <TitleNavbar title="Vehicle Intelligence" navigation={VEHICLE_INTELLIGENCE_NAVIGATION}>
+      <TitleNavbar title="Vehicle Intelligence" navigation={vehicleIntelligenceNavigationForMode(mode)}>
         <VehicleClusters initialResult={result} view="review" initialQueue={queue} />
       </TitleNavbar>
     </DashboardLayout>

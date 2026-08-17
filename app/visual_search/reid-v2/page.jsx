@@ -1,9 +1,11 @@
-import { getVehicleReidV2Shadow } from "@/app/actions";
+import { redirect } from "next/navigation";
+
+import { getVehicleReidAuthorityMode, getVehicleReidV2Shadow } from "@/app/actions";
 import VehicleReidV2Shadow from "@/components/VehicleReidV2Shadow";
 import DashboardLayout from "@/components/layout/MainLayout";
 import TitleNavbar from "@/components/layout/TitleNav";
 import { requirePagePermission } from "@/lib/page-permission.mjs";
-import { VEHICLE_INTELLIGENCE_NAVIGATION } from "@/lib/vehicle-intelligence-navigation.mjs";
+import { vehicleIntelligenceNavigationForMode } from "@/lib/vehicle-intelligence-navigation.mjs";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -16,6 +18,13 @@ function positiveInteger(value, fallback) {
 export default async function VehicleReidV2ShadowPage({ searchParams }) {
   await requirePagePermission("plate.read");
   const parameters = await searchParams;
+  const modeResult = await getVehicleReidAuthorityMode();
+  const mode = modeResult?.success ? modeResult.data.control?.mode : "v1_primary";
+  if (mode === "v2_primary") {
+    const query = new URLSearchParams(Object.entries(parameters || {})
+      .filter(([, value]) => typeof value === "string"));
+    redirect(`/visual_search/review${query.size ? `?${query.toString()}` : ""}`);
+  }
   const result = await getVehicleReidV2Shadow({
     page: positiveInteger(parameters?.page, 1),
     pageSize: positiveInteger(parameters?.pageSize, 12),
@@ -30,7 +39,7 @@ export default async function VehicleReidV2ShadowPage({ searchParams }) {
 
   return (
     <DashboardLayout>
-      <TitleNavbar title="Vehicle Intelligence" navigation={VEHICLE_INTELLIGENCE_NAVIGATION}>
+      <TitleNavbar title="Vehicle Intelligence" navigation={vehicleIntelligenceNavigationForMode(mode)}>
         <VehicleReidV2Shadow result={result} />
       </TitleNavbar>
     </DashboardLayout>

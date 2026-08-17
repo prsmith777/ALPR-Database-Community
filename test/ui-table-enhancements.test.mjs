@@ -170,7 +170,10 @@ test("live feed image review advances visibly and starts focused on the plate", 
   assert.match(secondRowSlots[1], /Confirm detected plate/);
   assert.match(secondActionRow, /<PopupActionSlot reserve className="col-start-6">[\s\S]*?Blue Iris/);
   assert.match(secondActionRow, /<PopupActionSlot reserve>[\s\S]*?Download/);
-  assert.match(plateTable, /aria-label="Find similar using legacy ReID v1"[\s\S]*?>Find similar \(legacy v1\)</);
+  assert.match(plateTable, /selectedImage\.vehicleIdentityMode === "v2_primary"[\s\S]*?"Find similar vehicle"[\s\S]*?: "Find similar using legacy ReID v1"/);
+  assert.match(plateTable, /selectedImage\.vehicleIdentityMode === "v2_primary"[\s\S]*?\? "Find similar vehicle"[\s\S]*?: "Find similar \(legacy v1\)"/);
+  assert.match(plateTable, /selectedImage\?\.vehicleIdentityMode === "v2_primary" && selectedImage\.vehicleProfileId[\s\S]*?>Open Vehicle Profile</);
+  assert.match(plateTable, /<span className=\{POPUP_ACTION_LABEL_CLASS\}>Find similar unavailable<\/span>/);
   assert.match(plateTable, /aria-label="Correct detected plate"[\s\S]*?>Correct Plate</);
   assert.match(plateTable, /aria-label="Open review history"[\s\S]*?>Review History</);
   assert.match(plateTable, /aria-label="Open recording in Blue Iris"[\s\S]*?>Blue Iris</);

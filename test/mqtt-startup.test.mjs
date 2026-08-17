@@ -183,6 +183,7 @@ test("Node instrumentation starts MQTT and automatic visual indexing together", 
   let vehicleImageCropCalls = 0;
   let vehicleAssetEmbeddingCalls = 0;
   let vehicleAssetAttributeCalls = 0;
+  let vehicleReidLiveCalls = 0;
   const result = await registerNodeInstrumentation({
     logger,
     async startMqtt(options) {
@@ -280,6 +281,15 @@ test("Node instrumentation starts MQTT and automatic visual indexing together", 
         },
       };
     },
+    async loadVehicleReidV2LiveStartup() {
+      return {
+        async startVehicleReidV2LiveRuntimeWithRetry(options) {
+          vehicleReidLiveCalls += 1;
+          assert.equal(options.logger, logger);
+          return { status: "started" };
+        },
+      };
+    },
   });
   assert.equal(result.status, "started");
   assert.equal(result.mqtt.status, "started");
@@ -293,6 +303,7 @@ test("Node instrumentation starts MQTT and automatic visual indexing together", 
   assert.equal(result.vehicleImageCrops.status, "started");
   assert.equal(result.vehicleAssetEmbeddings.status, "started");
   assert.equal(result.vehicleAssetAttributes.status, "started");
+  assert.equal(result.vehicleReid.status, "started");
   assert.equal(mqttCalls, 1);
   assert.equal(visualCalls, 1);
   assert.equal(vehicleFrameCalls, 1);
@@ -304,6 +315,7 @@ test("Node instrumentation starts MQTT and automatic visual indexing together", 
   assert.equal(vehicleImageCropCalls, 1);
   assert.equal(vehicleAssetEmbeddingCalls, 1);
   assert.equal(vehicleAssetAttributeCalls, 1);
+  assert.equal(vehicleReidLiveCalls, 1);
 });
 
 test("a visual-index instrumentation import failure cannot prevent MQTT startup", async () => {
@@ -344,6 +356,9 @@ test("a visual-index instrumentation import failure cannot prevent MQTT startup"
     },
     async loadVehicleAssetAttributeStartup() {
       return { async startVehicleAssetAttributeRuntimeWithRetry() { return { status: "started" }; } };
+    },
+    async loadVehicleReidV2LiveStartup() {
+      return { async startVehicleReidV2LiveRuntimeWithRetry() { return { status: "started" }; } };
     },
   });
   assert.equal(mqttCalls, 1);

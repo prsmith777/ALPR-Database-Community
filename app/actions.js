@@ -108,6 +108,12 @@ import {
 } from "@/lib/vehicle-asset-attribute-runtime.mjs";
 import { getVehicleReidV2ShadowService } from "@/lib/vehicle-reid-v2-shadow-runtime.mjs";
 import { getVehicleReidV2ConversionService } from "@/lib/vehicle-reid-v2-conversion-runtime.mjs";
+import { getVehicleReidV2AuthorityService } from "@/lib/vehicle-reid-v2-authority-runtime.mjs";
+import {
+  getVehicleReidV2LiveRuntime,
+  getVehicleReidV2LiveWorkerStatus,
+  wakeVehicleReidV2LiveWorker,
+} from "@/lib/vehicle-reid-v2-live-runtime.mjs";
 import {
   applyVisualIndexPace,
   normalizeVisualIndexSettings,
@@ -4595,7 +4601,7 @@ function vehicleReidV2ConversionActionFailure(error, fallback) {
 export async function getVehicleReidV2ConversionPreviewOverview() {
   await requirePermission("system.manage_settings");
   try {
-    const overview = await (await getVehicleReidV2ConversionService()).getOverview();
+    const overview = await loadVehicleReidV2OperatorOverview();
     return { success: true, data: { overview } };
   } catch (error) {
     return vehicleReidV2ConversionActionFailure(
@@ -4603,6 +4609,18 @@ export async function getVehicleReidV2ConversionPreviewOverview() {
       "Unable to load the ReID v2 conversion preview."
     );
   }
+}
+
+async function loadVehicleReidV2OperatorOverview() {
+  const [conversion, authority] = await Promise.all([
+    (await getVehicleReidV2ConversionService()).getOverview(),
+    (await getVehicleReidV2AuthorityService()).getOverview(),
+  ]);
+  return {
+    ...conversion,
+    authorityHealth: authority,
+    liveWorker: getVehicleReidV2LiveWorkerStatus(),
+  };
 }
 
 export async function startVehicleReidV2ConversionPreview(input = {}) {
@@ -4707,6 +4725,180 @@ export async function verifyVehicleReidV2ConversionPreview(input = {}) {
       error,
       "Unable to verify the ReID v2 conversion preview fingerprint."
     );
+  }
+}
+
+function vehicleReidV2AuthorityActionFailure(error, fallback) {
+  const code = String(error?.code || "");
+  if (code.startsWith("VEHICLE_REID_V2_AUTHORITY_")
+    || code.startsWith("VEHICLE_REID_V2_LIVE_")) {
+    return { success: false, error: String(error.message || fallback), code };
+  }
+  console.error(fallback, { code });
+  return { success: false, error: fallback };
+}
+
+export async function getVehicleReidV2AuthorityOverview() {
+  await requirePermission("system.manage_settings");
+  try {
+    const overview = await (await getVehicleReidV2AuthorityService()).getOverview();
+    return {
+      success: true,
+      data: { overview: { ...overview, worker: getVehicleReidV2LiveWorkerStatus() } },
+    };
+  } catch (error) {
+    return vehicleReidV2AuthorityActionFailure(error, "Unable to load authoritative ReID status.");
+  }
+}
+
+export async function getVehicleReidAuthorityMode() {
+  await requirePermission("plate.read");
+  try {
+    const overview = await (await getVehicleReidV2AuthorityService()).getOverview();
+    return { success: true, data: { control: overview.control } };
+  } catch (error) {
+    return vehicleReidV2AuthorityActionFailure(error, "Unable to resolve the ReID authority mode.");
+  }
+}
+
+export async function getVehicleReidReviewOverview() {
+  const principal = await requirePermission("plate.read");
+  try {
+    const runtime = await getVehicleReidV2LiveRuntime();
+    return {
+      success: true,
+      data: {
+        ...(await runtime.service.getReviewOverview()),
+        canRetry: hasPermission(principal, "maintenance.manage"),
+      },
+    };
+  } catch (error) {
+    return vehicleReidV2AuthorityActionFailure(error, "Unable to load ReID review exceptions.");
+  }
+}
+
+export async function retryVehicleReidLiveException(input = {}) {
+  const principal = await requirePermission("maintenance.manage");
+  try {
+    const runtime = await getVehicleReidV2LiveRuntime();
+    const operation = await runtime.service.retryException({
+      readId: input.readId,
+      actor: principal,
+    });
+    wakeVehicleReidV2LiveWorker();
+    revalidatePath("/visual_search/review");
+    revalidatePath("/settings/vehicle-intelligence/processing");
+    return {
+      success: true,
+      data: { operation, ...(await runtime.service.getReviewOverview()) },
+    };
+  } catch (error) {
+    return vehicleReidV2AuthorityActionFailure(error, "Unable to retry this ReID exception.");
+  }
+}
+
+export async function acceptVehicleReidV2ConversionPreview(input = {}) {
+  const principal = await requirePermission("maintenance.manage");
+  try {
+    const authority = await (await getVehicleReidV2AuthorityService()).acceptPreview({
+      runId: input.runId,
+      previewFingerprint: input.previewFingerprint,
+      actor: principal,
+    });
+    revalidatePath("/settings/vehicle-intelligence/processing");
+    return {
+      success: true,
+      data: {
+        operation: authority.operation,
+        overview: await loadVehicleReidV2OperatorOverview(),
+      },
+    };
+  } catch (error) {
+    return vehicleReidV2AuthorityActionFailure(error, "Unable to accept this frozen ReID preview.");
+  }
+}
+
+export async function materializeVehicleReidV2ConversionPreview(input = {}) {
+  const principal = await requirePermission("maintenance.manage");
+  try {
+    const authority = await (await getVehicleReidV2AuthorityService()).materializeAcceptedPreview({
+      runId: input.runId,
+      previewFingerprint: input.previewFingerprint,
+      actor: principal,
+    });
+    revalidatePath("/settings/vehicle-intelligence/processing");
+    revalidatePath("/visual_search/profiles");
+    return {
+      success: true,
+      data: {
+        operation: authority.operation,
+        overview: await loadVehicleReidV2OperatorOverview(),
+      },
+    };
+  } catch (error) {
+    return vehicleReidV2AuthorityActionFailure(error, "Unable to materialize this accepted ReID preview.");
+  }
+}
+
+export async function transitionVehicleReidAuthorityMode(input = {}) {
+  const principal = await requirePermission("maintenance.manage");
+  try {
+    const authority = await (await getVehicleReidV2AuthorityService()).transitionMode({
+      mode: input.mode,
+      runId: input.runId,
+      reason: input.reason,
+      actor: principal,
+    });
+    revalidatePath("/settings/vehicle-intelligence/processing");
+    revalidatePath("/visual_search");
+    revalidatePath("/visual_search/profiles");
+    revalidatePath("/visual_search/review");
+    revalidatePath("/live_feed");
+    revalidatePath("/database");
+    wakeVehicleReidV2LiveWorker();
+    return {
+      success: true,
+      data: {
+        operation: authority.operation,
+        overview: await loadVehicleReidV2OperatorOverview(),
+      },
+    };
+  } catch (error) {
+    return vehicleReidV2AuthorityActionFailure(error, "Unable to change the ReID authority mode.");
+  }
+}
+
+export async function getVehicleReidProfiles(input = {}) {
+  await requirePermission("plate.read");
+  try {
+    const data = await (await getVehicleReidV2AuthorityService()).listProfiles(input);
+    return { success: true, data };
+  } catch (error) {
+    return vehicleReidV2AuthorityActionFailure(error, "Unable to load ReID profiles.");
+  }
+}
+
+export async function getVehicleReidProfile(profileId) {
+  await requirePermission("plate.read");
+  try {
+    const data = await (await getVehicleReidV2AuthorityService()).getProfile(profileId);
+    return data
+      ? { success: true, data }
+      : { success: false, error: "ReID profile not found." };
+  } catch (error) {
+    return vehicleReidV2AuthorityActionFailure(error, "Unable to load this ReID profile.");
+  }
+}
+
+export async function resolveVehicleReidRead(readId) {
+  await requirePermission("plate.read");
+  try {
+    const data = await (await getVehicleReidV2AuthorityService()).resolveRead(readId);
+    return data
+      ? { success: true, data }
+      : { success: false, error: "Plate read not found." };
+  } catch (error) {
+    return vehicleReidV2AuthorityActionFailure(error, "Unable to resolve this read through ReID.");
   }
 }
 
@@ -4988,8 +5180,27 @@ export async function submitVehicleReidV2PairReview(input = {}) {
       actor: principal,
       campaignId: input.campaignId,
     });
+    let authorityMerge = null;
+    if (data?.review?.id) {
+      try {
+        authorityMerge = await (await getVehicleReidV2AuthorityService()).mergeProfilesByReview({
+          reviewId: data.review.id,
+          actor: principal,
+        });
+      } catch (mergeError) {
+        authorityMerge = {
+          merged: false,
+          reason: String(mergeError?.constraint || mergeError?.code || "merge_rejected"),
+        };
+      }
+    }
     revalidatePath("/visual_search/reid-v2");
-    return { success: true, data };
+    revalidatePath("/visual_search/review");
+    revalidatePath("/visual_search");
+    revalidatePath("/visual_search/profiles");
+    revalidatePath("/live_feed");
+    revalidatePath("/database");
+    return { success: true, data: { ...data, authorityMerge } };
   } catch (error) {
     return visualSearchFailure(error, "Unable to save this ReID v2 pair review.");
   }

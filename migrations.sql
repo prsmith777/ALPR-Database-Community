@@ -8291,3 +8291,899 @@ FOR EACH ROW EXECUTE FUNCTION public.prevent_vehicle_reid_v2_conversion_snapshot
 INSERT INTO public.schema_migrations(version,description) VALUES
  ('2026081603_vehicle_reid_v2_authoritative_stage1','Add empty stable ReID v2 authoritative profile, crop-member, and read-assignment ownership; a v2-shadow transition control; and immutable preview-only conversion evidence, projection, conflict, audit-state, retry, and v1-comparison foundations without changing current identity consumers or writing an authoritative assignment.')
 ON CONFLICT(version) DO NOTHING;
+
+-- Stage 2 gives exact reviewed plates a durable, current-revalidated profile
+-- anchor.  Conversion provenance remains immutable, while live anchors may be
+-- added only from a read whose reviewed plate contract is still exact.
+CREATE TABLE IF NOT EXISTS public.vehicle_reid_v2_profile_plate_anchors (
+  id BIGSERIAL PRIMARY KEY,
+  profile_id BIGINT NOT NULL
+    REFERENCES public.vehicle_reid_v2_profiles(id) ON DELETE RESTRICT,
+  status VARCHAR(16) NOT NULL DEFAULT 'current' CHECK (
+    status IN ('current','superseded','withdrawn')
+  ),
+  normalized_plate VARCHAR(32) NOT NULL CHECK (
+    normalized_plate ~ '^[A-Z0-9]+$'
+  ),
+  evidence_read_id INTEGER NOT NULL CHECK (evidence_read_id > 0),
+  plate_review_status VARCHAR(24) NOT NULL CHECK (
+    plate_review_status IN ('confirmed','corrected','alias_resolved')
+  ),
+  plate_review_revision INTEGER NOT NULL CHECK (plate_review_revision >= 0),
+  plate_review_id BIGINT CHECK (plate_review_id IS NULL OR plate_review_id > 0),
+  applied_alias_id BIGINT CHECK (applied_alias_id IS NULL OR applied_alias_id > 0),
+  evidence_fingerprint CHAR(64) NOT NULL CHECK (
+    evidence_fingerprint ~ '^[0-9a-f]{64}$'
+  ),
+  origin_conversion_run_id BIGINT
+    REFERENCES public.vehicle_reid_v2_conversion_runs(id) ON DELETE RESTRICT,
+  origin_projection_key CHAR(64) CHECK (
+    origin_projection_key IS NULL OR origin_projection_key ~ '^[0-9a-f]{64}$'
+  ),
+  ended_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE (origin_conversion_run_id, origin_projection_key, normalized_plate),
+  FOREIGN KEY (origin_conversion_run_id, origin_projection_key)
+    REFERENCES public.vehicle_reid_v2_conversion_projected_profiles(
+      run_id, projection_key
+    ) ON DELETE RESTRICT,
+  CHECK (
+    (origin_conversion_run_id IS NULL AND origin_projection_key IS NULL)
+    OR (origin_conversion_run_id IS NOT NULL AND origin_projection_key IS NOT NULL)
+  ),
+  CHECK (
+    (status = 'current' AND ended_at IS NULL)
+    OR (status <> 'current' AND ended_at IS NOT NULL)
+  )
+);
+
+-- Exact-current uniqueness is enforced by the validation trigger below.  A
+-- stale sealed conversion anchor must not block a later exact reviewed anchor,
+-- so the physical history may contain more than one status='current' row even
+-- though the current-evidence view can expose at most one.
+DROP INDEX IF EXISTS public.idx_reid_v2_plate_anchor_one_current_plate;
+CREATE INDEX IF NOT EXISTS idx_reid_v2_plate_anchor_current_plate
+  ON public.vehicle_reid_v2_profile_plate_anchors (normalized_plate)
+  WHERE status = 'current';
+CREATE INDEX IF NOT EXISTS idx_reid_v2_plate_anchor_profile
+  ON public.vehicle_reid_v2_profile_plate_anchors (
+    profile_id, status, normalized_plate, id
+  );
+
+CREATE OR REPLACE FUNCTION public.validate_vehicle_reid_v2_plate_anchor_contract()
+RETURNS TRIGGER AS $$
+BEGIN
+  IF NEW.status = 'current' THEN
+    PERFORM pg_advisory_xact_lock(hashtext(
+      'vehicle_reid_v2_plate_anchor:' || NEW.normalized_plate
+    ));
+    IF NOT EXISTS (
+      SELECT 1
+      FROM public.plate_reads reads
+      WHERE reads.id = NEW.evidence_read_id
+        AND UPPER(REGEXP_REPLACE(reads.plate_number, '[^A-Za-z0-9]', '', 'g'))
+              = NEW.normalized_plate
+        AND reads.review_status = NEW.plate_review_status
+        AND reads.review_revision = NEW.plate_review_revision
+        AND reads.applied_alias_id IS NOT DISTINCT FROM NEW.applied_alias_id
+        AND NEW.plate_review_id IS NOT DISTINCT FROM (
+          SELECT reviews.id
+          FROM public.plate_read_reviews reviews
+          WHERE reviews.read_id = NEW.evidence_read_id
+          ORDER BY reviews.created_at DESC, reviews.id DESC
+          LIMIT 1
+        )
+    ) THEN
+      RAISE EXCEPTION 'ReID v2 plate anchor is not exact current reviewed plate evidence'
+        USING ERRCODE = '23514',
+              CONSTRAINT = 'vehicle_reid_v2_plate_anchor_current_contract';
+    END IF;
+
+    IF EXISTS (
+      SELECT 1
+      FROM public.vehicle_reid_v2_profile_plate_anchors existing
+      JOIN public.plate_reads evidence ON evidence.id = existing.evidence_read_id
+      WHERE existing.id IS DISTINCT FROM NEW.id
+        AND existing.status = 'current'
+        AND existing.normalized_plate = NEW.normalized_plate
+        AND UPPER(REGEXP_REPLACE(evidence.plate_number, '[^A-Za-z0-9]', '', 'g'))
+              = existing.normalized_plate
+        AND evidence.review_status = existing.plate_review_status
+        AND evidence.review_revision = existing.plate_review_revision
+        AND evidence.applied_alias_id IS NOT DISTINCT FROM existing.applied_alias_id
+        AND existing.plate_review_id IS NOT DISTINCT FROM (
+          SELECT reviews.id
+          FROM public.plate_read_reviews reviews
+          WHERE reviews.read_id = existing.evidence_read_id
+          ORDER BY reviews.created_at DESC, reviews.id DESC
+          LIMIT 1
+        )
+    ) THEN
+      RAISE EXCEPTION 'ReID v2 reviewed plate already anchors a current profile'
+        USING ERRCODE = '23514',
+              CONSTRAINT = 'vehicle_reid_v2_plate_anchor_one_exact_current_plate';
+    END IF;
+  END IF;
+
+  IF NEW.origin_conversion_run_id IS NOT NULL AND NOT EXISTS (
+    SELECT 1
+    FROM public.vehicle_reid_v2_profiles profiles
+    JOIN public.vehicle_reid_v2_conversion_projected_profiles projected
+      ON projected.run_id = profiles.origin_conversion_run_id
+     AND projected.projection_key = profiles.origin_projection_key
+    WHERE profiles.id = NEW.profile_id
+      AND projected.run_id = NEW.origin_conversion_run_id
+      AND projected.projection_key = NEW.origin_projection_key
+      AND projected.anchor_plates ? NEW.normalized_plate
+  ) THEN
+    RAISE EXCEPTION 'ReID v2 plate anchor does not reproduce its preview provenance'
+      USING ERRCODE = '23514',
+            CONSTRAINT = 'vehicle_reid_v2_plate_anchor_preview_contract';
+  END IF;
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS vehicle_reid_v2_plate_anchors_validate_contract
+  ON public.vehicle_reid_v2_profile_plate_anchors;
+CREATE TRIGGER vehicle_reid_v2_plate_anchors_validate_contract
+BEFORE INSERT OR UPDATE ON public.vehicle_reid_v2_profile_plate_anchors
+FOR EACH ROW EXECUTE FUNCTION public.validate_vehicle_reid_v2_plate_anchor_contract();
+
+DROP TRIGGER IF EXISTS vehicle_reid_v2_plate_anchors_origin_authority_guard
+  ON public.vehicle_reid_v2_profile_plate_anchors;
+CREATE TRIGGER vehicle_reid_v2_plate_anchors_origin_authority_guard
+BEFORE INSERT OR UPDATE OR DELETE ON public.vehicle_reid_v2_profile_plate_anchors
+FOR EACH ROW EXECUTE FUNCTION public.guard_vehicle_reid_v2_origin_authority_mutation();
+
+-- New-read processing is deliberately bounded and observable.  A job row is
+-- a retry/audit record, not identity evidence; only the authoritative tables
+-- and their current-contract triggers can establish an assignment.
+CREATE TABLE IF NOT EXISTS public.vehicle_reid_v2_live_jobs (
+  read_id INTEGER PRIMARY KEY
+    REFERENCES public.plate_reads(id) ON DELETE CASCADE,
+  status VARCHAR(20) NOT NULL DEFAULT 'pending' CHECK (
+    status IN ('pending','processing','ready','conflict','unavailable','failed')
+  ),
+  attempt_count SMALLINT NOT NULL DEFAULT 0 CHECK (attempt_count BETWEEN 0 AND 3),
+  operator_retry_count SMALLINT NOT NULL DEFAULT 0 CHECK (
+    operator_retry_count BETWEEN 0 AND 1
+  ),
+  retryable BOOLEAN NOT NULL DEFAULT TRUE,
+  claim_token UUID,
+  processing_deadline_at TIMESTAMPTZ,
+  next_attempt_at TIMESTAMPTZ,
+  profile_id BIGINT REFERENCES public.vehicle_reid_v2_profiles(id) ON DELETE RESTRICT,
+  assignment_id BIGINT
+    REFERENCES public.vehicle_reid_v2_read_assignments(id) ON DELETE RESTRICT,
+  result_basis VARCHAR(32),
+  error_code VARCHAR(80),
+  error_details JSONB CHECK (
+    error_details IS NULL OR JSONB_TYPEOF(error_details) = 'object'
+  ),
+  completed_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  CHECK (
+    (status = 'processing' AND claim_token IS NOT NULL
+      AND processing_deadline_at IS NOT NULL)
+    OR (status <> 'processing' AND claim_token IS NULL
+      AND processing_deadline_at IS NULL)
+  ),
+  CHECK (
+    (status = 'ready' AND profile_id IS NOT NULL AND assignment_id IS NOT NULL
+      AND completed_at IS NOT NULL AND error_code IS NULL)
+    OR status <> 'ready'
+  ),
+  CHECK (
+    (status IN ('conflict','unavailable','failed') AND error_code IS NOT NULL)
+    OR status NOT IN ('conflict','unavailable','failed')
+  )
+);
+
+CREATE INDEX IF NOT EXISTS idx_reid_v2_live_job_claim
+  ON public.vehicle_reid_v2_live_jobs (
+    status, next_attempt_at, read_id
+  ) WHERE status IN ('pending','processing','failed');
+CREATE INDEX IF NOT EXISTS idx_reid_v2_live_job_profile
+  ON public.vehicle_reid_v2_live_jobs (profile_id, status, read_id)
+  WHERE profile_id IS NOT NULL;
+
+-- Audited Same decisions can collapse two stable public profile identifiers
+-- without rewriting sealed conversion rows.  Consumers resolve only the
+-- current view below, so a revised/stale review fails closed automatically.
+CREATE TABLE IF NOT EXISTS public.vehicle_reid_v2_profile_merges (
+  id BIGSERIAL PRIMARY KEY,
+  source_profile_id BIGINT NOT NULL
+    REFERENCES public.vehicle_reid_v2_profiles(id) ON DELETE RESTRICT,
+  target_profile_id BIGINT NOT NULL
+    REFERENCES public.vehicle_reid_v2_profiles(id) ON DELETE RESTRICT,
+  status VARCHAR(16) NOT NULL DEFAULT 'current' CHECK (
+    status IN ('current','withdrawn')
+  ),
+  pair_review_id BIGINT NOT NULL
+    REFERENCES public.vehicle_reid_v2_pair_reviews(id) ON DELETE RESTRICT,
+  pair_review_revision INTEGER NOT NULL CHECK (pair_review_revision > 0),
+  evidence_fingerprint CHAR(64) NOT NULL UNIQUE CHECK (
+    evidence_fingerprint ~ '^[0-9a-f]{64}$'
+  ),
+  actor_user_id BIGINT REFERENCES public.users(id) ON DELETE SET NULL,
+  actor_username VARCHAR(64) NOT NULL CHECK (
+    NULLIF(BTRIM(actor_username), '') IS NOT NULL
+  ),
+  actor_display_name VARCHAR(120) NOT NULL CHECK (
+    NULLIF(BTRIM(actor_display_name), '') IS NOT NULL
+  ),
+  ended_by_user_id BIGINT REFERENCES public.users(id) ON DELETE SET NULL,
+  ended_by_username VARCHAR(64),
+  ended_by_display_name VARCHAR(120),
+  end_reason VARCHAR(80),
+  ended_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  CHECK (source_profile_id <> target_profile_id),
+  CHECK (
+    (status = 'current' AND ended_at IS NULL
+      AND ended_by_username IS NULL AND ended_by_display_name IS NULL
+      AND end_reason IS NULL)
+    OR (status = 'withdrawn' AND ended_at IS NOT NULL
+      AND NULLIF(BTRIM(ended_by_username), '') IS NOT NULL
+      AND NULLIF(BTRIM(ended_by_display_name), '') IS NOT NULL
+      AND NULLIF(BTRIM(end_reason), '') IS NOT NULL)
+  )
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_reid_v2_profile_merge_one_current_source
+  ON public.vehicle_reid_v2_profile_merges (source_profile_id)
+  WHERE status = 'current';
+CREATE INDEX IF NOT EXISTS idx_reid_v2_profile_merge_target
+  ON public.vehicle_reid_v2_profile_merges (
+    target_profile_id, status, source_profile_id
+  );
+
+-- A profile member is usable by current consumers only while its exact crop,
+-- embedding, and at least one identity-eligible canonical source link still
+-- match.  The historical authority row remains untouched when a source is
+-- replaced; this view is the fail-closed current contract.
+CREATE OR REPLACE VIEW public.vehicle_reid_v2_exact_profile_members AS
+SELECT members.*
+FROM public.vehicle_reid_v2_profile_members members
+JOIN public.vehicle_reid_v2_profiles profiles ON profiles.id = members.profile_id
+JOIN public.vehicle_image_derivatives derivatives
+  ON derivatives.id = members.derivative_id
+ AND derivatives.asset_id = members.asset_id
+ AND derivatives.derivative_kind = members.derivative_kind
+ AND derivatives.algorithm_version = members.crop_algorithm_version
+ AND derivatives.source_sha256 = members.asset_source_sha256
+ AND derivatives.content_sha256 = members.crop_content_sha256
+JOIN public.vehicle_image_assets assets
+  ON assets.id = members.asset_id
+ AND assets.content_sha256 = members.asset_source_sha256
+JOIN public.vehicle_asset_embeddings embeddings
+  ON embeddings.id = members.embedding_id
+ AND embeddings.derivative_id = members.derivative_id
+ AND embeddings.model_name = members.embedding_model
+ AND embeddings.algorithm_version = members.embedding_algorithm_version
+ AND embeddings.source_sha256 = members.embedding_source_sha256
+ AND embeddings.embedding_sha256 = members.embedding_sha256
+WHERE members.status = 'current'
+  AND profiles.status IN ('active','provisional')
+  AND EXISTS (
+    SELECT 1
+    FROM public.vehicle_image_asset_reads links
+    JOIN public.plate_reads reads ON reads.id = links.read_id
+    WHERE links.asset_id = members.asset_id
+      AND links.identity_eligible = TRUE
+      AND links.relationship <> 'display_fallback'
+      AND reads.vehicle_image_status = 'ready'
+      AND reads.vehicle_image_path = links.source_path_snapshot
+      AND reads.vehicle_image_source_kind = links.source_kind
+      AND reads.vehicle_image_updated_at IS NOT DISTINCT FROM links.source_updated_at
+  )
+  AND (
+    SELECT COUNT(DISTINCT UPPER(
+      REGEXP_REPLACE(reads.plate_number, '[^A-Za-z0-9]', '', 'g')
+    ))
+    FROM public.vehicle_image_asset_reads links
+    JOIN public.plate_reads reads ON reads.id = links.read_id
+    WHERE links.asset_id = members.asset_id
+      AND links.identity_eligible = TRUE
+      AND links.relationship <> 'display_fallback'
+      AND reads.vehicle_image_status = 'ready'
+      AND reads.vehicle_image_path = links.source_path_snapshot
+      AND reads.vehicle_image_source_kind = links.source_kind
+      AND reads.vehicle_image_updated_at IS NOT DISTINCT FROM links.source_updated_at
+      AND reads.review_status <> 'rejected'
+      AND UPPER(REGEXP_REPLACE(reads.plate_number, '[^A-Za-z0-9]', '', 'g')) <> ''
+  ) <= 1;
+
+CREATE OR REPLACE FUNCTION public.validate_vehicle_reid_v2_profile_merge()
+RETURNS TRIGGER AS $$
+BEGIN
+  IF NEW.status <> 'current' THEN
+    RAISE EXCEPTION 'ReID v2 profile merge history must begin current'
+      USING ERRCODE = '23514',
+            CONSTRAINT = 'vehicle_reid_v2_profile_merge_initial_state';
+  END IF;
+  IF EXISTS (
+    SELECT 1 FROM public.vehicle_reid_v2_profile_merges merges
+    WHERE merges.status = 'current'
+      AND (merges.target_profile_id = NEW.source_profile_id
+       OR merges.source_profile_id = NEW.target_profile_id)
+  ) THEN
+    RAISE EXCEPTION 'ReID profile merge chains are not permitted'
+      USING ERRCODE = '23514',
+            CONSTRAINT = 'vehicle_reid_v2_profile_merge_no_chain';
+  END IF;
+
+  IF NOT EXISTS (
+    SELECT 1
+    FROM public.vehicle_reid_v2_pair_reviews reviews
+    JOIN public.vehicle_reid_v2_exact_profile_members low_member
+      ON low_member.derivative_id = reviews.derivative_id_low
+    JOIN public.vehicle_reid_v2_exact_profile_members high_member
+      ON high_member.derivative_id = reviews.derivative_id_high
+    LEFT JOIN public.vehicle_reid_v2_current_profile_merges low_existing_merge
+      ON low_existing_merge.source_profile_id = low_member.profile_id
+    LEFT JOIN public.vehicle_reid_v2_current_profile_merges high_existing_merge
+      ON high_existing_merge.source_profile_id = high_member.profile_id
+    WHERE reviews.id = NEW.pair_review_id
+      AND reviews.revision = NEW.pair_review_revision
+      AND reviews.label = 'same_vehicle'
+      AND (
+        (COALESCE(low_existing_merge.target_profile_id, low_member.profile_id)
+            = NEW.source_profile_id
+          AND COALESCE(high_existing_merge.target_profile_id, high_member.profile_id)
+            = NEW.target_profile_id)
+        OR (COALESCE(low_existing_merge.target_profile_id, low_member.profile_id)
+            = NEW.target_profile_id
+          AND COALESCE(high_existing_merge.target_profile_id, high_member.profile_id)
+            = NEW.source_profile_id)
+      )
+      AND reviews.source_sha256_low = low_member.crop_content_sha256
+      AND reviews.source_sha256_high = high_member.crop_content_sha256
+      AND reviews.embedding_id_low = low_member.embedding_id
+      AND reviews.embedding_id_high = high_member.embedding_id
+      AND reviews.embedding_model = low_member.embedding_model
+      AND reviews.embedding_model = high_member.embedding_model
+      AND reviews.algorithm_version = low_member.embedding_algorithm_version
+      AND reviews.algorithm_version = high_member.embedding_algorithm_version
+      AND EXISTS (
+        SELECT 1
+        FROM public.vehicle_reid_v2_current_profile_members current_members
+        WHERE current_members.canonical_profile_id = NEW.source_profile_id
+      )
+      AND EXISTS (
+        SELECT 1
+        FROM public.vehicle_reid_v2_current_profile_members current_members
+        WHERE current_members.canonical_profile_id = NEW.target_profile_id
+      )
+  ) THEN
+    RAISE EXCEPTION 'ReID profile merge requires an exact-current audited Same review'
+      USING ERRCODE = '23514',
+            CONSTRAINT = 'vehicle_reid_v2_profile_merge_same_contract';
+  END IF;
+
+  IF (
+    SELECT COUNT(DISTINCT anchors.normalized_plate)
+    FROM public.vehicle_reid_v2_profile_plate_anchors anchors
+    JOIN public.plate_reads evidence ON evidence.id = anchors.evidence_read_id
+    WHERE anchors.status = 'current'
+      AND anchors.profile_id IN (NEW.source_profile_id, NEW.target_profile_id)
+      AND UPPER(REGEXP_REPLACE(evidence.plate_number, '[^A-Za-z0-9]', '', 'g'))
+            = anchors.normalized_plate
+      AND evidence.review_status = anchors.plate_review_status
+      AND evidence.review_revision = anchors.plate_review_revision
+      AND evidence.applied_alias_id IS NOT DISTINCT FROM anchors.applied_alias_id
+      AND anchors.plate_review_id IS NOT DISTINCT FROM (
+        SELECT reviews.id
+        FROM public.plate_read_reviews reviews
+        WHERE reviews.read_id = anchors.evidence_read_id
+        ORDER BY reviews.created_at DESC, reviews.id DESC
+        LIMIT 1
+      )
+  ) > 1 THEN
+    RAISE EXCEPTION 'ReID profiles with clearly different reviewed plates cannot merge'
+      USING ERRCODE = '23514',
+            CONSTRAINT = 'vehicle_reid_v2_profile_merge_plate_conflict';
+  END IF;
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS vehicle_reid_v2_profile_merges_validate
+  ON public.vehicle_reid_v2_profile_merges;
+CREATE TRIGGER vehicle_reid_v2_profile_merges_validate
+BEFORE INSERT ON public.vehicle_reid_v2_profile_merges
+FOR EACH ROW EXECUTE FUNCTION public.validate_vehicle_reid_v2_profile_merge();
+
+CREATE OR REPLACE FUNCTION public.guard_vehicle_reid_v2_profile_merge_history()
+RETURNS TRIGGER AS $$
+BEGIN
+  IF TG_OP = 'DELETE' THEN
+    RAISE EXCEPTION 'ReID v2 profile merge history cannot be deleted'
+      USING ERRCODE = '23514',
+            CONSTRAINT = 'vehicle_reid_v2_profile_merge_history_immutable';
+  END IF;
+  IF NOT (
+    OLD.status = 'current' AND NEW.status = 'withdrawn'
+    AND (TO_JSONB(NEW) - ARRAY[
+      'status','ended_by_user_id','ended_by_username',
+      'ended_by_display_name','end_reason','ended_at'
+    ]) = (TO_JSONB(OLD) - ARRAY[
+      'status','ended_by_user_id','ended_by_username',
+      'ended_by_display_name','end_reason','ended_at'
+    ])
+  ) THEN
+    RAISE EXCEPTION 'ReID v2 profile merge history permits only one audited withdrawal'
+      USING ERRCODE = '23514',
+            CONSTRAINT = 'vehicle_reid_v2_profile_merge_withdrawal_only';
+  END IF;
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS vehicle_reid_v2_profile_merges_history_guard
+  ON public.vehicle_reid_v2_profile_merges;
+CREATE TRIGGER vehicle_reid_v2_profile_merges_history_guard
+BEFORE UPDATE OR DELETE ON public.vehicle_reid_v2_profile_merges
+FOR EACH ROW EXECUTE FUNCTION public.guard_vehicle_reid_v2_profile_merge_history();
+
+CREATE OR REPLACE VIEW public.vehicle_reid_v2_current_profile_merges AS
+SELECT merges.*
+FROM public.vehicle_reid_v2_profile_merges merges
+JOIN public.vehicle_reid_v2_pair_reviews reviews
+  ON reviews.id = merges.pair_review_id
+ AND reviews.revision = merges.pair_review_revision
+ AND reviews.label = 'same_vehicle'
+WHERE EXISTS (
+  SELECT 1
+  FROM public.vehicle_reid_v2_exact_profile_members low_member
+  JOIN public.vehicle_reid_v2_exact_profile_members high_member ON TRUE
+  LEFT JOIN public.vehicle_reid_v2_profile_merges low_existing_merge
+    ON low_existing_merge.source_profile_id = low_member.profile_id
+   AND low_existing_merge.status = 'current'
+   AND low_existing_merge.id <> merges.id
+  LEFT JOIN public.vehicle_reid_v2_profile_merges high_existing_merge
+    ON high_existing_merge.source_profile_id = high_member.profile_id
+   AND high_existing_merge.status = 'current'
+   AND high_existing_merge.id <> merges.id
+  WHERE low_member.derivative_id = reviews.derivative_id_low
+    AND high_member.derivative_id = reviews.derivative_id_high
+    AND reviews.source_sha256_low = low_member.crop_content_sha256
+    AND reviews.source_sha256_high = high_member.crop_content_sha256
+    AND reviews.embedding_id_low = low_member.embedding_id
+    AND reviews.embedding_id_high = high_member.embedding_id
+    AND reviews.embedding_model = low_member.embedding_model
+    AND reviews.embedding_model = high_member.embedding_model
+    AND reviews.algorithm_version = low_member.embedding_algorithm_version
+    AND reviews.algorithm_version = high_member.embedding_algorithm_version
+    AND (
+      (COALESCE(low_existing_merge.target_profile_id, low_member.profile_id)
+          = merges.source_profile_id
+        AND COALESCE(high_existing_merge.target_profile_id, high_member.profile_id)
+          = merges.target_profile_id)
+      OR (COALESCE(low_existing_merge.target_profile_id, low_member.profile_id)
+          = merges.target_profile_id
+        AND COALESCE(high_existing_merge.target_profile_id, high_member.profile_id)
+          = merges.source_profile_id)
+    )
+)
+AND merges.status = 'current'
+AND (
+  SELECT COUNT(DISTINCT anchors.normalized_plate)
+  FROM public.vehicle_reid_v2_profile_plate_anchors anchors
+  JOIN public.plate_reads evidence ON evidence.id = anchors.evidence_read_id
+  WHERE anchors.status = 'current'
+    AND anchors.profile_id IN (merges.source_profile_id, merges.target_profile_id)
+    AND UPPER(REGEXP_REPLACE(evidence.plate_number, '[^A-Za-z0-9]', '', 'g'))
+          = anchors.normalized_plate
+    AND evidence.review_status = anchors.plate_review_status
+    AND evidence.review_revision = anchors.plate_review_revision
+    AND evidence.applied_alias_id IS NOT DISTINCT FROM anchors.applied_alias_id
+    AND anchors.plate_review_id IS NOT DISTINCT FROM (
+      SELECT latest_reviews.id
+      FROM public.plate_read_reviews latest_reviews
+      WHERE latest_reviews.read_id = anchors.evidence_read_id
+      ORDER BY latest_reviews.created_at DESC, latest_reviews.id DESC
+      LIMIT 1
+    )
+) <= 1;
+
+-- Reviewed plate anchors also remain historical rows.  Only the exact latest
+-- plate-review contract is current, and merge aliases resolve to one stable
+-- public profile identifier without rewriting conversion provenance.
+CREATE OR REPLACE VIEW public.vehicle_reid_v2_current_plate_anchors AS
+SELECT anchors.*,
+       COALESCE(merges.target_profile_id, anchors.profile_id)
+         AS canonical_profile_id
+FROM public.vehicle_reid_v2_profile_plate_anchors anchors
+JOIN public.plate_reads evidence ON evidence.id = anchors.evidence_read_id
+LEFT JOIN public.vehicle_reid_v2_current_profile_merges merges
+  ON merges.source_profile_id = anchors.profile_id
+JOIN public.vehicle_reid_v2_profiles profiles
+  ON profiles.id = COALESCE(merges.target_profile_id, anchors.profile_id)
+WHERE anchors.status = 'current'
+  AND profiles.status IN ('active','provisional')
+  AND UPPER(REGEXP_REPLACE(evidence.plate_number, '[^A-Za-z0-9]', '', 'g'))
+        = anchors.normalized_plate
+  AND evidence.review_status = anchors.plate_review_status
+  AND evidence.review_revision = anchors.plate_review_revision
+  AND evidence.applied_alias_id IS NOT DISTINCT FROM anchors.applied_alias_id
+  AND anchors.plate_review_id IS NOT DISTINCT FROM (
+    SELECT reviews.id
+    FROM public.plate_read_reviews reviews
+    WHERE reviews.read_id = anchors.evidence_read_id
+    ORDER BY reviews.created_at DESC, reviews.id DESC
+    LIMIT 1
+  );
+
+CREATE OR REPLACE VIEW public.vehicle_reid_v2_current_profile_members AS
+WITH canonical_members AS (
+  SELECT members.*,
+         COALESCE(merges.target_profile_id, members.profile_id)
+           AS canonical_profile_id
+  FROM public.vehicle_reid_v2_exact_profile_members members
+  LEFT JOIN public.vehicle_reid_v2_current_profile_merges merges
+    ON merges.source_profile_id = members.profile_id
+)
+SELECT members.*
+FROM canonical_members members
+WHERE NOT EXISTS (
+  SELECT 1
+  FROM public.vehicle_image_asset_reads links
+  JOIN public.plate_reads reads ON reads.id = links.read_id
+  JOIN public.vehicle_reid_v2_current_plate_anchors anchors
+    ON anchors.normalized_plate = UPPER(
+      REGEXP_REPLACE(reads.plate_number, '[^A-Za-z0-9]', '', 'g')
+    )
+  WHERE links.asset_id = members.asset_id
+    AND links.identity_eligible = TRUE
+    AND links.relationship <> 'display_fallback'
+    AND reads.vehicle_image_status = 'ready'
+    AND reads.vehicle_image_path = links.source_path_snapshot
+    AND reads.vehicle_image_source_kind = links.source_kind
+    AND reads.vehicle_image_updated_at IS NOT DISTINCT FROM links.source_updated_at
+    AND reads.review_status IN ('confirmed','corrected','alias_resolved')
+    AND anchors.canonical_profile_id <> members.canonical_profile_id
+)
+AND NOT EXISTS (
+  SELECT 1
+  FROM public.vehicle_reid_v2_pair_reviews reviews
+  JOIN public.vehicle_reid_v2_exact_profile_members low_member
+    ON low_member.derivative_id = reviews.derivative_id_low
+  JOIN public.vehicle_reid_v2_exact_profile_members high_member
+    ON high_member.derivative_id = reviews.derivative_id_high
+  LEFT JOIN public.vehicle_reid_v2_current_profile_merges low_merges
+    ON low_merges.source_profile_id = low_member.profile_id
+  LEFT JOIN public.vehicle_reid_v2_current_profile_merges high_merges
+    ON high_merges.source_profile_id = high_member.profile_id
+  WHERE reviews.label IN ('different_vehicle','unsure')
+    AND reviews.embedding_model = low_member.embedding_model
+    AND reviews.embedding_model = high_member.embedding_model
+    AND reviews.algorithm_version = low_member.embedding_algorithm_version
+    AND reviews.algorithm_version = high_member.embedding_algorithm_version
+    AND reviews.source_sha256_low = low_member.crop_content_sha256
+    AND reviews.source_sha256_high = high_member.crop_content_sha256
+    AND reviews.embedding_id_low = low_member.embedding_id
+    AND reviews.embedding_id_high = high_member.embedding_id
+    AND COALESCE(low_merges.target_profile_id, low_member.profile_id)
+          = members.canonical_profile_id
+    AND COALESCE(high_merges.target_profile_id, high_member.profile_id)
+          = members.canonical_profile_id
+);
+
+-- Exact-plate assignments now bind a durable current plate anchor.  Frozen
+-- conversion assignments retain their preview provenance, while later live
+-- assignments may use the same current anchor without fabricating a frozen
+-- disposition fingerprint.
+--
+-- The Stage 1 physical unique index cannot distinguish an exact-current row
+-- from a sealed row whose source/review contract later changed.  Preserve the
+-- sealed history and enforce one exact-current assignment per read under a
+-- per-read transaction lock instead.
+DROP INDEX IF EXISTS public.idx_reid_v2_assignment_one_active_read;
+CREATE INDEX IF NOT EXISTS idx_reid_v2_assignment_active_read_history
+  ON public.vehicle_reid_v2_read_assignments (read_id, id DESC)
+  WHERE status = 'active';
+
+CREATE OR REPLACE FUNCTION public.validate_vehicle_reid_v2_assignment_contract()
+RETURNS TRIGGER AS $$
+BEGIN
+  IF NEW.status = 'active' AND NOT EXISTS (
+    SELECT 1
+    FROM public.vehicle_reid_v2_profiles profiles
+    LEFT JOIN public.vehicle_reid_v2_profile_members members
+      ON members.id = NEW.profile_member_id
+     AND members.profile_id = NEW.profile_id
+     AND members.status = 'current'
+    WHERE profiles.id = NEW.profile_id
+      AND profiles.revision = NEW.profile_revision
+      AND profiles.status IN ('active','provisional')
+      AND (
+        (NEW.origin_conversion_run_id IS NOT NULL
+          AND profiles.provenance_basis = NEW.profile_membership_basis)
+        OR (NEW.origin_conversion_run_id IS NULL
+          AND NEW.assignment_basis = 'exact_effective_plate'
+          AND NEW.profile_membership_basis = 'exact_effective_plate')
+        OR (NEW.origin_conversion_run_id IS NULL
+          AND NEW.assignment_basis IN ('canonical_image','shared_asset','human_same')
+          AND members.membership_basis = NEW.profile_membership_basis)
+      )
+  ) THEN
+    RAISE EXCEPTION 'ReID v2 assignment does not bind the current profile/member revision and evidence basis'
+      USING ERRCODE = '23514',
+            CONSTRAINT = 'vehicle_reid_v2_assignment_profile_contract';
+  END IF;
+
+  IF NEW.status = 'active'
+    AND NEW.assignment_basis IN ('canonical_image','shared_asset','human_same')
+    AND NOT EXISTS (
+      SELECT 1
+      FROM public.vehicle_reid_v2_profile_members members
+      JOIN public.vehicle_image_asset_reads links
+        ON links.asset_id = members.asset_id
+       AND links.read_id = NEW.read_id
+      JOIN public.plate_reads reads ON reads.id = links.read_id
+      WHERE members.id = NEW.profile_member_id
+        AND members.profile_id = NEW.profile_id
+        AND members.status = 'current'
+        AND members.asset_id = NEW.asset_id
+        AND members.derivative_id = NEW.derivative_id
+        AND members.embedding_id = NEW.embedding_id
+        AND links.identity_eligible = TRUE
+        AND links.relationship <> 'display_fallback'
+        AND links.source_kind IS NOT DISTINCT FROM NEW.source_kind
+        AND links.relationship IS NOT DISTINCT FROM NEW.source_relationship
+        AND links.source_path_snapshot IS NOT DISTINCT FROM NEW.source_path_snapshot
+        AND links.source_updated_at IS NOT DISTINCT FROM NEW.source_updated_at
+        AND links.updated_at IS NOT DISTINCT FROM NEW.source_link_updated_at
+        AND reads.vehicle_image_status = 'ready'
+        AND reads.vehicle_image_path = links.source_path_snapshot
+        AND reads.vehicle_image_source_kind = links.source_kind
+        AND reads.vehicle_image_updated_at IS NOT DISTINCT FROM links.source_updated_at
+    ) THEN
+    RAISE EXCEPTION 'ReID v2 image assignment is not an exact current member/source-link contract'
+      USING ERRCODE = '23514',
+            CONSTRAINT = 'vehicle_reid_v2_assignment_member_contract';
+  END IF;
+
+  IF NEW.status = 'active'
+    AND NEW.assignment_basis = 'exact_effective_plate'
+    AND NOT EXISTS (
+      SELECT 1 FROM public.plate_reads reads
+      WHERE reads.id = NEW.read_id
+        AND UPPER(REGEXP_REPLACE(reads.plate_number, '[^A-Za-z0-9]', '', 'g'))
+              = NEW.normalized_effective_plate
+        AND reads.review_status = NEW.plate_review_status
+        AND reads.review_revision = NEW.plate_review_revision
+        AND reads.applied_alias_id IS NOT DISTINCT FROM NEW.applied_alias_id
+        AND NEW.plate_review_id IS NOT DISTINCT FROM (
+          SELECT reviews.id
+          FROM public.plate_read_reviews reviews
+          WHERE reviews.read_id = NEW.read_id
+          ORDER BY reviews.created_at DESC, reviews.id DESC
+          LIMIT 1
+        )
+    ) THEN
+    RAISE EXCEPTION 'ReID v2 exact-plate assignment is not current reviewed plate evidence'
+      USING ERRCODE = '23514',
+            CONSTRAINT = 'vehicle_reid_v2_assignment_plate_contract';
+  END IF;
+
+  IF NEW.status = 'active'
+    AND NEW.assignment_basis = 'exact_effective_plate'
+    AND NOT EXISTS (
+      SELECT 1
+      FROM public.vehicle_reid_v2_profile_plate_anchors anchors
+      WHERE anchors.profile_id = NEW.profile_id
+        AND anchors.status = 'current'
+        AND anchors.normalized_plate = NEW.normalized_effective_plate
+    ) THEN
+    RAISE EXCEPTION 'ReID v2 exact-plate assignment requires a current profile plate anchor'
+      USING ERRCODE = '23514',
+            CONSTRAINT = 'vehicle_reid_v2_assignment_plate_profile_contract';
+  END IF;
+
+  IF NEW.origin_conversion_run_id IS NOT NULL AND NOT EXISTS (
+    SELECT 1
+    FROM public.vehicle_reid_v2_conversion_read_dispositions dispositions
+    JOIN public.vehicle_reid_v2_conversion_projected_profiles projected_profiles
+      ON projected_profiles.run_id = dispositions.run_id
+     AND projected_profiles.id = dispositions.projected_profile_id
+    JOIN public.vehicle_reid_v2_profiles profiles
+      ON profiles.id = NEW.profile_id
+    WHERE dispositions.run_id = NEW.origin_conversion_run_id
+      AND dispositions.disposition_fingerprint = NEW.origin_disposition_fingerprint
+      AND dispositions.read_id = NEW.read_id
+      AND dispositions.disposition = 'assigned'
+      AND dispositions.assignment_basis = NEW.assignment_basis
+      AND dispositions.profile_evidence_basis = NEW.profile_membership_basis
+      AND dispositions.asset_id IS NOT DISTINCT FROM NEW.asset_id
+      AND dispositions.derivative_id IS NOT DISTINCT FROM NEW.derivative_id
+      AND dispositions.embedding_id IS NOT DISTINCT FROM NEW.embedding_id
+      AND dispositions.normalized_effective_plate
+            IS NOT DISTINCT FROM NEW.normalized_effective_plate
+      AND profiles.origin_conversion_run_id = projected_profiles.run_id
+      AND profiles.origin_projection_key = projected_profiles.projection_key
+  ) THEN
+    RAISE EXCEPTION 'ReID v2 assignment does not exactly reproduce its preview provenance'
+      USING ERRCODE = '23514',
+            CONSTRAINT = 'vehicle_reid_v2_assignment_preview_contract';
+  END IF;
+
+  IF NEW.status = 'active' THEN
+    PERFORM pg_advisory_xact_lock(hashtext(
+      'vehicle_reid_v2_read_assignment:' || NEW.read_id::TEXT
+    ));
+    IF EXISTS (
+      SELECT 1
+      FROM public.vehicle_reid_v2_current_read_assignments existing
+      WHERE existing.read_id = NEW.read_id
+        AND existing.id IS DISTINCT FROM NEW.id
+    ) THEN
+      RAISE EXCEPTION 'ReID v2 read already has an exact-current assignment'
+        USING ERRCODE = '23514',
+              CONSTRAINT = 'vehicle_reid_v2_assignment_one_exact_current_read';
+    END IF;
+  END IF;
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+-- Every primary consumer reads this view rather than trusting status='active'.
+-- It revalidates the exact current plate review or canonical source-link/member
+-- contract and resolves a current merge alias without mutating history.
+CREATE OR REPLACE VIEW public.vehicle_reid_v2_current_read_assignments AS
+SELECT assignments.*,
+       COALESCE(merges.target_profile_id, assignments.profile_id)
+         AS canonical_profile_id
+FROM public.vehicle_reid_v2_read_assignments assignments
+JOIN public.vehicle_reid_v2_profiles source_profiles
+  ON source_profiles.id = assignments.profile_id
+LEFT JOIN public.vehicle_reid_v2_current_profile_merges merges
+  ON merges.source_profile_id = assignments.profile_id
+JOIN public.vehicle_reid_v2_profiles canonical_profiles
+  ON canonical_profiles.id = COALESCE(merges.target_profile_id, assignments.profile_id)
+JOIN public.plate_reads reads ON reads.id = assignments.read_id
+WHERE assignments.status = 'active'
+  AND source_profiles.status IN ('active','provisional')
+  AND canonical_profiles.status IN ('active','provisional')
+  AND source_profiles.revision = assignments.profile_revision
+  AND (
+    (
+      assignments.assignment_basis = 'exact_effective_plate'
+      AND (
+        assignments.origin_conversion_run_id IS NOT NULL
+        OR assignments.profile_membership_basis = 'exact_effective_plate'
+      )
+      AND UPPER(REGEXP_REPLACE(reads.plate_number, '[^A-Za-z0-9]', '', 'g'))
+            = assignments.normalized_effective_plate
+      AND reads.review_status = assignments.plate_review_status
+      AND reads.review_revision = assignments.plate_review_revision
+      AND reads.applied_alias_id IS NOT DISTINCT FROM assignments.applied_alias_id
+      AND assignments.plate_review_id IS NOT DISTINCT FROM (
+        SELECT reviews.id
+        FROM public.plate_read_reviews reviews
+        WHERE reviews.read_id = assignments.read_id
+        ORDER BY reviews.created_at DESC, reviews.id DESC
+        LIMIT 1
+      )
+      AND EXISTS (
+        SELECT 1
+        FROM public.vehicle_reid_v2_current_plate_anchors anchors
+        WHERE anchors.canonical_profile_id =
+                COALESCE(merges.target_profile_id, assignments.profile_id)
+          AND anchors.normalized_plate = assignments.normalized_effective_plate
+      )
+    )
+    OR (
+      assignments.assignment_basis IN ('canonical_image','shared_asset','human_same')
+      AND EXISTS (
+        SELECT 1
+        FROM public.vehicle_reid_v2_current_profile_members members
+        JOIN public.vehicle_image_asset_reads links
+          ON links.asset_id = members.asset_id
+         AND links.read_id = assignments.read_id
+        WHERE members.id = assignments.profile_member_id
+          AND members.profile_id = assignments.profile_id
+          AND members.asset_id = assignments.asset_id
+          AND members.derivative_id = assignments.derivative_id
+          AND members.embedding_id = assignments.embedding_id
+          AND members.membership_basis = assignments.profile_membership_basis
+          AND members.canonical_profile_id =
+                COALESCE(merges.target_profile_id, assignments.profile_id)
+          AND links.identity_eligible = TRUE
+          AND links.relationship <> 'display_fallback'
+          AND links.source_kind IS NOT DISTINCT FROM assignments.source_kind
+          AND links.relationship IS NOT DISTINCT FROM assignments.source_relationship
+          AND links.source_path_snapshot IS NOT DISTINCT FROM assignments.source_path_snapshot
+          AND links.source_updated_at IS NOT DISTINCT FROM assignments.source_updated_at
+          AND links.updated_at IS NOT DISTINCT FROM assignments.source_link_updated_at
+          AND reads.vehicle_image_status = 'ready'
+          AND reads.vehicle_image_path = links.source_path_snapshot
+          AND reads.vehicle_image_source_kind = links.source_kind
+          AND reads.vehicle_image_updated_at IS NOT DISTINCT FROM links.source_updated_at
+      )
+    )
+  );
+
+-- Stage 2 completion and every v2-primary transition also reconcile the
+-- immutable projected plate anchors in both directions.
+CREATE OR REPLACE FUNCTION public.assert_vehicle_reid_v2_stage2_materialization(
+  materialization_run_id BIGINT
+)
+RETURNS VOID AS $$
+BEGIN
+  PERFORM public.assert_vehicle_reid_v2_exact_materialization(materialization_run_id);
+  IF EXISTS (
+    (
+      SELECT projected.projection_key::TEXT, plates.value::TEXT
+      FROM public.vehicle_reid_v2_conversion_projected_profiles projected
+      CROSS JOIN LATERAL JSONB_ARRAY_ELEMENTS_TEXT(projected.anchor_plates) plates(value)
+      WHERE projected.run_id = materialization_run_id
+      EXCEPT
+      SELECT anchors.origin_projection_key::TEXT, anchors.normalized_plate::TEXT
+      FROM public.vehicle_reid_v2_profile_plate_anchors anchors
+      WHERE anchors.origin_conversion_run_id = materialization_run_id
+        AND anchors.status = 'current'
+    )
+    UNION ALL
+    (
+      SELECT anchors.origin_projection_key::TEXT, anchors.normalized_plate::TEXT
+      FROM public.vehicle_reid_v2_profile_plate_anchors anchors
+      WHERE anchors.origin_conversion_run_id = materialization_run_id
+        AND anchors.status = 'current'
+      EXCEPT
+      SELECT projected.projection_key::TEXT, plates.value::TEXT
+      FROM public.vehicle_reid_v2_conversion_projected_profiles projected
+      CROSS JOIN LATERAL JSONB_ARRAY_ELEMENTS_TEXT(projected.anchor_plates) plates(value)
+      WHERE projected.run_id = materialization_run_id
+    )
+  ) THEN
+    RAISE EXCEPTION 'ReID v2 plate-anchor materialization does not exactly reproduce run %',
+      materialization_run_id
+      USING ERRCODE = '23514',
+            CONSTRAINT = 'vehicle_reid_v2_exact_plate_anchor_materialization';
+  END IF;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE OR REPLACE FUNCTION public.validate_vehicle_reid_v2_stage2_materialization_transition()
+RETURNS TRIGGER AS $$
+BEGIN
+  IF OLD.status = 'running' AND OLD.phase = 'materialize'
+    AND NEW.status = 'completed' AND NEW.phase = 'complete' THEN
+    PERFORM public.assert_vehicle_reid_v2_stage2_materialization(OLD.id);
+  END IF;
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS vehicle_reid_v2_conversion_stage2_materialization
+  ON public.vehicle_reid_v2_conversion_runs;
+CREATE TRIGGER vehicle_reid_v2_conversion_stage2_materialization
+BEFORE UPDATE ON public.vehicle_reid_v2_conversion_runs
+FOR EACH ROW EXECUTE FUNCTION public.validate_vehicle_reid_v2_stage2_materialization_transition();
+
+CREATE OR REPLACE FUNCTION public.validate_vehicle_reid_control_stage2_transition()
+RETURNS TRIGGER AS $$
+BEGIN
+  IF NEW.mode = 'v2_primary' THEN
+    PERFORM public.assert_vehicle_reid_v2_stage2_materialization(
+      NEW.transition_run_id
+    );
+  END IF;
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS vehicle_reid_control_stage2_validate_transition
+  ON public.vehicle_reid_control;
+CREATE TRIGGER vehicle_reid_control_stage2_validate_transition
+BEFORE INSERT OR UPDATE ON public.vehicle_reid_control
+FOR EACH ROW EXECUTE FUNCTION public.validate_vehicle_reid_control_stage2_transition();
+
+INSERT INTO public.schema_migrations(version,description) VALUES
+ ('2026081701_vehicle_reid_v2_primary_stage2','Add current-reviewed authoritative profile plate anchors, exact Stage 2 anchor reconciliation, bounded observable live-assignment jobs, and current-anchor exact-plate assignment guards while retaining v2 shadow mode until an explicit completed-run cutover.')
+ON CONFLICT(version) DO NOTHING;

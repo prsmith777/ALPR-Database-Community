@@ -29,6 +29,7 @@ import {
   History,
   RotateCcw,
   ScanSearch,
+  CarFront,
   ChevronLeft,
   ChevronRight,
   Split,
@@ -682,6 +683,10 @@ export default function PlateTable({
       vehicleClusterSimilarity: plate.vehicle_cluster_similarity === null || plate.vehicle_cluster_similarity === undefined
         ? null
         : Number(plate.vehicle_cluster_similarity),
+      vehicleIdentityMode: plate.vehicle_identity_mode || "v1_primary",
+      vehicleProfileId: plate.vehicle_profile_id ? Number(plate.vehicle_profile_id) : null,
+      vehicleProfileAssignmentBasis: plate.vehicle_profile_assignment_basis || null,
+      vehicleFindSimilarAvailable: plate.vehicle_find_similar_available !== false,
       id: plate.id,
       validated: plate.validated,
       bi_path: bi_url,
@@ -918,6 +923,12 @@ export default function PlateTable({
         || currentPlate?.vehicle_cluster_similarity === undefined
         ? null
         : Number(currentPlate.vehicle_cluster_similarity);
+      const currentVehicleIdentityMode = currentPlate?.vehicle_identity_mode || "v1_primary";
+      const currentVehicleProfileId = currentPlate?.vehicle_profile_id
+        ? Number(currentPlate.vehicle_profile_id)
+        : null;
+      const currentVehicleProfileAssignmentBasis = currentPlate?.vehicle_profile_assignment_basis || null;
+      const currentVehicleFindSimilarAvailable = currentPlate?.vehicle_find_similar_available !== false;
       const currentVehicleImageUrl = currentPlate?.vehicle_image_path
         ? `/images/${currentPlate.vehicle_image_path}`
         : null;
@@ -957,6 +968,10 @@ export default function PlateTable({
           currentVehicleClusterId !== selectedImage.vehicleClusterId ||
           currentVehicleClusterStatus !== selectedImage.vehicleClusterStatus ||
           currentVehicleClusterSimilarity !== selectedImage.vehicleClusterSimilarity ||
+          currentVehicleIdentityMode !== selectedImage.vehicleIdentityMode ||
+          currentVehicleProfileId !== selectedImage.vehicleProfileId ||
+          currentVehicleProfileAssignmentBasis !== selectedImage.vehicleProfileAssignmentBasis ||
+          currentVehicleFindSimilarAvailable !== selectedImage.vehicleFindSimilarAvailable ||
           currentVehicleImageUrl !== selectedImage.vehicleImageUrl ||
           currentVehicleImageStatus !== selectedImage.vehicleImageStatus ||
           currentVehicleImageErrorCode !== selectedImage.vehicleImageErrorCode ||
@@ -997,6 +1012,10 @@ export default function PlateTable({
           vehicleClusterId: currentVehicleClusterId,
           vehicleClusterStatus: currentVehicleClusterStatus,
           vehicleClusterSimilarity: currentVehicleClusterSimilarity,
+          vehicleIdentityMode: currentVehicleIdentityMode,
+          vehicleProfileId: currentVehicleProfileId,
+          vehicleProfileAssignmentBasis: currentVehicleProfileAssignmentBasis,
+          vehicleFindSimilarAvailable: currentVehicleFindSimilarAvailable,
           vehicleImageUrl: currentVehicleImageUrl,
           vehicleImageStatus: currentVehicleImageStatus,
           vehicleImageErrorCode: currentVehicleImageErrorCode,
@@ -3008,12 +3027,27 @@ export default function PlateTable({
                   )}
                 </div>
                 <div>
-                  <div className="text-xs uppercase text-muted-foreground">Legacy vehicle (ReID v1)</div>
+                  <div className="text-xs uppercase text-muted-foreground">
+                    {selectedImage.vehicleIdentityMode === "v2_primary" ? "Vehicle" : "Legacy vehicle (ReID v1)"}
+                  </div>
                   {selectedImage.vehicleClusterId ? (
-                    <Link href={`/visual_search/vehicles/${selectedImage.vehicleClusterId}`} className="text-blue-500 hover:underline">
-                      Legacy Vehicle #{selectedImage.vehicleClusterId}
+                    <Link
+                      href={selectedImage.vehicleIdentityMode === "v2_primary"
+                        ? `/visual_search/profiles/${selectedImage.vehicleClusterId}`
+                        : `/visual_search/vehicles/${selectedImage.vehicleClusterId}`}
+                      className="text-blue-500 hover:underline"
+                    >
+                      {selectedImage.vehicleIdentityMode === "v2_primary"
+                        ? `Vehicle #${selectedImage.vehicleClusterId}`
+                        : `Legacy Vehicle #${selectedImage.vehicleClusterId}`}
                     </Link>
-                  ) : <div className="text-muted-foreground">Unassigned in legacy ReID v1</div>}
+                  ) : (
+                    <div className="text-muted-foreground">
+                      {selectedImage.vehicleIdentityMode === "v2_primary"
+                        ? "Unassigned in ReID"
+                        : "Unassigned in legacy ReID v1"}
+                    </div>
+                  )}
                 </div>
                   </div>
                   <div className="relative h-[40vh] w-full overflow-hidden rounded-md border bg-black sm:h-auto sm:min-h-0">
@@ -3214,22 +3248,49 @@ export default function PlateTable({
               <div className="grid w-full gap-3">
                   <div className={POPUP_ACTION_GRID_CLASS}>
                     <PopupActionSlot>
-                      {canRead && selectedImage && <Button
+                      {canRead && selectedImage && (selectedImage.vehicleIdentityMode !== "v2_primary" || selectedImage.vehicleFindSimilarAvailable) ? <Button
                         asChild
                         variant="outline"
                         size="sm"
                         className={POPUP_ACTION_BUTTON_CLASS}
-                        aria-label="Find similar using legacy ReID v1"
-                        title="Find similar using legacy ReID v1 plate-image search"
+                        aria-label={selectedImage.vehicleIdentityMode === "v2_primary"
+                          ? "Find similar vehicle"
+                          : "Find similar using legacy ReID v1"}
+                        title={selectedImage.vehicleIdentityMode === "v2_primary"
+                          ? "Find similar from the exact canonical Vehicle View"
+                          : "Find similar using legacy ReID v1 plate-image search"}
                       >
                         <Link href={`/visual_search?readId=${selectedImage.id}`}>
                           <ScanSearch className={POPUP_ACTION_ICON_CLASS} />
-                          <span className={POPUP_ACTION_LABEL_CLASS}>Find similar (legacy v1)</span>
+                          <span className={POPUP_ACTION_LABEL_CLASS}>
+                            {selectedImage.vehicleIdentityMode === "v2_primary"
+                              ? "Find similar vehicle"
+                              : "Find similar (legacy v1)"}
+                          </span>
                         </Link>
-                      </Button>}
+                      </Button> : canRead && selectedImage?.vehicleIdentityMode === "v2_primary" && selectedImage.vehicleProfileId ? (
+                        <Button asChild variant="outline" size="sm" className={POPUP_ACTION_BUTTON_CLASS}>
+                          <Link href={`/visual_search/profiles/${selectedImage.vehicleProfileId}`}>
+                            <CarFront className={POPUP_ACTION_ICON_CLASS} />
+                            <span className={POPUP_ACTION_LABEL_CLASS}>Open Vehicle Profile</span>
+                          </Link>
+                        </Button>
+                      ) : canRead && selectedImage?.vehicleIdentityMode === "v2_primary" ? (
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          className={POPUP_ACTION_BUTTON_CLASS}
+                          disabled
+                          title="No identity-eligible Vehicle View or authoritative profile is available"
+                        >
+                          <ScanSearch className={POPUP_ACTION_ICON_CLASS} />
+                          <span className={POPUP_ACTION_LABEL_CLASS}>Find similar unavailable</span>
+                        </Button>
+                      ) : null}
                     </PopupActionSlot>
                     <PopupActionSlot>
-                      {canReview && selectedImage?.vehicleClusterStatus === "suggested" && <Button
+                      {canReview && selectedImage?.vehicleIdentityMode !== "v2_primary" && selectedImage?.vehicleClusterStatus === "suggested" && <Button
                         variant="outline"
                         size="sm"
                         className={POPUP_ACTION_BUTTON_CLASS}
@@ -3243,7 +3304,7 @@ export default function PlateTable({
                       </Button>}
                     </PopupActionSlot>
                     <PopupActionSlot>
-                      {canReview && selectedImage?.vehicleClusterStatus === "suggested" && <Button
+                      {canReview && selectedImage?.vehicleIdentityMode !== "v2_primary" && selectedImage?.vehicleClusterStatus === "suggested" && <Button
                         variant="outline"
                         size="sm"
                         className={POPUP_ACTION_BUTTON_CLASS}
