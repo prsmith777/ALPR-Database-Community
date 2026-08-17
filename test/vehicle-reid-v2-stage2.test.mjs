@@ -97,6 +97,7 @@ test("live processor is deterministic, bounded, and never uses cosine as identit
   assert.match(live, /ON CONFLICT \(read_id\) DO UPDATE[\s\S]*WHERE public\.vehicle_reid_v2_live_jobs\.status = 'ready'/);
   assert.match(live, /SELECT DISTINCT anchors\.canonical_profile_id AS profile_id[\s\S]*ORDER BY profile_id, anchors\.normalized_plate/);
   assert.match(live, /SELECT \$1, 'current', \$2::varchar\(32\)[\s\S]*anchors\.normalized_plate = \$2::varchar\(32\)/);
+  assert.match(live, /id: Number\(candidate\.profile_id\),[\s\S]*revision: Number\(candidate\.profile_revision\)/);
 });
 
 test("live service processes claimed reads and reports failures without abandoning the batch", async () => {
