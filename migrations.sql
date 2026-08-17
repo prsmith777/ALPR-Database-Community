@@ -9029,7 +9029,17 @@ BEGIN
     PERFORM pg_advisory_xact_lock(hashtext(
       'vehicle_reid_v2_read_assignment:' || NEW.read_id::TEXT
     ));
+    -- Most Stage 2 materializations start from an empty authority table.  Do
+    -- the cheap indexed history probe first so those thousands of inserts do
+    -- not repeatedly expand the exact-current consumer view.  If history is
+    -- present, retain the full fail-closed current-contract validation.
     IF EXISTS (
+      SELECT 1
+      FROM public.vehicle_reid_v2_read_assignments prior
+      WHERE prior.read_id = NEW.read_id
+        AND prior.status = 'active'
+        AND prior.id IS DISTINCT FROM NEW.id
+    ) AND EXISTS (
       SELECT 1
       FROM public.vehicle_reid_v2_current_read_assignments existing
       WHERE existing.read_id = NEW.read_id
@@ -9199,4 +9209,8 @@ FOR EACH ROW EXECUTE FUNCTION public.validate_vehicle_reid_control_stage2_transi
 
 INSERT INTO public.schema_migrations(version,description) VALUES
  ('2026081701_vehicle_reid_v2_primary_stage2','Add current-reviewed authoritative profile plate anchors, exact Stage 2 anchor reconciliation, bounded observable live-assignment jobs, and current-anchor exact-plate assignment guards while retaining v2 shadow mode until an explicit completed-run cutover.')
+ON CONFLICT(version) DO NOTHING;
+
+INSERT INTO public.schema_migrations(version,description) VALUES
+ ('2026081702_vehicle_reid_v2_materialization_scale','Keep Stage 2 assignment materialization parameter-aware and bypass the exact-current consumer view when no indexed active assignment history exists; final exact reconciliation remains mandatory.')
 ON CONFLICT(version) DO NOTHING;

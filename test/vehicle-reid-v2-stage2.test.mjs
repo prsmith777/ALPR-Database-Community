@@ -54,13 +54,17 @@ test("Stage 2 schema adds reviewed plate anchors, bounded live jobs, and audited
 });
 
 test("accepted materialization revalidates and exactly writes profiles, members, anchors, then assignments", async () => {
-  const [repository, actions, panel] = await Promise.all([
+  const [repository, migration, actions, panel] = await Promise.all([
     source("lib/vehicle-reid-v2-authority-repository.mjs"),
+    source("migrations.sql"),
     source("app/actions.js"),
     source("components/settings/VehicleReidV2ConversionPanel.jsx"),
   ]);
   assert.match(repository, /liveProjection\(client, run\)/);
   assert.match(repository, /assertProjectionCurrent/);
+  assert.match(repository, /SET LOCAL plan_cache_mode = 'force_custom_plan'/);
+  assert.match(repository, /SET LOCAL lock_timeout = '15s'/);
+  assert.match(repository, /SET LOCAL statement_timeout = '10min'/);
   const profileInsert = repository.indexOf("INSERT INTO public.vehicle_reid_v2_profiles");
   const memberInsert = repository.indexOf("INSERT INTO public.vehicle_reid_v2_profile_members");
   const anchorInsert = repository.indexOf("INSERT INTO public.vehicle_reid_v2_profile_plate_anchors");
@@ -75,6 +79,22 @@ test("accepted materialization revalidates and exactly writes profiles, members,
   assert.match(panel, /Materialize authoritative ReID/);
   assert.match(panel, /Make ReID v2 primary/);
   assert.match(panel, /Roll back consumers to v1/);
+
+  const scaleFix = migration.slice(
+    migration.lastIndexOf("CREATE OR REPLACE FUNCTION public.validate_vehicle_reid_v2_assignment_contract"),
+    migration.indexOf("CREATE OR REPLACE VIEW public.vehicle_reid_v2_current_read_assignments")
+  );
+  const indexedHistoryProbe = scaleFix.indexOf(
+    "FROM public.vehicle_reid_v2_read_assignments prior"
+  );
+  const exactCurrentProbe = scaleFix.indexOf(
+    "FROM public.vehicle_reid_v2_current_read_assignments existing"
+  );
+  assert.ok(indexedHistoryProbe > 0 && indexedHistoryProbe < exactCurrentProbe);
+  assert.match(scaleFix, /prior\.read_id = NEW\.read_id/);
+  assert.match(scaleFix, /prior\.status = 'active'/);
+  assert.match(scaleFix, /AND EXISTS \(\s*SELECT 1\s*FROM public\.vehicle_reid_v2_current_read_assignments existing/);
+  assert.match(migration, /2026081702_vehicle_reid_v2_materialization_scale/);
 });
 
 test("live processor is deterministic, bounded, and never uses cosine as identity", async () => {
