@@ -128,39 +128,88 @@ test("authority overview uses fast stored counts while consumers retain exact-cu
   assert.doesNotMatch(panel, /stale assignments excluded/);
 });
 
-test("authoritative profile browsing paginates before exact-current evidence fanout", async () => {
+test("authoritative profile browsing binds exact-current evidence to the page id array", async () => {
+  const serviceSource = await source("lib/vehicle-reid-v2-authority-service.mjs");
+  const serviceListProfiles = serviceSource.slice(
+    serviceSource.indexOf("async listProfiles(input = {})"),
+    serviceSource.indexOf("async getProfile(profileId)")
+  );
+  assert.match(serviceListProfiles, /Promise\.all\(\[/);
+  assert.match(serviceListProfiles, /this\.repository\.listProfiles\(input\)/);
+  assert.match(serviceListProfiles, /this\.getOverview\(\)/);
+
   const queries = [];
   const repository = new VehicleReidV2AuthorityRepository({
     executor: {
       async query(sql, values) {
         queries.push({ sql, values });
+        if (/FROM public\.vehicle_reid_v2_profiles profiles[\s\S]*ORDER BY profiles\.updated_at/.test(sql)) {
+          return {
+            rows: [
+              {
+                id: 20, status: "provisional", revision: 1,
+                provenance_basis: "provisional_singleton",
+                representative_derivative_id: 200,
+                created_at: "created-20", updated_at: "updated-20",
+              },
+              {
+                id: 10, status: "active", revision: 2,
+                provenance_basis: "mixed", representative_derivative_id: 100,
+                created_at: "created-10", updated_at: "updated-10",
+              },
+            ],
+          };
+        }
+        if (/current_profile_merges/.test(sql)) return { rows: [] };
+        if (/SELECT DISTINCT anchors\.canonical_profile_id/.test(sql)) {
+          return { rows: [{ canonical_profile_id: 10 }] };
+        }
+        if (/WITH page_members AS MATERIALIZED/.test(sql)) {
+          return { rows: [
+            { canonical_profile_id: 20, member_count: 1, representative_storage_path: "20.jpg" },
+            { canonical_profile_id: 10, member_count: 2, representative_storage_path: "10.jpg" },
+          ] };
+        }
+        if (/current_read_assignments/.test(sql)) {
+          return { rows: [{ canonical_profile_id: 10, read_count: 3 }] };
+        }
+        if (/current_plate_anchors/.test(sql)) {
+          return { rows: [{ canonical_profile_id: 10, anchor_count: 1, anchor_plates: ["ABC123"] }] };
+        }
         return { rows: [] };
       },
     },
   });
 
-  await repository.listProfiles({ page: 2, pageSize: 24 });
-  assert.equal(queries.length, 1);
-  assert.deepEqual(queries[0].values, [24, 24]);
-  assert.match(queries[0].sql, /paged_profiles AS MATERIALIZED/);
-  assert.match(queries[0].sql, /page_members AS MATERIALIZED/);
-  assert.match(queries[0].sql, /assignment_counts AS MATERIALIZED/);
-  assert.match(queries[0].sql, /anchor_counts AS MATERIALIZED/);
+  const page = await repository.listProfiles({ page: 1, pageSize: 24 });
+  assert.equal(queries.length, 5);
+  assert.deepEqual(queries[0].values, []);
+  assert.doesNotMatch(queries[0].sql, /vehicle_reid_v2_current_/);
   assert.doesNotMatch(queries[0].sql, /ILIKE/);
-  assert.ok(
-    queries[0].sql.indexOf("LIMIT $1 OFFSET $2")
-      < queries[0].sql.indexOf("FROM public.vehicle_reid_v2_current_profile_members")
-  );
-  assert.doesNotMatch(
-    queries[0].sql,
-    /LEFT JOIN public\.vehicle_reid_v2_current_profile_members[\s\S]*LEFT JOIN public\.vehicle_reid_v2_current_read_assignments/
-  );
+  for (const query of queries.slice(1)) assert.deepEqual(query.values, [[20, 10]]);
+  assert.match(queries[1].sql, /current_profile_merges[\s\S]*source_profile_id = ANY\(\$1::bigint\[\]\)/);
+  assert.match(queries[2].sql, /current_profile_members[\s\S]*canonical_profile_id = ANY\(\$1::bigint\[\]\)/);
+  assert.match(queries[3].sql, /current_read_assignments[\s\S]*canonical_profile_id = ANY\(\$1::bigint\[\]\)/);
+  assert.match(queries[4].sql, /current_plate_anchors[\s\S]*canonical_profile_id = ANY\(\$1::bigint\[\]\)/);
+  assert.deepEqual(page.rows.map((row) => ({
+    id: row.id,
+    status: row.status,
+    members: row.member_count,
+    reads: row.read_count,
+    anchors: row.anchor_plates,
+  })), [
+    { id: 20, status: "provisional", members: 1, reads: 0, anchors: [] },
+    { id: 10, status: "active", members: 2, reads: 3, anchors: ["ABC123"] },
+  ]);
 
   queries.length = 0;
   await repository.listProfiles({ page: 1, pageSize: 12, search: " ABC123 " });
-  assert.deepEqual(queries[0].values, ["ABC123", 12, 0]);
-  assert.match(queries[0].sql, /normalized_plate ILIKE '%' \|\| \$1 \|\| '%'/);
-  assert.match(queries[0].sql, /LIMIT \$2 OFFSET \$3/);
+  assert.equal(queries.length, 6);
+  assert.deepEqual(queries[0].values, []);
+  assert.deepEqual(queries[1].values, [[20, 10]]);
+  assert.deepEqual(queries[2].values, [[20, 10], "ABC123"]);
+  assert.match(queries[2].sql, /normalized_plate ILIKE '%' \|\| \$2 \|\| '%'/);
+  for (const query of queries.slice(3)) assert.deepEqual(query.values, [[10]]);
 });
 
 test("live processor is deterministic, bounded, and never uses cosine as identity", async () => {
