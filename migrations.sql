@@ -9039,15 +9039,17 @@ BEGIN
       WHERE prior.read_id = NEW.read_id
         AND prior.status = 'active'
         AND prior.id IS DISTINCT FROM NEW.id
-    ) AND EXISTS (
-      SELECT 1
-      FROM public.vehicle_reid_v2_current_read_assignments existing
-      WHERE existing.read_id = NEW.read_id
-        AND existing.id IS DISTINCT FROM NEW.id
     ) THEN
-      RAISE EXCEPTION 'ReID v2 read already has an exact-current assignment'
-        USING ERRCODE = '23514',
-              CONSTRAINT = 'vehicle_reid_v2_assignment_one_exact_current_read';
+      IF EXISTS (
+        SELECT 1
+        FROM public.vehicle_reid_v2_current_read_assignments existing
+        WHERE existing.read_id = NEW.read_id
+          AND existing.id IS DISTINCT FROM NEW.id
+      ) THEN
+        RAISE EXCEPTION 'ReID v2 read already has an exact-current assignment'
+          USING ERRCODE = '23514',
+                CONSTRAINT = 'vehicle_reid_v2_assignment_one_exact_current_read';
+      END IF;
     END IF;
   END IF;
   RETURN NEW;

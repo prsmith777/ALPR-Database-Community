@@ -93,7 +93,7 @@ test("accepted materialization revalidates and exactly writes profiles, members,
   assert.ok(indexedHistoryProbe > 0 && indexedHistoryProbe < exactCurrentProbe);
   assert.match(scaleFix, /prior\.read_id = NEW\.read_id/);
   assert.match(scaleFix, /prior\.status = 'active'/);
-  assert.match(scaleFix, /AND EXISTS \(\s*SELECT 1\s*FROM public\.vehicle_reid_v2_current_read_assignments existing/);
+  assert.match(scaleFix, /\) THEN\s*IF EXISTS \(\s*SELECT 1\s*FROM public\.vehicle_reid_v2_current_read_assignments existing/);
   assert.match(migration, /2026081702_vehicle_reid_v2_materialization_scale/);
 });
 
