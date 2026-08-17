@@ -97,24 +97,29 @@ test("accepted materialization revalidates and exactly writes profiles, members,
   assert.match(migration, /2026081702_vehicle_reid_v2_materialization_scale/);
 });
 
-test("authority overview evaluates each exact-current evidence view only once", async () => {
-  const repository = await source("lib/vehicle-reid-v2-authority-repository.mjs");
+test("authority overview uses fast stored counts while consumers retain exact-current views", async () => {
+  const [repository, panel] = await Promise.all([
+    source("lib/vehicle-reid-v2-authority-repository.mjs"),
+    source("components/settings/VehicleReidV2ConversionPanel.jsx"),
+  ]);
   const overview = repository.slice(
     repository.indexOf("async getOverview()"),
     repository.indexOf("async listProfiles(")
   );
-  for (const view of [
-    "vehicle_reid_v2_current_profile_members",
-    "vehicle_reid_v2_current_plate_anchors",
-    "vehicle_reid_v2_current_read_assignments",
-  ]) {
-    assert.equal((overview.match(new RegExp(view, "g")) || []).length, 1);
-  }
-  assert.match(overview, /valid_members AS MATERIALIZED/);
-  assert.match(overview, /valid_anchors AS MATERIALIZED/);
-  assert.match(overview, /valid_assignments AS MATERIALIZED/);
+  assert.doesNotMatch(overview, /vehicle_reid_v2_current_/);
+  assert.match(overview, /FROM public\.vehicle_reid_v2_profile_members members/);
+  assert.match(overview, /FROM public\.vehicle_reid_v2_profile_plate_anchors anchors/);
+  assert.match(overview, /FROM public\.vehicle_reid_v2_read_assignments assignments/);
+  assert.match(overview, /members\.status = 'current'/);
+  assert.match(overview, /anchors\.status = 'current'/);
+  assert.match(overview, /assignments\.status = 'active'/);
+  assert.match(overview, /COUNT\(DISTINCT assignments\.read_id\)::integer AS assignments/);
   assert.match(overview, /assignment_counts AS MATERIALIZED/);
-  assert.doesNotMatch(overview, /SELECT assignments\.\*/);
+  assert.doesNotMatch(overview, /stale_assignments/);
+  assert.match(panel, /Stored, reconciled authority counts/);
+  assert.match(panel, /consumers still revalidate exact current source links, embeddings, and review evidence/);
+  assert.match(panel, /label="plate anchors" value=\{authorityCounts\.plateAnchors\}/);
+  assert.doesNotMatch(panel, /stale assignments excluded/);
 });
 
 test("live processor is deterministic, bounded, and never uses cosine as identity", async () => {
