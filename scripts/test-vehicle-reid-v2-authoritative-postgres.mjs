@@ -1161,7 +1161,7 @@ async function testAuthorityAndRollbackSchema(fixtures, templateRunId) {
            evidence_fingerprint
          )
          SELECT
-           reads.id, $2, 'exact_effective_plate', 'provisional_singleton', 1,
+           reads.id, $2, 'exact_effective_plate', 'exact_effective_plate', 1,
            UPPER(REGEXP_REPLACE(reads.plate_number, '[^A-Za-z0-9]', '', 'g')),
            reads.review_status, reads.review_revision,
            (SELECT reviews.id FROM public.plate_read_reviews reviews
