@@ -2046,6 +2046,30 @@ async function testCommittedStage2MaterializationAndRollback() {
   assert.equal(expansion.merged, true);
   liveProfiles = await currentProfilesForReads(liveReadIds);
   assert.equal(new Set(liveProfiles.values()).size, 1);
+  const mergedProfileId = liveProfiles.get(liveA.readId);
+  const mergedPage = await authority.listProfiles({
+    page: 1,
+    pageSize: 24,
+    search: String(mergedProfileId),
+  });
+  assert.equal(mergedPage.total, 1);
+  assert.equal(mergedPage.profiles.length, 1);
+  assert.equal(mergedPage.profiles[0].id, mergedProfileId);
+  assert.equal(mergedPage.profiles[0].memberCount, 3);
+  assert.equal(mergedPage.profiles[0].readCount, 3);
+  const mergedDetail = await authority.getProfile(firstMerge.sourceProfileId);
+  assert.equal(mergedDetail.profile.id, mergedProfileId);
+  assert.equal(mergedDetail.profile.status, "active");
+  assert.equal(mergedDetail.members.length, 3);
+  assert.equal(mergedDetail.reads.length, 3);
+  assert.deepEqual(
+    new Set(mergedDetail.members.map((member) => member.assetId)),
+    new Set([liveA.assetId, liveB.assetId, liveC.assetId])
+  );
+  assert.deepEqual(
+    new Set(mergedDetail.reads.map((read) => read.id)),
+    new Set(liveReadIds)
+  );
 
   await revisePairReview(firstReviewId, "different_vehicle");
   const split = await authority.mergeProfilesByReview({ reviewId: firstReviewId, actor });
