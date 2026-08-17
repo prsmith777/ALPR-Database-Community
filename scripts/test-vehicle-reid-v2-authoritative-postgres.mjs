@@ -2026,6 +2026,21 @@ async function testCommittedStage2MaterializationAndRollback() {
   const liveC = await createAssetWithCrop("stage2-live-c", "LVC333", {
     reviewStatus: "unreviewed", timestampOffset: "52 seconds",
   });
+  const detailTags = [
+    { name: `codex-reid-${suffix}-resident`, color: "#2563EB" },
+    { name: `codex-reid-${suffix}-review`, color: "#DC2626" },
+  ];
+  await pool.query(
+    `WITH inserted_tags AS (
+       INSERT INTO public.tags (name, color)
+       SELECT tag.name, tag.color
+       FROM JSONB_TO_RECORDSET($2::jsonb) AS tag(name text, color text)
+       RETURNING id
+     )
+     INSERT INTO public.plate_tags (plate_number, tag_id)
+     SELECT $1, inserted_tags.id FROM inserted_tags`,
+    [liveB.plate, JSON.stringify(detailTags)]
+  );
   const liveReadIds = [liveA.readId, liveB.readId, liveC.readId];
   await drainLiveReads(live, liveReadIds, "provisional singleton creation");
   let liveProfiles = await currentProfilesForReads(liveReadIds);
@@ -2074,6 +2089,12 @@ async function testCommittedStage2MaterializationAndRollback() {
     new Set(mergedDetail.reads.map((read) => read.id)),
     new Set(liveReadIds)
   );
+  const taggedRead = mergedDetail.reads.find((read) => read.id === liveB.readId);
+  assert.ok(taggedRead);
+  assert.deepEqual(
+    taggedRead.tags.map((tag) => `${tag.name}:${tag.color}`).sort(),
+    detailTags.map((tag) => `${tag.name}:${tag.color}`).sort()
+  );
 
   await revisePairReview(firstReviewId, "different_vehicle");
   const split = await authority.mergeProfilesByReview({ reviewId: firstReviewId, actor });
@@ -2086,6 +2107,14 @@ async function testCommittedStage2MaterializationAndRollback() {
   assert.equal(remerge.merged, true);
   liveProfiles = await currentProfilesForReads(liveReadIds);
   assert.equal(new Set(liveProfiles.values()).size, 1);
+  const remergedProfileId = liveProfiles.get(liveA.readId);
+  const remergedDetail = await authority.getProfile(firstMerge.sourceProfileId);
+  assert.equal(remergedDetail.profile.id, remergedProfileId);
+  assert.equal(remergedDetail.members.length, 3);
+  assert.deepEqual(
+    new Set(remergedDetail.reads.map((read) => read.id)),
+    new Set(liveReadIds)
+  );
   const mergeHistory = await pool.query(
     `SELECT status, COUNT(*)::integer AS count
      FROM public.vehicle_reid_v2_profile_merges
