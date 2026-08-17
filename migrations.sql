@@ -3240,8 +3240,21 @@ ALTER TABLE public.plate_reads
   ADD COLUMN IF NOT EXISTS vehicle_image_source_kind VARCHAR(24),
   ADD COLUMN IF NOT EXISTS vehicle_overview_candidate_id BIGINT;
 
-ALTER TABLE public.plate_reads
-  ALTER COLUMN vehicle_image_source_kind TYPE VARCHAR(40);
+DO $$
+DECLARE
+  current_length INTEGER;
+BEGIN
+  SELECT columns.character_maximum_length
+  INTO current_length
+  FROM information_schema.columns
+  WHERE columns.table_schema = 'public'
+    AND columns.table_name = 'plate_reads'
+    AND columns.column_name = 'vehicle_image_source_kind';
+
+  IF current_length IS DISTINCT FROM 40 THEN
+    EXECUTE 'ALTER TABLE public.plate_reads ALTER COLUMN vehicle_image_source_kind TYPE VARCHAR(40)';
+  END IF;
+END $$;
 
 ALTER TABLE public.plate_reads
   DROP CONSTRAINT IF EXISTS plate_reads_vehicle_image_source_kind_check;

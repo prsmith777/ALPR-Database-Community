@@ -14,6 +14,21 @@ async function source(path) {
   return readFile(new URL(`../${path}`, import.meta.url), "utf8");
 }
 
+test("legacy vehicle source widening is replay-safe after Stage 2 views exist", async () => {
+  const migration = await source("migrations.sql");
+  const sourceKindWidening = migration.slice(
+    migration.indexOf("ADD COLUMN IF NOT EXISTS vehicle_image_source_kind VARCHAR(24)"),
+    migration.indexOf("DROP CONSTRAINT IF EXISTS plate_reads_vehicle_image_source_kind_check")
+  );
+  assert.match(sourceKindWidening, /information_schema\.columns/);
+  assert.match(sourceKindWidening, /character_maximum_length/);
+  assert.match(sourceKindWidening, /IF current_length IS DISTINCT FROM 40 THEN/);
+  assert.match(
+    sourceKindWidening,
+    /ALTER TABLE public\.plate_reads ALTER COLUMN vehicle_image_source_kind TYPE VARCHAR\(40\)/
+  );
+});
+
 test("Stage 2 schema adds reviewed plate anchors, bounded live jobs, and audited merge aliases", async () => {
   const migration = await source("migrations.sql");
   const stage2 = migration.slice(migration.indexOf("CREATE TABLE IF NOT EXISTS public.vehicle_reid_v2_profile_plate_anchors"));
