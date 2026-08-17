@@ -3,6 +3,9 @@ import { readFile } from "node:fs/promises";
 import test from "node:test";
 
 import {
+  VehicleReidV2AuthorityRepository,
+} from "../lib/vehicle-reid-v2-authority-repository.mjs";
+import {
   VehicleReidV2LiveRepository,
   VehicleReidV2LiveService,
 } from "../lib/vehicle-reid-v2-live.mjs";
@@ -123,6 +126,41 @@ test("authority overview uses fast stored counts while consumers retain exact-cu
   assert.match(panel, /consumers still revalidate exact current source links, embeddings, and review evidence/);
   assert.match(panel, /label="plate anchors" value=\{authorityCounts\.plateAnchors\}/);
   assert.doesNotMatch(panel, /stale assignments excluded/);
+});
+
+test("authoritative profile browsing paginates before exact-current evidence fanout", async () => {
+  const queries = [];
+  const repository = new VehicleReidV2AuthorityRepository({
+    executor: {
+      async query(sql, values) {
+        queries.push({ sql, values });
+        return { rows: [] };
+      },
+    },
+  });
+
+  await repository.listProfiles({ page: 2, pageSize: 24 });
+  assert.equal(queries.length, 1);
+  assert.deepEqual(queries[0].values, [24, 24]);
+  assert.match(queries[0].sql, /paged_profiles AS MATERIALIZED/);
+  assert.match(queries[0].sql, /page_members AS MATERIALIZED/);
+  assert.match(queries[0].sql, /assignment_counts AS MATERIALIZED/);
+  assert.match(queries[0].sql, /anchor_counts AS MATERIALIZED/);
+  assert.doesNotMatch(queries[0].sql, /ILIKE/);
+  assert.ok(
+    queries[0].sql.indexOf("LIMIT $1 OFFSET $2")
+      < queries[0].sql.indexOf("FROM public.vehicle_reid_v2_current_profile_members")
+  );
+  assert.doesNotMatch(
+    queries[0].sql,
+    /LEFT JOIN public\.vehicle_reid_v2_current_profile_members[\s\S]*LEFT JOIN public\.vehicle_reid_v2_current_read_assignments/
+  );
+
+  queries.length = 0;
+  await repository.listProfiles({ page: 1, pageSize: 12, search: " ABC123 " });
+  assert.deepEqual(queries[0].values, ["ABC123", 12, 0]);
+  assert.match(queries[0].sql, /normalized_plate ILIKE '%' \|\| \$1 \|\| '%'/);
+  assert.match(queries[0].sql, /LIMIT \$2 OFFSET \$3/);
 });
 
 test("live processor is deterministic, bounded, and never uses cosine as identity", async () => {
