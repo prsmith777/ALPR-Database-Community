@@ -2,7 +2,10 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 
-import { VehicleReidV2LiveService } from "../lib/vehicle-reid-v2-live.mjs";
+import {
+  VehicleReidV2LiveRepository,
+  VehicleReidV2LiveService,
+} from "../lib/vehicle-reid-v2-live.mjs";
 import { VehicleReidV2LiveWorker } from "../lib/vehicle-reid-v2-live-worker.mjs";
 import {
   VEHICLE_INTELLIGENCE_LEGACY_NAVIGATION,
@@ -144,6 +147,23 @@ test("live processor is deterministic, bounded, and never uses cosine as identit
   assert.match(live, /SELECT \$1, 'current', \$2::varchar\(32\)[\s\S]*anchors\.normalized_plate = \$2::varchar\(32\)/);
   assert.match(live, /id: Number\(candidate\.profile_id\),[\s\S]*revision: Number\(candidate\.profile_revision\)/);
   assert.equal((live.match(/links\.updated_at::text AS source_link_updated_at/g) || []).length, 2);
+});
+
+test("live discovery never evaluates candidates while v2 is not primary", async () => {
+  const queries = [];
+  const repository = new VehicleReidV2LiveRepository({
+    pool: {
+      connect() { throw new Error("not used"); },
+      async query(sql) {
+        queries.push(sql);
+        return { rows: [{ mode: "v2_shadow" }] };
+      },
+    },
+  });
+  assert.deepEqual(await repository.discover({ limit: 25 }), []);
+  assert.equal(queries.length, 1);
+  assert.match(queries[0], /SELECT mode FROM public\.vehicle_reid_control/);
+  assert.doesNotMatch(queries[0], /vehicle_reid_v2_current_read_assignments/);
 });
 
 test("live service processes claimed reads and reports failures without abandoning the batch", async () => {
