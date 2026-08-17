@@ -14,7 +14,10 @@ import {
   inferVehicleType,
 } from "../lib/vehicle-attributes.mjs";
 import { chooseShadowCluster } from "../lib/vehicle-clustering.mjs";
-import { VEHICLE_INTELLIGENCE_NAVIGATION } from "../lib/vehicle-intelligence-navigation.mjs";
+import {
+  VEHICLE_INTELLIGENCE_NAVIGATION,
+  VEHICLE_INTELLIGENCE_PRIMARY_NAVIGATION,
+} from "../lib/vehicle-intelligence-navigation.mjs";
 import { BLUE_IRIS_TRIGGER_DIRECTION_ALGORITHM } from "../lib/blue-iris-trigger-direction.mjs";
 
 async function source(path) {
@@ -102,10 +105,13 @@ test("live-feed vehicle descriptors use a side rail without reducing image heigh
   const directionSection = table.slice(table.indexOf("<span>Direction</span>"), table.indexOf("<aside"));
   assert.doesNotMatch(directionSection, /vehicleColor|vehicleBodyType/);
   const vehicleMetadata = table.slice(
-    table.indexOf('<div className="text-xs uppercase text-muted-foreground">Legacy vehicle (ReID v1)</div>'),
+    table.indexOf('{selectedImage.vehicleIdentityMode === "v2_primary" ? "Vehicle" : "Legacy vehicle (ReID v1)"}'),
     table.indexOf('<div className="relative h-[40vh]')
   );
-  assert.match(vehicleMetadata, /Legacy Vehicle #\{selectedImage\.vehicleClusterId\}/);
+  assert.match(vehicleMetadata, /Vehicle #\$\{selectedImage\.vehicleClusterId\}/);
+  assert.match(vehicleMetadata, /Legacy Vehicle #\$\{selectedImage\.vehicleClusterId\}/);
+  assert.match(vehicleMetadata, /\/visual_search\/profiles\/\$\{selectedImage\.vehicleClusterId\}/);
+  assert.match(vehicleMetadata, /\/visual_search\/vehicles\/\$\{selectedImage\.vehicleClusterId\}/);
   assert.doesNotMatch(vehicleMetadata, /vehicleClusterStatus|vehicleClusterSimilarity/);
 });
 
@@ -358,6 +364,11 @@ test("every vehicle intelligence route shares the complete top navigation", asyn
     { title: "Legacy Needs Review", href: "/visual_search/vehicles/review" },
     { title: "ReID v2 Shadow", href: "/visual_search/reid-v2" },
   ]);
+  assert.deepEqual(VEHICLE_INTELLIGENCE_PRIMARY_NAVIGATION.map(({ title, href }) => ({ title, href })), [
+    { title: "Vehicle Search", href: "/visual_search" },
+    { title: "Profiles", href: "/visual_search/profiles" },
+    { title: "Review", href: "/visual_search/review" },
+  ]);
 
   const routes = [
     "app/visual_search/page.jsx",
@@ -365,10 +376,13 @@ test("every vehicle intelligence route shares the complete top navigation", asyn
     "app/visual_search/vehicles/review/page.jsx",
     "app/visual_search/vehicles/[clusterId]/page.jsx",
     "app/visual_search/reid-v2/page.jsx",
+    "app/visual_search/profiles/page.jsx",
+    "app/visual_search/profiles/[profileId]/page.jsx",
+    "app/visual_search/review/page.jsx",
   ];
   for (const route of routes) {
     const page = await source(route);
-    assert.match(page, /navigation=\{VEHICLE_INTELLIGENCE_NAVIGATION\}/, route);
+    assert.match(page, /vehicleIntelligenceNavigationForMode|navigation=\{navigation\}/, route);
   }
 });
 

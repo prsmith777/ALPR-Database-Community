@@ -3,11 +3,13 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   AlertTriangle,
+  Database,
   Fingerprint,
   GitCompareArrows,
   Loader2,
   Pause,
   Play,
+  Power,
   RefreshCw,
   RotateCcw,
   ScanSearch,
@@ -16,12 +18,15 @@ import {
 } from "lucide-react";
 
 import {
+  acceptVehicleReidV2ConversionPreview,
   cancelVehicleReidV2ConversionPreview,
   getVehicleReidV2ConversionPreviewOverview,
+  materializeVehicleReidV2ConversionPreview,
   processVehicleReidV2ConversionPreviewBatch,
   retryVehicleReidV2ConversionPreviewJob,
   setVehicleReidV2ConversionPreviewPaused,
   startVehicleReidV2ConversionPreview,
+  transitionVehicleReidAuthorityMode,
   verifyVehicleReidV2ConversionPreview,
 } from "@/app/actions";
 import { Badge } from "@/components/ui/badge";
@@ -40,8 +45,8 @@ const STATUS_LABELS = Object.freeze({
   starting: "Starting",
   previewing: "Building preview",
   ready: "Preview ready to verify",
-  accepted: "Accepted in a later stage",
-  running: "Later-stage materialization",
+  accepted: "Accepted for materialization",
+  running: "Materializing authority",
   processing: "Processing",
   paused: "Paused",
   verifying: "Verifying fingerprints",
@@ -151,14 +156,21 @@ export default function VehicleReidV2ConversionPanel({ initialOverview = null })
   const lastRevalidatedAt = run?.lastRevalidatedAt || verification.verifiedAt || null;
   const controlMode = text(overview?.control?.mode) || "unknown";
   const authority = overview?.authority || {};
+  const authorityHealth = overview?.authorityHealth || {};
+  const authorityCounts = authorityHealth.counts || {};
+  const liveJobs = authorityHealth.liveJobs || {};
+  const liveWorker = overview?.liveWorker || authorityHealth.worker || {};
   const authoritativeProfiles = count(
-    authority.profileCount ?? authority.profiles ?? authority.authoritativeProfiles
+    authorityCounts.profiles
+      ?? authority.profileCount ?? authority.profiles ?? authority.authoritativeProfiles
   );
   const authoritativeMembers = count(
-    authority.memberCount ?? authority.members ?? authority.authoritativeMembers
+    authorityCounts.members
+      ?? authority.memberCount ?? authority.members ?? authority.authoritativeMembers
   );
   const authoritativeAssignments = count(
-    authority.readAssignmentCount ?? authority.readAssignments ?? authority.assignments
+    authorityCounts.assignments
+      ?? authority.readAssignmentCount ?? authority.readAssignments ?? authority.assignments
       ?? authority.authoritativeReadAssignments
   );
   const retryCandidates = Array.isArray(overview?.retryCandidates)
@@ -193,7 +205,8 @@ export default function VehicleReidV2ConversionPanel({ initialOverview = null })
     ? Math.min(100, Math.round(processedReads / totalReads * 100))
     : status === "completed" || status === "verified" ? 100 : 0;
   const polling = ACTIVE_STATUSES.has(status);
-  const canStart = !run || TERMINAL_STATUSES.has(status) || status === "verified";
+  const canStart = controlMode !== "v2_primary"
+    && (!run || TERMINAL_STATUSES.has(status) || status === "verified");
   const canProcess = Boolean(runId)
     && status === "previewing"
     && processingReads === 0;
@@ -204,6 +217,11 @@ export default function VehicleReidV2ConversionPanel({ initialOverview = null })
   const canVerify = Boolean(runId && previewFingerprint)
     && status === "ready"
     && processingReads === 0;
+  const canAccept = canVerify && lastRevalidationStatus === "current";
+  const canMaterialize = Boolean(runId && previewFingerprint) && status === "accepted";
+  const canCutover = Boolean(runId) && status === "completed"
+    && ["v2_shadow", "v1_rollback"].includes(controlMode);
+  const canRollback = controlMode === "v2_primary";
 
   const projectionMetrics = useMemo(() => ([
     { label: "projected profiles", value: metrics.projectedProfiles },
@@ -364,16 +382,59 @@ export default function VehicleReidV2ConversionPanel({ initialOverview = null })
     "The preview item was queued for its one bounded operator retry."
   );
 
+  const acceptPreview = () => {
+    if (!window.confirm("Accept this exact verified preview fingerprint for Stage 2 materialization? This records approval but does not switch consumers.")) return;
+    return perform(
+      "accept",
+      () => acceptVehicleReidV2ConversionPreview({ runId, previewFingerprint }),
+      "The exact verified preview was accepted. No authoritative rows or consumer cutover were written yet."
+    );
+  };
+
+  const materializePreview = () => {
+    if (!window.confirm("Materialize the accepted frozen preview into authoritative ReID profiles and assignments? ReID v1 remains primary until a separate cutover.")) return;
+    return perform(
+      "materialize",
+      () => materializeVehicleReidV2ConversionPreview({ runId, previewFingerprint }),
+      "The accepted preview was materialized exactly. ReID v1 remains primary until the separate cutover control is confirmed."
+    );
+  };
+
+  const cutoverToV2 = () => {
+    if (!window.confirm("Switch Live Feed, Vehicle Search, Profiles, Review, and profile links to authoritative ReID v2 now? The v1 rollback path remains available.")) return;
+    return perform(
+      "cutover",
+      () => transitionVehicleReidAuthorityMode({
+        mode: "v2_primary",
+        runId,
+        reason: "Explicit Stage 2 operator cutover after exact materialization and fingerprint verification.",
+      }),
+      "Authoritative ReID v2 is now primary. ReID v1 remains retained for the rollback window."
+    );
+  };
+
+  const rollbackToV1 = () => {
+    if (!window.confirm("Roll consumers back to ReID v1? Authoritative v2 rows are retained unchanged for diagnosis and a later controlled return.")) return;
+    return perform(
+      "rollback",
+      () => transitionVehicleReidAuthorityMode({
+        mode: "v1_rollback",
+        reason: "Explicit Stage 2 operator rollback to retained ReID v1 consumers.",
+      }),
+      "Consumers were rolled back to ReID v1. Authoritative v2 evidence remains retained."
+    );
+  };
+
   return (
     <Card className="mt-6">
       <CardHeader>
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
             <CardTitle className="flex items-center gap-2">
-              <GitCompareArrows className="h-5 w-5" /> ReID v2 authoritative conversion preview
+              <GitCompareArrows className="h-5 w-5" /> ReID authoritative conversion and cutover
             </CardTitle>
             <CardDescription className="mt-1 max-w-3xl">
-              Build and verify a frozen projection of stable v2 profiles, canonical crop members, and read assignments before any future cutover.
+              Build and verify a frozen projection, materialize its exact authoritative rows, and switch consumers only after reconciliation succeeds.
             </CardDescription>
           </div>
           <Badge variant={statusVariant(status)}>{STATUS_LABELS[status] || status.replaceAll("_", " ")}</Badge>
@@ -381,9 +442,9 @@ export default function VehicleReidV2ConversionPanel({ initialOverview = null })
       </CardHeader>
       <CardContent className="space-y-5">
         <div className="rounded-md border border-amber-500/40 bg-amber-500/10 p-4 text-sm">
-          <div className="font-semibold">Stage 1 conversion preview only</div>
+          <div className="font-semibold">{["accepted", "running", "completed", "rolled_back"].includes(status) ? "Stage 2 controlled materialization" : "Stage 1 conversion preview"}</div>
           <p className="mt-1 text-xs text-muted-foreground">
-            No authoritative v2 profile, profile member, or read assignment is written here. This Stage 1 panel never changes the current identity source, Live Feed Vehicle numbers, legacy profiles, or review decisions. The transition mode is shown below and remains unchanged by every control on this panel.
+            Preview controls create no authoritative identity. Stage 2 acceptance, materialization, and consumer cutover are separate confirmed operations. Materialization does not change the current identity source; only the explicit cutover control changes consumers, and the retained v1 rollback remains available.
           </p>
           <p className="mt-2 text-xs text-muted-foreground">
             Current v1 assignments are comparison evidence only and never create v2 identity. Exact effective or corrected plates and audited human Same reviews may connect evidence; Different, Unsure, ambiguous, stale, or conflicting evidence fails closed. Cosine similarity never establishes identity by itself.
@@ -475,7 +536,13 @@ export default function VehicleReidV2ConversionPanel({ initialOverview = null })
             <section className="space-y-3">
               <div>
                 <h3 className="font-medium">Projected authoritative v2 identity</h3>
-                <p className="text-xs text-muted-foreground">Projection counts only; stable profiles and assignments are not materialized in Stage 1.</p>
+                <p className="text-xs text-muted-foreground">
+                  {status === "completed" || status === "rolled_back"
+                    ? "These frozen projection counts are retained as the materialization contract; current-contract authority health appears below."
+                    : ["accepted", "running"].includes(status)
+                      ? "These frozen projection counts are the exact contract being materialized."
+                      : "Projection counts only; no authoritative profile or assignment is written until the separately confirmed Stage 2 materialization step."}
+                </p>
               </div>
               <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
                 {projectionMetrics.map((metric) => <Metric key={metric.label} {...metric} />)}
@@ -651,6 +718,58 @@ export default function VehicleReidV2ConversionPanel({ initialOverview = null })
             Refresh status
           </Button>
         </div>
+
+        {run ? (
+          <section className="space-y-3 rounded-md border p-4">
+            <div>
+              <p className="font-medium">Stage 2 authority controls</p>
+              <p className="text-xs text-muted-foreground">
+                Each step rechecks the exact frozen evidence. Acceptance writes approval only; materialization writes the exact projected profiles and assignments; cutover changes consumers only after database reconciliation succeeds.
+              </p>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <Button type="button" variant="secondary" disabled={Boolean(busy) || !canAccept} onClick={acceptPreview}>
+                {busy === "accept" ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <ShieldCheck className="mr-2 h-4 w-4" />}
+                Accept verified preview
+              </Button>
+              <Button type="button" variant="secondary" disabled={Boolean(busy) || !canMaterialize} onClick={materializePreview}>
+                {busy === "materialize" ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Database className="mr-2 h-4 w-4" />}
+                Materialize authoritative ReID
+              </Button>
+              <Button type="button" disabled={Boolean(busy) || !canCutover} onClick={cutoverToV2}>
+                {busy === "cutover" ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Power className="mr-2 h-4 w-4" />}
+                Make ReID v2 primary
+              </Button>
+              <Button type="button" variant="destructive" disabled={Boolean(busy) || !canRollback} onClick={rollbackToV1}>
+                {busy === "rollback" ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <RotateCcw className="mr-2 h-4 w-4" />}
+                Roll back consumers to v1
+              </Button>
+            </div>
+          </section>
+        ) : null}
+
+        {status === "completed" || controlMode === "v2_primary" || controlMode === "v1_rollback" ? (
+          <section className="space-y-3 rounded-md border p-4">
+            <div>
+              <p className="font-medium">Authoritative ReID health</p>
+              <p className="text-xs text-muted-foreground">
+                Current-contract counts exclude stale source links. Live processing remains in standby unless v2 is primary.
+              </p>
+            </div>
+            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+              <Metric label="current profiles" value={authorityCounts.profiles} detail={`${formatCount(authorityCounts.multiMemberProfiles)} multi-member · ${formatCount(authorityCounts.singletonProfiles)} singleton`} />
+              <Metric label="assigned reads" value={authorityCounts.assignments} detail={`${formatCount(authorityCounts.unassignedReads)} safely unassigned`} />
+              <Metric label="exact-plate-only" value={authorityCounts.exactPlateAssignments} detail={`${formatCount(authorityCounts.sharedAssetAssignments)} shared-asset assignments`} />
+              <Metric label="stale assignments excluded" value={authorityCounts.staleAssignments} detail={`${formatCount(liveJobs.conflict)} live conflicts`} />
+            </div>
+            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+              <Metric label="live pending" value={liveJobs.pending} />
+              <Metric label="live processing" value={liveJobs.processing} />
+              <Metric label="live ready" value={liveJobs.ready} />
+              <Metric label="live exceptions" value={count(liveJobs.conflict) + count(liveJobs.unavailable) + count(liveJobs.failed)} detail={`worker ${text(liveWorker.phase) || "starting"}`} />
+            </div>
+          </section>
+        ) : null}
 
         {message ? <p role="status" className="rounded-md border p-3 text-sm">{message}</p> : null}
       </CardContent>

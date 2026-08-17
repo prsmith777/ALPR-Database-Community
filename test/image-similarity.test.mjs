@@ -292,12 +292,12 @@ test("detector statistics recommend fallback review only after meaningful misses
   );
 });
 
-test("plate tables render the visual-search link only for an open image", async () => {
+test("plate tables render the mode-aware visual-search link only for eligible open images", async () => {
   const plateTable = await readFile(new URL("../components/PlateTable.jsx", import.meta.url), "utf8");
   assert.match(plateTable, /Find similar using legacy ReID v1 plate-image search/);
   assert.match(
     plateTable,
-    /\{canRead && selectedImage && <Button[\s\S]*?href=\{`\/visual_search\?readId=\$\{selectedImage\.id\}`\}/
+    /\{canRead && selectedImage && \(selectedImage\.vehicleIdentityMode !== "v2_primary" \|\| selectedImage\.vehicleFindSimilarAvailable\) \? <Button[\s\S]*?href=\{`\/visual_search\?readId=\$\{selectedImage\.id\}`\}/
   );
 });
 

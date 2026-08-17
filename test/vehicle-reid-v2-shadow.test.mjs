@@ -230,6 +230,24 @@ test("shadow overview bounds browsing, searches current evidence, and skips inva
   assert.deepEqual(overview.matches.map((item) => item.derivativeId), [3]);
 });
 
+test("primary browsing skips Stage 1 candidate, campaign, and calibration work", async () => {
+  const calls = [];
+  const service = new VehicleReidV2ShadowService({
+    repository: {
+      async listCurrentSources() { return [row({ derivative_id: 1 })]; },
+      async listPairReviewCalibration() { calls.push("calibration"); return []; },
+      async getLatestReviewCampaign() { calls.push("campaign"); return null; },
+      async getProfileCandidateSnapshot() { calls.push("candidate"); return null; },
+    },
+  });
+
+  const overview = await service.getOverview({ primaryBrowse: true });
+  assert.deepEqual(calls, []);
+  assert.equal(overview.profileCandidates, null);
+  assert.equal(overview.reviewCampaign.campaign, null);
+  assert.equal(overview.calibration.total, 0);
+});
+
 test("pair review recomputes immutable-crop similarity and returns calibration", async () => {
   const first = row({ derivative_id: 10, embedding: embedding([1, 0]) });
   const second = row({ derivative_id: 20, embedding: embedding([0.8, 0.6]) });

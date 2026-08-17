@@ -1,9 +1,11 @@
-import { getVehicleClusterOverview } from "@/app/actions";
+import { redirect } from "next/navigation";
+
+import { getVehicleClusterOverview, getVehicleReidAuthorityMode } from "@/app/actions";
 import VehicleClusters from "@/components/VehicleClusters";
 import DashboardLayout from "@/components/layout/MainLayout";
 import TitleNavbar from "@/components/layout/TitleNav";
 import { requirePagePermission } from "@/lib/page-permission.mjs";
-import { VEHICLE_INTELLIGENCE_NAVIGATION } from "@/lib/vehicle-intelligence-navigation.mjs";
+import { vehicleIntelligenceNavigationForMode } from "@/lib/vehicle-intelligence-navigation.mjs";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -15,6 +17,9 @@ function positivePage(value) {
 export default async function VehicleClustersPage({ searchParams }) {
   await requirePagePermission("plate.read");
   const parameters = await searchParams;
+  const modeResult = await getVehicleReidAuthorityMode();
+  const mode = modeResult?.success ? modeResult.data.control?.mode : "v1_primary";
+  if (mode === "v2_primary") redirect("/visual_search/profiles");
   const result = await getVehicleClusterOverview({
     view: "profiles",
     profilePage: positivePage(parameters?.profilesPage),
@@ -27,7 +32,7 @@ export default async function VehicleClustersPage({ searchParams }) {
   });
   return (
     <DashboardLayout>
-      <TitleNavbar title="Vehicle Intelligence" navigation={VEHICLE_INTELLIGENCE_NAVIGATION}>
+      <TitleNavbar title="Vehicle Intelligence" navigation={vehicleIntelligenceNavigationForMode(mode)}>
         <VehicleClusters initialResult={result} view="profiles" />
       </TitleNavbar>
     </DashboardLayout>

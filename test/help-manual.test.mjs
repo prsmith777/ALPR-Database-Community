@@ -14,7 +14,7 @@ async function source(path) {
 }
 
 test("the user guide is structured, searchable, and role-aware", () => {
-  assert.equal(HELP_MANUAL.manualVersion, "2.12");
+  assert.equal(HELP_MANUAL.manualVersion, "2.13");
   assert.ok(HELP_MANUAL.sections.length >= 14);
 
   const ids = HELP_MANUAL.sections.map((section) => section.id);
@@ -75,16 +75,19 @@ test("the guide covers required workflows and clearly labels planned features", 
     "no background repair worker",
     "create canonical crop embeddings",
     "has no automatic embedding queue",
-    "review reid v2 shadow comparisons",
+    "search and review reid v2 comparisons",
     "reid v2 pair labels make no assignments",
     "create evidence-backed shadow profile candidates",
     "shadow candidates are not current vehicle profiles",
-    "stage 1 authoritative reid v2 foundation",
-    "stage 1 preview cannot become an assignment",
+    "stage 2 authoritative reid v2 materialization and cutover",
+    "cutover is explicit and rollback retains reid v1",
     "legacy reid v1 visual search and profiles",
-    "one transition-control row starts in v2_shadow",
     "cosine similarity can rank review candidates but cannot join a profile",
-    "no action, worker, or user control to accept or materialize",
+    "accept verified preview records the administrator approval",
+    "materialize authoritative reid",
+    "bounded live worker runs only in v2_primary",
+    "merge two compatible profiles",
+    "stage 2 does not stop or delete the v1 producer",
   ]) {
     assert.match(text, new RegExp(required, "i"));
   }
@@ -127,10 +130,11 @@ test("production releases require help and roadmap updates", async () => {
     assert.match(text, /docs\/COMMUNITY_PRODUCT_ROADMAP\.md/);
   }
   assert.match(roadmap, /Release candidate baseline — August 16, 2026/);
-  assert.match(roadmap, /tables are created empty/i);
-  assert.match(roadmap, /no acceptance or materialization\s+path/i);
-  assert.match(roadmap, /Stage 2 materialization[\s\S]*remain planned/i);
-  assert.match(roadmap, /has not been merged or deployed/i);
+  assert.match(roadmap, /start empty/i);
+  assert.match(roadmap, /Accept\s+records an Administrator's exact verified preview\s+approval/i);
+  assert.match(roadmap, /Stage 2 adds one explicit compatibility cutover/i);
+  assert.match(roadmap, /Stage 3 v1 producer shutdown[\s\S]*remain planned/i);
+  assert.match(roadmap, /has not(?: itself)? been merged or deployed/i);
   assert.doesNotMatch(roadmap, /current production release is `[0-9a-f]{7,40}`/i);
 });
 

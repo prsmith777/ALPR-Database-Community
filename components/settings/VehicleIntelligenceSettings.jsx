@@ -795,16 +795,16 @@ export default function VehicleIntelligenceSettings({
     >
       <Tabs value={routeTab.active} onValueChange={routeTab.navigate} className="space-y-6">
         <TabsList aria-label="Vehicle intelligence sections" className="grid h-auto w-full grid-cols-2 gap-1 p-1 lg:grid-cols-4">
-          <TabsTrigger value="cameras" className="gap-2 py-2"><Settings2 className="h-4 w-4" />Cameras</TabsTrigger>
+          <TabsTrigger value="cameras" className="gap-2 py-2"><Settings2 className="h-4 w-4" />Direction &amp; Cameras</TabsTrigger>
           <TabsTrigger value="views" className="gap-2 py-2">
             <Images className="h-4 w-4" />Vehicle Views
             {Number(frameQueue?.historicalOutstanding || 0) > 0 ? <span className="rounded-full bg-muted px-2 py-0.5 text-xs">{compactCount(frameQueue.historicalOutstanding)}</span> : null}
           </TabsTrigger>
           <TabsTrigger value="processing" className="gap-2 py-2">
-            <History className="h-4 w-4" />Processing
+            <History className="h-4 w-4" />Vehicle Pipeline
             {Number(data.backfill?.pending || 0) > 0 ? <span className="rounded-full bg-muted px-2 py-0.5 text-xs">{compactCount(data.backfill.pending)}</span> : null}
           </TabsTrigger>
-          <TabsTrigger value="calibration" className="gap-2 py-2"><ScanSearch className="h-4 w-4" />Calibration</TabsTrigger>
+          <TabsTrigger value="calibration" className="gap-2 py-2"><ScanSearch className="h-4 w-4" />Legacy Calibration</TabsTrigger>
         </TabsList>
 
         {message && <p className="rounded-md border p-3 text-sm">{message}</p>}

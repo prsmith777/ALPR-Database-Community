@@ -37,15 +37,18 @@ export default function VehicleReidV2PairReviewControls({
   canReview = false,
   nextHref = null,
   campaignId = null,
+  authoritativeIdentity = false,
 }) {
   const router = useRouter();
   const [review, setReview] = useState(initialReview);
   const [saving, setSaving] = useState(null);
   const [error, setError] = useState("");
+  const [authorityMessage, setAuthorityMessage] = useState("");
 
   const save = async (label) => {
     setSaving(label);
     setError("");
+    setAuthorityMessage("");
     try {
       const result = await submitVehicleReidV2PairReview({
         sourceDerivativeId,
@@ -58,6 +61,19 @@ export default function VehicleReidV2PairReviewControls({
         return;
       }
       setReview(result.data.review);
+      if (result.data.authorityMerge?.merged) {
+        setAuthorityMessage(
+          `Vehicle #${result.data.authorityMerge.sourceProfileId} now resolves to Vehicle #${result.data.authorityMerge.targetProfileId}.`
+        );
+      } else if (result.data.authorityMerge?.split) {
+        setAuthorityMessage(
+          `The prior merge into Vehicle #${result.data.authorityMerge.targetProfileId} was withdrawn.`
+        );
+      } else if (authoritativeIdentity && result.data.authorityMerge?.reason) {
+        setAuthorityMessage(
+          `Review saved; authoritative profiles remain separate (${String(result.data.authorityMerge.reason).replaceAll("_", " ")}).`
+        );
+      }
       if (nextHref) {
         router.push(nextHref);
         router.refresh();
@@ -72,7 +88,11 @@ export default function VehicleReidV2PairReviewControls({
   return (
     <div className="space-y-2 rounded-md border p-3">
       <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-        {review?.automatic ? "Automatic plate review" : "Human pair review — calibration only"}
+        {review?.automatic
+          ? "Automatic plate review"
+          : authoritativeIdentity
+            ? "Human pair review — authoritative identity evidence"
+            : "Human pair review — calibration only"}
       </p>
       {!review?.automatic ? <div className="flex flex-wrap gap-2">
         {OPTIONS.map(({ label, text, Icon }) => (
@@ -100,6 +120,12 @@ export default function VehicleReidV2PairReviewControls({
           Saving one label records one pair decision and advances to the next current unresolved pair.
         </p>
       ) : null}
+      {authoritativeIdentity && !review?.automatic ? (
+        <p className="text-xs text-muted-foreground">
+          Same may merge two exact-current profiles. Different or Unsure withdraws a prior merge from this pair and keeps the identities separate.
+        </p>
+      ) : null}
+      {authorityMessage ? <p role="status" className="text-xs text-emerald-600 dark:text-emerald-400">{authorityMessage}</p> : null}
       {error ? <p role="alert" className="text-xs text-destructive">{error}</p> : null}
     </div>
   );

@@ -4,8 +4,11 @@ import { setTimeout as delay } from "node:timers/promises";
 
 import pg from "pg";
 
+import { VehicleReidV2AuthorityRepository } from "../lib/vehicle-reid-v2-authority-repository.mjs";
+import { VehicleReidV2AuthorityService } from "../lib/vehicle-reid-v2-authority-service.mjs";
 import { VehicleReidV2ConversionRepository } from "../lib/vehicle-reid-v2-conversion-repository.mjs";
 import { VehicleReidV2ConversionService } from "../lib/vehicle-reid-v2-conversion-service.mjs";
+import { VehicleReidV2LiveRepository, VehicleReidV2LiveService } from "../lib/vehicle-reid-v2-live.mjs";
 import { VehicleReidV2ShadowRepository } from "../lib/vehicle-reid-v2-shadow-repository.mjs";
 import { VehicleReidV2ShadowService } from "../lib/vehicle-reid-v2-shadow.mjs";
 
@@ -340,6 +343,19 @@ function newConversionService({ repository = null } = {}) {
   return new VehicleReidV2ConversionService({
     repository: repository || new VehicleReidV2ConversionRepository({ pool }),
     shadowService,
+  });
+}
+
+function newAuthorityService() {
+  return new VehicleReidV2AuthorityService({
+    repository: new VehicleReidV2AuthorityRepository({ pool }),
+  });
+}
+
+function newLiveService() {
+  return new VehicleReidV2LiveService({
+    repository: new VehicleReidV2LiveRepository({ pool }),
+    logger: { error() {} },
   });
 }
 
@@ -1125,7 +1141,7 @@ async function testAuthorityAndRollbackSchema(fixtures, templateRunId) {
            profile_revision, normalized_effective_plate, plate_review_status,
            plate_review_revision, evidence_fingerprint
          ) VALUES (
-           $1, $2, 'exact_effective_plate', 'provisional_singleton', 1,
+           $1, $2, 'exact_effective_plate', 'exact_effective_plate', 1,
            'COR123', 'unreviewed', 0, $3
          )`,
         [fixtures.historicalReadId, Number(profile.rows[0].id),
@@ -1145,7 +1161,7 @@ async function testAuthorityAndRollbackSchema(fixtures, templateRunId) {
            evidence_fingerprint
          )
          SELECT
-           reads.id, $2, 'exact_effective_plate', 'provisional_singleton', 1,
+           reads.id, $2, 'exact_effective_plate', 'exact_effective_plate', 1,
            UPPER(REGEXP_REPLACE(reads.plate_number, '[^A-Za-z0-9]', '', 'g')),
            reads.review_status, reads.review_revision,
            (SELECT reviews.id FROM public.plate_read_reviews reviews
@@ -1156,7 +1172,7 @@ async function testAuthorityAndRollbackSchema(fixtures, templateRunId) {
         [fixtures.historicalReadId, Number(profile.rows[0].id),
           hash("unrelated-trusted-exact-assignment")]
       ),
-      /requires conversion-origin projected profile plate evidence/
+      /requires a current profile plate anchor/
     );
     await client.query("ROLLBACK TO SAVEPOINT unrelated_trusted_plate_check");
 
@@ -1205,7 +1221,7 @@ async function testAuthorityAndRollbackSchema(fixtures, templateRunId) {
              transitioned_at = clock_timestamp(), updated_at = clock_timestamp()
          WHERE singleton = TRUE`
       ),
-      /requires one completed, exactly revalidated conversion run/
+      /exact materialization requires one conversion run|requires one completed, exactly revalidated conversion run/
     );
     await client.query("ROLLBACK TO SAVEPOINT premature_cutover_check");
 
@@ -1618,6 +1634,38 @@ async function testAuthorityAndRollbackSchema(fixtures, templateRunId) {
     );
     const materializedMemberId = Number(materializedMember.rows[0].id);
 
+    await client.query(
+      `INSERT INTO public.vehicle_reid_v2_profile_plate_anchors (
+         profile_id, status, normalized_plate, evidence_read_id,
+         plate_review_status, plate_review_revision, plate_review_id,
+         applied_alias_id, evidence_fingerprint, origin_conversion_run_id,
+         origin_projection_key
+       )
+       SELECT $2, 'current', plates.normalized_plate, evidence.read_id,
+              evidence.plate_review_status, evidence.plate_review_revision,
+              evidence.last_plate_review_id, evidence.applied_alias_id,
+              evidence.plate_evidence_fingerprint, projected.run_id,
+              projected.projection_key
+       FROM public.vehicle_reid_v2_conversion_projected_profiles projected
+       CROSS JOIN LATERAL JSONB_ARRAY_ELEMENTS_TEXT(projected.anchor_plates)
+         plates(normalized_plate)
+       JOIN LATERAL (
+         SELECT reads.*
+         FROM public.vehicle_reid_v2_conversion_read_dispositions dispositions
+         JOIN public.vehicle_reid_v2_conversion_read_evidence reads
+           ON reads.run_id = dispositions.run_id
+          AND reads.read_id = dispositions.read_id
+         WHERE dispositions.run_id = projected.run_id
+           AND dispositions.projected_profile_id = projected.id
+           AND dispositions.disposition = 'assigned'
+           AND reads.normalized_effective_plate = plates.normalized_plate
+           AND reads.plate_review_status IN ('confirmed','corrected','alias_resolved')
+         ORDER BY reads.read_id LIMIT 1
+       ) evidence ON TRUE
+       WHERE projected.run_id = $1`,
+      [dedicatedRunId, materializedProfileId]
+    );
+
     await client.query("SAVEPOINT missing_assignment_check");
     await assert.rejects(
       client.query(
@@ -1762,7 +1810,279 @@ async function testAuthorityAndRollbackSchema(fixtures, templateRunId) {
   }
 }
 
-async function assertFinalBoundary() {
+async function drainLiveReads(service, readIds, label) {
+  const expected = [...new Set(readIds.map(Number))].sort((left, right) => left - right);
+  for (let attempt = 0; attempt < 20; attempt += 1) {
+    await service.processBatch({ limit: 25 });
+    const jobs = await pool.query(
+      `SELECT read_id, status, error_code
+       FROM public.vehicle_reid_v2_live_jobs
+       WHERE read_id = ANY($1::integer[]) ORDER BY read_id`,
+      [expected]
+    );
+    if (jobs.rows.length === expected.length
+      && jobs.rows.every((row) => row.status === "ready")) {
+      return jobs.rows;
+    }
+    const terminal = jobs.rows.find((row) => (
+      row.status === "conflict" || row.status === "unavailable"
+      || (row.status === "failed" && row.error_code)
+    ));
+    if (terminal) {
+      assert.fail(`${label} stopped at ${terminal.status}:${terminal.error_code || "unknown"}`);
+    }
+  }
+  assert.fail(`${label} did not reach ready within the bounded live drain`);
+}
+
+async function currentProfilesForReads(readIds) {
+  const result = await pool.query(
+    `SELECT read_id, canonical_profile_id
+     FROM public.vehicle_reid_v2_current_read_assignments
+     WHERE read_id = ANY($1::integer[]) ORDER BY read_id`,
+    [readIds]
+  );
+  return new Map(result.rows.map((row) => [
+    Number(row.read_id), Number(row.canonical_profile_id),
+  ]));
+}
+
+async function revisePairReview(reviewId, label) {
+  const result = await pool.query(
+    `UPDATE public.vehicle_reid_v2_pair_reviews
+     SET label = $2, revision = revision + 1,
+         actor_user_id = $3, actor_username = $4,
+         actor_display_name = $5, updated_at = clock_timestamp()
+     WHERE id = $1 RETURNING revision`,
+    [reviewId, label, fixture.actorId, `codex_reid_${suffix}`,
+      "Codex ReID v2 integration"]
+  );
+  assert.equal(result.rowCount, 1);
+  return Number(result.rows[0].revision);
+}
+
+async function testCommittedStage2MaterializationAndRollback() {
+  const actor = fixtureActor();
+  const conversion = await startCommittedPreview();
+  const ready = await processCommittedPreview(conversion.runId, { firstLimit: 250 });
+  await verifyCommittedPreview(conversion.runId, ready.latestRun.previewFingerprint);
+
+  const authority = newAuthorityService();
+  const accepted = await authority.acceptPreview({
+    runId: conversion.runId,
+    previewFingerprint: ready.latestRun.previewFingerprint,
+    actor,
+  });
+  assert.deepEqual(accepted.operation, {
+    accepted: true,
+    stale: false,
+    runId: conversion.runId,
+  });
+  const materialized = await authority.materializeAcceptedPreview({
+    runId: conversion.runId,
+    previewFingerprint: ready.latestRun.previewFingerprint,
+    actor,
+  });
+  assert.equal(materialized.operation.completed, true);
+  assert.equal(materialized.operation.stale, undefined);
+  assert.equal(materialized.overview.control.mode, "v2_shadow");
+  assert.equal(materialized.overview.counts.profiles, materialized.operation.profiles);
+  assert.equal(materialized.overview.counts.members, materialized.operation.members);
+  assert.equal(materialized.overview.counts.assignments, materialized.operation.assignments);
+  assert.equal(materialized.overview.counts.plateAnchors, materialized.operation.plateAnchors);
+
+  const cutover = await authority.transitionMode({
+    mode: "v2_primary",
+    runId: conversion.runId,
+    reason: "Committed Stage 2 integration cutover",
+    actor,
+  });
+  assert.equal(cutover.overview.control.mode, "v2_primary");
+  assert.equal(cutover.overview.control.transitionRunId, conversion.runId);
+
+  const live = newLiveService();
+  const replacementTarget = await pool.query(
+    `SELECT assignments.read_id, assignments.asset_id
+     FROM public.vehicle_reid_v2_current_read_assignments assignments
+     WHERE assignments.origin_conversion_run_id = $1
+       AND assignments.assignment_basis IN ('canonical_image','shared_asset','human_same')
+     ORDER BY assignments.read_id LIMIT 1`,
+    [conversion.runId]
+  );
+  assert.equal(replacementTarget.rowCount, 1);
+  const replacedReadId = Number(replacementTarget.rows[0].read_id);
+  await pool.query(
+    `UPDATE public.vehicle_image_asset_reads
+     SET updated_at = updated_at + INTERVAL '1 second'
+     WHERE read_id = $1 AND asset_id = $2`,
+    [replacedReadId, Number(replacementTarget.rows[0].asset_id)]
+  );
+  const staleAfterLinkChange = await pool.query(
+    `SELECT COUNT(*)::integer AS count
+     FROM public.vehicle_reid_v2_current_read_assignments WHERE read_id = $1`,
+    [replacedReadId]
+  );
+  assert.equal(staleAfterLinkChange.rows[0].count, 0);
+  await drainLiveReads(live, [replacedReadId], "source-link replacement");
+  const replacementHistory = await pool.query(
+    `SELECT
+       (SELECT COUNT(*)::integer FROM public.vehicle_reid_v2_read_assignments
+        WHERE read_id = $1 AND status = 'active') AS history,
+       (SELECT COUNT(*)::integer FROM public.vehicle_reid_v2_current_read_assignments
+        WHERE read_id = $1) AS current`,
+    [replacedReadId]
+  );
+  assert.deepEqual(replacementHistory.rows[0], { history: 2, current: 1 });
+
+  const anchorTarget = await pool.query(
+    `SELECT anchors.normalized_plate, anchors.evidence_read_id
+     FROM public.vehicle_reid_v2_current_plate_anchors anchors
+     JOIN public.vehicle_reid_v2_current_read_assignments assignments
+       ON assignments.read_id = anchors.evidence_read_id
+      AND assignments.canonical_profile_id = anchors.canonical_profile_id
+     ORDER BY anchors.id LIMIT 1`
+  );
+  assert.equal(anchorTarget.rowCount, 1);
+  const anchorPlate = anchorTarget.rows[0].normalized_plate;
+  const anchorReadId = Number(anchorTarget.rows[0].evidence_read_id);
+  await pool.query(
+    `UPDATE public.plate_reads
+     SET review_revision = review_revision + 1 WHERE id = $1`,
+    [anchorReadId]
+  );
+  await drainLiveReads(live, [anchorReadId], "plate-anchor revision replacement");
+  const anchorHistory = await pool.query(
+    `SELECT
+       (SELECT COUNT(*)::integer
+        FROM public.vehicle_reid_v2_profile_plate_anchors
+        WHERE normalized_plate = $1 AND status = 'current') AS history,
+       (SELECT COUNT(*)::integer
+        FROM public.vehicle_reid_v2_current_plate_anchors
+        WHERE normalized_plate = $1) AS current`,
+    [anchorPlate]
+  );
+  assert.ok(anchorHistory.rows[0].history >= 2);
+  assert.equal(anchorHistory.rows[0].current, 1);
+
+  const historical = await createRead({
+    plate: anchorPlate,
+    reviewStatus: "corrected",
+    vehicleStatus: "unavailable",
+    errorCode: "STAGE2_HISTORICAL_NO_OVERVIEW",
+    queueKind: "historical",
+    timestampOffset: "40 seconds",
+  });
+  const historicalId = Number(historical.id);
+  await drainLiveReads(live, [historicalId], "new exact-plate history");
+  let exactAssignment = await pool.query(
+    `SELECT assignment_basis
+     FROM public.vehicle_reid_v2_current_read_assignments WHERE read_id = $1`,
+    [historicalId]
+  );
+  assert.equal(exactAssignment.rows[0]?.assignment_basis, "exact_effective_plate");
+  await pool.query(
+    `UPDATE public.plate_reads
+     SET review_revision = review_revision + 1 WHERE id = $1`,
+    [historicalId]
+  );
+  await drainLiveReads(live, [historicalId], "exact-plate review replacement");
+  exactAssignment = await pool.query(
+    `SELECT
+       (SELECT COUNT(*)::integer FROM public.vehicle_reid_v2_read_assignments
+        WHERE read_id = $1 AND status = 'active') AS history,
+       (SELECT COUNT(*)::integer FROM public.vehicle_reid_v2_current_read_assignments
+        WHERE read_id = $1) AS current`,
+    [historicalId]
+  );
+  assert.deepEqual(exactAssignment.rows[0], { history: 2, current: 1 });
+
+  const liveA = await createAssetWithCrop("stage2-live-a", "LVA111", {
+    reviewStatus: "unreviewed", timestampOffset: "50 seconds",
+  });
+  const liveB = await createAssetWithCrop("stage2-live-b", "LVB222", {
+    reviewStatus: "unreviewed", timestampOffset: "51 seconds",
+  });
+  const liveC = await createAssetWithCrop("stage2-live-c", "LVC333", {
+    reviewStatus: "unreviewed", timestampOffset: "52 seconds",
+  });
+  const liveReadIds = [liveA.readId, liveB.readId, liveC.readId];
+  await drainLiveReads(live, liveReadIds, "provisional singleton creation");
+  let liveProfiles = await currentProfilesForReads(liveReadIds);
+  assert.equal(new Set(liveProfiles.values()).size, 3);
+
+  const firstReviewId = await createPairReview(liveA, liveB, "same_vehicle");
+  const firstMerge = await authority.mergeProfilesByReview({ reviewId: firstReviewId, actor });
+  assert.equal(firstMerge.merged, true);
+  liveProfiles = await currentProfilesForReads(liveReadIds);
+  assert.equal(liveProfiles.get(liveA.readId), liveProfiles.get(liveB.readId));
+
+  // The second review deliberately uses the raw source-profile member from the
+  // first merge, proving expansion validates pre-merge canonical groups.
+  const expansionReviewId = await createPairReview(liveB, liveC, "same_vehicle");
+  const expansion = await authority.mergeProfilesByReview({
+    reviewId: expansionReviewId, actor,
+  });
+  assert.equal(expansion.merged, true);
+  liveProfiles = await currentProfilesForReads(liveReadIds);
+  assert.equal(new Set(liveProfiles.values()).size, 1);
+
+  await revisePairReview(firstReviewId, "different_vehicle");
+  const split = await authority.mergeProfilesByReview({ reviewId: firstReviewId, actor });
+  assert.equal(split.split, true);
+  liveProfiles = await currentProfilesForReads(liveReadIds);
+  assert.equal(new Set(liveProfiles.values()).size, 3);
+
+  await revisePairReview(firstReviewId, "same_vehicle");
+  const remerge = await authority.mergeProfilesByReview({ reviewId: firstReviewId, actor });
+  assert.equal(remerge.merged, true);
+  liveProfiles = await currentProfilesForReads(liveReadIds);
+  assert.equal(new Set(liveProfiles.values()).size, 1);
+  const mergeHistory = await pool.query(
+    `SELECT status, COUNT(*)::integer AS count
+     FROM public.vehicle_reid_v2_profile_merges
+     WHERE pair_review_id = $1 GROUP BY status ORDER BY status`,
+    [firstReviewId]
+  );
+  assert.deepEqual(mergeHistory.rows, [
+    { status: "current", count: 1 },
+    { status: "withdrawn", count: 1 },
+  ]);
+
+  const rollback = await authority.transitionMode({
+    mode: "v1_rollback",
+    reason: "Committed Stage 2 integration rollback",
+    actor,
+  });
+  assert.equal(rollback.overview.control.mode, "v1_rollback");
+  const standby = await live.processBatch({ limit: 25 });
+  assert.equal(standby.mode, "v1_rollback");
+  assert.equal(standby.processed, 0);
+
+  const retained = await pool.query(
+    `SELECT
+       (SELECT COUNT(*)::integer FROM public.vehicle_clusters) AS v1_clusters,
+       (SELECT COUNT(*)::integer FROM public.vehicle_cluster_assignments)
+         AS v1_assignments,
+       (SELECT COUNT(*)::integer FROM public.vehicle_reid_v2_profiles) AS profiles,
+       (SELECT COUNT(*)::integer FROM public.vehicle_reid_v2_profile_members) AS members,
+       (SELECT COUNT(*)::integer FROM public.vehicle_reid_v2_read_assignments) AS assignments,
+       (SELECT COUNT(*)::integer FROM public.vehicle_reid_v2_profile_plate_anchors) AS anchors,
+       (SELECT COUNT(*)::integer FROM public.vehicle_reid_v2_live_jobs) AS live_jobs`
+  );
+  assert.deepEqual({
+    v1_clusters: retained.rows[0].v1_clusters,
+    v1_assignments: retained.rows[0].v1_assignments,
+  }, { v1_clusters: 1, v1_assignments: 3 });
+  return {
+    profiles: retained.rows[0].profiles,
+    members: retained.rows[0].members,
+    assignments: retained.rows[0].assignments,
+    anchors: retained.rows[0].anchors,
+    liveJobs: retained.rows[0].live_jobs,
+  };
+}
+
+async function assertFinalBoundary(stage2) {
   const state = await pool.query(
     `SELECT
        (SELECT COUNT(*)::integer FROM public.vehicle_reid_v2_conversion_runs) AS conversions,
@@ -1777,18 +2097,22 @@ async function assertFinalBoundary() {
        (SELECT COUNT(*)::integer FROM public.vehicle_reid_v2_profiles) AS profiles,
        (SELECT COUNT(*)::integer FROM public.vehicle_reid_v2_profile_members) AS members,
        (SELECT COUNT(*)::integer FROM public.vehicle_reid_v2_read_assignments) AS assignments,
+       (SELECT COUNT(*)::integer FROM public.vehicle_reid_v2_profile_plate_anchors) AS anchors,
+       (SELECT COUNT(*)::integer FROM public.vehicle_reid_v2_live_jobs) AS live_jobs,
        (SELECT mode FROM public.vehicle_reid_control WHERE singleton = TRUE) AS mode`
   );
   assert.deepEqual(state.rows[0], {
-    conversions: 8,
+    conversions: 9,
     cancelled: 4,
     stale: 3,
     ready: 0,
     failed: 1,
-    profiles: 0,
-    members: 0,
-    assignments: 0,
-    mode: "v2_shadow",
+    profiles: stage2.profiles,
+    members: stage2.members,
+    assignments: stage2.assignments,
+    anchors: stage2.anchors,
+    live_jobs: stage2.liveJobs,
+    mode: "v1_rollback",
   });
 }
 
@@ -1801,7 +2125,8 @@ try {
   const previewResult = await runConversionPreview(fixtures);
   await testAuthorityAndRollbackSchema(fixtures, previewResult.latestRunId);
   await testOlderFailedRunCannotBeRevived(previewResult.latestRunId);
-  await assertFinalBoundary();
+  const stage2 = await testCommittedStage2MaterializationAndRollback();
+  await assertFinalBoundary(stage2);
   succeeded = true;
 } finally {
   try {
@@ -1819,5 +2144,5 @@ try {
   }
 }
 
-if (!succeeded) throw new Error("ReID v2 authoritative Stage-1 integration test did not complete");
-console.log("vehicle_reid_v2_authoritative_stage1_postgres_gate=passed");
+if (!succeeded) throw new Error("ReID v2 authoritative Stage 1/2 integration test did not complete");
+console.log("vehicle_reid_v2_authoritative_stage2_postgres_gate=passed");

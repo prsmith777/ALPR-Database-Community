@@ -163,7 +163,7 @@ test("a current canonical link without the exact crop and embedding is incomplet
   );
 });
 
-test("Stage 1 runtime can only freeze and project; it cannot accept, materialize, or switch authority", () => {
+test("Stage 1 conversion engine remains projection-only behind the separate Stage 2 authority runtime", () => {
   const runtime = `${repository}\n${service}`;
   for (const table of [
     "vehicle_reid_v2_profiles",
@@ -189,8 +189,9 @@ test("Stage 1 runtime can only freeze and project; it cannot accept, materialize
   assert.doesNotMatch(repository, /recordBatchFailure/);
   assert.match(repository, /newer\.id > runs\.id/);
   assert.match(repository, /jobs\.stage = 'project_reads'/);
-  assert.doesNotMatch(panel, />\s*(Accept|Materialize|Cut over)\b/i);
-  assert.doesNotMatch(actions, /acceptVehicleReidV2Conversion|materializeVehicleReidV2/i);
+  assert.match(panel, /acceptVehicleReidV2ConversionPreview/);
+  assert.match(actions, /materializeVehicleReidV2ConversionPreview/);
+  assert.doesNotMatch(service, /vehicle-reid-v2-authority/);
 });
 
 test("authoritative exact-plate assignments require reviewed trustworthy plate evidence", () => {

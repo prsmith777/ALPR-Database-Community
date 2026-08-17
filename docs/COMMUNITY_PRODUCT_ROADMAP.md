@@ -902,32 +902,45 @@ notes. Updates remain externally orchestrated.
   evidence reuses the prior deterministic fingerprint. The snapshot is stored
   separately from current vehicle profiles and writes no threshold, cluster,
   assignment, notification, or external-provider result.
-- The current Stage 1 authoritative ReID v2 source candidate adds only an
-  additive, reversible foundation. Stable `vehicle_reid_v2_profiles`,
-  `vehicle_reid_v2_profile_members`, and
-  `vehicle_reid_v2_read_assignments` tables are created empty; immutable
-  shadow snapshot candidate IDs remain evidence references and never become
-  authoritative IDs. The single `vehicle_reid_control` row defaults to
-  `v2_shadow`, while legacy v1 remains the primary identity source and all
-  existing consumers, writers, rollback data, and files remain unchanged.
-  Immutable conversion evidence, projection, conflict, per-read disposition,
-  bounded job-state, fingerprint, and observation-only v1-comparison records
-  are accompanied by a deterministic preview projector. Exact normalized
-  effective plates and audited exact-current human Same reviews are the only
-  positive joins. Different or Unsure reviews, clearly different or ambiguous
-  plates, conflicts, stale or replaced source links, incomplete evidence, and
-  display-only Entry-to-Street fallbacks fail closed; cosine similarity and v1
-  grouping never create v2 identity. The candidate exposes no accept or
-  materialization path, so it creates no authoritative profile, member, or
-  read assignment. The Processing page does expose the preview-only lifecycle:
-  start one frozen run, process bounded 1, 5, 25, or 250-read batches, pause or
-  resume, cancel remaining work, retry one listed failure once, inspect
-  conflicts and v1 comparison metrics, and verify the frozen fingerprints.
-  None of those controls accepts or materializes the projection. The candidate
-  also corrects the production-schema
-  mismatch in candidate suggestions by selecting persisted `shadow` candidates
-  and ordering conflicts by `conflict_key`. This candidate has not begun Stage
-  2 and has not been merged or deployed to staging or production.
+- The additive Stage 1 authoritative ReID v2 foundation is delivered. Stable
+  `vehicle_reid_v2_profiles`, `vehicle_reid_v2_profile_members`, and
+  `vehicle_reid_v2_read_assignments` start empty; immutable snapshot candidate
+  IDs remain evidence references and never become authoritative IDs. The
+  singleton `vehicle_reid_control` defaults to `v2_shadow`, and immutable
+  conversion evidence, projected profiles/members/read dispositions, visible
+  conflicts, bounded jobs, fingerprints, and observation-only v1 comparison
+  support 1, 5, 25, or 250-read preview batches with pause, resume,
+  cancellation, one bounded retry, and exact verification.
+- The current source candidate implements controlled Stage 2 without silently
+  changing authority. Accept records an Administrator's exact verified preview
+  approval but writes no profile. Materialize re-captures the live source,
+  crop, embedding, plate-review, pair-review, and source-link contracts and
+  atomically writes exactly the projected stable profiles, crop members,
+  reviewed plate anchors, and assigned reads; evidence drift marks the run
+  stale with zero authority writes. Database triggers reconcile every projected
+  row, count, fingerprint, and provenance in both directions before completion
+  or `v2_primary` is permitted.
+- Stage 2 adds one explicit compatibility cutover rather than rewriting reads.
+  Only after the completed-run reconciliation succeeds do Live Feed Vehicle
+  numbers, Find Similar, Vehicle Search, Profiles, Review, and legacy-route
+  redirects use current ReID v2 authority. Current views revalidate canonical
+  links, crop and embedding hashes, reviewed plate revisions, anchors, and
+  merge evidence on every read. A bounded observable worker processes new or
+  stale reads only in `v2_primary`; exact canonical images, shared assets,
+  trustworthy exact plates, and audited Same decisions can create authority,
+  while Different, Unsure, ambiguity, stale evidence, display fallbacks, and
+  missing contracts stay unassigned in the exception queue.
+- Exact-current audited Same reviews can merge compatible stable profile IDs,
+  including a new profile joined through a member of an existing merge group.
+  Revising that pair to Different or Unsure withdraws its merge without deleting
+  history. `v1_rollback` returns every consumer to the retained v1 path while
+  preserving v2 authority for audit; Stage 2 does not stop or delete v1
+  producers, clusters, assignments, reviews, files, or shared direction and
+  attribute contracts. The disposable PostgreSQL 17 gate commits and verifies
+  accept/materialize/cutover, stale source and plate-revision replacement,
+  live provisional assignment, merge/split/remerge, v1 retention, and rollback.
+  This source candidate has not itself been merged or deployed to staging or
+  production and has not operated a production cutover.
 - Final full-resolution Overview framing validation is implemented before a
   new Vehicle View is committed. The anchor-constrained selector prioritizes a
   fully framed vehicle track over a higher numerical score near an image edge,
@@ -1048,17 +1061,16 @@ be restored. Monochrome nighttime captures do not receive a direction result.
   and existing Different or Unsure labels fail closed. The suggestion surface
   assigns no crop, applies no threshold, and changes no current profile.
   Review a bounded sample of these suggestions and create a refreshed snapshot
-  after new Same evidence. Any later promotion into a new assignment path must
-  remain a separate explicit cutover decision with current-link revalidation,
-  observable shadow-versus-current results, and a rollback plan.
-  The additive Stage 1 source candidate now supplies empty authoritative tables,
-  a default `v2_shadow` control, immutable preview evidence/projection records,
-  deterministic fail-closed projection logic, and observation-only v1
-  comparison metrics. It deliberately supplies no acceptance or materialization
-  path. Stage 2 materialization, compatibility reads, primary cutover, live v2
-  assignment, consumer replacement, and later v1 retirement remain planned and
-  require separate review and approval; no merge or deployment is implied by
-  this roadmap entry.
+  after new Same evidence. Stage 1's empty authority, default `v2_shadow`
+  control, immutable preview records, deterministic fail-closed projection, and
+  observation-only v1 comparisons are delivered. The Stage 2 source candidate
+  now adds exact accepted-preview materialization, current-contract compatibility
+  reads, explicit primary cutover, bounded live assignment, final consumer
+  routes, audited merge/split history, observable exceptions, and retained v1
+  rollback. A deployment and any actual environment cutover still require
+  separate approval and verification. Stage 3 v1 producer shutdown, historical
+  preservation/export, derived-file cleanup, and table retirement remain planned
+  and must not begin from this Stage 2 candidate.
   Shared Street images must continue to
   count once, and Entry-to-Street display fallbacks must never become an
   additional identity observation. Keep the existing ReID path available until

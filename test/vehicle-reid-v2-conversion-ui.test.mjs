@@ -30,7 +30,7 @@ test("Vehicle Setup Processing loads and renders the ReID v2 conversion preview 
   assert.equal((settings.match(/<VehicleReidV2ConversionPanel/g) || []).length, 1);
 });
 
-test("conversion preview UI exposes bounded lifecycle controls without a cutover action", async () => {
+test("conversion UI preserves bounded preview controls and separates Stage 2 authority actions", async () => {
   const panel = await source("components/settings/VehicleReidV2ConversionPanel.jsx");
 
   for (const action of [
@@ -41,6 +41,9 @@ test("conversion preview UI exposes bounded lifecycle controls without a cutover
     "cancelVehicleReidV2ConversionPreview",
     "retryVehicleReidV2ConversionPreviewJob",
     "verifyVehicleReidV2ConversionPreview",
+    "acceptVehicleReidV2ConversionPreview",
+    "materializeVehicleReidV2ConversionPreview",
+    "transitionVehicleReidAuthorityMode",
   ]) assert.match(panel, new RegExp(`${action}\\b`), action);
 
   assert.match(panel, /BATCH_SIZES = Object\.freeze\(\[1, 5, 25, 250\]\)/);
@@ -63,15 +66,19 @@ test("conversion preview UI exposes bounded lifecycle controls without a cutover
   assert.match(panel, /Cancel preview/);
   assert.match(panel, /Retry once/);
   assert.match(panel, /Verify frozen preview/);
-  assert.doesNotMatch(panel, /cut over|make v2 primary|materialize authoritative/i);
+  assert.match(panel, /Accept verified preview/);
+  assert.match(panel, /Materialize authoritative ReID/);
+  assert.match(panel, /Make ReID v2 primary/);
+  assert.match(panel, /Roll back consumers to v1/);
+  assert.ok(panel.indexOf("Accept verified preview") < panel.indexOf("Materialize authoritative ReID"));
 });
 
 test("conversion preview UI makes Stage 1 safety and every projection category explicit", async () => {
   const panel = await source("components/settings/VehicleReidV2ConversionPanel.jsx");
 
-  assert.match(panel, /Stage 1 conversion preview only/);
-  assert.match(panel, /No authoritative v2 profile, profile member, or read assignment is written here/);
-  assert.match(panel, /never changes the current identity source/);
+  assert.match(panel, /Stage 1 conversion preview/);
+  assert.match(panel, /Preview controls create no authoritative identity/);
+  assert.match(panel, /Materialization does not change the current identity source/);
   assert.match(panel, /authority\.assignments/);
   assert.match(panel, /terminal job failure/);
   assert.match(panel, /comparison evidence only and never create v2 identity/);
