@@ -5,6 +5,7 @@ import test from "node:test";
 import {
   VehicleReidV2AuthorityRepository,
 } from "../lib/vehicle-reid-v2-authority-repository.mjs";
+import { VehicleReidV2AuthorityService } from "../lib/vehicle-reid-v2-authority-service.mjs";
 import {
   VehicleReidV2LiveRepository,
   VehicleReidV2LiveService,
@@ -128,7 +129,44 @@ test("authority overview uses fast stored counts while consumers retain exact-cu
   assert.doesNotMatch(panel, /stale assignments excluded/);
 });
 
-test("authoritative profile browsing binds exact-current evidence to the page id array", async () => {
+test("authority mode uses the direct control lookup without loading overview counts", async () => {
+  const [actions, serviceSource] = await Promise.all([
+    source("app/actions.js"),
+    source("lib/vehicle-reid-v2-authority-service.mjs"),
+  ]);
+  const action = actions.slice(
+    actions.indexOf("export async function getVehicleReidAuthorityMode()"),
+    actions.indexOf("export async function getVehicleReidReviewOverview()")
+  );
+  assert.match(action, /getVehicleReidV2AuthorityService\(\)\)\.getControl\(\)/);
+  assert.doesNotMatch(action, /getOverview\(\)/);
+  assert.match(serviceSource, /async getControl\(\)[\s\S]*this\.repository\.getControl\(\)/);
+
+  const calls = [];
+  const service = new VehicleReidV2AuthorityService({
+    repository: {
+      async getControl() {
+        calls.push("control");
+        return { mode: "v2_primary", revision: "3" };
+      },
+      async getOverview() {
+        calls.push("overview");
+        throw new Error("overview must not be loaded");
+      },
+    },
+  });
+  assert.deepEqual(await service.getControl(), {
+    mode: "v2_primary",
+    previousMode: null,
+    revision: 3,
+    transitionRunId: null,
+    transitionReason: null,
+    transitionedAt: null,
+  });
+  assert.deepEqual(calls, ["control"]);
+});
+
+test("authoritative profile browsing fences exact-current evidence with physical row ids", async () => {
   const serviceSource = await source("lib/vehicle-reid-v2-authority-service.mjs");
   const serviceListProfiles = serviceSource.slice(
     serviceSource.indexOf("async listProfiles(input = {})"),
@@ -160,11 +198,26 @@ test("authoritative profile browsing binds exact-current evidence to the page id
             ],
           };
         }
-        if (/current_profile_merges/.test(sql)) {
-          return { rows: [{ source_profile_id: 20, target_profile_id: 10 }] };
+        if (/FROM public\.vehicle_reid_v2_profile_merges merges/.test(sql)) {
+          return { rows: [{ id: 900 }] };
+        }
+        if (/FROM public\.vehicle_reid_v2_current_profile_merges merges/.test(sql)) {
+          return { rows: [{ id: 900, source_profile_id: 20, target_profile_id: 10 }] };
+        }
+        if (/SELECT anchors\.id[\s\S]*FROM public\.vehicle_reid_v2_profile_plate_anchors anchors[\s\S]*ILIKE/.test(sql)) {
+          return { rows: [{ id: 301 }] };
         }
         if (/SELECT DISTINCT anchors\.canonical_profile_id/.test(sql)) {
           return { rows: [{ canonical_profile_id: 10 }] };
+        }
+        if (/FROM public\.vehicle_reid_v2_profile_members members/.test(sql)) {
+          return { rows: [{ id: 101 }, { id: 102 }] };
+        }
+        if (/FROM public\.vehicle_reid_v2_read_assignments assignments/.test(sql)) {
+          return { rows: [{ id: 201 }, { id: 202 }, { id: 203 }] };
+        }
+        if (/FROM public\.vehicle_reid_v2_profile_plate_anchors anchors/.test(sql)) {
+          return { rows: [{ id: 301 }] };
         }
         if (/WITH page_members AS MATERIALIZED/.test(sql)) {
           return { rows: [
@@ -183,17 +236,42 @@ test("authoritative profile browsing binds exact-current evidence to the page id
   });
 
   const page = await repository.listProfiles({ page: 1, pageSize: 24 });
-  assert.equal(queries.length, 5);
+  assert.equal(queries.length, 9);
   assert.deepEqual(queries[0].values, []);
   assert.doesNotMatch(queries[0].sql, /vehicle_reid_v2_current_/);
   assert.doesNotMatch(queries[0].sql, /ILIKE/);
-  assert.deepEqual(queries[1].values, [[20, 10]]);
-  for (const query of queries.slice(2)) assert.deepEqual(query.values, [[10, 20]]);
-  assert.match(queries[1].sql, /current_profile_merges[\s\S]*source_profile_id = ANY\(\$1::bigint\[\]\)/);
-  assert.match(queries[1].sql, /SELECT merges\.source_profile_id, merges\.target_profile_id/);
-  assert.match(queries[2].sql, /current_profile_members[\s\S]*members\.profile_id = ANY\(\$1::bigint\[\]\)/);
-  assert.match(queries[3].sql, /current_read_assignments[\s\S]*assignments\.profile_id = ANY\(\$1::bigint\[\]\)/);
-  assert.match(queries[4].sql, /current_plate_anchors[\s\S]*anchors\.profile_id = ANY\(\$1::bigint\[\]\)/);
+  const rawMerge = queries.find(({ sql }) => (
+    /FROM public\.vehicle_reid_v2_profile_merges merges/.test(sql)
+  ));
+  const exactMerge = queries.find(({ sql }) => (
+    /FROM public\.vehicle_reid_v2_current_profile_merges merges/.test(sql)
+  ));
+  assert.deepEqual(rawMerge.values, [[20, 10]]);
+  assert.match(rawMerge.sql, /merges\.status = 'current'[\s\S]*source_profile_id = ANY/);
+  assert.deepEqual(exactMerge.values, [[900], [20, 10]]);
+  assert.match(exactMerge.sql, /merges\.id = ANY\(\$1::bigint\[\]\)/);
+
+  const rawMembers = queries.find(({ sql }) => (
+    /FROM public\.vehicle_reid_v2_profile_members members/.test(sql)
+  ));
+  const rawAssignments = queries.find(({ sql }) => (
+    /FROM public\.vehicle_reid_v2_read_assignments assignments/.test(sql)
+  ));
+  const rawAnchors = queries.find(({ sql }) => (
+    /FROM public\.vehicle_reid_v2_profile_plate_anchors anchors/.test(sql)
+  ));
+  for (const query of [rawMembers, rawAssignments, rawAnchors]) {
+    assert.deepEqual(query.values, [[10, 20]]);
+  }
+  const exactMembers = queries.find(({ sql }) => /WITH page_members AS MATERIALIZED/.test(sql));
+  const exactAssignments = queries.find(({ sql }) => /current_read_assignments/.test(sql));
+  const exactAnchors = queries.find(({ sql }) => /current_plate_anchors/.test(sql));
+  assert.deepEqual(exactMembers.values, [[101, 102], [10]]);
+  assert.deepEqual(exactAssignments.values, [[201, 202, 203], [10]]);
+  assert.deepEqual(exactAnchors.values, [[301], [10]]);
+  assert.match(exactMembers.sql, /current_profile_members[\s\S]*members\.id = ANY\(\$1::bigint\[\]\)/);
+  assert.match(exactAssignments.sql, /assignments\.id = ANY\(\$1::bigint\[\]\)/);
+  assert.match(exactAnchors.sql, /anchors\.id = ANY\(\$1::bigint\[\]\)/);
   assert.deepEqual(page.rows.map((row) => ({
     id: row.id,
     status: row.status,
@@ -207,29 +285,87 @@ test("authoritative profile browsing binds exact-current evidence to the page id
 
   queries.length = 0;
   await repository.listProfiles({ page: 1, pageSize: 12, search: " ABC123 " });
-  assert.equal(queries.length, 6);
-  assert.deepEqual(queries[0].values, []);
-  assert.deepEqual(queries[1].values, [[20, 10]]);
-  assert.deepEqual(queries[2].values, [[20, 10], "ABC123"]);
-  assert.match(queries[2].sql, /normalized_plate ILIKE '%' \|\| \$2 \|\| '%'/);
-  assert.match(queries[2].sql, /anchors\.profile_id = ANY\(\$1::bigint\[\]\)/);
-  for (const query of queries.slice(3)) assert.deepEqual(query.values, [[10, 20]]);
+  assert.equal(queries.length, 11);
+  const rawSearch = queries.find(({ sql }) => (
+    /FROM public\.vehicle_reid_v2_profile_plate_anchors anchors[\s\S]*ILIKE/.test(sql)
+  ));
+  const exactSearch = queries.find(({ sql }) => /SELECT DISTINCT anchors\.canonical_profile_id/.test(sql));
+  assert.deepEqual(rawSearch.values, [[20, 10], "ABC123"]);
+  assert.deepEqual(exactSearch.values, [[301], [20, 10], "ABC123"]);
+  assert.match(exactSearch.sql, /anchors\.id = ANY\(\$1::bigint\[\]\)/);
 });
 
-test("authoritative profile detail scopes merged evidence by physical source profile ids", async () => {
+test("profile browsing skips exact-current views when indexed physical candidates are empty", async () => {
   const queries = [];
   const repository = new VehicleReidV2AuthorityRepository({
     executor: {
       async query(sql, values) {
         queries.push({ sql, values });
-        if (/SELECT COALESCE\(merges\.target_profile_id, profiles\.id\) AS id/.test(sql)) {
-          return { rows: [{ id: 10 }] };
+        if (/FROM public\.vehicle_reid_v2_profiles profiles[\s\S]*ORDER BY profiles\.updated_at/.test(sql)) {
+          return { rows: [{ id: 10, status: "active", revision: 1 }] };
         }
-        if (/SELECT merges\.source_profile_id[\s\S]*merges\.target_profile_id = \$1/.test(sql)) {
-          return { rows: [{ source_profile_id: 20 }] };
+        return { rows: [] };
+      },
+    },
+  });
+
+  await repository.listProfiles({ page: 1, pageSize: 24 });
+  assert.equal(queries.length, 5);
+  assert.equal(queries.filter(({ sql }) => /vehicle_reid_v2_current_/.test(sql)).length, 0);
+  assert.equal(queries.filter(({ sql }) => (
+    /FROM public\.vehicle_reid_v2_(profile_merges|profile_members|read_assignments|profile_plate_anchors)/.test(sql)
+  )).length, 4);
+});
+
+test("a raw current merge candidate must still pass the exact-current merge view", async () => {
+  const queries = [];
+  const repository = new VehicleReidV2AuthorityRepository({
+    executor: {
+      async query(sql, values) {
+        queries.push({ sql, values });
+        if (/FROM public\.vehicle_reid_v2_profile_merges merges/.test(sql)) {
+          return { rows: [{ id: 900 }] };
+        }
+        if (/FROM public\.vehicle_reid_v2_current_profile_merges merges/.test(sql)) {
+          return { rows: [] };
+        }
+        throw new Error(`Unexpected merge validation query: ${sql}`);
+      },
+    },
+  });
+
+  assert.deepEqual(await repository.listCurrentProfileMergesBySource([20]), []);
+  assert.equal(queries.length, 2);
+  assert.deepEqual(queries[0].values, [[20]]);
+  assert.deepEqual(queries[1].values, [[900], [20]]);
+});
+
+test("authoritative profile detail validates merge and evidence candidates by physical id", async () => {
+  const queries = [];
+  const repository = new VehicleReidV2AuthorityRepository({
+    executor: {
+      async query(sql, values) {
+        queries.push({ sql, values });
+        if (/FROM public\.vehicle_reid_v2_profile_merges merges[\s\S]*source_profile_id/.test(sql)) {
+          return { rows: [{ id: 900 }] };
+        }
+        if (/FROM public\.vehicle_reid_v2_profile_merges merges[\s\S]*target_profile_id/.test(sql)) {
+          return { rows: [{ id: 900 }] };
+        }
+        if (/FROM public\.vehicle_reid_v2_current_profile_merges merges/.test(sql)) {
+          return { rows: [{ id: 900, source_profile_id: 20, target_profile_id: 10 }] };
         }
         if (/SELECT profiles\.\*[\s\S]*WHERE profiles\.id = \$1/.test(sql)) {
           return { rows: [{ id: 10, status: "provisional", revision: 1 }] };
+        }
+        if (/FROM public\.vehicle_reid_v2_profile_members members/.test(sql)) {
+          return { rows: [{ id: 100 }, { id: 200 }] };
+        }
+        if (/FROM public\.vehicle_reid_v2_read_assignments assignments/.test(sql)) {
+          return { rows: [{ id: 300 }] };
+        }
+        if (/FROM public\.vehicle_reid_v2_profile_plate_anchors anchors/.test(sql)) {
+          return { rows: [{ id: 400 }] };
         }
         if (/current_profile_members/.test(sql)) {
           return { rows: [
@@ -249,18 +385,31 @@ test("authoritative profile detail scopes merged evidence by physical source pro
   });
 
   const detail = await repository.getProfile(20);
-  assert.equal(queries.length, 6);
-  assert.deepEqual(queries[0].values, [20]);
-  assert.match(queries[0].sql, /current_profile_merges[\s\S]*source_profile_id = profiles\.id/);
-  assert.deepEqual(queries[1].values, [10]);
-  assert.match(queries[1].sql, /current_profile_merges[\s\S]*target_profile_id = \$1/);
-  assert.deepEqual(queries[2].values, [10]);
-  for (const query of queries.slice(3)) assert.deepEqual(query.values, [[10, 20], 10]);
-  assert.match(queries[3].sql, /WITH scoped_members AS MATERIALIZED[\s\S]*current_profile_members[\s\S]*members\.profile_id = ANY\(\$1::bigint\[\]\)[\s\S]*FROM scoped_members members[\s\S]*members\.canonical_profile_id = \$2/);
-  assert.match(queries[4].sql, /WITH scoped_assignments AS MATERIALIZED[\s\S]*current_read_assignments[\s\S]*assignments\.profile_id = ANY\(\$1::bigint\[\]\)[\s\S]*FROM scoped_assignments assignments[\s\S]*assignments\.canonical_profile_id = \$2/);
-  assert.match(queries[4].sql, /SELECT JSONB_AGG\(DISTINCT JSONB_BUILD_OBJECT\([\s\S]*FROM public\.plate_tags plate_tags[\s\S]*plate_tags\.plate_number = reads\.plate_number/);
-  assert.doesNotMatch(queries[4].sql, /GROUP BY assignments\.id/);
-  assert.match(queries[5].sql, /WITH scoped_anchors AS MATERIALIZED[\s\S]*current_plate_anchors[\s\S]*anchors\.profile_id = ANY\(\$1::bigint\[\]\)[\s\S]*FROM scoped_anchors anchors[\s\S]*anchors\.canonical_profile_id = \$2/);
+  assert.equal(queries.length, 11);
+  const rawSourceMerge = queries.find(({ sql }) => (
+    /FROM public\.vehicle_reid_v2_profile_merges merges[\s\S]*source_profile_id/.test(sql)
+  ));
+  const rawTargetMerge = queries.find(({ sql }) => (
+    /FROM public\.vehicle_reid_v2_profile_merges merges[\s\S]*target_profile_id/.test(sql)
+  ));
+  assert.deepEqual(rawSourceMerge.values, [[20]]);
+  assert.deepEqual(rawTargetMerge.values, [[10]]);
+  const exactMerges = queries.filter(({ sql }) => /current_profile_merges/.test(sql));
+  assert.equal(exactMerges.length, 2);
+  assert.deepEqual(exactMerges[0].values, [[900], [20]]);
+  assert.deepEqual(exactMerges[1].values, [[900], [10]]);
+
+  const membersQuery = queries.find(({ sql }) => /WITH scoped_members AS MATERIALIZED/.test(sql));
+  const assignmentsQuery = queries.find(({ sql }) => /WITH scoped_assignments AS MATERIALIZED/.test(sql));
+  const anchorsQuery = queries.find(({ sql }) => /WITH scoped_anchors AS MATERIALIZED/.test(sql));
+  assert.deepEqual(membersQuery.values, [[100, 200], 10]);
+  assert.deepEqual(assignmentsQuery.values, [[300], 10]);
+  assert.deepEqual(anchorsQuery.values, [[400], 10]);
+  assert.match(membersQuery.sql, /current_profile_members[\s\S]*members\.id = ANY\(\$1::bigint\[\]\)[\s\S]*members\.canonical_profile_id = \$2/);
+  assert.match(assignmentsQuery.sql, /current_read_assignments[\s\S]*assignments\.id = ANY\(\$1::bigint\[\]\)[\s\S]*assignments\.canonical_profile_id = \$2/);
+  assert.match(assignmentsQuery.sql, /SELECT JSONB_AGG\(DISTINCT JSONB_BUILD_OBJECT\([\s\S]*FROM public\.plate_tags plate_tags[\s\S]*plate_tags\.plate_number = reads\.plate_number/);
+  assert.doesNotMatch(assignmentsQuery.sql, /GROUP BY assignments\.id/);
+  assert.match(anchorsQuery.sql, /current_plate_anchors[\s\S]*anchors\.id = ANY\(\$1::bigint\[\]\)[\s\S]*anchors\.canonical_profile_id = \$2/);
   assert.equal(detail.profile.id, 10);
   assert.equal(detail.profile.effective_status, "active");
   assert.deepEqual(detail.profile.anchor_plates, ["ABC123"]);
@@ -311,9 +460,16 @@ test("live discovery never evaluates candidates while v2 is not primary", async 
 
 test("live service processes claimed reads and reports failures without abandoning the batch", async () => {
   const calls = [];
+  let claimCount = 0;
   const repository = {
     async discover() { calls.push("discover"); return [11, 12]; },
-    async claim() { calls.push("claim"); return { token: "token", readIds: [11, 12] }; },
+    async claim({ limit }) {
+      calls.push(`claim:${limit}`);
+      claimCount += 1;
+      return claimCount === 1
+        ? { token: "first-token", readIds: [11, 12] }
+        : { token: "second-token", readIds: [] };
+    },
     async processClaimedRead({ readId }) {
       calls.push(`process:${readId}`);
       if (readId === 12) throw Object.assign(new Error("forced"), { code: "FORCED" });
@@ -324,7 +480,9 @@ test("live service processes claimed reads and reports failures without abandoni
   };
   const service = new VehicleReidV2LiveService({ repository, logger: { error() {} } });
   const result = await service.processBatch({ limit: 5 });
-  assert.deepEqual(calls, ["discover", "claim", "process:11", "process:12", "failure:12"]);
+  assert.deepEqual(calls, [
+    "claim:5", "claim:3", "process:11", "process:12", "failure:12",
+  ]);
   assert.equal(result.processed, 2);
   assert.equal(result.succeeded, 1);
   assert.equal(result.failed, 1);
@@ -396,10 +554,16 @@ test("navigation is final only in v2 primary and legacy routes remain rollback r
 test("disposable PostgreSQL gate commits the full Stage 2 lifecycle and retains v1 rollback data", async () => {
   const gate = await source("scripts/test-vehicle-reid-v2-authoritative-postgres.mjs");
   assert.match(gate, /testCommittedStage2MaterializationAndRollback/);
+  assert.match(gate, /testBoundedLiveDiscoveryWindows/);
+  assert.match(gate, /Promise\.all\(repositories\.map/);
+  assert.match(gate, /forced discovery-state rollback/);
+  assert.match(gate, /forward_windows_since_revisit = 8/);
+  assert.match(gate, /Codex late lower id/);
   assert.match(gate, /authority\.acceptPreview/);
   assert.match(gate, /authority\.materializeAcceptedPreview/);
   assert.match(gate, /mode: "v2_primary"/);
   assert.match(gate, /source-link replacement/);
+  assert.match(gate, /row\.status === "ready" && row\.has_current_assignment === true/);
   assert.match(gate, /plate-anchor revision replacement/);
   assert.match(gate, /provisional singleton creation/);
   assert.match(gate, /pre-merge canonical groups/);
