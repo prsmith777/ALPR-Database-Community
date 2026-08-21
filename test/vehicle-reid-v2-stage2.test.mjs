@@ -269,9 +269,10 @@ test("authoritative profile browsing fences exact-current evidence with physical
   assert.deepEqual(exactMembers.values, [[101, 102], [10]]);
   assert.deepEqual(exactAssignments.values, [[201, 202, 203], [10]]);
   assert.deepEqual(exactAnchors.values, [[301], [10]]);
-  assert.match(exactMembers.sql, /current_profile_members[\s\S]*members\.id = ANY\(\$1::bigint\[\]\)/);
-  assert.match(exactAssignments.sql, /assignments\.id = ANY\(\$1::bigint\[\]\)/);
-  assert.match(exactAnchors.sql, /anchors\.id = ANY\(\$1::bigint\[\]\)/);
+  for (const query of [exactMembers, exactAssignments, exactAnchors]) {
+    assert.match(query.sql, /UNNEST\(\$1::bigint\[\]\)[\s\S]*JOIN LATERAL[\s\S]*OFFSET 0/);
+    assert.doesNotMatch(query.sql, /\.id = ANY\(\$1::bigint\[\]\)/);
+  }
   assert.deepEqual(page.rows.map((row) => ({
     id: row.id,
     status: row.status,
@@ -405,11 +406,15 @@ test("authoritative profile detail validates merge and evidence candidates by ph
   assert.deepEqual(membersQuery.values, [[100, 200], 10]);
   assert.deepEqual(assignmentsQuery.values, [[300], 10]);
   assert.deepEqual(anchorsQuery.values, [[400], 10]);
-  assert.match(membersQuery.sql, /current_profile_members[\s\S]*members\.id = ANY\(\$1::bigint\[\]\)[\s\S]*members\.canonical_profile_id = \$2/);
-  assert.match(assignmentsQuery.sql, /current_read_assignments[\s\S]*assignments\.id = ANY\(\$1::bigint\[\]\)[\s\S]*assignments\.canonical_profile_id = \$2/);
+  for (const query of [membersQuery, assignmentsQuery, anchorsQuery]) {
+    assert.match(query.sql, /UNNEST\(\$1::bigint\[\]\)[\s\S]*JOIN LATERAL[\s\S]*OFFSET 0/);
+    assert.doesNotMatch(query.sql, /\.id = ANY\(\$1::bigint\[\]\)/);
+  }
+  assert.match(membersQuery.sql, /current_profile_members[\s\S]*members\.canonical_profile_id = \$2/);
+  assert.match(assignmentsQuery.sql, /current_read_assignments[\s\S]*assignments\.canonical_profile_id = \$2/);
   assert.match(assignmentsQuery.sql, /SELECT JSONB_AGG\(DISTINCT JSONB_BUILD_OBJECT\([\s\S]*FROM public\.plate_tags plate_tags[\s\S]*plate_tags\.plate_number = reads\.plate_number/);
   assert.doesNotMatch(assignmentsQuery.sql, /GROUP BY assignments\.id/);
-  assert.match(anchorsQuery.sql, /current_plate_anchors[\s\S]*anchors\.id = ANY\(\$1::bigint\[\]\)[\s\S]*anchors\.canonical_profile_id = \$2/);
+  assert.match(anchorsQuery.sql, /current_plate_anchors[\s\S]*anchors\.canonical_profile_id = \$2/);
   assert.equal(detail.profile.id, 10);
   assert.equal(detail.profile.effective_status, "active");
   assert.deepEqual(detail.profile.anchor_plates, ["ABC123"]);
