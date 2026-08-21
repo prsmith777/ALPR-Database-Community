@@ -63,17 +63,30 @@ test("Stage 2 schema adds reviewed plate anchors, bounded live jobs, and audited
 });
 
 test("accepted materialization revalidates and exactly writes profiles, members, anchors, then assignments", async () => {
-  const [repository, migration, actions, panel] = await Promise.all([
+  const [repository, migration, actions, panel, runtime] = await Promise.all([
     source("lib/vehicle-reid-v2-authority-repository.mjs"),
     source("migrations.sql"),
     source("app/actions.js"),
     source("components/settings/VehicleReidV2ConversionPanel.jsx"),
+    source("lib/vehicle-reid-v2-live-runtime.mjs"),
   ]);
   assert.match(repository, /liveProjection\(client, run\)/);
   assert.match(repository, /assertProjectionCurrent/);
   assert.match(repository, /SET LOCAL plan_cache_mode = 'force_custom_plan'/);
   assert.match(repository, /SET LOCAL lock_timeout = '15s'/);
   assert.match(repository, /SET LOCAL statement_timeout = '10min'/);
+  const modeTransition = repository.slice(
+    repository.indexOf("async transitionMode"),
+    repository.indexOf("async mergeProfilesByReview")
+  );
+  assert.match(modeTransition, /SET LOCAL lock_timeout = '15s'/);
+  assert.match(modeTransition, /SET LOCAL statement_timeout = '15s'/);
+  assert.match(runtime, /await repository\.fencePredecessorAuthoritySessions\(\)/);
+  assert.match(runtime, /Authoritative ReID startup authority fence complete/);
+  assert.ok(
+    runtime.indexOf("await repository.fencePredecessorAuthoritySessions()")
+      < runtime.indexOf("new VehicleReidV2LiveWorker")
+  );
   const profileInsert = repository.indexOf("INSERT INTO public.vehicle_reid_v2_profiles");
   const memberInsert = repository.indexOf("INSERT INTO public.vehicle_reid_v2_profile_members");
   const anchorInsert = repository.indexOf("INSERT INTO public.vehicle_reid_v2_profile_plate_anchors");
@@ -110,6 +123,91 @@ test("accepted materialization revalidates and exactly writes profiles, members,
   assert.match(scaleFix, /prior\.status = 'active'/);
   assert.match(scaleFix, /\) THEN\s*IF EXISTS \(\s*SELECT 1\s*FROM public\.vehicle_reid_v2_current_read_assignments existing/);
   assert.match(migration, /2026081702_vehicle_reid_v2_materialization_scale/);
+});
+
+test("live startup fences only bounded older sessions holding exact ReID authority locks", async () => {
+  const calls = [];
+  const client = {
+    async query(sql, params = []) {
+      calls.push({ sql, params });
+      if (sql.includes("SELECT DISTINCT locks.pid") && sql.includes("ORDER BY locks.pid")) {
+        return { rows: [{ pid: 4102 }] };
+      }
+      if (sql.includes("pg_catalog.pg_terminate_backend")) {
+        return { rows: [{ candidate_count: 1, terminated_count: 1 }] };
+      }
+      if (sql.includes("remaining_count")) return { rows: [{ remaining_count: 0 }] };
+      return { rows: [] };
+    },
+    release() { calls.push({ sql: "RELEASE", params: [] }); },
+  };
+  const repository = new VehicleReidV2LiveRepository({
+    pool: {
+      query: async () => ({ rows: [] }),
+      connect: async () => client,
+    },
+  });
+
+  const result = await repository.fencePredecessorAuthoritySessions();
+  assert.deepEqual(result, { candidateCount: 1, terminatedCount: 1, remainingCount: 0 });
+  assert.deepEqual(calls.map(({ sql }) => sql.trim().split(/\s+/).slice(0, 3).join(" ")), [
+    "BEGIN",
+    "SET LOCAL lock_timeout",
+    "SET LOCAL statement_timeout",
+    "WITH current_backend AS",
+    "WITH current_backend AS",
+    "WITH target_locks AS",
+    "COMMIT",
+    "RELEASE",
+  ]);
+  const holderCall = calls.find(({ sql }) => sql.includes("ORDER BY locks.pid"));
+  assert.deepEqual(holderCall.params, [
+    ["vehicle_reid_v2_authority_stage2", "vehicle_reid_v2_authority_stage2_epoch_2"],
+    5,
+  ]);
+  assert.match(holderCall.sql, /activity\.backend_start < current_backend\.backend_start/);
+  assert.match(holderCall.sql, /locks\.pid <> pg_catalog\.pg_backend_pid\(\)/);
+  assert.match(holderCall.sql, /locks\.locktype = 'advisory'/);
+  assert.match(holderCall.sql, /locks\.objsubid = 1/);
+  assert.match(holderCall.sql, /activity\.usename = session_user/);
+  assert.match(holderCall.sql, /activity\.backend_type = 'client backend'/);
+  assert.doesNotMatch(holderCall.sql, /locks\.granted = TRUE/);
+  const terminateCall = calls.find(({ sql }) => sql.includes("pg_catalog.pg_terminate_backend"));
+  assert.deepEqual(terminateCall.params, [
+    ["vehicle_reid_v2_authority_stage2", "vehicle_reid_v2_authority_stage2_epoch_2"],
+    [4102],
+  ]);
+  assert.match(terminateCall.sql, /pg_catalog\.pg_terminate_backend\(pid, 5000\)/);
+  assert.match(terminateCall.sql, /activity\.backend_start < current_backend\.backend_start/);
+  assert.doesNotMatch(terminateCall.sql, /locks\.granted = TRUE/);
+});
+
+test("live startup refuses an unexpectedly broad authority-session fence", async () => {
+  const calls = [];
+  const client = {
+    async query(sql) {
+      calls.push(sql);
+      if (sql.includes("SELECT DISTINCT locks.pid")) {
+        return { rows: [1, 2, 3, 4, 5].map((pid) => ({ pid })) };
+      }
+      return { rows: [] };
+    },
+    release() { calls.push("RELEASE"); },
+  };
+  const repository = new VehicleReidV2LiveRepository({
+    pool: {
+      query: async () => ({ rows: [] }),
+      connect: async () => client,
+    },
+  });
+
+  await assert.rejects(
+    repository.fencePredecessorAuthoritySessions(),
+    (error) => error?.code === "VEHICLE_REID_V2_AUTHORITY_FENCE_REFUSED"
+  );
+  assert.equal(calls.some((sql) => String(sql).includes("pg_catalog.pg_terminate_backend")), false);
+  assert.ok(calls.includes("ROLLBACK"));
+  assert.ok(calls.includes("RELEASE"));
 });
 
 test("authority overview uses fast stored counts while consumers retain exact-current views", async () => {
