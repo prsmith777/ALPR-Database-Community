@@ -375,11 +375,19 @@ test("authoritative profile browsing fences exact-current evidence with physical
   const exactAnchors = queries.find(({ sql }) => /current_plate_anchors/.test(sql));
   assert.deepEqual(exactMembers.values, [[101, 102], [10], [20], [10]]);
   assert.deepEqual(exactAnchors.values, [[301], [10]]);
-  assert.match(exactMembers.sql, /UNNEST\(\$1::bigint\[\]\)[\s\S]*JOIN LATERAL[\s\S]*OFFSET 0/);
-  assert.doesNotMatch(exactMembers.sql, /\.id = ANY\(\$1::bigint\[\]\)/);
+  assert.match(exactMembers.sql, /exact_members\.id = ANY\(\$1::bigint\[\]\)[\s\S]*OFFSET 0/);
+  assert.doesNotMatch(exactMembers.sql, /FROM UNNEST\(\$1::bigint\[\]\)|JOIN LATERAL/);
   assert.match(exactMembers.sql, /vehicle_reid_v2_exact_profile_members/);
+  assert.equal(
+    (exactMembers.sql.match(/vehicle_reid_v2_exact_profile_members/g) || []).length,
+    1
+  );
   assert.match(exactMembers.sql, /conflicting_anchor_members AS MATERIALIZED/);
   assert.match(exactMembers.sql, /conflicting_review_profiles AS MATERIALIZED/);
+  assert.match(
+    exactMembers.sql,
+    /JOIN page_exact_members low_members[\s\S]*JOIN page_exact_members high_members/
+  );
   assert.doesNotMatch(exactMembers.sql, /vehicle_reid_v2_current_profile_members/);
   assert.match(exactAnchors.sql, /page_anchors AS MATERIALIZED/);
   assert.match(exactAnchors.sql, /anchors\.id = ANY\(\$1::bigint\[\]\)/);
