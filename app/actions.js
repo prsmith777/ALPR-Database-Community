@@ -4611,10 +4611,12 @@ export async function getVehicleReidV2ConversionPreviewOverview() {
   }
 }
 
-async function loadVehicleReidV2OperatorOverview() {
+async function loadVehicleReidV2OperatorOverview({ authorityOverview } = {}) {
   const [conversion, authority] = await Promise.all([
     (await getVehicleReidV2ConversionService()).getOverview(),
-    (await getVehicleReidV2AuthorityService()).getOverview(),
+    authorityOverview
+      ? Promise.resolve(authorityOverview)
+      : (await getVehicleReidV2AuthorityService()).getOverview(),
   ]);
   return {
     ...conversion,
@@ -4810,7 +4812,9 @@ export async function acceptVehicleReidV2ConversionPreview(input = {}) {
       success: true,
       data: {
         operation: authority.operation,
-        overview: await loadVehicleReidV2OperatorOverview(),
+        overview: await loadVehicleReidV2OperatorOverview({
+          authorityOverview: authority.overview,
+        }),
       },
     };
   } catch (error) {
@@ -4832,7 +4836,9 @@ export async function materializeVehicleReidV2ConversionPreview(input = {}) {
       success: true,
       data: {
         operation: authority.operation,
-        overview: await loadVehicleReidV2OperatorOverview(),
+        overview: await loadVehicleReidV2OperatorOverview({
+          authorityOverview: authority.overview,
+        }),
       },
     };
   } catch (error) {
@@ -4860,7 +4866,9 @@ export async function transitionVehicleReidAuthorityMode(input = {}) {
       success: true,
       data: {
         operation: authority.operation,
-        overview: await loadVehicleReidV2OperatorOverview(),
+        overview: await loadVehicleReidV2OperatorOverview({
+          authorityOverview: authority.overview,
+        }),
       },
     };
   } catch (error) {
