@@ -296,6 +296,55 @@ test("primary browsing ranks the lean catalog before one bounded rich hydration"
   assert.equal(overview.selected.derivativeId, 4);
   assert.deepEqual(overview.matches.map((item) => item.derivativeId), [3, 2]);
   assert.deepEqual(overview.matches.map((item) => item.rank), [1, 2]);
+  assert.deepEqual(overview.selected.currentProfileIds, []);
+  assert.ok(overview.sources.every((item) => item.currentProfileIds.length === 0));
+  assert.ok(overview.matches.every((item) => (
+    item.reviewEvidence.currentProfileAgreement === "unavailable"
+  )));
+});
+
+test("primary browsing emits one sanitized fixed-shape phase timing record", async () => {
+  const catalog = [
+    row({ derivative_id: 1, embedding: embedding([1, 0]) }),
+    row({ derivative_id: 2, embedding: embedding([0.8, 0.6]) }),
+  ];
+  const older = row({ derivative_id: 10_001, embedding: embedding([0.9, 0.1]) });
+  const entries = [];
+  let clock = 0;
+  const service = new VehicleReidV2ShadowService({
+    logger: { info(event, fields) { entries.push({ event, fields }); } },
+    now: () => clock++,
+    repository: {
+      async listPrimaryCurrentSourceCatalog() { return catalog; },
+      async getPrimaryCurrentSourceCatalog() { return older; },
+      async listPrimaryCurrentSourceDetails(ids) {
+        return ids.map((id) => id === 10_001
+          ? older
+          : catalog.find((item) => Number(item.derivative_id) === id));
+      },
+      async listPairReviewsForSource() { return []; },
+    },
+  });
+
+  await service.getOverview({
+    primaryBrowse: true,
+    sourceDerivativeId: 10_001,
+    resultLimit: 1,
+  });
+  assert.deepEqual(entries, [{
+    event: "vehicle_reid_v2_primary_browse",
+    fields: {
+      outcome: "succeeded",
+      catalogMs: 1,
+      exactSourceMs: 1,
+      hydrationMs: 1,
+      pairReviewMs: 1,
+      catalogRowCount: 2,
+      hydrationCount: 3,
+      totalMs: 9,
+    },
+  }]);
+  assert.doesNotMatch(JSON.stringify(entries), /PLATE|derived\/|embedding|sourceDerivative/i);
 });
 
 test("primary browsing never hydrates more than page plus source plus top matches", async () => {
@@ -607,6 +656,14 @@ test("repository scans only exact current identity links and performs no writes"
     assert.match(call.text, /companion_links\.asset_id <> derivatives\.asset_id/);
     assert.doesNotMatch(call.text, /\b(?:INSERT INTO|UPDATE public|DELETE FROM)\b/);
   }
+  assert.match(
+    calls[0].text,
+    /FROM public\.vehicle_reid_v2_current_profile_members members/
+  );
+  assert.match(
+    calls[0].text,
+    /ELSE related\.cluster_ids END AS cluster_ids/
+  );
   assert.equal(vehicleReidV2ShadowRepositoryInternals.MAX_SCAN_SOURCES, 10_000);
 });
 
@@ -652,6 +709,16 @@ test("primary repository uses an asset-gated lean catalog and ID-seeded bounded 
   assert.match(hydration.text, /derivatives\.source_sha256 = assets\.content_sha256/);
   assert.match(hydration.text, /embeddings\.source_sha256 = derivatives\.content_sha256/);
   assert.match(hydration.text, /vehicle_image_path = links\.source_path_snapshot/);
+  assert.match(hydration.text, /ARRAY\[\]::bigint\[\] AS cluster_ids/);
+  assert.doesNotMatch(hydration.text, /vehicle_reid_v2_(?:current|exact)_profile_members/);
+  assert.doesNotMatch(hydration.text, /FROM public\.vehicle_reid_v2_profile_members/);
+  assert.equal(
+    (hydration.text.match(/vehicle_reid_v2_current_profile_members/g) || []).length,
+    0
+  );
+  assert.match(calls[0].text, /vehicle_reid_v2_primary_catalog/);
+  assert.match(calls[1].text, /vehicle_reid_v2_primary_exact_source/);
+  assert.match(hydration.text, /vehicle_reid_v2_primary_hydration/);
   assert.ok(
     hydration.text.indexOf("seeded_derivatives AS MATERIALIZED")
       < hydration.text.indexOf("JOIN LATERAL")
@@ -784,9 +851,11 @@ test("shadow review surface keeps assignments unchanged, gates pair labels, and 
 });
 
 test("primary Vehicle Search route fails closed and never substitutes invalid read or source input", async () => {
-  const [page, actions] = await Promise.all([
+  const [page, actions, component, help] = await Promise.all([
     source("app/visual_search/page.jsx"),
     source("app/actions.js"),
+    source("components/VehicleReidV2Shadow.jsx"),
+    source("lib/help-manual.mjs"),
   ]);
   assert.match(page, /!modeResult\?\.success \|\| !\["v1_primary", "v1_rollback", "v2_primary"\]\.includes\(mode\)/);
   assert.doesNotMatch(page, /modeResult\?\.success \? modeResult\.data\.control\?\.mode : "v1_primary"/);
@@ -799,6 +868,11 @@ test("primary Vehicle Search route fails closed and never substitutes invalid re
   assert.match(page, /primaryBrowse: true,[\s\S]*?suppressDefaultSelection/);
   assert.match(actions, /"VEHICLE_REID_V2_SEARCH_MODE_CHANGED"/);
   assert.match(actions, /"VEHICLE_REID_V2_SEARCH_SOURCE_CHANGED"/);
+  assert.match(component, /!data\.primaryMode \? \([\s\S]*?currentProfileAgreement/);
+  assert.match(component, /Exact-current profile agreement is intentionally omitted/);
+  assert.match(component, /profileContextOmitted=\{data\.primaryMode\}/);
+  assert.match(component, /Profile context omitted from Vehicle Search/);
+  assert.match(help, /Primary Vehicle Search deliberately omits profile-agreement context/);
 });
 
 test("Vehicle Search query identifiers reject malformed explicit read and source values", () => {

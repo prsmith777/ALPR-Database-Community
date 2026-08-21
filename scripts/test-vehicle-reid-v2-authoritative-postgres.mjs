@@ -2361,7 +2361,10 @@ async function testPrimaryHistoricalSimilarityReadOnly(fixtures) {
       overview.selected.imageUrl,
       `/images/${cropPath(historicalSource.derivativeSha)}`
     );
-    assert.ok(overview.selected.currentProfileIds.length > 0);
+    assert.deepEqual(overview.selected.currentProfileIds, []);
+    assert.ok(overview.matches.every((match) => (
+      match.reviewEvidence.currentProfileAgreement === "unavailable"
+    )));
     assert.ok(Date.now() - new Date(overview.selected.timestamp).getTime() > 6 * 24 * 60 * 60 * 1000);
     assert.equal(overview.matches[0]?.derivativeId, fixtures.exactA.derivativeId);
     assert.ok(overview.matches[0]?.similarity > 0.99);

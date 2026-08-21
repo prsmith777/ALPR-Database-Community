@@ -661,7 +661,7 @@ function LprEvidencePanel({ source }) {
   );
 }
 
-function SourceMetadata({ source }) {
+function SourceMetadata({ source, profileContextOmitted = false }) {
   return (
     <div className="space-y-2 text-sm">
       <div className="flex flex-wrap gap-2">
@@ -676,7 +676,11 @@ function SourceMetadata({ source }) {
         Crop #{source.derivativeId.toLocaleString()} · asset #{source.assetId.toLocaleString()} · read #{source.readId.toLocaleString()}
       </p>
       <div className="flex flex-wrap gap-2 text-xs">
-        {source.currentProfileIds?.length
+        {profileContextOmitted
+          ? <span className="text-muted-foreground">
+            Profile context omitted from Vehicle Search
+          </span>
+          : source.currentProfileIds?.length
           ? source.currentProfileIds.map((profileId) => (
             <Link
               key={profileId}
@@ -787,12 +791,17 @@ function MatchCard({ data, selected, match, canReview }) {
       <CardContent className="space-y-4">
         <VehicleImage source={match} />
         <LprEvidencePanel source={match} />
-        <SourceMetadata source={match} />
+        <SourceMetadata source={match} profileContextOmitted={data.primaryMode} />
         <div className="space-y-2 rounded-md border bg-muted/30 p-3">
           <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Review evidence — not scoring inputs</p>
           <div className="flex flex-wrap gap-2">
             <EvidenceBadge label="Plate" state={match.reviewEvidence.plateAgreement} />
-            <EvidenceBadge label={data.reviewMode ? "Authoritative profile" : "Current v1 grouping"} state={match.reviewEvidence.currentProfileAgreement} />
+            {!data.primaryMode ? (
+              <EvidenceBadge
+                label={data.reviewMode ? "Authoritative profile" : "Current v1 grouping"}
+                state={match.reviewEvidence.currentProfileAgreement}
+              />
+            ) : null}
             <EvidenceBadge label="Color" state={match.reviewEvidence.colorAgreement} />
             <EvidenceBadge label="Body" state={match.reviewEvidence.bodyTypeAgreement} />
           </div>
@@ -856,7 +865,10 @@ function ShadowNeighborhood({ data }) {
           <CardContent className="space-y-4">
             <VehicleImage source={data.selected} priority />
             <LprEvidencePanel source={data.selected} />
-            <SourceMetadata source={data.selected} />
+            <SourceMetadata
+              source={data.selected}
+              profileContextOmitted={data.primaryMode}
+            />
             <Button asChild variant="outline" size="sm"><Link href={`/live_feed?readId=${data.selected.readId}`}><Eye className="mr-1 h-4 w-4" />Open source read</Link></Button>
           </CardContent>
         </Card>
@@ -952,7 +964,10 @@ export default function VehicleReidV2Shadow({
         <div className="rounded-lg border border-blue-500/30 bg-blue-500/5 p-4 text-sm">
           <p className="font-medium"><Info className="mr-2 inline h-4 w-4" />How to read this page</p>
           <p className="mt-1 text-muted-foreground">
-            Candidate order uses only cosine similarity from {data.modelName}. Plate, {primaryMode ? "authoritative profile" : "current v1 grouping"}, color, body type, and saved human labels are displayed afterward for context and never alter the score or order. Shared images are scanned once; display-only Entry fallbacks are excluded.
+            Candidate order uses only cosine similarity from {data.modelName}. Plate, color, body type, and saved human labels are displayed afterward for context and never alter the score or order. Shared images are scanned once; display-only Entry fallbacks are excluded.
+            {primaryMode
+              ? " Exact-current profile agreement is intentionally omitted from this fast comparison view; open Profiles to inspect authoritative membership."
+              : ` ${reviewMode ? "Authoritative profile" : "Current v1 grouping"} agreement remains separate review context.`}
           </p>
         </div>
         {data.stats.truncated ? (

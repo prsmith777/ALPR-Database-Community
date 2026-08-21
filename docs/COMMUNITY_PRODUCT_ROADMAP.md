@@ -937,7 +937,13 @@ notes. Updates remain externally orchestrated.
   embedding, and source-link hashes are revalidated before evidence is shown;
   stale or missing source URLs fail closed instead of substituting another
   vehicle. Historical Overview JPEGs and embeddings remain read-only, and the
-  search path neither queues capture work nor mutates identity authority.
+  search path neither queues capture work nor mutates identity authority. The
+  primary comparison cards deliberately omit exact-current profile-agreement
+  context so large profiles cannot re-expand the authority view during bounded
+  hydration; authoritative membership remains available on Profiles, while
+  plate, image, color, body, and linked-LPR evidence remain visible. Sanitized
+  per-phase timings identify catalog, exact-source, hydration, and review costs
+  without logging crop IDs, plates, paths, or embeddings.
 - Exact-current audited Same reviews can merge compatible stable profile IDs,
   including a new profile joined through a member of an existing merge group.
   Revising that pair to Different or Unsure withdraws its merge without deleting
