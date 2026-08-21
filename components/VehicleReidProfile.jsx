@@ -27,7 +27,7 @@ export default function VehicleReidProfile({ result }) {
           <Badge variant="outline">revision {profile.revision}</Badge>
         </div>
         <p className="text-sm text-muted-foreground">
-          {profile.anchorPlates.length ? `Reviewed plate ${profile.anchorPlates.join(" / ")}` : "No reviewed plate anchor"} · {members.length} current crop member{members.length === 1 ? "" : "s"} · {reads.length} recent assigned read{reads.length === 1 ? "" : "s"}
+          {profile.anchorPlates.length ? `Reviewed plate ${profile.anchorPlates.join(" / ")}` : "No reviewed plate anchor"} · {profile.memberCount} current crop member{profile.memberCount === 1 ? "" : "s"} · {profile.readCount} assigned read{profile.readCount === 1 ? "" : "s"}
         </p>
       </section>
 
@@ -52,6 +52,7 @@ export default function VehicleReidProfile({ result }) {
 
       <section className="space-y-3">
         <h2 className="text-xl font-semibold">Profile history</h2>
+        {profile.readCount > reads.length ? <p className="text-sm text-muted-foreground">Showing the {reads.length} most recent of {profile.readCount} current assignments.</p> : null}
         <div className="space-y-2">
           {reads.map((read) => (
             <div key={read.id} className="flex flex-wrap items-center justify-between gap-3 rounded-md border p-3 text-sm">
