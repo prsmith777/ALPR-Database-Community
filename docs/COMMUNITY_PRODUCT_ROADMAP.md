@@ -18,7 +18,7 @@ reliable background processing.
 6. Audit sensitive searches, exports, corrections, rule changes, and
    destructive maintenance.
 
-## Release candidate baseline — August 16, 2026
+## Release candidate baseline — August 21, 2026
 
 - Application `0.1.20` candidate includes named users and roles, evidence-preserving plate
   review, filter-respecting exports, the searchable help center, local privacy
@@ -930,6 +930,14 @@ notes. Updates remain externally orchestrated.
   trustworthy exact plates, and audited Same decisions can create authority,
   while Different, Unsure, ambiguity, stale evidence, display fallbacks, and
   missing contracts stay unassigned in the exception queue.
+- ReID v2 primary Find Similar now separates ranking from display enrichment.
+  A lean exact-current catalog ranks every bounded stored crop without depending
+  on live camera availability, then one physically ID-fenced query hydrates only
+  the selected crop, visible picker rows, and displayed neighbors. Asset, crop,
+  embedding, and source-link hashes are revalidated before evidence is shown;
+  stale or missing source URLs fail closed instead of substituting another
+  vehicle. Historical Overview JPEGs and embeddings remain read-only, and the
+  search path neither queues capture work nor mutates identity authority.
 - Exact-current audited Same reviews can merge compatible stable profile IDs,
   including a new profile joined through a member of an existing merge group.
   Revising that pair to Different or Unsure withdraws its merge without deleting
@@ -939,8 +947,10 @@ notes. Updates remain externally orchestrated.
   attribute contracts. The disposable PostgreSQL 17 gate commits and verifies
   accept/materialize/cutover, stale source and plate-revision replacement,
   live provisional assignment, merge/split/remerge, v1 retention, and rollback.
-  This source candidate has not itself been merged or deployed to staging or
-  production and has not operated a production cutover.
+  The authoritative Stage 2 production baseline was deployed from commit
+  `fddcf67cb7e2a755f75f885749189b1db5e06b23`; later repair deployments are
+  recorded by the normal release and deployment status rather than by a
+  self-referential roadmap commit.
 - Final full-resolution Overview framing validation is implemented before a
   new Vehicle View is committed. The anchor-constrained selector prioritizes a
   fully framed vehicle track over a higher numerical score near an image edge,

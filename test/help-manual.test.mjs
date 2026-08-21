@@ -14,7 +14,7 @@ async function source(path) {
 }
 
 test("the user guide is structured, searchable, and role-aware", () => {
-  assert.equal(HELP_MANUAL.manualVersion, "2.13");
+  assert.equal(HELP_MANUAL.manualVersion, "2.14");
   assert.ok(HELP_MANUAL.sections.length >= 14);
 
   const ids = HELP_MANUAL.sections.map((section) => section.id);
@@ -88,6 +88,8 @@ test("the guide covers required workflows and clearly labels planned features", 
     "bounded live worker runs only in v2_primary",
     "merge two compatible profiles",
     "stage 2 does not stop or delete the v1 producer",
+    "find similar continues to use retained historical overview crops",
+    "searching never queues a camera capture",
   ]) {
     assert.match(text, new RegExp(required, "i"));
   }
@@ -129,12 +131,12 @@ test("production releases require help and roadmap updates", async () => {
     assert.match(text, /lib\/help-manual\.mjs/);
     assert.match(text, /docs\/COMMUNITY_PRODUCT_ROADMAP\.md/);
   }
-  assert.match(roadmap, /Release candidate baseline — August 16, 2026/);
+  assert.match(roadmap, /Release candidate baseline — August 21, 2026/);
   assert.match(roadmap, /start empty/i);
   assert.match(roadmap, /Accept\s+records an Administrator's exact verified preview\s+approval/i);
   assert.match(roadmap, /Stage 2 adds one explicit compatibility cutover/i);
   assert.match(roadmap, /Stage 3 v1 producer shutdown[\s\S]*remain planned/i);
-  assert.match(roadmap, /has not(?: itself)? been merged or deployed/i);
+  assert.match(roadmap, /authoritative Stage 2 production baseline was deployed from commit/i);
   assert.doesNotMatch(roadmap, /current production release is `[0-9a-f]{7,40}`/i);
 });
 
