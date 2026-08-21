@@ -495,9 +495,11 @@ test("live service processes claimed reads and reports failures without abandoni
 
 test("live worker stays in standby off-cutover and drains quickly when primary", async () => {
   let primary = false;
+  const limits = [];
   const worker = new VehicleReidV2LiveWorker({
     service: {
-      async processBatch() {
+      async processBatch({ limit }) {
+        limits.push(limit);
         return primary
           ? { mode: "v2_primary", discovered: 1, processed: 1, succeeded: 1, failed: 0 }
           : { mode: "v2_shadow", discovered: 0, processed: 0, succeeded: 0, failed: 0 };
@@ -507,8 +509,40 @@ test("live worker stays in standby off-cutover and drains quickly when primary",
   assert.equal(await worker.runOnce(), 30_000);
   assert.equal(worker.snapshot().phase, "standby");
   primary = true;
-  assert.equal(await worker.runOnce(), 250);
+  assert.equal(await worker.runOnce(), 2_000);
   assert.equal(worker.snapshot().phase, "working");
+  assert.deepEqual(limits, [1, 1]);
+});
+
+test("live worker fences exact-current assignment and anchor reads by physical ids", async () => {
+  const live = await source("lib/vehicle-reid-v2-live.mjs");
+  const assignmentLookup = live.slice(
+    live.indexOf("async loadCurrentReadAssignment"),
+    live.indexOf("async loadAssetReads")
+  );
+  assert.match(assignmentLookup, /vehicle_reid_v2_read_assignments historical/);
+  assert.match(assignmentLookup, /historical\.read_id = \$1/);
+  assert.match(assignmentLookup, /JOIN LATERAL/);
+  assert.match(assignmentLookup, /vehicle_reid_v2_current_read_assignments assignments/);
+  assert.match(assignmentLookup, /assignments\.id = candidate_ids\.id[\s\S]*OFFSET 0/);
+
+  const anchorInsert = live.slice(
+    live.indexOf("async createPlateAnchor"),
+    live.indexOf("async createImageAssignment")
+  );
+  assert.match(anchorInsert, /vehicle_reid_v2_profile_plate_anchors historical/);
+  assert.match(anchorInsert, /JOIN LATERAL/);
+  assert.match(anchorInsert, /vehicle_reid_v2_current_plate_anchors anchors/);
+  assert.match(anchorInsert, /anchors\.id = candidate_ids\.id[\s\S]*OFFSET 0/);
+
+  const imageAssignment = live.slice(
+    live.indexOf("async createImageAssignment"),
+    live.indexOf("async createPlateAssignment")
+  );
+  assert.match(imageAssignment, /vehicle_reid_v2_read_assignments historical/);
+  assert.match(imageAssignment, /JOIN LATERAL/);
+  assert.match(imageAssignment, /vehicle_reid_v2_current_read_assignments assignments/);
+  assert.match(imageAssignment, /assignments\.id = candidate_ids\.id[\s\S]*OFFSET 0/);
 });
 
 test("compatibility routing switches every identity consumer without rewriting plate reads", async () => {
