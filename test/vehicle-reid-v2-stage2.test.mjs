@@ -4,11 +4,13 @@ import test from "node:test";
 
 import {
   VehicleReidV2AuthorityRepository,
+  vehicleReidV2AuthorityRepositoryInternals,
 } from "../lib/vehicle-reid-v2-authority-repository.mjs";
 import { VehicleReidV2AuthorityService } from "../lib/vehicle-reid-v2-authority-service.mjs";
 import {
   VehicleReidV2LiveRepository,
   VehicleReidV2LiveService,
+  vehicleReidV2LiveInternals,
 } from "../lib/vehicle-reid-v2-live.mjs";
 import { VehicleReidV2LiveWorker } from "../lib/vehicle-reid-v2-live-worker.mjs";
 import {
@@ -468,6 +470,14 @@ test("live processor is deterministic, bounded, and never uses cosine as identit
 });
 
 test("authority session locks retain post-lock snapshots and have a bounded wait", async () => {
+  assert.equal(
+    vehicleReidV2AuthorityRepositoryInternals.AUTHORITY_LOCK,
+    vehicleReidV2LiveInternals.LIVE_AUTHORITY_LOCK
+  );
+  assert.equal(
+    vehicleReidV2AuthorityRepositoryInternals.AUTHORITY_LOCK,
+    "vehicle_reid_v2_authority_stage2_epoch_2"
+  );
   const events = [];
   const client = {
     async query(sql) {
