@@ -214,7 +214,12 @@ test("authoritative profile browsing fences exact-current evidence with physical
           return { rows: [{ id: 101 }, { id: 102 }] };
         }
         if (/FROM public\.vehicle_reid_v2_read_assignments assignments/.test(sql)) {
-          return { rows: [{ id: 201 }, { id: 202 }, { id: 203 }] };
+          return { rows: [
+            { profile_id: 10, read_id: 201 },
+            { profile_id: 20, read_id: 201 },
+            { profile_id: 20, read_id: 202 },
+            { profile_id: 20, read_id: 203 },
+          ] };
         }
         if (/FROM public\.vehicle_reid_v2_profile_plate_anchors anchors/.test(sql)) {
           return { rows: [{ id: 301 }] };
@@ -223,9 +228,6 @@ test("authoritative profile browsing fences exact-current evidence with physical
           return { rows: [
             { canonical_profile_id: 10, member_count: 2, representative_storage_path: "10.jpg" },
           ] };
-        }
-        if (/current_read_assignments/.test(sql)) {
-          return { rows: [{ canonical_profile_id: 10, read_count: 3 }] };
         }
         if (/current_plate_anchors/.test(sql)) {
           return { rows: [{ canonical_profile_id: 10, anchor_count: 1, anchor_plates: ["ABC123"] }] };
@@ -236,7 +238,7 @@ test("authoritative profile browsing fences exact-current evidence with physical
   });
 
   const page = await repository.listProfiles({ page: 1, pageSize: 24 });
-  assert.equal(queries.length, 9);
+  assert.equal(queries.length, 8);
   assert.deepEqual(queries[0].values, []);
   assert.doesNotMatch(queries[0].sql, /vehicle_reid_v2_current_/);
   assert.doesNotMatch(queries[0].sql, /ILIKE/);
@@ -264,15 +266,15 @@ test("authoritative profile browsing fences exact-current evidence with physical
     assert.deepEqual(query.values, [[10, 20]]);
   }
   const exactMembers = queries.find(({ sql }) => /WITH page_members AS MATERIALIZED/.test(sql));
-  const exactAssignments = queries.find(({ sql }) => /current_read_assignments/.test(sql));
   const exactAnchors = queries.find(({ sql }) => /current_plate_anchors/.test(sql));
   assert.deepEqual(exactMembers.values, [[101, 102], [10]]);
-  assert.deepEqual(exactAssignments.values, [[201, 202, 203], [10]]);
   assert.deepEqual(exactAnchors.values, [[301], [10]]);
-  for (const query of [exactMembers, exactAssignments, exactAnchors]) {
+  for (const query of [exactMembers, exactAnchors]) {
     assert.match(query.sql, /UNNEST\(\$1::bigint\[\]\)[\s\S]*JOIN LATERAL[\s\S]*OFFSET 0/);
     assert.doesNotMatch(query.sql, /\.id = ANY\(\$1::bigint\[\]\)/);
   }
+  assert.equal(queries.filter(({ sql }) => /current_read_assignments/.test(sql)).length, 0);
+  assert.match(rawAssignments.sql, /SELECT assignments\.profile_id, assignments\.read_id/);
   assert.deepEqual(page.rows.map((row) => ({
     id: row.id,
     status: row.status,
@@ -286,7 +288,7 @@ test("authoritative profile browsing fences exact-current evidence with physical
 
   queries.length = 0;
   await repository.listProfiles({ page: 1, pageSize: 12, search: " ABC123 " });
-  assert.equal(queries.length, 11);
+  assert.equal(queries.length, 10);
   const rawSearch = queries.find(({ sql }) => (
     /FROM public\.vehicle_reid_v2_profile_plate_anchors anchors[\s\S]*ILIKE/.test(sql)
   ));
