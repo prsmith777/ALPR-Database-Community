@@ -2529,6 +2529,8 @@ async function testCommittedStage2MaterializationAndRollback() {
   const mergedDetail = await authority.getProfile(firstMerge.sourceProfileId);
   assert.equal(mergedDetail.profile.id, mergedProfileId);
   assert.equal(mergedDetail.profile.status, "active");
+  assert.equal(mergedDetail.profile.memberCount, 3);
+  assert.equal(mergedDetail.profile.readCount, 3);
   assert.equal(mergedDetail.members.length, 3);
   assert.equal(mergedDetail.reads.length, 3);
   assert.deepEqual(
@@ -2560,6 +2562,8 @@ async function testCommittedStage2MaterializationAndRollback() {
   const remergedProfileId = liveProfiles.get(liveA.readId);
   const remergedDetail = await authority.getProfile(firstMerge.sourceProfileId);
   assert.equal(remergedDetail.profile.id, remergedProfileId);
+  assert.equal(remergedDetail.profile.memberCount, 3);
+  assert.equal(remergedDetail.profile.readCount, 3);
   assert.equal(remergedDetail.members.length, 3);
   assert.deepEqual(
     new Set(remergedDetail.reads.map((read) => read.id)),

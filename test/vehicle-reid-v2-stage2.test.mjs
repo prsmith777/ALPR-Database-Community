@@ -470,6 +470,19 @@ test("authoritative profile detail validates merge and evidence candidates by ph
     executor: {
       async query(sql, values) {
         queries.push({ sql, values });
+        if (/detail_exact_members AS MATERIALIZED/.test(sql)) {
+          return { rows: [{
+            members: [
+              { id: 100, profile_id: 10, canonical_profile_id: 10 },
+              { id: 200, profile_id: 20, canonical_profile_id: 10 },
+            ],
+            reads: [{ id: 300, read_id: 30, profile_id: 20, canonical_profile_id: 10 }],
+            read_count: 1,
+            anchor_count: 1,
+            anchor_plates: ["ABC123"],
+            merge_contract_current: true,
+          }] };
+        }
         if (/FROM public\.vehicle_reid_v2_profile_merges merges[\s\S]*source_profile_id/.test(sql)) {
           return { rows: [{ id: 900 }] };
         }
@@ -491,25 +504,13 @@ test("authoritative profile detail validates merge and evidence candidates by ph
         if (/FROM public\.vehicle_reid_v2_profile_plate_anchors anchors/.test(sql)) {
           return { rows: [{ id: 400 }] };
         }
-        if (/current_profile_members/.test(sql)) {
-          return { rows: [
-            { id: 100, profile_id: 10, canonical_profile_id: 10 },
-            { id: 200, profile_id: 20, canonical_profile_id: 10 },
-          ] };
-        }
-        if (/current_read_assignments/.test(sql)) {
-          return { rows: [{ id: 300, read_id: 30, profile_id: 20, canonical_profile_id: 10 }] };
-        }
-        if (/current_plate_anchors/.test(sql)) {
-          return { rows: [{ anchor_count: 1, anchor_plates: ["ABC123"] }] };
-        }
         return { rows: [] };
       },
     },
   });
 
   const detail = await repository.getProfile(20);
-  assert.equal(queries.length, 11);
+  assert.equal(queries.length, 9);
   const rawSourceMerge = queries.find(({ sql }) => (
     /FROM public\.vehicle_reid_v2_profile_merges merges[\s\S]*source_profile_id/.test(sql)
   ));
@@ -518,31 +519,65 @@ test("authoritative profile detail validates merge and evidence candidates by ph
   ));
   assert.deepEqual(rawSourceMerge.values, [[20]]);
   assert.deepEqual(rawTargetMerge.values, [[10]]);
-  const exactMerges = queries.filter(({ sql }) => /current_profile_merges/.test(sql));
+  const exactMerges = queries.filter(({ sql }) => (
+    /current_profile_merges/.test(sql) && !/detail_exact_members/.test(sql)
+  ));
   assert.equal(exactMerges.length, 2);
   assert.deepEqual(exactMerges[0].values, [[900], [20]]);
   assert.deepEqual(exactMerges[1].values, [[900], [10]]);
 
-  const membersQuery = queries.find(({ sql }) => /WITH scoped_members AS MATERIALIZED/.test(sql));
-  const assignmentsQuery = queries.find(({ sql }) => /WITH scoped_assignments AS MATERIALIZED/.test(sql));
-  const anchorsQuery = queries.find(({ sql }) => /WITH scoped_anchors AS MATERIALIZED/.test(sql));
-  assert.deepEqual(membersQuery.values, [[100, 200], 10]);
-  assert.deepEqual(assignmentsQuery.values, [[300], 10]);
-  assert.deepEqual(anchorsQuery.values, [[400], 10]);
-  for (const query of [membersQuery, assignmentsQuery, anchorsQuery]) {
-    assert.match(query.sql, /\.id = ANY\(\$1::bigint\[\]\)[\s\S]*canonical_profile_id = \$2[\s\S]*OFFSET 0/);
-    assert.doesNotMatch(query.sql, /UNNEST\(\$1::bigint\[\]\)[\s\S]*JOIN LATERAL/);
-  }
-  assert.match(membersQuery.sql, /current_profile_members[\s\S]*members\.canonical_profile_id = \$2/);
-  assert.match(assignmentsQuery.sql, /current_read_assignments[\s\S]*assignments\.canonical_profile_id = \$2/);
-  assert.match(assignmentsQuery.sql, /SELECT JSONB_AGG\(DISTINCT JSONB_BUILD_OBJECT\([\s\S]*FROM public\.plate_tags plate_tags[\s\S]*plate_tags\.plate_number = reads\.plate_number/);
-  assert.doesNotMatch(assignmentsQuery.sql, /GROUP BY assignments\.id/);
-  assert.match(anchorsQuery.sql, /current_plate_anchors[\s\S]*anchors\.canonical_profile_id = \$2/);
+  const evidenceQuery = queries.find(({ sql }) => /detail_exact_members AS MATERIALIZED/.test(sql));
+  assert.deepEqual(evidenceQuery.values, [
+    [100, 200], 10, [900], [20], [10], [300], [400], 20,
+  ]);
+  assert.match(evidenceQuery.sql, /current_merges AS MATERIALIZED[\s\S]*vehicle_reid_v2_current_profile_merges/);
+  assert.match(evidenceQuery.sql, /merge_contract AS MATERIALIZED[\s\S]*EXCEPT[\s\S]*UNION ALL[\s\S]*EXCEPT/);
+  assert.match(evidenceQuery.sql, /vehicle_reid_v2_exact_profile_members exact_members[\s\S]*exact_members\.id = ANY\(\$1::bigint\[\]\)/);
+  assert.doesNotMatch(evidenceQuery.sql, /vehicle_reid_v2_current_profile_members|vehicle_reid_v2_current_read_assignments/);
+  assert.doesNotMatch(evidenceQuery.sql, /FROM UNNEST\(\$1::bigint\[\]\)|JOIN LATERAL/);
+  assert.equal((evidenceQuery.sql.match(/vehicle_reid_v2_exact_profile_members/g) || []).length, 1);
+  assert.match(evidenceQuery.sql, /JOIN detail_exact_members low_members[\s\S]*JOIN detail_exact_members high_members/);
+  assert.match(evidenceQuery.sql, /FROM detail_members members[\s\S]*members\.id = assignments\.profile_member_id/);
+  assert.match(evidenceQuery.sql, /assignments\.assignment_basis = 'exact_effective_plate'[\s\S]*assignment_reads\.review_revision = assignments\.plate_review_revision[\s\S]*FROM detail_anchors anchors/);
+  assert.match(evidenceQuery.sql, /links\.source_path_snapshot[\s\S]*IS NOT DISTINCT FROM assignments\.source_updated_at[\s\S]*assignment_reads\.vehicle_image_updated_at/);
+  assert.match(evidenceQuery.sql, /detail_read_rows AS MATERIALIZED[\s\S]*ORDER BY reads\.timestamp DESC, reads\.id DESC[\s\S]*LIMIT 250/);
+  assert.match(evidenceQuery.sql, /SELECT JSONB_AGG\(DISTINCT JSONB_BUILD_OBJECT\([\s\S]*FROM public\.plate_tags plate_tags[\s\S]*plate_tags\.plate_number = reads\.plate_number/);
   assert.equal(detail.profile.id, 10);
   assert.equal(detail.profile.effective_status, "active");
+  assert.equal(detail.profile.member_count, 2);
+  assert.equal(detail.profile.read_count, 1);
   assert.deepEqual(detail.profile.anchor_plates, ["ABC123"]);
   assert.deepEqual(detail.members.map((row) => row.id), [100, 200]);
   assert.deepEqual(detail.reads.map((row) => row.read_id), [30]);
+});
+
+test("authoritative profile detail fails closed when its merge contract changes", async () => {
+  const repository = new VehicleReidV2AuthorityRepository({
+    executor: {
+      async query(sql) {
+        if (/SELECT profiles\.\*/.test(sql)) {
+          return { rows: [{ id: 10, status: "active", revision: 1 }] };
+        }
+        if (/detail_exact_members AS MATERIALIZED/.test(sql)) {
+          return { rows: [{
+            members: [], reads: [], read_count: 0, anchor_count: 0,
+            anchor_plates: [], merge_contract_current: false,
+          }] };
+        }
+        return { rows: [] };
+      },
+    },
+  });
+  repository.listCurrentProfileMergesBySource = async () => [];
+  repository.listCurrentProfileMergesByTarget = async () => [];
+  repository.listPhysicalProfileEvidenceIds = async () => ({
+    memberIds: [], assignmentIds: [], anchorIds: [],
+  });
+
+  await assert.rejects(
+    repository.getProfile(10),
+    (error) => error?.code === "VEHICLE_REID_V2_PROFILE_CHANGED"
+  );
 });
 
 test("live processor is deterministic, bounded, and never uses cosine as identity", async () => {
