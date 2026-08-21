@@ -113,6 +113,133 @@ async function guard() {
   lockHeld = true;
 }
 
+async function testAuthorityStartupFence() {
+  const exactLock = "vehicle_reid_v2_authority_stage2";
+  const unrelatedLock = `codex_unrelated_reid_fence_${suffix}`;
+  const sentinelScope = `vehicle-reid-v2-fence:${suffix}`;
+  const holder = await pool.connect();
+  const waiter = await pool.connect();
+  const unrelated = await pool.connect();
+  // node-postgres emits an idle-client error event when a backend is
+  // intentionally terminated; consume it so the test can assert the bounded
+  // disconnect instead of treating the expected fence as an uncaught error.
+  holder.on("error", () => {});
+  waiter.on("error", () => {});
+  let waiterLockPromise = null;
+  let unrelatedHeld = false;
+  try {
+    await holder.query("BEGIN");
+    await holder.query(
+      `INSERT INTO public.codex_integration_test_guard (scope, guard_token)
+       VALUES ($1, $2)`,
+      [sentinelScope, guardToken]
+    );
+    await holder.query("SELECT pg_advisory_xact_lock(hashtext($1))", [exactLock]);
+
+    await waiter.query("BEGIN");
+    waiterLockPromise = waiter.query(
+      "SELECT pg_advisory_xact_lock(hashtext($1))",
+      [exactLock]
+    ).then(
+      () => ({ acquired: true, error: null }),
+      (error) => ({ acquired: false, error })
+    );
+
+    const unrelatedResult = await unrelated.query(
+      "SELECT pg_try_advisory_lock(hashtext($1)) AS locked",
+      [unrelatedLock]
+    );
+    assert.equal(unrelatedResult.rows[0]?.locked, true);
+    unrelatedHeld = true;
+
+    let participants = null;
+    for (let attempt = 0; attempt < 100; attempt += 1) {
+      participants = await pool.query(
+        `WITH target AS (
+           SELECT hashtext($1)::bigint AS lock_key
+         )
+         SELECT COUNT(DISTINCT locks.pid)::integer AS participant_count,
+                COUNT(DISTINCT locks.pid) FILTER (WHERE locks.granted)::integer AS granted_count,
+                COUNT(DISTINCT locks.pid) FILTER (WHERE NOT locks.granted)::integer AS waiting_count
+         FROM pg_catalog.pg_locks locks
+         CROSS JOIN target
+         WHERE locks.locktype = 'advisory'
+           AND locks.objsubid = 1
+           AND locks.classid::bigint = ((target.lock_key >> 32) & 4294967295::bigint)
+           AND locks.objid::bigint = (target.lock_key & 4294967295::bigint)
+           AND locks.database = (
+             SELECT oid FROM pg_catalog.pg_database WHERE datname = current_database()
+           )`,
+        [exactLock]
+      );
+      if (participants.rows[0]?.participant_count === 2
+          && participants.rows[0]?.granted_count === 1
+          && participants.rows[0]?.waiting_count === 1) break;
+      await delay(20);
+    }
+    assert.deepEqual(participants?.rows?.[0], {
+      participant_count: 2,
+      granted_count: 1,
+      waiting_count: 1,
+    });
+
+    // Ensure the fence connection is newer than every predecessor candidate.
+    await delay(20);
+    const repository = new VehicleReidV2LiveRepository({ pool });
+    const fenced = await repository.fencePredecessorAuthoritySessions();
+    assert.deepEqual(fenced, {
+      candidateCount: 2,
+      terminatedCount: 2,
+      remainingCount: 0,
+    });
+
+    const waiterOutcome = await waiterLockPromise;
+    assert.equal(typeof waiterOutcome.acquired, "boolean");
+    await assert.rejects(holder.query("SELECT 1"));
+    await assert.rejects(waiter.query("SELECT 1"));
+    const sentinel = await pool.query(
+      `SELECT COUNT(*)::integer AS count
+       FROM public.codex_integration_test_guard WHERE scope = $1`,
+      [sentinelScope]
+    );
+    assert.equal(sentinel.rows[0]?.count, 0);
+
+    const exactRemaining = await pool.query(
+      `WITH target AS (
+         SELECT hashtext($1)::bigint AS lock_key
+       )
+       SELECT COUNT(*)::integer AS count
+       FROM pg_catalog.pg_locks locks
+       CROSS JOIN target
+       WHERE locks.locktype = 'advisory'
+         AND locks.objsubid = 1
+         AND locks.classid::bigint = ((target.lock_key >> 32) & 4294967295::bigint)
+         AND locks.objid::bigint = (target.lock_key & 4294967295::bigint)
+         AND locks.database = (
+           SELECT oid FROM pg_catalog.pg_database WHERE datname = current_database()
+         )`,
+      [exactLock]
+    );
+    assert.equal(exactRemaining.rows[0]?.count, 0);
+    const unrelatedStillAlive = await unrelated.query(
+      `SELECT pg_backend_pid()::integer AS pid,
+              pg_advisory_unlock(hashtext($1)) AS unlocked`,
+      [unrelatedLock]
+    );
+    assert.ok(Number(unrelatedStillAlive.rows[0]?.pid) > 0);
+    assert.equal(unrelatedStillAlive.rows[0]?.unlocked, true);
+    unrelatedHeld = false;
+  } finally {
+    if (unrelatedHeld) {
+      await unrelated.query("SELECT pg_advisory_unlock(hashtext($1))", [unrelatedLock])
+        .catch(() => {});
+    }
+    holder.release(true);
+    waiter.release(true);
+    unrelated.release(true);
+  }
+}
+
 async function createRead({
   plate,
   reviewStatus = "corrected",
@@ -2520,6 +2647,7 @@ async function assertFinalBoundary(stage2) {
 let succeeded = false;
 try {
   await guard();
+  await testAuthorityStartupFence();
   await createActor();
   await testEmptyPreviewFinalizes();
   const fixtures = await createFixtures();
