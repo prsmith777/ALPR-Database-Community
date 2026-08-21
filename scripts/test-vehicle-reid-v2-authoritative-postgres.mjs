@@ -280,6 +280,7 @@ async function createAssetWithCrop(name, plate, {
   sourceKind = "overview_primary",
   overviewContext = "street",
   timestampOffset = "0 seconds",
+  embeddingValues = [],
 } = {}) {
   const assetSha = hash(`asset:${name}`);
   const derivativeSha = hash(`crop:${name}`);
@@ -330,6 +331,10 @@ async function createAssetWithCrop(name, plate, {
   );
   const derivativeId = Number(derivative.rows[0].id);
   fixture.derivativeIds.push(derivativeId);
+  const embeddingBytes = Buffer.alloc(512 * 4);
+  for (let index = 0; index < Math.min(embeddingValues.length, 512); index += 1) {
+    embeddingBytes.writeFloatLE(Number(embeddingValues[index]), index * 4);
+  }
   const embedding = await pool.query(
     `INSERT INTO public.vehicle_asset_embeddings (
        derivative_id, model_name, algorithm_version, source_sha256,
@@ -337,9 +342,9 @@ async function createAssetWithCrop(name, plate, {
      ) VALUES (
        $1, 'vehicle-reid-0001-ir-fp16-v1',
        'canonical-overview-crop-embedding-v1', $2, $3, 512,
-       DECODE(REPEAT('00', 2048), 'hex')
+       $4::bytea
      ) RETURNING id`,
-    [derivativeId, derivativeSha, embeddingSha]
+    [derivativeId, derivativeSha, embeddingSha, embeddingBytes]
   );
   const embeddingId = Number(embedding.rows[0].id);
   fixture.embeddingIds.push(embeddingId);
@@ -382,9 +387,13 @@ async function addSharedRead(source, plate = source.plate) {
   return Number(read.id);
 }
 
-async function replaceCanonicalSource(source, name) {
+async function replaceCanonicalSource(source, name, {
+  timestampOffset = "20 seconds",
+  embeddingValues = [],
+} = {}) {
   const replacement = await createAssetWithCrop(name, source.plate, {
-    timestampOffset: "20 seconds",
+    timestampOffset,
+    embeddingValues,
   });
   await pool.query(
     "DELETE FROM public.vehicle_image_asset_reads WHERE asset_id = $1 AND read_id = $2",
@@ -508,8 +517,13 @@ async function testEmptyPreviewFinalizes() {
 async function createFixtures() {
   await createActor();
 
-  const exactA = await createAssetWithCrop("exact-a", "COR123");
-  const exactB = await createAssetWithCrop("exact-b", "COR123", { timestampOffset: "2 seconds" });
+  const exactA = await createAssetWithCrop("exact-a", "COR123", {
+    embeddingValues: [1, 0],
+  });
+  const exactB = await createAssetWithCrop("exact-b", "COR123", {
+    timestampOffset: "-7 days",
+    embeddingValues: [0.95, 0.05],
+  });
   const sharedReadId = await addSharedRead(exactA);
   const humanA = await createAssetWithCrop("human-a", "OCR123");
   const humanB = await createAssetWithCrop("human-b", "OCR128");
@@ -1033,7 +1047,11 @@ async function runConversionPreview(fixtures) {
   const third = await startCommittedPreview();
   const thirdOverview = await processCommittedPreview(third.runId);
   await verifyCommittedPreview(third.runId, thirdOverview.latestRun.previewFingerprint);
-  await replaceCanonicalSource(fixtures.exactB, "replacement-exact-b");
+  fixtures.exactBReplacement = await replaceCanonicalSource(
+    fixtures.exactB,
+    "replacement-exact-b",
+    { timestampOffset: "-7 days", embeddingValues: [0.95, 0.05] }
+  );
   await assertPreviewIsStale(third.runId, thirdOverview.latestRun.previewFingerprint);
 
   const fourth = await startCommittedPreview();
@@ -2305,7 +2323,59 @@ async function testBoundedLiveDiscoveryWindows({ authority, runId, actor }) {
   await pool.query(`DELETE FROM public.plate_reads WHERE id = $1`, [claimReleaseReadId]);
 }
 
-async function testCommittedStage2MaterializationAndRollback() {
+async function primarySimilarityState() {
+  const result = await pool.query(
+    `SELECT
+       (SELECT COUNT(*)::integer FROM public.vehicle_reid_v2_profiles) AS profiles,
+       (SELECT COUNT(*)::integer FROM public.vehicle_reid_v2_profile_members) AS members,
+       (SELECT COUNT(*)::integer FROM public.vehicle_reid_v2_read_assignments) AS assignments,
+       (SELECT COUNT(*)::integer FROM public.vehicle_reid_v2_pair_reviews) AS pair_reviews`
+  );
+  return result.rows[0];
+}
+
+async function testPrimaryHistoricalSimilarityReadOnly(fixtures) {
+  const historicalSource = fixtures.exactBReplacement;
+  assert.ok(historicalSource);
+  const before = await primarySimilarityState();
+  const client = await pool.connect();
+  let transactionOpen = false;
+  try {
+    await client.query("BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY");
+    transactionOpen = true;
+    await client.query("SET LOCAL statement_timeout = '5s'");
+    const service = new VehicleReidV2ShadowService({
+      repository: new VehicleReidV2ShadowRepository({ executor: client }),
+    });
+    const overview = await service.getOverview({
+      primaryBrowse: true,
+      browseMode: true,
+      sourceDerivativeId: historicalSource.derivativeId,
+      page: 1,
+      pageSize: 2,
+      resultLimit: 2,
+    });
+    assert.equal(overview.selected.derivativeId, historicalSource.derivativeId);
+    assert.equal(overview.selected.sourceKind, "overview_primary");
+    assert.equal(
+      overview.selected.imageUrl,
+      `/images/${cropPath(historicalSource.derivativeSha)}`
+    );
+    assert.ok(overview.selected.currentProfileIds.length > 0);
+    assert.ok(Date.now() - new Date(overview.selected.timestamp).getTime() > 6 * 24 * 60 * 60 * 1000);
+    assert.equal(overview.matches[0]?.derivativeId, fixtures.exactA.derivativeId);
+    assert.ok(overview.matches[0]?.similarity > 0.99);
+    assert.ok(overview.sources.length <= 2);
+    await client.query("ROLLBACK");
+    transactionOpen = false;
+  } finally {
+    if (transactionOpen) await client.query("ROLLBACK");
+    client.release();
+  }
+  assert.deepEqual(await primarySimilarityState(), before);
+}
+
+async function testCommittedStage2MaterializationAndRollback(fixtures) {
   const actor = fixtureActor();
   const conversion = await startCommittedPreview();
   const ready = await processCommittedPreview(conversion.runId, { firstLimit: 250 });
@@ -2343,6 +2413,8 @@ async function testCommittedStage2MaterializationAndRollback() {
   });
   assert.equal(cutover.overview.control.mode, "v2_primary");
   assert.equal(cutover.overview.control.transitionRunId, conversion.runId);
+
+  await testPrimaryHistoricalSimilarityReadOnly(fixtures);
 
   await testBoundedLiveDiscoveryWindows({
     authority,
@@ -2658,7 +2730,7 @@ try {
   const previewResult = await runConversionPreview(fixtures);
   await testAuthorityAndRollbackSchema(fixtures, previewResult.latestRunId);
   await testOlderFailedRunCannotBeRevived(previewResult.latestRunId);
-  const stage2 = await testCommittedStage2MaterializationAndRollback();
+  const stage2 = await testCommittedStage2MaterializationAndRollback(fixtures);
   await assertFinalBoundary(stage2);
   succeeded = true;
 } finally {

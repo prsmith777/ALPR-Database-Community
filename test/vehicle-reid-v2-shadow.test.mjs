@@ -11,6 +11,7 @@ import {
   VehicleReidV2ShadowRepository,
   vehicleReidV2ShadowRepositoryInternals,
 } from "../lib/vehicle-reid-v2-shadow-repository.mjs";
+import { parseVehicleReidV2SearchId } from "../lib/vehicle-reid-v2-search-input.mjs";
 import {
   canonicalVehicleReidV2ReviewPair,
   normalizeVehicleReidV2ReviewLabel,
@@ -43,6 +44,7 @@ function row(overrides = {}) {
     derivative_created_at: "2026-08-15 12:00:00.123456+00",
     embedding_id: derivativeId + 200,
     embedding: embedding([1, 0]),
+    embedding_sha256: String(derivativeId + 1_000).padStart(64, "0"),
     model_name: "vehicle-reid-0001-ir-fp16-v1",
     embedding_algorithm_version: "canonical-overview-crop-embedding-v1",
     read_id: derivativeId + 300,
@@ -232,20 +234,295 @@ test("shadow overview bounds browsing, searches current evidence, and skips inva
 
 test("primary browsing skips Stage 1 candidate, campaign, and calibration work", async () => {
   const calls = [];
+  const current = row({ derivative_id: 1, fully_attributed: true });
   const service = new VehicleReidV2ShadowService({
     repository: {
-      async listCurrentSources() { return [row({ derivative_id: 1 })]; },
+      async listPrimaryCurrentSourceCatalog() { calls.push("catalog"); return [current]; },
+      async listPrimaryCurrentSourceDetails(ids) {
+        calls.push(`details:${ids.join(",")}`);
+        return [current];
+      },
+      async listCurrentSources() { calls.push("rich-shadow"); return [current]; },
       async listPairReviewCalibration() { calls.push("calibration"); return []; },
       async getLatestReviewCampaign() { calls.push("campaign"); return null; },
       async getProfileCandidateSnapshot() { calls.push("candidate"); return null; },
+      async listPairReviewsForSource() { calls.push("reviews"); return []; },
     },
   });
 
   const overview = await service.getOverview({ primaryBrowse: true });
-  assert.deepEqual(calls, []);
+  assert.deepEqual(calls, ["catalog", "details:1"]);
   assert.equal(overview.profileCandidates, null);
   assert.equal(overview.reviewCampaign.campaign, null);
   assert.equal(overview.calibration.total, 0);
+  assert.equal(overview.stats.fullyAttributed, 1);
+});
+
+test("primary browsing ranks the lean catalog before one bounded rich hydration", async () => {
+  const catalog = [
+    row({ derivative_id: 1, embedding: embedding([1, 0]), total_sources: "4" }),
+    row({ derivative_id: 2, embedding: embedding([0.9, Math.sqrt(0.19)]), total_sources: "4" }),
+    row({ derivative_id: 3, embedding: embedding([0.8, 0.6]), total_sources: "4" }),
+    row({ derivative_id: 4, embedding: embedding([0.7, Math.sqrt(0.51)]), total_sources: "4" }),
+  ];
+  const calls = [];
+  const service = new VehicleReidV2ShadowService({
+    repository: {
+      async listPrimaryCurrentSourceCatalog(options) {
+        calls.push(["catalog", options]);
+        return catalog;
+      },
+      async listPrimaryCurrentSourceDetails(ids) {
+        calls.push(["details", ids]);
+        return ids.map((id) => row({
+          ...catalog.find((item) => Number(item.derivative_id) === id),
+          derivative_id: id,
+        }));
+      },
+    },
+  });
+
+  const overview = await service.getOverview({
+    primaryBrowse: true,
+    sourceDerivativeId: 4,
+    pageSize: 2,
+    resultLimit: 2,
+  });
+  assert.deepEqual(calls, [
+    ["catalog", { limit: 10_000 }],
+    ["details", [1, 2, 4, 3]],
+  ]);
+  assert.deepEqual(overview.sources.map((item) => item.derivativeId), [1, 2]);
+  assert.equal(overview.selected.derivativeId, 4);
+  assert.deepEqual(overview.matches.map((item) => item.derivativeId), [3, 2]);
+  assert.deepEqual(overview.matches.map((item) => item.rank), [1, 2]);
+});
+
+test("primary browsing never hydrates more than page plus source plus top matches", async () => {
+  const catalog = Array.from({ length: 100 }, (_, index) => row({
+    derivative_id: index + 1,
+    embedding: embedding([1, (index + 1) / 1_000]),
+    total_sources: "100",
+  }));
+  let hydratedIds = [];
+  const service = new VehicleReidV2ShadowService({
+    repository: {
+      async listPrimaryCurrentSourceCatalog() { return catalog; },
+      async listPrimaryCurrentSourceDetails(ids) {
+        hydratedIds = ids;
+        return ids.map((id) => catalog.find((item) => Number(item.derivative_id) === id));
+      },
+    },
+  });
+
+  await service.getOverview({
+    primaryBrowse: true,
+    sourceDerivativeId: 100,
+    pageSize: 48,
+    resultLimit: 24,
+  });
+  assert.equal(hydratedIds.length, 73);
+  assert.equal(vehicleReidV2ShadowInternals.MAX_PRIMARY_HYDRATION_SOURCES, 73);
+});
+
+test("primary browsing fails closed instead of substituting an explicit stale source", async () => {
+  let hydrationCalls = 0;
+  const catalogMissingService = new VehicleReidV2ShadowService({
+    repository: {
+      async listPrimaryCurrentSourceCatalog() { return [row({ derivative_id: 1 })]; },
+      async listPrimaryCurrentSourceDetails() { hydrationCalls += 1; return []; },
+    },
+  });
+  await assert.rejects(
+    catalogMissingService.getOverview({ primaryBrowse: true, sourceDerivativeId: 99 }),
+    { code: "VEHICLE_REID_V2_SEARCH_SOURCE_CHANGED" }
+  );
+  assert.equal(hydrationCalls, 0);
+
+  const detailMissingService = new VehicleReidV2ShadowService({
+    repository: {
+      async listPrimaryCurrentSourceCatalog() {
+        return [row({ derivative_id: 1 }), row({ derivative_id: 2 })];
+      },
+      async listPrimaryCurrentSourceDetails() { return [row({ derivative_id: 2 })]; },
+    },
+  });
+  await assert.rejects(
+    detailMissingService.getOverview({ primaryBrowse: true, sourceDerivativeId: 1 }),
+    { code: "VEHICLE_REID_V2_SEARCH_SOURCE_CHANGED" }
+  );
+});
+
+test("primary browsing resolves an exact current source outside the newest catalog bound", async () => {
+  const newest = row({ derivative_id: 1, total_sources: "10001" });
+  const olderRequested = row({
+    derivative_id: 10_001,
+    embedding: embedding([0.8, 0.6]),
+    total_sources: null,
+  });
+  const calls = [];
+  const service = new VehicleReidV2ShadowService({
+    repository: {
+      async listPrimaryCurrentSourceCatalog() { return [newest]; },
+      async getPrimaryCurrentSourceCatalog(id) {
+        calls.push(["exact", id]);
+        return id === 10_001 ? olderRequested : null;
+      },
+      async listPrimaryCurrentSourceDetails(ids) {
+        calls.push(["details", ids]);
+        return ids.map((id) => id === 10_001 ? olderRequested : newest);
+      },
+    },
+  });
+  const overview = await service.getOverview({
+    primaryBrowse: true,
+    sourceDerivativeId: 10_001,
+    resultLimit: 1,
+  });
+  assert.deepEqual(calls, [
+    ["exact", 10_001],
+    ["details", [1, 10_001]],
+  ]);
+  assert.equal(overview.selected.derivativeId, 10_001);
+  assert.deepEqual(overview.matches.map((item) => item.derivativeId), [1]);
+  assert.equal(overview.stats.truncated, true);
+});
+
+test("primary browsing rejects selected contract drift and drops candidate contract drift", async () => {
+  const catalog = [
+    row({ derivative_id: 1, embedding: embedding([1, 0]) }),
+    row({ derivative_id: 2, embedding: embedding([0.9, Math.sqrt(0.19)]) }),
+    row({ derivative_id: 3, embedding: embedding([0.8, 0.6]) }),
+  ];
+  const changedSourceService = new VehicleReidV2ShadowService({
+    repository: {
+      async listPrimaryCurrentSourceCatalog() { return catalog; },
+      async listPrimaryCurrentSourceDetails() {
+        return [
+          { ...catalog[0], content_sha256: "f".repeat(64) },
+          catalog[1],
+          catalog[2],
+        ];
+      },
+    },
+  });
+  await assert.rejects(
+    changedSourceService.getOverview({ primaryBrowse: true, sourceDerivativeId: 1 }),
+    { code: "VEHICLE_REID_V2_SEARCH_SOURCE_CHANGED" }
+  );
+
+  const changedCandidateService = new VehicleReidV2ShadowService({
+    repository: {
+      async listPrimaryCurrentSourceCatalog() { return catalog; },
+      async listPrimaryCurrentSourceDetails() {
+        return [
+          catalog[0],
+          { ...catalog[1], embedding_id: 999_999 },
+          catalog[2],
+        ];
+      },
+    },
+  });
+  const overview = await changedCandidateService.getOverview({
+    primaryBrowse: true,
+    sourceDerivativeId: 1,
+    resultLimit: 2,
+  });
+  assert.deepEqual(overview.matches.map((item) => item.derivativeId), [3]);
+  assert.deepEqual(overview.matches.map((item) => item.rank), [2]);
+  assert.equal(overview.winnerMargin, null);
+});
+
+test("primary browsing displays only pair reviews bound to the hydrated crop contract", async () => {
+  const catalog = [
+    row({ derivative_id: 1, plate_numbers: [], lpr_evidence: [] }),
+    row({ derivative_id: 2, plate_numbers: [], lpr_evidence: [] }),
+  ];
+  const matchingReview = {
+    id: 7,
+    candidate_derivative_id: 2,
+    derivative_id_low: 1,
+    derivative_id_high: 2,
+    source_sha256_low: catalog[0].content_sha256,
+    source_sha256_high: catalog[1].content_sha256,
+    embedding_id_low: catalog[0].embedding_id,
+    embedding_id_high: catalog[1].embedding_id,
+    embedding_model: catalog[0].model_name,
+    algorithm_version: catalog[0].embedding_algorithm_version,
+    similarity_score: 1,
+    label: "same_vehicle",
+    revision: 1,
+    updated_at: "2026-08-15 12:00:00+00",
+    actor_username: "operator",
+    actor_display_name: "Operator",
+    campaign_id: null,
+  };
+  const overviewFor = async (review) => new VehicleReidV2ShadowService({
+    repository: {
+      async listPrimaryCurrentSourceCatalog() { return catalog; },
+      async listPrimaryCurrentSourceDetails() { return catalog; },
+      async listPairReviewsForSource() { return [review]; },
+    },
+  }).getOverview({ primaryBrowse: true, sourceDerivativeId: 1 });
+
+  const current = await overviewFor(matchingReview);
+  assert.equal(current.matches[0].pairReview.label, "same_vehicle");
+  const stale = await overviewFor({
+    ...matchingReview,
+    source_sha256_high: "f".repeat(64),
+  });
+  assert.equal(stale.matches[0].pairReview, null);
+});
+
+test("primary browsing suppresses a default source for invalid source or unresolved read", async () => {
+  const current = row({ derivative_id: 1 });
+  const service = new VehicleReidV2ShadowService({
+    repository: {
+      async listPrimaryCurrentSourceCatalog() { return [current]; },
+      async listPrimaryCurrentSourceDetails(ids) {
+        assert.deepEqual(ids, [1]);
+        return [current];
+      },
+    },
+  });
+  const overview = await service.getOverview({
+    primaryBrowse: true,
+    sourceDerivativeId: "abc",
+  });
+  assert.equal(overview.selected, null);
+  assert.deepEqual(overview.matches, []);
+  assert.deepEqual(overview.sources.map((item) => item.derivativeId), [1]);
+  const unresolved = await service.getOverview({
+    primaryBrowse: true,
+    suppressDefaultSelection: true,
+  });
+  assert.equal(unresolved.selected, null);
+});
+
+test("primary browsing drops stale hydrated candidates without changing global ranks", async () => {
+  const catalog = [
+    row({ derivative_id: 1, embedding: embedding([1, 0]) }),
+    row({ derivative_id: 2, embedding: embedding([0.9, Math.sqrt(0.19)]) }),
+    row({ derivative_id: 3, embedding: embedding([0.8, 0.6]) }),
+  ];
+  const service = new VehicleReidV2ShadowService({
+    repository: {
+      async listPrimaryCurrentSourceCatalog() { return catalog; },
+      async listPrimaryCurrentSourceDetails(ids) {
+        assert.deepEqual(ids, [1, 2, 3]);
+        return [catalog[0], catalog[2]];
+      },
+    },
+  });
+  const overview = await service.getOverview({
+    primaryBrowse: true,
+    sourceDerivativeId: 1,
+    pageSize: 1,
+    resultLimit: 2,
+  });
+  assert.deepEqual(overview.matches.map((item) => item.derivativeId), [3]);
+  assert.deepEqual(overview.matches.map((item) => item.rank), [2]);
+  assert.equal(overview.winnerMargin, null);
 });
 
 test("pair review recomputes immutable-crop similarity and returns calibration", async () => {
@@ -333,6 +610,94 @@ test("repository scans only exact current identity links and performs no writes"
   assert.equal(vehicleReidV2ShadowRepositoryInternals.MAX_SCAN_SOURCES, 10_000);
 });
 
+test("primary repository uses an asset-gated lean catalog and ID-seeded bounded hydration", async () => {
+  const calls = [];
+  const repository = new VehicleReidV2ShadowRepository({
+    executor: {
+      async query(text, values) {
+        calls.push({ text, values });
+        return { rows: [{ authority_mode: "v2_primary" }] };
+      },
+    },
+  });
+  await repository.listPrimaryCurrentSourceCatalog({ limit: 99_999 });
+  await repository.getPrimaryCurrentSourceCatalog(10_001);
+  await repository.listPrimaryCurrentSourceDetails([3, 1, 3, 2]);
+  assert.equal(calls.length, 3);
+
+  const catalog = calls[0];
+  assert.equal(catalog.values.at(-1), 10_000);
+  assert.match(catalog.text, /JOIN public\.vehicle_image_assets assets/);
+  assert.match(catalog.text, /derivatives\.source_sha256 = assets\.content_sha256/);
+  assert.match(catalog.text, /embeddings\.source_sha256 = derivatives\.content_sha256/);
+  assert.match(catalog.text, /identity_eligible = TRUE/);
+  assert.match(catalog.text, /relationship <> 'display_fallback'/);
+  assert.match(catalog.text, /reid_control\.mode = 'v2_primary'/);
+  assert.doesNotMatch(catalog.text, /vehicle_reid_v2_current_profile_members/);
+  assert.doesNotMatch(catalog.text, /vehicle_cluster_assignments/);
+  assert.doesNotMatch(catalog.text, /vehicle_events/);
+  assert.doesNotMatch(catalog.text, /vehicle_reid_v2_pair_reviews/);
+  assert.doesNotMatch(catalog.text, /JSONB_(?:AGG|BUILD_OBJECT)/);
+
+  const exact = calls[1];
+  assert.equal(exact.values.at(-1), 10_001);
+  assert.match(exact.text, /derivatives\.id = \$12/);
+  assert.doesNotMatch(exact.text, /LIMIT \$12/);
+
+  const hydration = calls[2];
+  assert.deepEqual(hydration.values.at(-1), [3, 1, 2]);
+  assert.match(hydration.text, /seeded_derivatives AS MATERIALIZED/);
+  assert.match(hydration.text, /derivatives\.id = ANY\(\$12::bigint\[\]\)/);
+  assert.match(hydration.text, /JOIN public\.vehicle_image_assets assets/);
+  assert.match(hydration.text, /derivatives\.source_sha256 = assets\.content_sha256/);
+  assert.match(hydration.text, /embeddings\.source_sha256 = derivatives\.content_sha256/);
+  assert.match(hydration.text, /vehicle_image_path = links\.source_path_snapshot/);
+  assert.ok(
+    hydration.text.indexOf("seeded_derivatives AS MATERIALIZED")
+      < hydration.text.indexOf("JOIN LATERAL")
+  );
+  assert.equal(
+    vehicleReidV2ShadowRepositoryInternals.MAX_PRIMARY_HYDRATION_SOURCES,
+    73
+  );
+  await assert.rejects(
+    repository.listPrimaryCurrentSourceDetails(Array.from({ length: 74 }, (_, index) => index + 1)),
+    { code: "VEHICLE_REID_V2_SEARCH_HYDRATION_LIMIT" }
+  );
+  assert.equal(calls.length, 3);
+});
+
+test("primary repository fails closed when authority mode is not v2 primary", async () => {
+  const repository = new VehicleReidV2ShadowRepository({
+    executor: {
+      async query() { return { rows: [{ authority_mode: "v1_rollback" }] }; },
+    },
+  });
+  await assert.rejects(
+    repository.listPrimaryCurrentSourceCatalog(),
+    { code: "VEHICLE_REID_V2_SEARCH_MODE_CHANGED" }
+  );
+  await assert.rejects(
+    repository.listPrimaryCurrentSourceDetails([1]),
+    { code: "VEHICLE_REID_V2_SEARCH_MODE_CHANGED" }
+  );
+});
+
+test("primary pair-review lookup returns immutable crop and embedding gates", async () => {
+  let query = "";
+  const repository = new VehicleReidV2ShadowRepository({
+    executor: {
+      async query(text) { query = text; return { rows: [] }; },
+    },
+  });
+  await repository.listPairReviewsForSource({
+    sourceDerivativeId: 1,
+    candidateDerivativeIds: [2],
+  });
+  assert.match(query, /source_sha256_low, source_sha256_high/);
+  assert.match(query, /embedding_id_low, embedding_id_high/);
+});
+
 test("repository revalidates current crop evidence, updates one pair row, and appends audit", async () => {
   const calls = [];
   const low = row({ derivative_id: 10, embedding_id: 210, total_sources: "2" });
@@ -416,4 +781,49 @@ test("shadow review surface keeps assignments unchanged, gates pair labels, and 
   assert.doesNotMatch(migration.slice(migration.indexOf("2026081507_vehicle_reid_v2_pair_reviews")), /INSERT INTO public\.vehicle_clusters/);
   assert.doesNotMatch(`${service}\n${repository}`, /plate recognizer|plates?recognizer\.com/i);
   assert.doesNotMatch(`${service}\n${repository}`, /openvino-node/);
+});
+
+test("primary Vehicle Search route fails closed and never substitutes invalid read or source input", async () => {
+  const [page, actions] = await Promise.all([
+    source("app/visual_search/page.jsx"),
+    source("app/actions.js"),
+  ]);
+  assert.match(page, /!modeResult\?\.success \|\| !\["v1_primary", "v1_rollback", "v2_primary"\]\.includes\(mode\)/);
+  assert.doesNotMatch(page, /modeResult\?\.success \? modeResult\.data\.control\?\.mode : "v1_primary"/);
+  assert.match(page, /parseVehicleReidV2SearchId\(parameters\?\.source\)/);
+  assert.match(page, /requestedSource\.present && !requestedSource\.valid/);
+  assert.match(page, /parseVehicleReidV2SearchId\(parameters\?\.readId\)/);
+  assert.match(page, /requestedRead\.present[\s\S]*?sourceDerivativeId = null/);
+  assert.match(page, /requestedRead\.valid[\s\S]*?resolveVehicleReidRead\(requestedRead\.value\)/);
+  assert.match(page, /suppressDefaultSelection = true;[\s\S]*?Find Similar is unavailable/);
+  assert.match(page, /primaryBrowse: true,[\s\S]*?suppressDefaultSelection/);
+  assert.match(actions, /"VEHICLE_REID_V2_SEARCH_MODE_CHANGED"/);
+  assert.match(actions, /"VEHICLE_REID_V2_SEARCH_SOURCE_CHANGED"/);
+});
+
+test("Vehicle Search query identifiers reject malformed explicit read and source values", () => {
+  assert.deepEqual(parseVehicleReidV2SearchId(undefined), {
+    present: false,
+    valid: true,
+    value: null,
+  });
+  assert.deepEqual(parseVehicleReidV2SearchId(""), {
+    present: false,
+    valid: true,
+    value: null,
+  });
+  for (const invalid of [
+    "abc", "12junk", "0", "-1", "1.5", "12.0", "1e3", "0x10", "0b10", "NaN",
+  ]) {
+    assert.deepEqual(parseVehicleReidV2SearchId(invalid), {
+      present: true,
+      valid: false,
+      value: null,
+    });
+  }
+  assert.deepEqual(parseVehicleReidV2SearchId(" 12 "), {
+    present: true,
+    valid: true,
+    value: 12,
+  });
 });

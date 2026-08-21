@@ -12,6 +12,7 @@ import DashboardLayout from "@/components/layout/MainLayout";
 import TitleNavbar from "@/components/layout/TitleNav";
 import { requirePagePermission } from "@/lib/page-permission.mjs";
 import { vehicleIntelligenceNavigationForMode } from "@/lib/vehicle-intelligence-navigation.mjs";
+import { parseVehicleReidV2SearchId } from "@/lib/vehicle-reid-v2-search-input.mjs";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -20,20 +21,40 @@ export default async function VisualSearchPage({ searchParams }) {
   await requirePagePermission("plate.read");
   const parameters = await searchParams;
   const modeResult = await getVehicleReidAuthorityMode();
-  const mode = modeResult?.success ? modeResult.data.control?.mode : "v1_primary";
+  const mode = modeResult?.success ? modeResult.data.control?.mode : null;
+  if (!modeResult?.success || !["v1_primary", "v1_rollback", "v2_primary"].includes(mode)) {
+    return (
+      <DashboardLayout>
+        <TitleNavbar title="Vehicle Intelligence" navigation={[]}>
+          <div className="rounded-md border border-destructive/50 bg-destructive/10 p-4 text-sm text-destructive">
+            {modeResult?.error || "Unable to determine the current ReID authority mode. Vehicle Search is unavailable."}
+          </div>
+        </TitleNavbar>
+      </DashboardLayout>
+    );
+  }
   const navigation = vehicleIntelligenceNavigationForMode(mode);
   if (mode === "v2_primary") {
-    let sourceDerivativeId = Number.parseInt(String(parameters?.source || ""), 10);
+    const requestedSource = parseVehicleReidV2SearchId(parameters?.source);
+    let sourceDerivativeId = requestedSource.value;
     let resolutionMessage = "";
-    const requestedReadId = Number.parseInt(String(parameters?.readId || ""), 10);
-    if (Number.isSafeInteger(requestedReadId) && requestedReadId > 0) {
-      const resolved = await resolveVehicleReidRead(requestedReadId);
-      if (resolved?.success && resolved.data.currentIdentityLink && resolved.data.derivativeId) {
-        sourceDerivativeId = resolved.data.derivativeId;
-      } else if (resolved?.success && resolved.data.profileId) {
-        redirect(`/visual_search/profiles/${resolved.data.profileId}`);
+    let suppressDefaultSelection = requestedSource.present && !requestedSource.valid;
+    const requestedRead = parseVehicleReidV2SearchId(parameters?.readId);
+    if (requestedRead.present) {
+      sourceDerivativeId = null;
+      if (requestedRead.valid) {
+        const resolved = await resolveVehicleReidRead(requestedRead.value);
+        if (resolved?.success && resolved.data.currentIdentityLink && resolved.data.derivativeId) {
+          sourceDerivativeId = resolved.data.derivativeId;
+        } else if (resolved?.success && resolved.data.profileId) {
+          redirect(`/visual_search/profiles/${resolved.data.profileId}`);
+        } else {
+          suppressDefaultSelection = true;
+          resolutionMessage = "This read has no exact current identity-eligible Vehicle View or authoritative ReID profile. Find Similar is unavailable.";
+        }
       } else {
-        resolutionMessage = "This read has no exact current identity-eligible Vehicle View or authoritative ReID profile. Find Similar is unavailable.";
+        suppressDefaultSelection = true;
+        resolutionMessage = "This read link is invalid. Find Similar is unavailable.";
       }
     }
     const result = await getVehicleReidV2Shadow({
@@ -45,6 +66,7 @@ export default async function VisualSearchPage({ searchParams }) {
         : null,
       browseMode: true,
       primaryBrowse: true,
+      suppressDefaultSelection,
       search: parameters?.search || "",
     });
     return (
