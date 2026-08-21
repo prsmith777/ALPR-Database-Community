@@ -82,6 +82,12 @@ test("accepted materialization revalidates and exactly writes profiles, members,
   assert.match(actions, /acceptVehicleReidV2ConversionPreview[\s\S]*requirePermission\("maintenance\.manage"\)/);
   assert.match(actions, /materializeVehicleReidV2ConversionPreview[\s\S]*requirePermission\("maintenance\.manage"\)/);
   assert.match(actions, /transitionVehicleReidAuthorityMode[\s\S]*requirePermission\("maintenance\.manage"\)/);
+  const transitionAction = actions.slice(
+    actions.indexOf("export async function transitionVehicleReidAuthorityMode"),
+    actions.indexOf("export async function getVehicleReidProfiles")
+  );
+  assert.match(transitionAction, /authorityOverview: authority\.overview/);
+  assert.doesNotMatch(transitionAction, /loadVehicleReidV2OperatorOverview\(\)/);
   assert.match(panel, /Accept verified preview/);
   assert.match(panel, /Materialize authoritative ReID/);
   assert.match(panel, /Make ReID v2 primary/);
