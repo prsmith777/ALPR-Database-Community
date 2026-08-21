@@ -286,6 +286,9 @@ test("a claimed read is released across rollback and processed after primary re-
       if (["BEGIN", "COMMIT", "ROLLBACK"].includes(sql)) {
         return { rows: [], rowCount: 0 };
       }
+      if (/^SET LOCAL (lock_timeout|statement_timeout)/.test(sql)) {
+        return { rows: [], rowCount: 0 };
+      }
       if (/pg_advisory_xact_lock/.test(sql)) return { rows: [{}], rowCount: 1 };
       if (/WITH candidates AS \(/.test(sql)) {
         if (mode !== "v2_primary" || job.status !== "pending" || job.attemptCount >= 3) {
