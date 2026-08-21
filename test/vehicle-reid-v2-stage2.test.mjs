@@ -440,6 +440,12 @@ test("authoritative profile detail validates merge and evidence candidates by ph
 test("live processor is deterministic, bounded, and never uses cosine as identity", async () => {
   const live = await source("lib/vehicle-reid-v2-live.mjs");
   assert.match(live, /MAX_BATCH_SIZE = 25/);
+  assert.match(live, /SET LOCAL lock_timeout = '\$\{LIVE_TRANSACTION_LOCK_TIMEOUT\}'/);
+  assert.match(live, /SET LOCAL statement_timeout = '\$\{LIVE_TRANSACTION_STATEMENT_TIMEOUT\}'/);
+  assert.ok(
+    live.indexOf("SET LOCAL statement_timeout") < live.indexOf("SELECT pg_advisory_xact_lock"),
+    "the live statement deadline must be active before the authority lock is acquired"
+  );
   assert.match(live, /mode !== "v2_primary"/);
   assert.match(live, /AMBIGUOUS_EFFECTIVE_PLATES/);
   assert.match(live, /HUMAN_DIFFERENT/);
@@ -459,6 +465,38 @@ test("live processor is deterministic, bounded, and never uses cosine as identit
   assert.match(live, /SELECT \$1, 'current', \$2::varchar\(32\)[\s\S]*anchors\.normalized_plate = \$2::varchar\(32\)/);
   assert.match(live, /id: Number\(candidate\.profile_id\),[\s\S]*revision: Number\(candidate\.profile_revision\)/);
   assert.equal((live.match(/links\.updated_at::text AS source_link_updated_at/g) || []).length, 2);
+});
+
+test("authority session locks retain post-lock snapshots and have a bounded wait", async () => {
+  const events = [];
+  const client = {
+    async query(sql) {
+      events.push(sql);
+      return { rows: [], rowCount: 0 };
+    },
+    release() { events.push("release"); },
+  };
+  const repository = new VehicleReidV2AuthorityRepository({
+    pool: {
+      connect() { return client; },
+      query(...args) { return client.query(...args); },
+    },
+  });
+
+  await repository.transaction(async () => {
+    events.push("operation");
+  }, { isolation: "REPEATABLE READ", sessionLock: "test-authority-lock" });
+
+  assert.deepEqual(events, [
+    "SET lock_timeout = '15s'",
+    "SELECT pg_advisory_lock(hashtext($1))",
+    "RESET lock_timeout",
+    "BEGIN ISOLATION LEVEL REPEATABLE READ",
+    "operation",
+    "COMMIT",
+    "SELECT pg_advisory_unlock(hashtext($1))",
+    "release",
+  ]);
 });
 
 test("live discovery never evaluates candidates while v2 is not primary", async () => {
