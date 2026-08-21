@@ -1815,13 +1815,21 @@ async function drainLiveReads(service, readIds, label) {
   for (let attempt = 0; attempt < 20; attempt += 1) {
     await service.processBatch({ limit: 25 });
     const jobs = await pool.query(
-      `SELECT read_id, status, error_code
-       FROM public.vehicle_reid_v2_live_jobs
-       WHERE read_id = ANY($1::integer[]) ORDER BY read_id`,
+      `SELECT jobs.read_id, jobs.status, jobs.error_code,
+              EXISTS (
+                SELECT 1
+                FROM public.vehicle_reid_v2_current_read_assignments assignments
+                WHERE assignments.id = jobs.assignment_id
+                  AND assignments.read_id = jobs.read_id
+              ) AS has_current_assignment
+       FROM public.vehicle_reid_v2_live_jobs jobs
+       WHERE jobs.read_id = ANY($1::integer[]) ORDER BY jobs.read_id`,
       [expected]
     );
     if (jobs.rows.length === expected.length
-      && jobs.rows.every((row) => row.status === "ready")) {
+      && jobs.rows.every((row) => (
+        row.status === "ready" && row.has_current_assignment === true
+      ))) {
       return jobs.rows;
     }
     const terminal = jobs.rows.find((row) => (
@@ -1859,6 +1867,315 @@ async function revisePairReview(reviewId, label) {
   );
   assert.equal(result.rowCount, 1);
   return Number(result.rows[0].revision);
+}
+
+async function testBoundedLiveDiscoveryWindows({ authority, runId, actor }) {
+  const anchor = await pool.query(
+    `SELECT normalized_plate
+     FROM public.vehicle_reid_v2_current_plate_anchors
+     ORDER BY normalized_plate LIMIT 1`
+  );
+  assert.equal(anchor.rowCount, 1);
+  const plate = anchor.rows[0].normalized_plate;
+  const run = await pool.query(
+    `SELECT max_read_id FROM public.vehicle_reid_v2_conversion_runs WHERE id = $1`,
+    [runId]
+  );
+  const seeded = await pool.query(
+    `SELECT transition_run_id, forward_cursor_read_id, revisit_cursor_read_id,
+            revisit_upper_read_id, last_scanned_at, revision
+     FROM public.vehicle_reid_v2_live_discovery_state
+     WHERE singleton = TRUE`
+  );
+  assert.equal(Number(seeded.rows[0].transition_run_id), runId);
+  assert.equal(Number(seeded.rows[0].forward_cursor_read_id), Number(run.rows[0].max_read_id));
+  assert.equal(Number(seeded.rows[0].revisit_cursor_read_id), Number(run.rows[0].max_read_id));
+  assert.equal(Number(seeded.rows[0].revisit_upper_read_id), Number(run.rows[0].max_read_id));
+  assert.ok(seeded.rows[0].last_scanned_at);
+
+  // Two concurrent discoverers serialize on the singleton and consume
+  // disjoint 250-ID base-table windows.  All 500 exact-plate candidates must
+  // be enqueued; there is no result cap inside the raw window.
+  const decoys = await pool.query(
+    `INSERT INTO public.plate_reads (
+       plate_number, camera_name, "timestamp", review_status, review_revision,
+       validated
+     )
+     SELECT $1, 'Codex bounded discovery',
+            CURRENT_TIMESTAMP + (series.value || ' milliseconds')::interval,
+            'corrected', 1, TRUE
+     FROM GENERATE_SERIES(1, 500) series(value)
+     RETURNING id`,
+    [plate]
+  );
+  const decoyIds = decoys.rows.map((row) => Number(row.id));
+  const repositories = [
+    new VehicleReidV2LiveRepository({ pool }),
+    new VehicleReidV2LiveRepository({ pool }),
+  ];
+  const windows = await Promise.all(repositories.map((repository) => (
+    repository.discover({ limit: 250 })
+  )));
+  assert.equal(windows[0].length, 250);
+  assert.equal(windows[1].length, 250);
+  assert.equal(new Set([...windows[0], ...windows[1]]).size, 500);
+  assert.deepEqual(
+    [...windows[0], ...windows[1]].sort((left, right) => left - right),
+    decoyIds
+  );
+  const concurrentState = await pool.query(
+    `SELECT forward_cursor_read_id, forward_windows_since_revisit, revision
+     FROM public.vehicle_reid_v2_live_discovery_state WHERE singleton = TRUE`
+  );
+  assert.equal(Number(concurrentState.rows[0].forward_cursor_read_id), decoyIds.at(-1));
+  assert.equal(Number(concurrentState.rows[0].forward_windows_since_revisit), 2);
+  assert.equal(
+    Number(concurrentState.rows[0].revision),
+    Number(seeded.rows[0].revision) + 2
+  );
+  await pool.query(`DELETE FROM public.plate_reads WHERE id = ANY($1::integer[])`, [decoyIds]);
+
+  // A forced state-update failure occurs after the candidate upsert.  The
+  // surrounding transaction must retain neither the job nor cursor progress.
+  const rollbackRead = await createRead({
+    plate,
+    reviewStatus: "corrected",
+    vehicleStatus: "unavailable",
+    errorCode: "BOUNDED_DISCOVERY_ROLLBACK",
+    queueKind: "historical",
+  });
+  const beforeRollback = await pool.query(
+    `SELECT forward_cursor_read_id, revision
+     FROM public.vehicle_reid_v2_live_discovery_state WHERE singleton = TRUE`
+  );
+  await pool.query(
+    `CREATE OR REPLACE FUNCTION public.codex_fail_reid_discovery_state_update()
+     RETURNS TRIGGER LANGUAGE plpgsql AS $$
+     BEGIN
+       RAISE EXCEPTION 'forced discovery-state rollback';
+     END;
+     $$;
+     DROP TRIGGER IF EXISTS codex_fail_reid_discovery_state_update
+       ON public.vehicle_reid_v2_live_discovery_state;
+     CREATE TRIGGER codex_fail_reid_discovery_state_update
+     BEFORE UPDATE ON public.vehicle_reid_v2_live_discovery_state
+     FOR EACH ROW EXECUTE FUNCTION public.codex_fail_reid_discovery_state_update();`
+  );
+  try {
+    await assert.rejects(
+      repositories[0].discover({ limit: 250 }),
+      /forced discovery-state rollback/
+    );
+  } finally {
+    await pool.query(
+      `DROP TRIGGER IF EXISTS codex_fail_reid_discovery_state_update
+         ON public.vehicle_reid_v2_live_discovery_state;
+       DROP FUNCTION IF EXISTS public.codex_fail_reid_discovery_state_update();`
+    );
+  }
+  const afterRollback = await pool.query(
+    `SELECT state.forward_cursor_read_id, state.revision,
+            EXISTS (
+              SELECT 1 FROM public.vehicle_reid_v2_live_jobs jobs
+              WHERE jobs.read_id = $1
+            ) AS has_job
+     FROM public.vehicle_reid_v2_live_discovery_state state
+     WHERE state.singleton = TRUE`,
+    [Number(rollbackRead.id)]
+  );
+  assert.deepEqual(afterRollback.rows[0], {
+    forward_cursor_read_id: beforeRollback.rows[0].forward_cursor_read_id,
+    revision: beforeRollback.rows[0].revision,
+    has_job: false,
+  });
+  await pool.query(`DELETE FROM public.plate_reads WHERE id = $1`, [Number(rollbackRead.id)]);
+
+  // Reserve a lower sequence ID in an uncommitted transaction.  A later ID
+  // commits and advances the forward cursor first; the independent revisit
+  // window must still find the late lower-ID commit.
+  const lateClient = await pool.connect();
+  let lateId;
+  let highId;
+  let newestId;
+  try {
+    const base = await pool.query(
+      `SELECT forward_cursor_read_id
+       FROM public.vehicle_reid_v2_live_discovery_state WHERE singleton = TRUE`
+    );
+    const baseCursor = Number(base.rows[0].forward_cursor_read_id);
+    await lateClient.query("BEGIN");
+    const late = await lateClient.query(
+      `INSERT INTO public.plate_reads (
+         plate_number, camera_name, review_status, review_revision, validated
+       ) VALUES ($1, 'Codex late lower id', 'corrected', 1, TRUE)
+       RETURNING id`,
+      [plate]
+    );
+    lateId = Number(late.rows[0].id);
+    const high = await pool.query(
+      `INSERT INTO public.plate_reads (
+         plate_number, camera_name, review_status, review_revision, validated
+       ) VALUES ('LATEHIGH', 'Codex forward priority', 'unreviewed', 0, FALSE)
+       RETURNING id`
+    );
+    highId = Number(high.rows[0].id);
+    assert.ok(baseCursor < lateId && lateId < highId);
+    assert.deepEqual(await repositories[0].discover({ limit: 250 }), []);
+    await pool.query(
+      `UPDATE public.vehicle_reid_v2_live_discovery_state
+       SET revisit_cursor_read_id = $1, revisit_upper_read_id = $2,
+           forward_windows_since_revisit = 8,
+           revision = revision + 1, updated_at = CURRENT_TIMESTAMP
+       WHERE singleton = TRUE`,
+      [baseCursor, highId]
+    );
+    await lateClient.query("COMMIT");
+    const newest = await pool.query(
+      `INSERT INTO public.plate_reads (
+         plate_number, camera_name, review_status, review_revision, validated
+       ) VALUES ('LATENEWER', 'Codex bounded revisit fairness', 'unreviewed', 0, FALSE)
+       RETURNING id`
+    );
+    newestId = Number(newest.rows[0].id);
+    assert.ok(highId < newestId);
+    assert.deepEqual(await repositories[0].discover({ limit: 250 }), [lateId]);
+    const fairState = await pool.query(
+      `SELECT forward_cursor_read_id, revisit_cursor_read_id,
+              forward_windows_since_revisit
+       FROM public.vehicle_reid_v2_live_discovery_state WHERE singleton = TRUE`
+    );
+    assert.equal(Number(fairState.rows[0].forward_cursor_read_id), highId);
+    assert.equal(Number(fairState.rows[0].revisit_cursor_read_id), highId);
+    assert.equal(Number(fairState.rows[0].forward_windows_since_revisit), 0);
+    assert.deepEqual(await repositories[0].discover({ limit: 250 }), []);
+  } catch (error) {
+    await lateClient.query("ROLLBACK").catch(() => {});
+    throw error;
+  } finally {
+    lateClient.release();
+  }
+  await pool.query(
+    `DELETE FROM public.plate_reads WHERE id = ANY($1::integer[])`,
+    [[lateId, highId, newestId]]
+  );
+
+  const beforeReplay = await pool.query(
+    `SELECT forward_cursor_read_id, revisit_cursor_read_id,
+            revisit_upper_read_id, forward_windows_since_revisit,
+            revision, last_scanned_at
+     FROM public.vehicle_reid_v2_live_discovery_state WHERE singleton = TRUE`
+  );
+  await authority.transitionMode({
+    mode: "v1_rollback",
+    reason: "Bounded discovery no-rewind check",
+    actor,
+  });
+  await authority.transitionMode({
+    mode: "v2_primary",
+    runId,
+    reason: "Bounded discovery same-run re-entry check",
+    actor,
+  });
+  const afterReplay = await pool.query(
+    `SELECT transition_run_id, forward_cursor_read_id, revisit_cursor_read_id,
+            revisit_upper_read_id, forward_windows_since_revisit,
+            revision, last_scanned_at
+     FROM public.vehicle_reid_v2_live_discovery_state WHERE singleton = TRUE`
+  );
+  assert.equal(Number(afterReplay.rows[0].transition_run_id), runId);
+  assert.equal(
+    Number(afterReplay.rows[0].forward_cursor_read_id),
+    Number(beforeReplay.rows[0].forward_cursor_read_id)
+  );
+  assert.equal(
+    Number(afterReplay.rows[0].revisit_cursor_read_id),
+    Number(beforeReplay.rows[0].revisit_cursor_read_id)
+  );
+  assert.equal(
+    Number(afterReplay.rows[0].revisit_upper_read_id),
+    Number(beforeReplay.rows[0].revisit_upper_read_id)
+  );
+  assert.equal(
+    Number(afterReplay.rows[0].forward_windows_since_revisit),
+    Number(beforeReplay.rows[0].forward_windows_since_revisit)
+  );
+  assert.ok(Number(afterReplay.rows[0].revision) > Number(beforeReplay.rows[0].revision));
+  assert.ok(new Date(afterReplay.rows[0].last_scanned_at) >= new Date(beforeReplay.rows[0].last_scanned_at));
+  assert.equal(await repositories[0].isDiscoveryDue(), false);
+
+  // A control rollback after claim must defer the exact token, not turn the
+  // read into a terminal exception.  The claim-only attempt is refunded so a
+  // same-run primary re-entry can reclaim the read with its full retry budget.
+  const claimReleaseRead = await createRead({
+    plate: `RC${suffix.slice(0, 8)}`,
+    reviewStatus: "corrected",
+    vehicleStatus: "unavailable",
+    errorCode: "CLAIM_RELEASE_TEST",
+    queueKind: "historical",
+  });
+  const claimReleaseReadId = Number(claimReleaseRead.id);
+  await pool.query(
+    `INSERT INTO public.vehicle_reid_v2_live_jobs (read_id) VALUES ($1)`,
+    [claimReleaseReadId]
+  );
+  const firstClaim = await repositories[0].claim({ limit: 1 });
+  assert.deepEqual(firstClaim.readIds, [claimReleaseReadId]);
+  const claimed = await pool.query(
+    `SELECT status, attempt_count, claim_token::text AS claim_token
+     FROM public.vehicle_reid_v2_live_jobs WHERE read_id = $1`,
+    [claimReleaseReadId]
+  );
+  assert.equal(claimed.rows[0].status, "processing");
+  assert.equal(Number(claimed.rows[0].attempt_count), 1);
+  assert.equal(claimed.rows[0].claim_token, firstClaim.token);
+
+  await authority.transitionMode({
+    mode: "v1_rollback",
+    reason: "Bounded live claim release race",
+    actor,
+  });
+  assert.deepEqual(
+    await repositories[0].processClaimedRead({
+      readId: claimReleaseReadId,
+      claimToken: firstClaim.token,
+    }),
+    { status: "pending", readId: claimReleaseReadId, released: true, attemptCount: 0 }
+  );
+  const released = await pool.query(
+    `SELECT status, attempt_count, retryable, claim_token,
+            processing_deadline_at, next_attempt_at, error_code, completed_at
+     FROM public.vehicle_reid_v2_live_jobs WHERE read_id = $1`,
+    [claimReleaseReadId]
+  );
+  assert.deepEqual(released.rows[0], {
+    status: "pending",
+    attempt_count: 0,
+    retryable: true,
+    claim_token: null,
+    processing_deadline_at: null,
+    next_attempt_at: null,
+    error_code: null,
+    completed_at: null,
+  });
+
+  await authority.transitionMode({
+    mode: "v2_primary",
+    runId,
+    reason: "Bounded live claim release re-entry",
+    actor,
+  });
+  const secondClaim = await repositories[0].claim({ limit: 1 });
+  assert.deepEqual(secondClaim.readIds, [claimReleaseReadId]);
+  assert.notEqual(secondClaim.token, firstClaim.token);
+  const reclaimed = await pool.query(
+    `SELECT status, attempt_count, claim_token::text AS claim_token
+     FROM public.vehicle_reid_v2_live_jobs WHERE read_id = $1`,
+    [claimReleaseReadId]
+  );
+  assert.equal(reclaimed.rows[0].status, "processing");
+  assert.equal(Number(reclaimed.rows[0].attempt_count), 1);
+  assert.equal(reclaimed.rows[0].claim_token, secondClaim.token);
+  await pool.query(`DELETE FROM public.plate_reads WHERE id = $1`, [claimReleaseReadId]);
 }
 
 async function testCommittedStage2MaterializationAndRollback() {
@@ -1899,6 +2216,12 @@ async function testCommittedStage2MaterializationAndRollback() {
   });
   assert.equal(cutover.overview.control.mode, "v2_primary");
   assert.equal(cutover.overview.control.transitionRunId, conversion.runId);
+
+  await testBoundedLiveDiscoveryWindows({
+    authority,
+    runId: conversion.runId,
+    actor,
+  });
 
   const profilePage = await authority.listProfiles({ page: 1, pageSize: 24 });
   assert.ok(profilePage.total > 0);

@@ -9216,3 +9216,178 @@ ON CONFLICT(version) DO NOTHING;
 INSERT INTO public.schema_migrations(version,description) VALUES
  ('2026081702_vehicle_reid_v2_materialization_scale','Keep Stage 2 assignment materialization parameter-aware and bypass the exact-current consumer view when no indexed active assignment history exists; final exact reconciliation remains mandatory.')
 ON CONFLICT(version) DO NOTHING;
+
+-- Live discovery progress is operational state, not authority provenance.  It
+-- therefore lives outside vehicle_reid_control (whose same-mode rows are
+-- deliberately immutable) and does not reference plate_reads: retention may
+-- delete the read at a cursor without making discovery state invalid.
+CREATE TABLE IF NOT EXISTS public.vehicle_reid_v2_live_discovery_state (
+  singleton BOOLEAN PRIMARY KEY DEFAULT TRUE CHECK (singleton = TRUE),
+  transition_run_id BIGINT
+    REFERENCES public.vehicle_reid_v2_conversion_runs(id) ON DELETE RESTRICT,
+  forward_cursor_read_id INTEGER NOT NULL DEFAULT 0 CHECK (
+    forward_cursor_read_id >= 0
+  ),
+  revisit_cursor_read_id INTEGER NOT NULL DEFAULT 0 CHECK (
+    revisit_cursor_read_id >= 0
+  ),
+  revisit_upper_read_id INTEGER NOT NULL DEFAULT 0 CHECK (
+    revisit_upper_read_id >= 0
+    AND revisit_cursor_read_id <= revisit_upper_read_id
+  ),
+  revisit_epoch BIGINT NOT NULL DEFAULT 0 CHECK (revisit_epoch >= 0),
+  forward_windows_since_revisit SMALLINT NOT NULL DEFAULT 0 CHECK (
+    forward_windows_since_revisit BETWEEN 0 AND 8
+  ),
+  last_scanned_at TIMESTAMPTZ,
+  revision BIGINT NOT NULL DEFAULT 1 CHECK (revision > 0),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  CHECK (revisit_upper_read_id <= forward_cursor_read_id)
+);
+
+-- Install the singleton even while v2 is on standby.  The first exact
+-- v2-primary transition below seeds it from that transition's completed run.
+INSERT INTO public.vehicle_reid_v2_live_discovery_state (singleton)
+VALUES (TRUE)
+ON CONFLICT (singleton) DO NOTHING;
+
+-- Existing installations may already be primary or rolled back from primary.
+-- Seed from the exact control run, never from MAX(plate_reads.id), and preserve
+-- any cursor that has already advanced beyond the immutable conversion bound.
+INSERT INTO public.vehicle_reid_v2_live_discovery_state (
+  singleton, transition_run_id, forward_cursor_read_id,
+  revisit_cursor_read_id, revisit_upper_read_id, last_scanned_at
+)
+SELECT TRUE, runs.id, runs.max_read_id, runs.max_read_id, runs.max_read_id,
+       CURRENT_TIMESTAMP
+FROM public.vehicle_reid_control control
+JOIN public.vehicle_reid_v2_conversion_runs runs
+  ON runs.id = control.transition_run_id
+ AND runs.status = 'completed'
+ AND runs.phase = 'complete'
+ AND runs.accepted_preview_fingerprint = runs.preview_fingerprint
+ AND runs.last_revalidation_status = 'current'
+ AND runs.last_revalidation_fingerprint = runs.identity_evidence_fingerprint
+ AND runs.last_revalidated_at IS NOT NULL
+ AND runs.completed_at IS NOT NULL
+WHERE control.singleton = TRUE
+ON CONFLICT (singleton) DO UPDATE
+SET transition_run_id = EXCLUDED.transition_run_id,
+    forward_cursor_read_id = GREATEST(
+      public.vehicle_reid_v2_live_discovery_state.forward_cursor_read_id,
+      EXCLUDED.forward_cursor_read_id
+    ),
+    revisit_cursor_read_id = CASE
+      WHEN public.vehicle_reid_v2_live_discovery_state.transition_run_id IS NULL
+       AND public.vehicle_reid_v2_live_discovery_state.last_scanned_at IS NULL
+       AND public.vehicle_reid_v2_live_discovery_state.revision = 1
+      THEN GREATEST(
+        public.vehicle_reid_v2_live_discovery_state.revisit_cursor_read_id,
+        EXCLUDED.revisit_cursor_read_id
+      )
+      ELSE public.vehicle_reid_v2_live_discovery_state.revisit_cursor_read_id
+    END,
+    revisit_upper_read_id = GREATEST(
+      public.vehicle_reid_v2_live_discovery_state.revisit_upper_read_id,
+      EXCLUDED.revisit_upper_read_id
+    ),
+    last_scanned_at = COALESCE(
+      public.vehicle_reid_v2_live_discovery_state.last_scanned_at,
+      EXCLUDED.last_scanned_at
+    ),
+    revision = public.vehicle_reid_v2_live_discovery_state.revision + 1,
+    updated_at = CURRENT_TIMESTAMP
+WHERE public.vehicle_reid_v2_live_discovery_state.transition_run_id
+        IS DISTINCT FROM EXCLUDED.transition_run_id
+   OR public.vehicle_reid_v2_live_discovery_state.forward_cursor_read_id
+        < EXCLUDED.forward_cursor_read_id
+   OR public.vehicle_reid_v2_live_discovery_state.revisit_upper_read_id
+        < EXCLUDED.revisit_upper_read_id
+   OR public.vehicle_reid_v2_live_discovery_state.last_scanned_at IS NULL;
+
+CREATE OR REPLACE FUNCTION public.validate_vehicle_reid_v2_live_discovery_state()
+RETURNS TRIGGER AS $$
+BEGIN
+  IF TG_OP = 'DELETE' THEN
+    RAISE EXCEPTION 'The ReID v2 live discovery singleton cannot be deleted'
+      USING ERRCODE = '23514',
+            CONSTRAINT = 'vehicle_reid_v2_live_discovery_singleton_immutable';
+  END IF;
+  IF NEW.forward_cursor_read_id < OLD.forward_cursor_read_id THEN
+    RAISE EXCEPTION 'The ReID v2 live forward cursor cannot rewind'
+      USING ERRCODE = '23514',
+            CONSTRAINT = 'vehicle_reid_v2_live_discovery_forward_monotonic';
+  END IF;
+  IF NEW.revision <> OLD.revision + 1 THEN
+    RAISE EXCEPTION 'ReID v2 live discovery updates require the next revision'
+      USING ERRCODE = '23514',
+            CONSTRAINT = 'vehicle_reid_v2_live_discovery_revision';
+  END IF;
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS vehicle_reid_v2_live_discovery_validate
+  ON public.vehicle_reid_v2_live_discovery_state;
+CREATE TRIGGER vehicle_reid_v2_live_discovery_validate
+BEFORE UPDATE OR DELETE ON public.vehicle_reid_v2_live_discovery_state
+FOR EACH ROW EXECUTE FUNCTION public.validate_vehicle_reid_v2_live_discovery_state();
+
+CREATE OR REPLACE FUNCTION public.seed_vehicle_reid_v2_live_discovery_state()
+RETURNS TRIGGER AS $$
+BEGIN
+  IF NEW.mode = 'v2_primary'
+    AND (TG_OP = 'INSERT' OR OLD.mode IS DISTINCT FROM NEW.mode) THEN
+    INSERT INTO public.vehicle_reid_v2_live_discovery_state (
+      singleton, transition_run_id, forward_cursor_read_id,
+      revisit_cursor_read_id, revisit_upper_read_id, last_scanned_at
+    )
+    SELECT TRUE, runs.id, runs.max_read_id, runs.max_read_id, runs.max_read_id,
+           CURRENT_TIMESTAMP
+    FROM public.vehicle_reid_v2_conversion_runs runs
+    WHERE runs.id = NEW.transition_run_id
+      AND runs.status = 'completed'
+      AND runs.phase = 'complete'
+      AND runs.accepted_preview_fingerprint = runs.preview_fingerprint
+      AND runs.last_revalidation_status = 'current'
+      AND runs.last_revalidation_fingerprint = runs.identity_evidence_fingerprint
+      AND runs.last_revalidated_at IS NOT NULL
+      AND runs.completed_at IS NOT NULL
+    ON CONFLICT (singleton) DO UPDATE
+    SET transition_run_id = EXCLUDED.transition_run_id,
+        forward_cursor_read_id = GREATEST(
+          public.vehicle_reid_v2_live_discovery_state.forward_cursor_read_id,
+          EXCLUDED.forward_cursor_read_id
+        ),
+        revisit_cursor_read_id = CASE
+          WHEN public.vehicle_reid_v2_live_discovery_state.transition_run_id IS NULL
+           AND public.vehicle_reid_v2_live_discovery_state.last_scanned_at IS NULL
+           AND public.vehicle_reid_v2_live_discovery_state.revision = 1
+          THEN GREATEST(
+            public.vehicle_reid_v2_live_discovery_state.revisit_cursor_read_id,
+            EXCLUDED.revisit_cursor_read_id
+          )
+          ELSE public.vehicle_reid_v2_live_discovery_state.revisit_cursor_read_id
+        END,
+        revisit_upper_read_id = GREATEST(
+          public.vehicle_reid_v2_live_discovery_state.revisit_upper_read_id,
+          EXCLUDED.revisit_upper_read_id
+        ),
+        last_scanned_at = EXCLUDED.last_scanned_at,
+        revision = public.vehicle_reid_v2_live_discovery_state.revision + 1,
+        updated_at = CURRENT_TIMESTAMP;
+  END IF;
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS vehicle_reid_control_seed_live_discovery
+  ON public.vehicle_reid_control;
+CREATE TRIGGER vehicle_reid_control_seed_live_discovery
+AFTER INSERT OR UPDATE ON public.vehicle_reid_control
+FOR EACH ROW EXECUTE FUNCTION public.seed_vehicle_reid_v2_live_discovery_state();
+
+INSERT INTO public.schema_migrations(version,description) VALUES
+ ('2026081703_vehicle_reid_v2_bounded_live_discovery','Persist serialized forward and independent epoch-bounded revisit discovery cursors, seed them from the exact completed transition run without rewinding, and keep cursor/job progress transactionally bounded.')
+ON CONFLICT(version) DO NOTHING;

@@ -4754,8 +4754,8 @@ export async function getVehicleReidV2AuthorityOverview() {
 export async function getVehicleReidAuthorityMode() {
   await requirePermission("plate.read");
   try {
-    const overview = await (await getVehicleReidV2AuthorityService()).getOverview();
-    return { success: true, data: { control: overview.control } };
+    const control = await (await getVehicleReidV2AuthorityService()).getControl();
+    return { success: true, data: { control } };
   } catch (error) {
     return vehicleReidV2AuthorityActionFailure(error, "Unable to resolve the ReID authority mode.");
   }
