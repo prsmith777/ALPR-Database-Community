@@ -419,8 +419,8 @@ test("authoritative profile detail validates merge and evidence candidates by ph
   assert.deepEqual(assignmentsQuery.values, [[300], 10]);
   assert.deepEqual(anchorsQuery.values, [[400], 10]);
   for (const query of [membersQuery, assignmentsQuery, anchorsQuery]) {
-    assert.match(query.sql, /UNNEST\(\$1::bigint\[\]\)[\s\S]*JOIN LATERAL[\s\S]*OFFSET 0/);
-    assert.doesNotMatch(query.sql, /\.id = ANY\(\$1::bigint\[\]\)/);
+    assert.match(query.sql, /\.id = ANY\(\$1::bigint\[\]\)[\s\S]*canonical_profile_id = \$2[\s\S]*OFFSET 0/);
+    assert.doesNotMatch(query.sql, /UNNEST\(\$1::bigint\[\]\)[\s\S]*JOIN LATERAL/);
   }
   assert.match(membersQuery.sql, /current_profile_members[\s\S]*members\.canonical_profile_id = \$2/);
   assert.match(assignmentsQuery.sql, /current_read_assignments[\s\S]*assignments\.canonical_profile_id = \$2/);
