@@ -530,11 +530,19 @@ test("authoritative profile detail validates merge and evidence candidates by ph
   assert.deepEqual(evidenceQuery.values, [
     [100, 200], 10, [900], [20], [10], [300], [400], 20,
   ]);
-  assert.match(evidenceQuery.sql, /current_merges AS MATERIALIZED[\s\S]*vehicle_reid_v2_current_profile_merges/);
+  assert.match(
+    evidenceQuery.sql,
+    /merge_candidates AS MATERIALIZED[\s\S]*vehicle_reid_v2_profile_merges merges[\s\S]*merges\.status = 'current'[\s\S]*merges\.target_profile_id = \$2[\s\S]*OR merges\.source_profile_id = \$8/
+  );
+  assert.match(
+    evidenceQuery.sql,
+    /current_merges AS MATERIALIZED[\s\S]*FROM merge_candidates candidates[\s\S]*JOIN LATERAL[\s\S]*vehicle_reid_v2_current_profile_merges merges[\s\S]*merges\.id = candidates\.id[\s\S]*OFFSET 0/
+  );
   assert.match(evidenceQuery.sql, /merge_contract AS MATERIALIZED[\s\S]*EXCEPT[\s\S]*UNION ALL[\s\S]*EXCEPT/);
   assert.match(evidenceQuery.sql, /vehicle_reid_v2_exact_profile_members exact_members[\s\S]*exact_members\.id = ANY\(\$1::bigint\[\]\)/);
   assert.doesNotMatch(evidenceQuery.sql, /vehicle_reid_v2_current_profile_members|vehicle_reid_v2_current_read_assignments/);
-  assert.doesNotMatch(evidenceQuery.sql, /FROM UNNEST\(\$1::bigint\[\]\)|JOIN LATERAL/);
+  assert.doesNotMatch(evidenceQuery.sql, /FROM UNNEST\(\$1::bigint\[\]\)/);
+  assert.equal((evidenceQuery.sql.match(/JOIN LATERAL/g) || []).length, 1);
   assert.equal((evidenceQuery.sql.match(/vehicle_reid_v2_exact_profile_members/g) || []).length, 1);
   assert.match(evidenceQuery.sql, /JOIN detail_exact_members low_members[\s\S]*JOIN detail_exact_members high_members/);
   assert.match(evidenceQuery.sql, /FROM detail_members members[\s\S]*members\.id = assignments\.profile_member_id/);
@@ -577,6 +585,50 @@ test("authoritative profile detail fails closed when its merge contract changes"
   await assert.rejects(
     repository.getProfile(10),
     (error) => error?.code === "VEHICLE_REID_V2_PROFILE_CHANGED"
+  );
+});
+
+test("authoritative profile detail fences an empty-to-new current merge race", async () => {
+  const queries = [];
+  const repository = new VehicleReidV2AuthorityRepository({
+    executor: {
+      async query(sql, values) {
+        queries.push({ sql, values });
+        if (/SELECT profiles\.\*[\s\S]*WHERE profiles\.id = \$1/.test(sql)) {
+          return { rows: [{ id: 10, status: "active", revision: 1 }] };
+        }
+        if (/detail_exact_members AS MATERIALIZED/.test(sql)) {
+          return { rows: [{
+            members: [], reads: [], read_count: 0, anchor_count: 0,
+            anchor_plates: [], merge_contract_current: false,
+          }] };
+        }
+        return { rows: [] };
+      },
+    },
+  });
+
+  await assert.rejects(
+    repository.getProfile(10),
+    (error) => error?.code === "VEHICLE_REID_V2_PROFILE_CHANGED"
+  );
+
+  const evidenceQuery = queries.find(({ sql }) => /detail_exact_members AS MATERIALIZED/.test(sql));
+  assert.deepEqual(evidenceQuery.values.slice(2, 5), [[], [], []]);
+  const candidateFence = evidenceQuery.sql.slice(
+    evidenceQuery.sql.indexOf("merge_candidates AS MATERIALIZED"),
+    evidenceQuery.sql.indexOf("current_merges AS MATERIALIZED")
+  );
+  assert.match(candidateFence, /FROM public\.vehicle_reid_v2_profile_merges merges/);
+  assert.match(candidateFence, /merges\.target_profile_id = \$2[\s\S]*OR merges\.source_profile_id = \$8/);
+  assert.doesNotMatch(candidateFence, /\$3|expected_merges/);
+  assert.match(
+    evidenceQuery.sql,
+    /FROM merge_candidates candidates[\s\S]*JOIN LATERAL[\s\S]*merges\.id = candidates\.id[\s\S]*OFFSET 0/
+  );
+  assert.match(
+    evidenceQuery.sql,
+    /merge_contract AS MATERIALIZED[\s\S]*EXCEPT[\s\S]*UNION ALL[\s\S]*EXCEPT/
   );
 });
 
@@ -747,6 +799,82 @@ test("live worker fences exact-current assignment and anchor reads by physical i
   assert.match(imageAssignment, /JOIN LATERAL/);
   assert.match(imageAssignment, /vehicle_reid_v2_current_read_assignments assignments/);
   assert.match(imageAssignment, /assignments\.id = candidate_ids\.id[\s\S]*OFFSET 0/);
+});
+
+test("live plate lookup bounds exact-current profile presence by physical evidence ids", async () => {
+  const live = await source("lib/vehicle-reid-v2-live.mjs");
+  const anchorLookup = live.slice(
+    live.indexOf("async loadPlateAnchorProfiles"),
+    live.indexOf("async loadCurrentProfileIds")
+  );
+
+  assert.match(anchorLookup, /candidate_anchor_ids AS MATERIALIZED/);
+  assert.match(anchorLookup, /vehicle_reid_v2_profile_plate_anchors historical/);
+  assert.match(anchorLookup, /historical\.normalized_plate = ANY\(\$1::varchar\[\]\)/);
+  assert.match(anchorLookup, /vehicle_reid_v2_current_plate_anchors anchors/);
+  assert.match(anchorLookup, /anchors\.id = ANY\(COALESCE\([\s\S]*candidate_anchor_ids\.id/);
+  assert.match(anchorLookup, /candidate_merge_ids AS MATERIALIZED/);
+  assert.match(anchorLookup, /vehicle_reid_v2_current_profile_merges merges/);
+  assert.match(anchorLookup, /merges\.id = ANY\(COALESCE\([\s\S]*candidate_merge_ids\.id/);
+  assert.match(anchorLookup, /candidate_source_profiles AS MATERIALIZED/);
+  assert.match(anchorLookup, /merges\.status = 'current'/);
+  assert.match(anchorLookup, /candidate_member_ids AS MATERIALIZED/);
+  assert.match(anchorLookup, /bounded_exact_members AS MATERIALIZED/);
+  assert.match(anchorLookup, /vehicle_reid_v2_exact_profile_members exact_members/);
+  assert.match(anchorLookup, /exact_members\.id = ANY\(COALESCE\([\s\S]*candidate_member_ids\.id/);
+  assert.match(anchorLookup, /conflicting_anchor_members AS MATERIALIZED/);
+  assert.match(anchorLookup, /conflicting_review_profiles AS MATERIALIZED/);
+  assert.match(anchorLookup, /current_members AS MATERIALIZED/);
+  assert.doesNotMatch(anchorLookup, /vehicle_reid_v2_current_profile_members/);
+  assert.match(anchorLookup, /JOIN current_profiles current/);
+  assert.doesNotMatch(
+    anchorLookup,
+    /WHERE members\.canonical_profile_id = anchors\.canonical_profile_id/
+  );
+});
+
+test("live sibling lookups avoid broad canonical-profile current-member expansion", async () => {
+  const live = await source("lib/vehicle-reid-v2-live.mjs");
+  const existingMember = live.slice(
+    live.indexOf("async loadExistingMember"),
+    live.indexOf("async loadPlateAnchorProfiles")
+  );
+  assert.match(existingMember, /LEFT JOIN LATERAL/);
+  assert.match(existingMember, /current_members\.id = members\.id/);
+  assert.match(existingMember, /current_members\.canonical_profile_id =[\s\S]*COALESCE/);
+  assert.match(existingMember, /OFFSET 0/);
+  assert.doesNotMatch(existingMember, /EXISTS \([\s\S]*current_profile_members/);
+
+  const profilePresence = live.slice(
+    live.indexOf("async loadCurrentProfileIds"),
+    live.indexOf("async loadHistoricalExactProfiles")
+  );
+  assert.match(profilePresence, /candidate_profiles AS MATERIALIZED/);
+  assert.match(profilePresence, /vehicle_reid_v2_current_profile_merges merges/);
+  assert.match(profilePresence, /merges\.id = ANY\(COALESCE/);
+  assert.match(profilePresence, /vehicle_reid_v2_exact_profile_members exact_members/);
+  assert.match(profilePresence, /exact_members\.id = ANY\(COALESCE/);
+  assert.match(profilePresence, /conflicting_anchor_members AS MATERIALIZED/);
+  assert.match(profilePresence, /conflicting_review_profiles AS MATERIALIZED/);
+  assert.doesNotMatch(profilePresence, /vehicle_reid_v2_current_profile_members/);
+
+  const historicalProfiles = live.slice(
+    live.indexOf("async loadHistoricalExactProfiles"),
+    live.indexOf("async loadPairReviewEvidence")
+  );
+  assert.match(historicalProfiles, /this\.loadCurrentProfileIds/);
+  assert.doesNotMatch(historicalProfiles, /vehicle_reid_v2_current_profile_members/);
+
+  const pairReviews = live.slice(
+    live.indexOf("async loadPairReviewEvidence"),
+    live.indexOf("async createProfile")
+  );
+  assert.match(pairReviews, /current_member\.canonical_profile_id AS profile_id/);
+  assert.match(pairReviews, /LEFT JOIN LATERAL/);
+  assert.match(pairReviews, /current_members\.id = members\.id/);
+  assert.match(pairReviews, /profiles\.id = current_member\.canonical_profile_id/);
+  assert.match(pairReviews, /OFFSET 0/);
+  assert.doesNotMatch(pairReviews, /EXISTS \([\s\S]*current_profile_members/);
 });
 
 test("compatibility routing switches every identity consumer without rewriting plate reads", async () => {
