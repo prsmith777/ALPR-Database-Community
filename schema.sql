@@ -1054,6 +1054,21 @@ CREATE INDEX IF NOT EXISTS idx_maintenance_alert_deliveries_due
     ON public.maintenance_alert_deliveries (next_attempt_at, id)
     WHERE status IN ('pending', 'retry');
 
+CREATE TABLE IF NOT EXISTS public.mqttbrokers (
+    id SERIAL PRIMARY KEY,
+    name VARCHAR(255),
+    broker VARCHAR(255),
+    port INTEGER DEFAULT 1883,
+    topic VARCHAR(255),
+    username VARCHAR(255),
+    password VARCHAR(255),
+    use_tls BOOLEAN DEFAULT FALSE,
+    enabled BOOLEAN NOT NULL DEFAULT TRUE,
+    client_id VARCHAR(255),
+    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
 CREATE TABLE IF NOT EXISTS public.radar_settings (
     id SMALLINT PRIMARY KEY DEFAULT 1 CHECK (id = 1),
     enabled BOOLEAN NOT NULL DEFAULT FALSE,

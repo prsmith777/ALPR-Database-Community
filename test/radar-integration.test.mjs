@@ -18,6 +18,11 @@ test("radar settings reuse the requested authenticated Mosquitto broker without 
   assert.match(migrations, /brokers\.port = 1883 AND brokers\.use_tls = FALSE/);
   assert.match(schema, /CREATE TABLE IF NOT EXISTS public\.radar_events/);
   assert.match(schema, /matched_read_id INTEGER UNIQUE REFERENCES public\.plate_reads/);
+  assert.ok(
+    schema.indexOf("CREATE TABLE IF NOT EXISTS public.mqttbrokers")
+      < schema.indexOf("CREATE TABLE IF NOT EXISTS public.radar_settings"),
+    "a clean schema must create the reused MQTT broker before radar settings",
+  );
   assert.doesNotMatch(migrations, /radar_password|radar_username/);
 });
 
