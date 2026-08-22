@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+  buildBlueIrisPlatePlaybackPath,
   buildBlueIrisTimelinePath,
   buildBlueIrisUiUrl,
   withBlueIrisCamera,
@@ -54,4 +55,34 @@ test("saved alert playback paths replace display names with Blue Iris short came
   );
   assert.equal(withBlueIrisCamera("ui3.htm?tab=clips", "Cam146"), "ui3.htm?tab=clips&cam=Cam146");
   assert.equal(withBlueIrisCamera("", "Cam146"), "");
+});
+
+test("plate playback retains a valid recording and replaces its camera with the short ID", () => {
+  assert.equal(
+    buildBlueIrisPlatePlaybackPath(
+      "ui3.htm?rec=14638483532154750-919666&cam=Street%20LPR%202",
+      "Cam146",
+      "2026-08-22T18:20:31.456Z",
+    ),
+    "ui3.htm?rec=14638483532154750-919666&cam=Cam146",
+  );
+});
+
+test("plate playback falls back to the short-camera timeline when Blue Iris reports recording zero", () => {
+  assert.equal(
+    buildBlueIrisPlatePlaybackPath(
+      "ui3.htm?rec=0-1036848&cam=Street%20LPR%201",
+      "Cam145",
+      "2026-08-22T20:17:18.919Z",
+    ),
+    "ui3.htm?tab=timeline&cam=Cam145&timeline=1787429838919&maximize=1",
+  );
+  assert.equal(
+    buildBlueIrisPlatePlaybackPath(
+      "ui3.htm?rec=0-1036848&cam=Street%20LPR%201",
+      "Cam145",
+      "invalid",
+    ),
+    "",
+  );
 });
