@@ -20,6 +20,61 @@ const configured = {
   },
 };
 
+test("Blue Iris camera discovery persists sanitized display-to-short-name mappings", async () => {
+  let synchronized = null;
+  const queue = new BlueIrisVehicleFrameQueue({
+    repository: {
+      async syncBlueIrisCameraInventory(cameras) { synchronized = cameras; },
+    },
+    fileStorage: {},
+    loadConfig: async () => configured,
+  });
+  const cameras = [{
+    id: "Cam149",
+    name: "Street Overview",
+    online: true,
+    enabled: true,
+  }];
+
+  const index = await queue.loadCameras({
+    async testConnection() { return { cameras }; },
+  });
+
+  assert.deepEqual(synchronized, cameras);
+  assert.equal(blueIrisVehicleFrameQueueInternals.uniqueCamera(index, "Street Overview").id, "Cam149");
+});
+
+test("Blue Iris camera inventory sync upserts current aliases and retires missing aliases atomically", async () => {
+  const statements = [];
+  const repository = new BlueIrisVehicleFrameRepository({
+    async query(sql, values = []) {
+      statements.push({ sql, values });
+      if (/RETURNING short_name/.test(sql)) return { rows: [{ short_name: "Cam149" }] };
+      if (/RETURNING inventory\.short_name/.test(sql)) return { rows: [{ short_name: "Cam999" }] };
+      return { rows: [] };
+    },
+  });
+
+  const result = await repository.syncBlueIrisCameraInventory([{
+    id: " Cam149 ",
+    name: " Street Overview ",
+    online: true,
+    enabled: true,
+  }]);
+
+  assert.deepEqual(result, { observed: 1, retired: 1 });
+  assert.equal(statements[0].sql, "BEGIN");
+  assert.match(statements[1].sql, /INSERT INTO public\.blue_iris_camera_inventory/);
+  assert.deepEqual(JSON.parse(statements[1].values[0]), [{
+    short_name: "Cam149",
+    display_name: "Street Overview",
+    online: true,
+    enabled: true,
+  }]);
+  assert.match(statements[2].sql, /SET present = FALSE/);
+  assert.equal(statements[3].sql, "COMMIT");
+});
+
 test("automatic vehicle-frame queue maps display camera names to Blue Iris IDs", async () => {
   const calls = [];
   const reads = [{

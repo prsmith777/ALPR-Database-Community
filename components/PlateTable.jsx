@@ -120,6 +120,7 @@ import {
 import {
   buildBlueIrisTimelinePath,
   buildBlueIrisUiUrl,
+  withBlueIrisCamera,
 } from "@/lib/blue-iris-ui-url.mjs";
 import {
   elapsedMilliseconds,
@@ -440,6 +441,7 @@ export default function PlateTable({
   const [prefetchedImages, setPrefetchedImages] = useState(new Set());
   const [isFilterSheetOpen, setIsFilterSheetOpen] = useState(false);
   const [isSearchOptionsOpen, setIsSearchOptionsOpen] = useState(false);
+  const [dateRangeDraft, setDateRangeDraft] = useState(filters.dateRange || {});
 
   const correctionInputRef = useRef(null);
   const confirmNextTokenSequenceRef = useRef(0);
@@ -467,6 +469,31 @@ export default function PlateTable({
     setConfirmNextOperation(null);
     setPendingUnconfirmedNavigation(null);
   }, []);
+
+  const closeImageViewer = useCallback(() => {
+    cancelConfirmNextFlow();
+    selectedImageIdRef.current = null;
+    viewerNavigationTimingRef.current = null;
+    setIsImageFullscreen(false);
+    setSelectedImage(null);
+    setSelectedIndex(-1);
+    setPendingViewerNavigation(null);
+    setPendingUnconfirmedNavigation(null);
+  }, [cancelConfirmNextFlow]);
+
+  const handlePlateFilterNavigation = useCallback(() => {
+    onLiveChange(false);
+    closeImageViewer();
+  }, [closeImageViewer, onLiveChange]);
+
+  const dateRangeFromMs = filters.dateRange?.from?.getTime() ?? null;
+  const dateRangeToMs = filters.dateRange?.to?.getTime() ?? null;
+  useEffect(() => {
+    setDateRangeDraft({
+      from: dateRangeFromMs === null ? undefined : new Date(dateRangeFromMs),
+      to: dateRangeToMs === null ? undefined : new Date(dateRangeToMs),
+    });
+  }, [dateRangeFromMs, dateRangeToMs]);
 
   useEffect(() => () => {
     activeConfirmNextOperationRef.current = null;
@@ -694,6 +721,7 @@ export default function PlateTable({
       id: plate.id,
       validated: plate.validated,
       bi_path: bi_url,
+      plateBiCamera: plate.plate_bi_camera || null,
       vehicleBiCamera: plate.vehicle_bi_camera || null,
       crop_coordinates: plate.crop_coordinates,
     });
@@ -868,7 +896,10 @@ export default function PlateTable({
         selectedImage?.vehicleBiCamera,
         selectedImage?.vehicleImageTimestamp || selectedImage?.timestamp,
       )
-    : selectedImage?.bi_path || "";
+    : withBlueIrisCamera(
+        selectedImage?.bi_path,
+        selectedImage?.plateBiCamera,
+      );
 
   const handleViewerImageLoad = useCallback(({ url, width, height }) => {
     const timing = viewerNavigationTimingRef.current;
@@ -952,6 +983,8 @@ export default function PlateTable({
       const currentVehicleImageDetectionBox = currentPlate?.vehicle_image_detection_box || null;
       const currentVehicleImageWidth = Number(currentPlate?.vehicle_image_width || 0) || null;
       const currentVehicleImageHeight = Number(currentPlate?.vehicle_image_height || 0) || null;
+      const currentPlateBiCamera = currentPlate?.plate_bi_camera || null;
+      const currentVehicleBiCamera = currentPlate?.vehicle_bi_camera || null;
       const currentVehicleImageDetectionSignature = JSON.stringify(currentVehicleImageDetectionBox);
       const selectedVehicleImageDetectionSignature = JSON.stringify(selectedImage.vehicleImageDetectionBox);
 
@@ -992,7 +1025,9 @@ export default function PlateTable({
           currentVehicleImageTimestamp !== selectedImage.vehicleImageTimestamp ||
           currentVehicleImageDetectionSignature !== selectedVehicleImageDetectionSignature ||
           currentVehicleImageWidth !== selectedImage.vehicleImageWidth ||
-          currentVehicleImageHeight !== selectedImage.vehicleImageHeight)
+          currentVehicleImageHeight !== selectedImage.vehicleImageHeight ||
+          currentPlateBiCamera !== selectedImage.plateBiCamera ||
+          currentVehicleBiCamera !== selectedImage.vehicleBiCamera)
       ) {
         setSelectedImage((previous) => ({
           ...previous,
@@ -1037,6 +1072,8 @@ export default function PlateTable({
           vehicleImageDetectionBox: currentVehicleImageDetectionBox,
           vehicleImageWidth: currentVehicleImageWidth,
           vehicleImageHeight: currentVehicleImageHeight,
+          plateBiCamera: currentPlateBiCamera,
+          vehicleBiCamera: currentVehicleBiCamera,
         }));
       }
     }
@@ -1380,9 +1417,23 @@ export default function PlateTable({
   };
 
   const handleDateRangeSelect = (range) => {
+    const nextRange = range || {};
+    setDateRangeDraft(nextRange);
+    if (!range) {
+      onUpdateFilters({
+        dateFrom: null,
+        dateTo: null,
+        timestampFrom: null,
+        timestampTo: null,
+        timeZone: null,
+        timeFrame: null,
+      });
+      return;
+    }
+    if (!nextRange.from || !nextRange.to) return;
     onUpdateFilters({
-      dateFrom: range.from ? range.from.toDateString() : null,
-      dateTo: range.to ? range.to.toDateString() : null,
+      dateFrom: nextRange.from.toDateString(),
+      dateTo: nextRange.to.toDateString(),
       timestampFrom: null,
       timestampTo: null,
       timeZone: null,
@@ -1820,21 +1871,9 @@ export default function PlateTable({
         <h4 className="text-sm font-medium">Date Range</h4>
         <Calendar
           mode="range"
-          defaultMonth={filters.dateRange?.from}
-          selected={{
-            from: filters.dateRange?.from,
-            to: filters.dateRange?.to,
-          }}
-          onSelect={(range) => {
-            onUpdateFilters({
-              dateFrom: range?.from ? range.from.toDateString() : null,
-              dateTo: range?.to ? range.to.toDateString() : null,
-              timestampFrom: null,
-              timestampTo: null,
-              timeZone: null,
-              timeFrame: null,
-            });
-          }}
+          defaultMonth={dateRangeDraft?.from}
+          selected={dateRangeDraft}
+          onSelect={handleDateRangeSelect}
           className="rounded-md border"
         />
       </div>
@@ -2171,21 +2210,9 @@ export default function PlateTable({
                   <Calendar
                     initialFocus
                     mode="range"
-                    defaultMonth={filters.dateRange?.from}
-                    selected={{
-                      from: filters.dateRange?.from,
-                      to: filters.dateRange?.to,
-                    }}
-                    onSelect={(range) => {
-                      onUpdateFilters({
-                        dateFrom: range.from ? range.from.toDateString() : null,
-                        dateTo: range.to ? range.to.toDateString() : null,
-                        timestampFrom: null,
-                        timestampTo: null,
-                        timeZone: null,
-                        timeFrame: null,
-                      });
-                    }}
+                    defaultMonth={dateRangeDraft?.from}
+                    selected={dateRangeDraft}
+                    onSelect={handleDateRangeSelect}
                     numberOfMonths={2}
                     fixedWeeks
                   />
@@ -2660,7 +2687,10 @@ export default function PlateTable({
                                   aria-label={`Open ${plate.plate_number} in Blue Iris`}
                                   onClick={() =>
                                     window.open(
-                                      buildBlueIrisUiUrl(biHost, plate.bi_path),
+                                      buildBlueIrisUiUrl(
+                                        biHost,
+                                        withBlueIrisCamera(plate.bi_path, plate.plate_bi_camera),
+                                      ),
                                       "_blank"
                                     )
                                   }
@@ -2823,7 +2853,10 @@ export default function PlateTable({
                                 <DropdownMenuItem
                                   onClick={() =>
                                     window.open(
-                                      buildBlueIrisUiUrl(biHost, plate.bi_path),
+                                      buildBlueIrisUiUrl(
+                                        biHost,
+                                        withBlueIrisCamera(plate.bi_path, plate.plate_bi_camera),
+                                      ),
                                       "_blank"
                                     )
                                   }
@@ -3014,16 +3047,7 @@ export default function PlateTable({
         <Dialog
           open={selectedImage !== null}
           onOpenChange={(open) => {
-            if (!open) {
-              cancelConfirmNextFlow();
-              selectedImageIdRef.current = null;
-              viewerNavigationTimingRef.current = null;
-              setIsImageFullscreen(false);
-              setSelectedImage(null);
-              setSelectedIndex(-1);
-              setPendingViewerNavigation(null);
-              setPendingUnconfirmedNavigation(null);
-            }
+            if (!open) closeImageViewer();
           }}
         >
           <DialogContent
@@ -3045,11 +3069,11 @@ export default function PlateTable({
                   <div className="grid gap-x-2 gap-y-3 rounded-lg border px-2.5 py-2 text-sm sm:grid-cols-2 md:grid-cols-5 lg:grid-cols-10">
                 <div>
                   <div className="text-xs uppercase text-muted-foreground">Observed</div>
-                  <Link href={`/live_feed?search=${encodeURIComponent(selectedImage.observedPlate)}&matchMode=off`} className="font-mono text-lg font-semibold leading-tight text-blue-500 hover:underline">{selectedImage.observedPlate}</Link>
+                  <Link href={`/live_feed?search=${encodeURIComponent(selectedImage.observedPlate)}&matchMode=off`} onClick={handlePlateFilterNavigation} className="font-mono text-lg font-semibold leading-tight text-blue-500 hover:underline">{selectedImage.observedPlate}</Link>
                 </div>
                 <div>
                   <div className="text-xs uppercase text-muted-foreground">Effective</div>
-                  <Link href={`/live_feed?search=${encodeURIComponent(selectedImage.plateNumber)}&matchMode=off`} className="font-mono text-lg font-semibold leading-tight text-blue-500 hover:underline">{selectedImage.plateNumber}</Link>
+                  <Link href={`/live_feed?search=${encodeURIComponent(selectedImage.plateNumber)}&matchMode=off`} onClick={handlePlateFilterNavigation} className="font-mono text-lg font-semibold leading-tight text-blue-500 hover:underline">{selectedImage.plateNumber}</Link>
                 </div>
                 <div>
                   <div className="text-xs uppercase text-muted-foreground">Review status</div>
