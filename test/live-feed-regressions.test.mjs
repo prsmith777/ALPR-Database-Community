@@ -4,20 +4,35 @@ import test from "node:test";
 
 const source = (path) => fs.readFile(path, "utf8");
 
-test("Live Feed date ranges wait for a complete selection and keep timestamp predicates indexable", async () => {
-  const [table, database] = await Promise.all([
+test("Live Feed date ranges isolate draft selection and keep timestamp predicates indexable", async () => {
+  const [table, dateFilter, database] = await Promise.all([
     source("components/PlateTable.jsx"),
+    source("components/LiveFeedDateRangeFilter.jsx"),
     source("lib/db.js"),
   ]);
 
-  assert.match(table, /const \[dateRangeDraft, setDateRangeDraft\] = useState/);
+  assert.doesNotMatch(table, /dateRangeDraft/);
+  assert.match(table, /<LiveFeedDateRangeFilter/);
+  assert.match(dateFilter, /const \[draft, setDraft\] = useState/);
+  assert.match(dateFilter, /if \(!nextRange\.from \|\| !nextRange\.to\) return/);
+  assert.match(dateFilter, /selected=\{draft\}/);
+  assert.match(dateFilter, /onSelect=\{handleSelect\}/);
   assert.match(table, /if \(!range\) \{[\s\S]*?dateFrom: null,[\s\S]*?dateTo: null/);
-  assert.match(table, /if \(!nextRange\.from \|\| !nextRange\.to\) return/);
-  assert.match(table, /selected=\{dateRangeDraft\}/);
-  assert.match(table, /onSelect=\{handleDateRangeSelect\}/);
   assert.match(database, /pr\.timestamp >= \$\{dateFromParameter\}::date/);
   assert.match(database, /pr\.timestamp < \(\$\{dateToParameter\}::date \+ INTERVAL '1 day'\)/);
   assert.doesNotMatch(database, /pr\.timestamp::date BETWEEN/);
+});
+
+test("Live Feed does not eagerly preload every full capture", async () => {
+  const [table, image] = await Promise.all([
+    source("components/PlateTable.jsx"),
+    source("components/PlateImage.jsx"),
+  ]);
+
+  assert.doesNotMatch(table, /prefetchedImages|new Image\(\)/);
+  assert.match(table, /priority=\{plateIndex < 3\}/);
+  assert.match(image, /priority = false/);
+  assert.match(image, /priority=\{priority\}/);
 });
 
 test("Live Feed plate links close the viewer without starting a competing refresh", async () => {

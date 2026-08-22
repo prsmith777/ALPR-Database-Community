@@ -68,6 +68,7 @@ test("live feed image review advances visibly and starts focused on the plate", 
   assert.doesNotMatch(plateTable, /setInterval\(\(\) => \{\s*router\.refresh\(\)/);
   assert.match(plateTable, /checked=\{isLive\}[\s\S]*?onCheckedChange=\{onLiveChange\}/);
   assert.match(plateTableWrapper, /LIVE_REFRESH_INTERVAL_MS = 5_000/);
+  assert.match(plateTableWrapper, /document\.visibilityState === "visible"/);
   assert.match(plateTableWrapper, /if \(!isLiveModeActive \|\| isViewerOpen\) return undefined/);
   assert.match(plateTableWrapper, /requestLiveRefresh\("live_poll"\)/);
   assert.match(plateTableWrapper, /refreshAfterViewerCloseRef\.current = true/);
@@ -312,14 +313,14 @@ test("live feed and plate database expose large and multi-select filters", async
 });
 
 test("live feed date picker remains within the visible viewport", async () => {
-  const plateTable = await source("components/PlateTable.jsx");
+  const dateFilter = await source("components/LiveFeedDateRangeFilter.jsx");
 
-  assert.match(plateTable, /--radix-popover-content-available-height/);
-  assert.match(plateTable, /overflow-y-auto overscroll-contain/);
-  assert.match(plateTable, /collisionPadding=\{16\}/);
-  assert.match(plateTable, /sticky="always"/);
-  assert.match(plateTable, /w-\[520px\]/);
-  assert.match(plateTable, /numberOfMonths=\{2\}[\s\S]*?fixedWeeks/);
+  assert.match(dateFilter, /--radix-popover-content-available-height/);
+  assert.match(dateFilter, /overflow-y-auto overscroll-contain/);
+  assert.match(dateFilter, /collisionPadding=\{16\}/);
+  assert.match(dateFilter, /sticky="always"/);
+  assert.match(dateFilter, /w-\[520px\]/);
+  assert.match(dateFilter, /numberOfMonths=\{embedded \? 1 : 2\}[\s\S]*?fixedWeeks/);
 });
 
 test("live feed review status filtering is multi-select, URL-backed, and server-side", async () => {

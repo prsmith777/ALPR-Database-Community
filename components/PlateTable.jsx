@@ -10,7 +10,6 @@ import {
   Plus,
   Trash2,
   X,
-  CalendarDays,
   HelpCircle,
   Edit,
   Download,
@@ -86,7 +85,6 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
-import { Calendar } from "@/components/ui/calendar";
 import {
   Tooltip,
   TooltipContent,
@@ -101,6 +99,7 @@ import { useRouter } from "next/navigation";
 import PlateMatchModeSelect from "@/components/PlateMatchModeSelect";
 import PlateImage from "@/components/PlateImage";
 import MultiSelectFilter from "@/components/MultiSelectFilter";
+import LiveFeedDateRangeFilter from "@/components/LiveFeedDateRangeFilter";
 import {
   retryBlueIrisVehicleFrameForRead,
   reviewVehicleClusterSuggestion,
@@ -438,10 +437,8 @@ export default function PlateTable({
   const [isDirectionReviewOpen, setIsDirectionReviewOpen] = useState(false);
   const [directionReviewError, setDirectionReviewError] = useState("");
   const [searchInput, setSearchInput] = useState(filters.search || "");
-  const [prefetchedImages, setPrefetchedImages] = useState(new Set());
   const [isFilterSheetOpen, setIsFilterSheetOpen] = useState(false);
   const [isSearchOptionsOpen, setIsSearchOptionsOpen] = useState(false);
-  const [dateRangeDraft, setDateRangeDraft] = useState(filters.dateRange || {});
 
   const correctionInputRef = useRef(null);
   const confirmNextTokenSequenceRef = useRef(0);
@@ -485,15 +482,6 @@ export default function PlateTable({
     onLiveChange(false);
     closeImageViewer();
   }, [closeImageViewer, onLiveChange]);
-
-  const dateRangeFromMs = filters.dateRange?.from?.getTime() ?? null;
-  const dateRangeToMs = filters.dateRange?.to?.getTime() ?? null;
-  useEffect(() => {
-    setDateRangeDraft({
-      from: dateRangeFromMs === null ? undefined : new Date(dateRangeFromMs),
-      to: dateRangeToMs === null ? undefined : new Date(dateRangeToMs),
-    });
-  }, [dateRangeFromMs, dateRangeToMs]);
 
   useEffect(() => () => {
     activeConfirmNextOperationRef.current = null;
@@ -1321,21 +1309,6 @@ export default function PlateTable({
     }
   };
 
-  useEffect(() => {
-    // Only prefetch if we have data and aren't loading
-    if (!loading && data?.length > 0) {
-      data.forEach((plate) => {
-        if (plate.image_path && !prefetchedImages.has(plate.image_path)) {
-          const fullImageUrl = `/images/${plate.image_path}`;
-          // Create a new Image to prefetch
-          const img = new Image();
-          img.src = fullImageUrl;
-          setPrefetchedImages((prev) => new Set([...prev, plate.image_path]));
-        }
-      });
-    }
-  }, [data, loading]);
-
   const handleOpenInNewTab = () => {
     if (!selectedImage) return;
 
@@ -1417,9 +1390,7 @@ export default function PlateTable({
     onUpdateFilters({ [name]: normalized || null });
   };
 
-  const handleDateRangeSelect = (range) => {
-    const nextRange = range || {};
-    setDateRangeDraft(nextRange);
+  const handleDateRangeChange = useCallback((range) => {
     if (!range) {
       onUpdateFilters({
         dateFrom: null,
@@ -1431,16 +1402,15 @@ export default function PlateTable({
       });
       return;
     }
-    if (!nextRange.from || !nextRange.to) return;
     onUpdateFilters({
-      dateFrom: nextRange.from.toDateString(),
-      dateTo: nextRange.to.toDateString(),
+      dateFrom: range.from.toDateString(),
+      dateTo: range.to.toDateString(),
       timestampFrom: null,
       timestampTo: null,
       timeZone: null,
       timeFrame: null,
     });
-  };
+  }, [onUpdateFilters]);
 
   const handlePageSizeChange = (value) => {
     onUpdateFilters({ pageSize: value });
@@ -1870,12 +1840,10 @@ export default function PlateTable({
 
       <div className="space-y-3">
         <h4 className="text-sm font-medium">Date Range</h4>
-        <Calendar
-          mode="range"
-          defaultMonth={dateRangeDraft?.from}
-          selected={dateRangeDraft}
-          onSelect={handleDateRangeSelect}
-          className="rounded-md border"
+        <LiveFeedDateRangeFilter
+          embedded
+          value={filters.dateRange}
+          onChange={handleDateRangeChange}
         />
       </div>
 
@@ -2181,44 +2149,10 @@ export default function PlateTable({
                 </PopoverContent>
               </Popover>
 
-              <Popover>
-                <PopoverTrigger asChild>
-                  <Button
-                    variant="outline"
-                    className="hidden sm:flex gap-2 dark:bg-[#161618]"
-                  >
-                    <CalendarDays className="h-4 w-4" />
-                    {filters.dateRange.from ? (
-                      filters.dateRange.to ? (
-                        <>
-                          {format(filters.dateRange.from, "LLL dd")} -{" "}
-                          {format(filters.dateRange.to, "LLL dd")}
-                        </>
-                      ) : (
-                        format(filters.dateRange.from, "LLL dd")
-                      )
-                    ) : (
-                      "Date Range"
-                    )}
-                  </Button>
-                </PopoverTrigger>
-                <PopoverContent
-                  className="max-h-[var(--radix-popover-content-available-height)] w-[520px] overflow-y-auto overscroll-contain p-0"
-                  align="start"
-                  collisionPadding={16}
-                  sticky="always"
-                >
-                  <Calendar
-                    initialFocus
-                    mode="range"
-                    defaultMonth={dateRangeDraft?.from}
-                    selected={dateRangeDraft}
-                    onSelect={handleDateRangeSelect}
-                    numberOfMonths={2}
-                    fixedWeeks
-                  />
-                </PopoverContent>
-              </Popover>
+              <LiveFeedDateRangeFilter
+                value={filters.dateRange}
+                onChange={handleDateRangeChange}
+              />
 
               <HourRangeFilter
                 timeFormat={timeFormat}
@@ -2503,12 +2437,13 @@ export default function PlateTable({
                     </TableCell>
                   </TableRow>
                 ) : (
-                  data.map((plate) => (
+                  data.map((plate, plateIndex) => (
                     <TableRow key={plate.id}>
                       <TableCell>
                         <PlateImage
                           plate={plate}
                           onClick={(e) => handleImageClick(e, plate)}
+                          priority={plateIndex < 3}
                           className=""
                         />
                       </TableCell>
@@ -2788,7 +2723,7 @@ export default function PlateTable({
               <div className="p-4 text-center">No results found</div>
             ) : (
               <div className="divide-y">
-                {data.map((plate) => (
+                {data.map((plate, plateIndex) => (
                   <div key={plate.id} className="p-3">
                     <div className="flex items-start gap-3">
                       {/* Image and basic info */}
@@ -2796,6 +2731,7 @@ export default function PlateTable({
                         <PlateImage
                           plate={plate}
                           onClick={(e) => handleImageClick(e, plate)}
+                          priority={plateIndex < 3}
                         />
                       </div>
 
