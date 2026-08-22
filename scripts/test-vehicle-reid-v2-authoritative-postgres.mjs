@@ -2825,7 +2825,8 @@ async function assertMigrationsReplayWithRetainedAssignmentHistory() {
            GROUP BY read_id
            HAVING COUNT(*) > 1
          ) duplicates
-       ) AS reads_with_active_history`
+       ) AS reads_with_active_history
+     FROM public.vehicle_reid_v2_read_assignments`
   );
   assert.ok(
     before.rows[0].reads_with_active_history > 0,
@@ -2869,7 +2870,8 @@ async function assertMigrationsReplayWithRetainedAssignmentHistory() {
            GROUP BY read_id
            HAVING COUNT(*) > 1
          ) duplicates
-       ) AS reads_with_multiple_current_assignments`
+       ) AS reads_with_multiple_current_assignments
+     FROM public.vehicle_reid_v2_read_assignments`
   );
   assert.deepEqual(
     {
