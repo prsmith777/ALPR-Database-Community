@@ -85,4 +85,11 @@ test("Live Feed preferences use a server-readable cookie without a hydration nav
   assert.match(page, /readTablePageSizeCookiePreference/);
   assert.doesNotMatch(wrapper, /router\.replace\(/);
   assert.match(wrapper, /writeTablePageSizePreference\("live-feed"/);
+  assert.equal(
+    wrapper.match(
+      /parseInt\(\s*params\.get\("pageSize"\) \|\| String\(preferredPageSize\)\s*\)/g
+    )?.length,
+    2,
+    "pagination and page navigation must both fall back to the saved server preference"
+  );
 });

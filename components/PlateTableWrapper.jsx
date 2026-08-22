@@ -335,7 +335,9 @@ export default function PlateTableWrapper({
       // Paging means live mode should be off
       setIsLiveModeActive(false);
       const currentPage = parseInt(params.get("page") || "1");
-      const pageSize = parseInt(params.get("pageSize") || "25");
+      const pageSize = parseInt(
+        params.get("pageSize") || String(preferredPageSize)
+      );
       const newPage = direction === "next" ? currentPage + 1 : currentPage - 1;
 
       if (
@@ -351,7 +353,7 @@ export default function PlateTableWrapper({
         { scroll: false }
       );
     },
-    [createQueryString, params, pathname, router, total]
+    [createQueryString, params, pathname, preferredPageSize, router, total]
   );
 
   // Most mutations refresh immediately. Plate confirmation is the exception:
@@ -543,7 +545,9 @@ export default function PlateTableWrapper({
       biHost={biHost}
       pagination={{
         page: parseInt(params.get("page") || "1"),
-        pageSize: parseInt(params.get("pageSize") || "25"),
+        pageSize: parseInt(
+          params.get("pageSize") || String(preferredPageSize)
+        ),
         total: totalToDisplay,
         dataRevision: serverDataRevision,
         onNextPage: () => handlePageChange("next"),
