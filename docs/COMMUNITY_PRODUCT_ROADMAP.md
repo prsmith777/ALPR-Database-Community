@@ -20,6 +20,14 @@ reliable background processing.
 
 ## Release candidate baseline — August 21, 2026
 
+- Full migration replay now preserves the later ReID v2 assignment-history
+  contract instead of briefly recreating the obsolete Stage 1 one-active-row
+  index. Sealed stale assignments and their exact-current replacements remain
+  intact, while the current-contract view and per-read transaction locks still
+  enforce at most one current assignment. A disposable PostgreSQL regression
+  replays the complete migration after the committed ReID lifecycle has created
+  retained assignment history and verifies unchanged counts, no obsolete unique
+  index, and no duplicate exact-current assignment.
 - Application `0.1.20` candidate includes named users and roles, evidence-preserving plate
   review, filter-respecting exports, the searchable help center, local privacy
   controls, and viewport-safe date/help navigation. Monitored Plates now lives

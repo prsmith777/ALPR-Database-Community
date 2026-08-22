@@ -7500,9 +7500,13 @@ CREATE TABLE IF NOT EXISTS public.vehicle_reid_v2_read_assignments (
   )
 );
 
-CREATE UNIQUE INDEX IF NOT EXISTS idx_reid_v2_assignment_one_active_read
-  ON public.vehicle_reid_v2_read_assignments (read_id)
-  WHERE status = 'active';
+-- Do not recreate the original Stage 1 one-active-row index here.  A later
+-- migration intentionally preserves sealed active history after its evidence
+-- becomes stale and enforces one exact-current assignment through the
+-- current-contract view plus a per-read transaction lock.  Recreating the
+-- obsolete index during a full migration replay would reject that valid
+-- history before the later migration can replace the index again.
+DROP INDEX IF EXISTS public.idx_reid_v2_assignment_one_active_read;
 CREATE INDEX IF NOT EXISTS idx_reid_v2_assignment_profile
   ON public.vehicle_reid_v2_read_assignments (
     profile_id, status, created_at DESC, id DESC
