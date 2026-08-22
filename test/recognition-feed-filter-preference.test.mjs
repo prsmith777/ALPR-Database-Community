@@ -165,7 +165,16 @@ test("Recognition Feed restores saved state before querying and keeps explicit l
     table.indexOf("{/* Active filters display */}"),
     table.indexOf("{/* Table - Desktop view and Mobile cards */}")
   );
+  const clearFiltersImplementation = table.slice(
+    table.indexOf("const clearFilters = () =>"),
+    table.indexOf("const formatConfidence")
+  );
   assert.match(activeFilterSummary, /\) && \(/);
   assert.match(activeFilterSummary, /onClick=\{clearFilters\}/);
   assert.match(activeFilterSummary, />\s*Clear filters\s*<\/Button>/);
+  assert.doesNotMatch(
+    clearFiltersImplementation,
+    /pageSize/,
+    "clearing filters must preserve the independently saved rows-per-page preference"
+  );
 });
