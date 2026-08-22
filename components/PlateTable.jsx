@@ -2357,6 +2357,16 @@ export default function PlateTable({
                   Hours: {filters.hourRange.from} - {filters.hourRange.to}
                 </Badge>
               )}
+
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={clearFilters}
+              className="h-6 shrink-0 gap-1 px-2 text-xs"
+            >
+              <X className="h-3.5 w-3.5" />
+              Clear filters
+            </Button>
           </div>
         )}
 
