@@ -1933,25 +1933,6 @@ export default function PlateTable({
 
       </div>
 
-      <div className="space-y-2">
-        <h4 className="text-sm font-medium">Results Per Page</h4>
-        <Select
-          value={pagination.pageSize.toString()}
-          onValueChange={handlePageSizeChange}
-        >
-          <SelectTrigger>
-            <SelectValue>{pagination.pageSize}</SelectValue>
-          </SelectTrigger>
-          <SelectContent>
-            {[10, 25, 50, 100, 250, 500].map((size) => (
-              <SelectItem key={size} value={size.toString()}>
-                {size} results per page{size === 500 ? " (large)" : ""}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      </div>
-
       <div className="pt-4 flex space-x-2">
         <Button
           variant="outline"
@@ -1997,10 +1978,10 @@ export default function PlateTable({
       <div className="">
         <div className="py-4">
           <div className="mb-4 rounded-lg border bg-card p-4 shadow-sm">
-            <div className="flex items-center gap-4">
+            <div className="flex flex-wrap items-center gap-3 sm:gap-4">
               <button
                 type="button"
-                className="flex flex-1 items-center justify-between gap-3 rounded-md text-left"
+                className="flex min-w-64 flex-1 items-center justify-between gap-3 rounded-md text-left"
                 aria-expanded={isSearchOptionsOpen}
                 aria-controls="recognition-feed-search-options"
                 onClick={() =>
@@ -2020,6 +2001,37 @@ export default function PlateTable({
                   aria-hidden="true"
                 />
               </button>
+
+              <div className="flex shrink-0 items-center gap-2 rounded-md border px-3 py-2 dark:bg-[#161618]">
+                <Label
+                  htmlFor="recognition-feed-page-size"
+                  className="text-sm text-muted-foreground"
+                >
+                  Show
+                </Label>
+                <Select
+                  value={pagination.pageSize.toString()}
+                  onValueChange={handlePageSizeChange}
+                >
+                  <SelectTrigger
+                    id="recognition-feed-page-size"
+                    aria-label="Results per page"
+                    className="h-8 w-[5.5rem] dark:bg-[#0e0e10]"
+                  >
+                    <SelectValue>{pagination.pageSize}</SelectValue>
+                  </SelectTrigger>
+                  <SelectContent>
+                    {[10, 25, 50, 100, 250, 500].map((size) => (
+                      <SelectItem key={size} value={size.toString()}>
+                        {size}{size === 500 ? " (large)" : ""}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <span className="whitespace-nowrap text-sm text-muted-foreground">
+                  per page
+                </span>
+              </div>
 
               <div className="flex shrink-0 items-center gap-2 rounded-md border px-3 py-2 dark:bg-[#161618]">
                 <Switch
@@ -2203,28 +2215,6 @@ export default function PlateTable({
             </div>
           </div>
 
-          {/* Results per page - Desktop only */}
-          <div className="hidden sm:flex items-center gap-2">
-            <span className="text-sm text-muted-foreground">Show</span>
-            <Select
-              value={pagination.pageSize.toString()}
-              onValueChange={handlePageSizeChange}
-            >
-              <SelectTrigger className="w-[6rem] dark:bg-[#161618]">
-                <SelectValue>{pagination.pageSize}</SelectValue>
-              </SelectTrigger>
-              <SelectContent>
-                {[10, 25, 50, 100, 250, 500].map((size) => (
-                  <SelectItem key={size} value={size.toString()}>
-                    {size}{size === 500 ? " (large)" : ""}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            <span className="text-sm text-muted-foreground text-nowrap">
-              per page
-            </span>
-          </div>
                 </div>
               </div>
             )}
@@ -2357,6 +2347,16 @@ export default function PlateTable({
                   Hours: {filters.hourRange.from} - {filters.hourRange.to}
                 </Badge>
               )}
+
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={clearFilters}
+              className="h-6 shrink-0 gap-1 px-2 text-xs"
+            >
+              <X className="h-3.5 w-3.5" />
+              Clear filters
+            </Button>
           </div>
         )}
 

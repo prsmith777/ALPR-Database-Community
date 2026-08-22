@@ -149,9 +149,10 @@ test("Recognition Feed preferences survive browser and application restarts thro
 });
 
 test("Recognition Feed restores saved state before querying and keeps explicit links authoritative", async () => {
-  const [page, wrapper] = await Promise.all([
+  const [page, wrapper, table] = await Promise.all([
     readFile(new URL("../app/live_feed/page.jsx", import.meta.url), "utf8"),
     readFile(new URL("../components/PlateTableWrapper.jsx", import.meta.url), "utf8"),
+    readFile(new URL("../components/PlateTable.jsx", import.meta.url), "utf8"),
   ]);
 
   assert.match(page, /readRecognitionFeedFilterCookiePreference/);
@@ -159,4 +160,21 @@ test("Recognition Feed restores saved state before querying and keeps explicit l
   assert.match(page, /redirect\(`\/live_feed\?\$\{savedQuery\}`\)/);
   assert.match(wrapper, /writeRecognitionFeedFilterPreference/);
   assert.match(wrapper, /recognitionFeedFilterPreferenceFromSearchParams/);
+
+  const activeFilterSummary = table.slice(
+    table.indexOf("{/* Active filters display */}"),
+    table.indexOf("{/* Table - Desktop view and Mobile cards */}")
+  );
+  const clearFiltersImplementation = table.slice(
+    table.indexOf("const clearFilters = () =>"),
+    table.indexOf("const formatConfidence")
+  );
+  assert.match(activeFilterSummary, /\) && \(/);
+  assert.match(activeFilterSummary, /onClick=\{clearFilters\}/);
+  assert.match(activeFilterSummary, />\s*Clear filters\s*<\/Button>/);
+  assert.doesNotMatch(
+    clearFiltersImplementation,
+    /pageSize/,
+    "clearing filters must preserve the independently saved rows-per-page preference"
+  );
 });

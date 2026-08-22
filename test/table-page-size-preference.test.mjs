@@ -60,14 +60,14 @@ test("blocked browser storage safely falls back", () => {
 });
 
 test("Live Feed preferences use a server-readable cookie without a hydration navigation", async () => {
-  const wrapper = await readFile(
-    new URL("../components/PlateTableWrapper.jsx", import.meta.url),
-    "utf8"
-  );
-  const page = await readFile(
-    new URL("../app/live_feed/page.jsx", import.meta.url),
-    "utf8"
-  );
+  const [wrapper, page, table] = await Promise.all([
+    readFile(
+      new URL("../components/PlateTableWrapper.jsx", import.meta.url),
+      "utf8"
+    ),
+    readFile(new URL("../app/live_feed/page.jsx", import.meta.url), "utf8"),
+    readFile(new URL("../components/PlateTable.jsx", import.meta.url), "utf8"),
+  ]);
   const documentRef = { cookie: "" };
 
   writeTablePageSizePreference("live-feed", 100, memoryStorage(), documentRef);
@@ -85,4 +85,25 @@ test("Live Feed preferences use a server-readable cookie without a hydration nav
   assert.match(page, /readTablePageSizeCookiePreference/);
   assert.doesNotMatch(wrapper, /router\.replace\(/);
   assert.match(wrapper, /writeTablePageSizePreference\("live-feed"/);
+  assert.equal(
+    wrapper.match(
+      /parseInt\(\s*params\.get\("pageSize"\) \|\| String\(preferredPageSize\)\s*\)/g
+    )?.length,
+    2,
+    "pagination and page navigation must both fall back to the saved server preference"
+  );
+
+  const pageSizeControl = table.indexOf('id="recognition-feed-page-size"');
+  const liveUpdatesControl = table.indexOf('id="live-updates"');
+  const expandedSearchOptions = table.indexOf(
+    'id="recognition-feed-search-options"'
+  );
+  assert.ok(pageSizeControl > table.indexOf("Search options"));
+  assert.ok(pageSizeControl < liveUpdatesControl);
+  assert.ok(pageSizeControl < expandedSearchOptions);
+  assert.equal(
+    table.match(/onValueChange=\{handlePageSizeChange\}/g)?.length,
+    1,
+    "rows per page must have one dedicated control outside Search options"
+  );
 });
