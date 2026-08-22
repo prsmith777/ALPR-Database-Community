@@ -2655,6 +2655,82 @@ async function testCommittedStage2MaterializationAndRollback(fixtures) {
     { status: "withdrawn", count: 1 },
   ]);
 
+  const beforeProducerStop = await pool.query(
+    `SELECT
+       (SELECT COUNT(*)::integer FROM public.capture_assets) AS assets,
+       (SELECT COUNT(*)::integer FROM public.vehicle_match_feedback) AS match_reviews,
+       (SELECT COUNT(*)::integer FROM public.vehicle_clusters) AS clusters,
+       (SELECT COUNT(*)::integer FROM public.vehicle_cluster_assignments) AS assignments,
+       (SELECT COUNT(*)::integer FROM public.vehicle_plate_associations) AS plate_associations`
+  );
+  const stopped = await authority.transitionV1Producer({
+    state: "stopped",
+    confirmation: "STOP REID V1 PRODUCER",
+    reason: "Committed Stage 3 integration producer stop",
+    actor,
+  });
+  assert.equal(stopped.overview.control.mode, "v2_primary");
+  assert.equal(stopped.overview.control.v1ProducerState, "stopped");
+  await assert.rejects(
+    pool.query(
+      `UPDATE public.vehicle_clusters SET updated_at = CURRENT_TIMESTAMP
+       WHERE id = (SELECT MIN(id) FROM public.vehicle_clusters)`
+    ),
+    (error) => error?.code === "55000"
+      && error?.constraint === "vehicle_reid_v1_producer_stopped"
+  );
+  await assert.rejects(
+    pool.query(
+      `UPDATE public.capture_assets SET updated_at = CURRENT_TIMESTAMP
+       WHERE id = (SELECT MIN(id) FROM public.capture_assets)`
+    ),
+    (error) => error?.code === "55000"
+      && error?.constraint === "vehicle_reid_v1_producer_stopped"
+  );
+  await assert.rejects(
+    authority.transitionMode({
+      mode: "v1_rollback",
+      reason: "Rollback must fail while the v1 producer is stopped",
+      actor,
+    }),
+    (error) => error?.code === "23514"
+      && error?.constraint === "vehicle_reid_control_v1_rollback_path"
+  );
+  const afterProducerStop = await pool.query(
+    `SELECT
+       (SELECT COUNT(*)::integer FROM public.capture_assets) AS assets,
+       (SELECT COUNT(*)::integer FROM public.vehicle_match_feedback) AS match_reviews,
+       (SELECT COUNT(*)::integer FROM public.vehicle_clusters) AS clusters,
+       (SELECT COUNT(*)::integer FROM public.vehicle_cluster_assignments) AS assignments,
+       (SELECT COUNT(*)::integer FROM public.vehicle_plate_associations) AS plate_associations`
+  );
+  assert.deepEqual(afterProducerStop.rows[0], beforeProducerStop.rows[0]);
+  const restored = await authority.transitionV1Producer({
+    state: "active",
+    confirmation: "RESTORE REID V1 PRODUCER",
+    reason: "Committed Stage 3 integration producer restore",
+    actor,
+  });
+  assert.equal(restored.overview.control.mode, "v2_primary");
+  assert.equal(restored.overview.control.v1ProducerState, "active");
+  const producerAudits = await pool.query(
+    `SELECT event_type, metadata
+     FROM public.audit_events
+     WHERE resource_type = 'vehicle_reid_control'
+       AND event_type IN (
+         'vehicle.reid_v1_producer_stopped',
+         'vehicle.reid_v1_producer_restored'
+       )
+     ORDER BY id`
+  );
+  assert.deepEqual(
+    producerAudits.rows.map((row) => row.event_type),
+    ["vehicle.reid_v1_producer_stopped", "vehicle.reid_v1_producer_restored"]
+  );
+  assert.ok(producerAudits.rows.every((row) => (
+    row.metadata.historicalDataDeleted === false && row.metadata.filesDeleted === false
+  )));
+
   const rollback = await authority.transitionMode({
     mode: "v1_rollback",
     reason: "Committed Stage 2 integration rollback",
@@ -2706,7 +2782,11 @@ async function assertFinalBoundary(stage2) {
        (SELECT COUNT(*)::integer FROM public.vehicle_reid_v2_read_assignments) AS assignments,
        (SELECT COUNT(*)::integer FROM public.vehicle_reid_v2_profile_plate_anchors) AS anchors,
        (SELECT COUNT(*)::integer FROM public.vehicle_reid_v2_live_jobs) AS live_jobs,
-       (SELECT mode FROM public.vehicle_reid_control WHERE singleton = TRUE) AS mode`
+       (SELECT mode FROM public.vehicle_reid_control WHERE singleton = TRUE) AS mode,
+       (SELECT v1_producer_state FROM public.vehicle_reid_control
+         WHERE singleton = TRUE) AS v1_producer_state,
+       (SELECT v1_producer_revision FROM public.vehicle_reid_control
+         WHERE singleton = TRUE) AS v1_producer_revision`
   );
   assert.deepEqual(state.rows[0], {
     conversions: 9,
@@ -2720,6 +2800,8 @@ async function assertFinalBoundary(stage2) {
     anchors: stage2.anchors,
     live_jobs: stage2.liveJobs,
     mode: "v1_rollback",
+    v1_producer_state: "active",
+    v1_producer_revision: 3,
   });
 }
 
@@ -2752,5 +2834,5 @@ try {
   }
 }
 
-if (!succeeded) throw new Error("ReID v2 authoritative Stage 1/2 integration test did not complete");
-console.log("vehicle_reid_v2_authoritative_stage2_postgres_gate=passed");
+if (!succeeded) throw new Error("ReID v2 authoritative Stage 1/2/3 integration test did not complete");
+console.log("vehicle_reid_v2_authoritative_stage3_postgres_gate=passed");

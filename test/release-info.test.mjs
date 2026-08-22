@@ -23,7 +23,7 @@ test("release information resolves a commit-pinned deployment image", () => {
   });
 
   assert.equal(release.version, "0.1.20");
-  assert.equal(release.manualVersion, "2.15");
+  assert.equal(release.manualVersion, "2.16");
   assert.equal(release.manualUpdatedAt, "August 21, 2026");
   assert.equal(release.gitSha, "8cd2fa8");
   assert.equal(release.channel, "staging");
@@ -31,11 +31,14 @@ test("release information resolves a commit-pinned deployment image", () => {
   assert.equal(release.readOnly, true);
   assert.equal(
     release.notes.title,
-    "August 16, 2026 ReID v2 controlled Stage 2 cutover candidate"
+    "August 21, 2026 reversible ReID v1 producer-stop candidate"
   );
-  assert.equal(release.notes.publishedAt, "2026-08-16");
+  assert.equal(release.notes.publishedAt, "2026-08-21");
   assert.ok(release.notes.items.length >= 4);
   const notes = release.notes.items.join(" ");
+  assert.match(notes, /default-active, audited Stage 3 control/i);
+  assert.match(notes, /deletes no database row or file/i);
+  assert.match(notes, /rollback is database-blocked while the producer is stopped/i);
   assert.match(notes, /Accept verified preview records approval without authority writes/i);
   assert.match(notes, /bidirectional reconciliation/i);
   assert.match(notes, /compatibility routing for v2_primary/i);
@@ -46,7 +49,7 @@ test("release information resolves a commit-pinned deployment image", () => {
   assert.match(notes, /bounded at 1, 5, 25, or 250 reads/i);
   assert.match(notes, /cosine similarity never establishes identity/i);
   assert.match(notes, /production-schema query mismatch/i);
-  assert.match(notes, /ReID v1 retirement and deletion remain later/i);
+  assert.match(notes, /ReID v1 retirement, and deletion remain later/i);
 });
 
 test("an explicit valid SHA overrides the image tag", () => {

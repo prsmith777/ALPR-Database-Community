@@ -41,7 +41,7 @@ test("direction setup skips calibration and status queries when a tab does not d
   assert.match(service, /selected && includeCaptures/);
   assert.match(service, /&& includeBlueIrisTriggerDirection/);
   assert.match(service, /this\.getStatus\(\{ includeDirection: false \}\)/);
-  assert.match(service, /const \[status, direction, vehicleTypePending, vehicleColorPending\] = await Promise\.all/);
+  assert.match(service, /const \[status, direction, vehicleTypePending, vehicleColorPending, v1Producer\] = await Promise\.all/);
 });
 
 test("Vehicle Intelligence paints before camera detector previews are loaded", async () => {

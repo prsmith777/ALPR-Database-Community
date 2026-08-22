@@ -14,7 +14,7 @@ async function source(path) {
 }
 
 test("the user guide is structured, searchable, and role-aware", () => {
-  assert.equal(HELP_MANUAL.manualVersion, "2.15");
+  assert.equal(HELP_MANUAL.manualVersion, "2.16");
   assert.ok(HELP_MANUAL.sections.length >= 14);
 
   const ids = HELP_MANUAL.sections.map((section) => section.id);
@@ -135,7 +135,8 @@ test("production releases require help and roadmap updates", async () => {
   assert.match(roadmap, /start empty/i);
   assert.match(roadmap, /Accept\s+records an Administrator's exact verified preview\s+approval/i);
   assert.match(roadmap, /Stage 2 adds one explicit compatibility cutover/i);
-  assert.match(roadmap, /Stage 3 v1 producer shutdown[\s\S]*remain planned/i);
+  assert.match(roadmap, /first Stage 3 source candidate[\s\S]*default-active v1 producer control/i);
+  assert.match(roadmap, /Historical v1 export,[\s\S]*table retirement remain planned/i);
   assert.match(roadmap, /authoritative Stage 2 production baseline was deployed from commit/i);
   assert.doesNotMatch(roadmap, /current production release is `[0-9a-f]{7,40}`/i);
 });

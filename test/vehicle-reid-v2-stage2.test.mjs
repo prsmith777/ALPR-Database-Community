@@ -268,6 +268,10 @@ test("authority mode uses the direct control lookup without loading overview cou
     transitionRunId: null,
     transitionReason: null,
     transitionedAt: null,
+    v1ProducerState: "active",
+    v1ProducerRevision: 1,
+    v1ProducerReason: null,
+    v1ProducerChangedAt: null,
   });
   assert.deepEqual(calls, ["control"]);
 });
@@ -922,7 +926,7 @@ test("navigation is final only in v2 primary and legacy routes remain rollback r
   assert.match(legacyShadow, /mode === "v2_primary"[\s\S]*redirect\(`\/visual_search\/review/);
 });
 
-test("disposable PostgreSQL gate commits the full Stage 2 lifecycle and retains v1 rollback data", async () => {
+test("disposable PostgreSQL gate commits Stage 2 plus reversible Stage 3 producer control", async () => {
   const gate = await source("scripts/test-vehicle-reid-v2-authoritative-postgres.mjs");
   assert.match(gate, /testCommittedStage2MaterializationAndRollback/);
   assert.match(gate, /testBoundedLiveDiscoveryWindows/);
@@ -940,5 +944,8 @@ test("disposable PostgreSQL gate commits the full Stage 2 lifecycle and retains 
   assert.match(gate, /pre-merge canonical groups/);
   assert.match(gate, /mode: "v1_rollback"/);
   assert.match(gate, /v1_clusters: 1, v1_assignments: 3/);
-  assert.match(gate, /vehicle_reid_v2_authoritative_stage2_postgres_gate=passed/);
+  assert.match(gate, /STOP REID V1 PRODUCER/);
+  assert.match(gate, /RESTORE REID V1 PRODUCER/);
+  assert.match(gate, /vehicle_reid_v1_producer_stopped/);
+  assert.match(gate, /vehicle_reid_v2_authoritative_stage3_postgres_gate=passed/);
 });
