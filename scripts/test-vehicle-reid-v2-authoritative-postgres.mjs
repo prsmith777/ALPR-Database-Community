@@ -2694,7 +2694,7 @@ async function testCommittedStage2MaterializationAndRollback(fixtures) {
       actor,
     }),
     (error) => error?.code === "23514"
-      && error?.constraint === "vehicle_reid_control_v1_rollback_path"
+      && error?.constraint === "vehicle_reid_control_v1_producer_active_for_rollback"
   );
   const afterProducerStop = await pool.query(
     `SELECT

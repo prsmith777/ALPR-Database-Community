@@ -20,7 +20,9 @@ test("Stage 3 schema defaults active and makes the first v1 producer stop revers
   assert.match(stage3, /v1_producer_state VARCHAR\(16\) NOT NULL DEFAULT 'active'/);
   assert.match(stage3, /v1_producer_state IN \('active','stopped'\)/);
   assert.match(stage3, /NEW\.mode <> 'v2_primary'/);
-  assert.match(stage3, /v1_rollback must retain the v2 run and an active v1 producer/);
+  assert.match(stage3, /v1_rollback must immediately retain the v2_primary conversion run/);
+  assert.match(stage3, /v1_rollback requires an active ReID v1 producer/);
+  assert.match(stage3, /vehicle_reid_control_v1_producer_active_for_rollback/);
   assert.match(stage3, /guard_stopped_vehicle_reid_v1_writes/);
   assert.match(stage3, /BEFORE INSERT OR UPDATE ON public\.capture_assets/);
   assert.match(stage3, /BEFORE INSERT OR UPDATE ON public\.vehicle_clusters/);

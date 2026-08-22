@@ -9541,13 +9541,18 @@ BEGIN
   IF NEW.mode = 'v1_rollback' AND (
     NEW.previous_mode IS DISTINCT FROM 'v2_primary'
     OR NEW.transition_run_id IS NULL
-    OR NEW.v1_producer_state <> 'active'
     OR (TG_OP = 'UPDATE'
       AND NEW.transition_run_id IS DISTINCT FROM OLD.transition_run_id)
   ) THEN
-    RAISE EXCEPTION 'v1_rollback must retain the v2 run and an active v1 producer'
+    RAISE EXCEPTION 'v1_rollback must immediately retain the v2_primary conversion run'
       USING ERRCODE = '23514',
             CONSTRAINT = 'vehicle_reid_control_v1_rollback_path';
+  END IF;
+
+  IF NEW.mode = 'v1_rollback' AND NEW.v1_producer_state <> 'active' THEN
+    RAISE EXCEPTION 'v1_rollback requires an active ReID v1 producer'
+      USING ERRCODE = '23514',
+            CONSTRAINT = 'vehicle_reid_control_v1_producer_active_for_rollback';
   END IF;
 
   IF NEW.mode IN ('v2_primary','v1_rollback') AND (
