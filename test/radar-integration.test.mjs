@@ -123,6 +123,8 @@ test("live-feed query and popup expose speed and overview-camera playback proven
 
   assert.match(database, /radar\.speed_mph/);
   assert.match(database, /LEFT JOIN (?:public\.)?radar_events radar ON radar\.matched_read_id = pr\.id/);
+  assert.match(database, /requiresRadarFilter/);
+  assert.match(database, /pagedRadarJoin/);
   assert.match(database, /source_camera_short_name/);
   assert.match(table, /label="Speed"/);
   assert.match(table, /minimumSpeed/);
@@ -132,4 +134,21 @@ test("live-feed query and popup expose speed and overview-camera playback proven
   assert.match(table, /Count/);
   assert.match(table, />Vehicle<\/div>/);
   assert.match(table, /matchMode=off/);
+});
+
+test("live-feed hydration never groups legacy inline image payloads", async () => {
+  const database = await readFile(new URL("../lib/db.js", import.meta.url), "utf8");
+  const queryStart = database.indexOf("const dataQuery =");
+  const queryEnd = database.indexOf("const result = await client.query(dataQuery");
+  assert.notEqual(queryStart, -1);
+  assert.notEqual(queryEnd, -1);
+  const hydration = database.slice(
+    queryStart,
+    queryEnd,
+  );
+
+  assert.match(hydration, /plate_tag_summary\.tags/);
+  assert.match(hydration, /LEFT JOIN LATERAL \([\s\S]*array_agg\(DISTINCT jsonb_build_object/);
+  assert.doesNotMatch(hydration, /GROUP BY[\s\S]*pr\.image_data/);
+  assert.doesNotMatch(hydration, /LEFT JOIN plate_tags pt/);
 });
