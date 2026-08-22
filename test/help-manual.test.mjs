@@ -14,7 +14,7 @@ async function source(path) {
 }
 
 test("the user guide is structured, searchable, and role-aware", () => {
-  assert.equal(HELP_MANUAL.manualVersion, "2.17");
+  assert.equal(HELP_MANUAL.manualVersion, "2.19");
   assert.ok(HELP_MANUAL.sections.length >= 14);
 
   const ids = HELP_MANUAL.sections.map((section) => section.id);
@@ -90,6 +90,8 @@ test("the guide covers required workflows and clearly labels planned features", 
     "stage 2 does not stop or delete the v1 producer",
     "find similar continues to use retained historical overview crops",
     "searching never queues a camera capture",
+    "matched radar speed",
+    "blue iris action follows the displayed image",
   ]) {
     assert.match(text, new RegExp(required, "i"));
   }
@@ -131,7 +133,7 @@ test("production releases require help and roadmap updates", async () => {
     assert.match(text, /lib\/help-manual\.mjs/);
     assert.match(text, /docs\/COMMUNITY_PRODUCT_ROADMAP\.md/);
   }
-  assert.match(roadmap, /Release candidate baseline — August 21, 2026/);
+  assert.match(roadmap, /Release candidate baseline — August 22, 2026/);
   assert.match(roadmap, /start empty/i);
   assert.match(roadmap, /Accept\s+records an Administrator's exact verified preview\s+approval/i);
   assert.match(roadmap, /Stage 2 adds one explicit compatibility cutover/i);

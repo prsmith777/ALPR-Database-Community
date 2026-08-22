@@ -105,7 +105,7 @@ test("live-feed vehicle descriptors use a side rail without reducing image heigh
   const directionSection = table.slice(table.indexOf("<span>Direction</span>"), table.indexOf("<aside"));
   assert.doesNotMatch(directionSection, /vehicleColor|vehicleBodyType/);
   const vehicleMetadata = table.slice(
-    table.indexOf('{selectedImage.vehicleIdentityMode === "v2_primary" ? "Vehicle" : "Legacy vehicle (ReID v1)"}'),
+    table.indexOf('<div className="text-xs uppercase text-muted-foreground">Vehicle</div>'),
     table.indexOf('<div className="relative h-[40vh]')
   );
   assert.match(vehicleMetadata, /Vehicle #\$\{selectedImage\.vehicleClusterId\}/);

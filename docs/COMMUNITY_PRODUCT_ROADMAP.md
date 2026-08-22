@@ -18,7 +18,25 @@ reliable background processing.
 6. Audit sensitive searches, exports, corrections, rule changes, and
    destructive maintenance.
 
-## Release candidate baseline — August 21, 2026
+## Release candidate baseline — August 22, 2026
+
+- Live Feed now hydrates only the already paged read identities, summarizes
+  tags per plate without grouping legacy inline image payloads, and keeps radar
+  joins out of count/page selection unless a speed filter or speed sort needs
+  them. This removes the staging-only page-size query-plan spill while
+  preserving radar search, filtering, sorting, and displayed speed.
+- Direct OPS9243-A-PE ingestion now subscribes inside ALPR to the configured
+  authenticated Mosquitto broker and `A26260220/#` without HomeSeer. Bounded
+  vehicle events are deduplicated, stored, and correlated one-to-one to ALPR
+  reads by configurable direction and timestamp proximity. Live Feed exposes
+  matched mph as searchable, sortable, and minimum/maximum filterable data on
+  desktop and mobile.
+- The Live Feed popup now uses the requested compact evidence order, adds Time
+  and Speed, calls occurrences Count, and links both Observed and Effective
+  plates to filtered Recognition Feed results. Its Blue Iris action follows
+  the selected image: Plate capture retains the LPR clip pointer, while Vehicle
+  view opens the provenanced Street Overview or Entry Overview timeline at the
+  stored vehicle-frame timestamp.
 
 - Full migration replay now preserves the later ReID v2 assignment-history
   contract instead of briefly recreating the obsolete Stage 1 one-active-row
