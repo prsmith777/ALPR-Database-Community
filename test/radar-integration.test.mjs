@@ -130,5 +130,6 @@ test("live-feed query and popup expose speed and overview-camera playback proven
   assert.match(table, /buildBlueIrisTimelinePath/);
   assert.match(table, /displayedImageView === "vehicle"/);
   assert.match(table, /Count/);
+  assert.match(table, />Vehicle<\/div>/);
   assert.match(table, /matchMode=off/);
 });

@@ -3099,9 +3099,7 @@ export default function PlateTable({
                   <div>{formatSpeed(selectedImage.speedMph)}</div>
                 </div>
                 <div>
-                  <div className="text-xs uppercase text-muted-foreground">
-                    {selectedImage.vehicleIdentityMode === "v2_primary" ? "Vehicle" : "Legacy vehicle (ReID v1)"}
-                  </div>
+                  <div className="text-xs uppercase text-muted-foreground">Vehicle</div>
                   {selectedImage.vehicleClusterId ? (
                     <Link
                       href={selectedImage.vehicleIdentityMode === "v2_primary"
