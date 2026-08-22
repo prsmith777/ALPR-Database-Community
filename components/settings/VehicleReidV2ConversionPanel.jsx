@@ -27,11 +27,13 @@ import {
   setVehicleReidV2ConversionPreviewPaused,
   startVehicleReidV2ConversionPreview,
   transitionVehicleReidAuthorityMode,
+  transitionVehicleReidV1Producer,
   verifyVehicleReidV2ConversionPreview,
 } from "@/app/actions";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Progress } from "@/components/ui/progress";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -116,6 +118,7 @@ export default function VehicleReidV2ConversionPanel({ initialOverview = null })
   const restoredBatchRun = useRef(null);
   const [busy, setBusy] = useState("");
   const [message, setMessage] = useState("");
+  const [producerConfirmation, setProducerConfirmation] = useState("");
 
   const run = overview?.latestRun || overview?.run || overview?.campaign || null;
   const projection = overview?.projection || run?.projection || overview?.latestProjection
@@ -159,6 +162,12 @@ export default function VehicleReidV2ConversionPanel({ initialOverview = null })
   const authorityHealth = overview?.authorityHealth || {};
   const authorityCounts = authorityHealth.counts || {};
   const liveJobs = authorityHealth.liveJobs || {};
+  const v1Retained = authorityHealth.v1Retained || {};
+  const v1ProducerControl = authorityHealth.control || overview?.control || {};
+  const v1ProducerState = text(v1ProducerControl.v1ProducerState) || "active";
+  const producerConfirmationPhrase = v1ProducerState === "stopped"
+    ? "RESTORE REID V1 PRODUCER"
+    : "STOP REID V1 PRODUCER";
   const liveWorker = overview?.liveWorker || authorityHealth.worker || {};
   const authoritativeProfiles = count(
     authorityCounts.profiles
@@ -221,7 +230,9 @@ export default function VehicleReidV2ConversionPanel({ initialOverview = null })
   const canMaterialize = Boolean(runId && previewFingerprint) && status === "accepted";
   const canCutover = Boolean(runId) && status === "completed"
     && ["v2_shadow", "v1_rollback"].includes(controlMode);
-  const canRollback = controlMode === "v2_primary";
+  const canRollback = controlMode === "v2_primary" && v1ProducerState === "active";
+  const canTransitionV1Producer = controlMode === "v2_primary"
+    && producerConfirmation === producerConfirmationPhrase;
 
   const projectionMetrics = useMemo(() => ([
     { label: "projected profiles", value: metrics.projectedProfiles },
@@ -423,6 +434,23 @@ export default function VehicleReidV2ConversionPanel({ initialOverview = null })
       }),
       "Consumers were rolled back to ReID v1. Authoritative v2 evidence remains retained."
     );
+  };
+
+  const transitionV1Producer = () => {
+    const stopping = v1ProducerState !== "stopped";
+    return perform(
+      stopping ? "stop-v1-producer" : "restore-v1-producer",
+      () => transitionVehicleReidV1Producer({
+        state: stopping ? "stopped" : "active",
+        confirmation: producerConfirmation,
+        reason: stopping
+          ? "Explicit Stage 3 operator stop after verified ReID v2 primary observation."
+          : "Explicit Stage 3 operator restore before a possible v1 consumer rollback.",
+      }),
+      stopping
+        ? "The ReID v1 producer is stopped. Historical v1 rows and files remain retained; ReID v2 stays primary."
+        : "The retained ReID v1 producer is active again. ReID v2 remains primary until a separate consumer rollback."
+    ).finally(() => setProducerConfirmation(""));
   };
 
   return (
@@ -745,6 +773,55 @@ export default function VehicleReidV2ConversionPanel({ initialOverview = null })
                 Roll back consumers to v1
               </Button>
             </div>
+          </section>
+        ) : null}
+
+        {controlMode === "v2_primary" ? (
+          <section className="space-y-3 rounded-md border border-amber-500/40 p-4">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <p className="font-medium">Stage 3 retained ReID v1 producer</p>
+                <p className="max-w-3xl text-xs text-muted-foreground">
+                  This reversible control stops new legacy capture-index, match-review, cluster, assignment, and plate-association writes. It does not delete or alter any original image, Overview image, v2 crop, embedding, profile, audit record, or retained v1 history.
+                </p>
+              </div>
+              <Badge variant={v1ProducerState === "stopped" ? "default" : "secondary"}>
+                {v1ProducerState === "stopped" ? "v1 producer stopped" : "v1 producer active"}
+              </Badge>
+            </div>
+            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+              <Metric label="retained v1 assets" value={v1Retained.assets} detail={`${formatCount(v1Retained.derivedFiles)} derived-file references`} />
+              <Metric label="retained v1 clusters" value={v1Retained.clusters} />
+              <Metric label="retained v1 assignments" value={v1Retained.assignments} />
+              <Metric label="retained v1 reviews" value={count(v1Retained.matchReviews) + count(v1Retained.plateAssociations)} />
+            </div>
+            <div className="max-w-xl space-y-2">
+              <Label htmlFor="reid-v1-producer-confirmation">Type {producerConfirmationPhrase}</Label>
+              <Input
+                id="reid-v1-producer-confirmation"
+                value={producerConfirmation}
+                onChange={(event) => setProducerConfirmation(event.target.value)}
+                autoComplete="off"
+              />
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <Button
+                type="button"
+                variant={v1ProducerState === "stopped" ? "secondary" : "destructive"}
+                disabled={Boolean(busy) || !canTransitionV1Producer}
+                onClick={transitionV1Producer}
+              >
+                {busy === "stop-v1-producer" || busy === "restore-v1-producer"
+                  ? <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  : v1ProducerState === "stopped"
+                    ? <RotateCcw className="mr-2 h-4 w-4" />
+                    : <Power className="mr-2 h-4 w-4" />}
+                {v1ProducerState === "stopped" ? "Restore v1 producer" : "Stop v1 producer"}
+              </Button>
+            </div>
+            <p className="text-xs text-muted-foreground">
+              Consumer rollback is unavailable while the producer is stopped. Restore the producer first, verify it is active, then use the separate rollback control if v2 diagnosis ever requires it.
+            </p>
           </section>
         ) : null}
 

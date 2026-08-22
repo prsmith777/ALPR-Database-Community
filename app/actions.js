@@ -4735,7 +4735,8 @@ export async function verifyVehicleReidV2ConversionPreview(input = {}) {
 function vehicleReidV2AuthorityActionFailure(error, fallback) {
   const code = String(error?.code || "");
   if (code.startsWith("VEHICLE_REID_V2_AUTHORITY_")
-    || code.startsWith("VEHICLE_REID_V2_LIVE_")) {
+    || code.startsWith("VEHICLE_REID_V2_LIVE_")
+    || code.startsWith("VEHICLE_REID_V1_PRODUCER_")) {
     return { success: false, error: String(error.message || fallback), code };
   }
   console.error(fallback, { code });
@@ -4875,6 +4876,37 @@ export async function transitionVehicleReidAuthorityMode(input = {}) {
     };
   } catch (error) {
     return vehicleReidV2AuthorityActionFailure(error, "Unable to change the ReID authority mode.");
+  }
+}
+
+export async function transitionVehicleReidV1Producer(input = {}) {
+  const principal = await requirePermission("maintenance.manage");
+  try {
+    const authority = await (await getVehicleReidV2AuthorityService()).transitionV1Producer({
+      state: input.state,
+      confirmation: input.confirmation,
+      reason: input.reason,
+      actor: principal,
+    });
+    revalidatePath("/settings/vehicle-intelligence/processing");
+    revalidatePath("/visual_search");
+    revalidatePath("/visual_search/vehicles");
+    revalidatePath("/visual_search/review");
+    wakeVisualIndexWorker();
+    return {
+      success: true,
+      data: {
+        operation: authority.operation,
+        overview: await loadVehicleReidV2OperatorOverview({
+          authorityOverview: authority.overview,
+        }),
+      },
+    };
+  } catch (error) {
+    return vehicleReidV2AuthorityActionFailure(
+      error,
+      "Unable to change the retained ReID v1 producer state."
+    );
   }
 }
 

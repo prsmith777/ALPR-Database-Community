@@ -9391,3 +9391,227 @@ FOR EACH ROW EXECUTE FUNCTION public.seed_vehicle_reid_v2_live_discovery_state()
 INSERT INTO public.schema_migrations(version,description) VALUES
  ('2026081703_vehicle_reid_v2_bounded_live_discovery','Persist serialized forward and independent epoch-bounded revisit discovery cursors, seed them from the exact completed transition run without rewinding, and keep cursor/job progress transactionally bounded.')
 ON CONFLICT(version) DO NOTHING;
+
+-- Stage 3 begins with a reversible producer stop, not deletion.  The default
+-- keeps every existing installation unchanged.  An Administrator may stop the
+-- legacy writer only while authoritative v2 remains primary; rolling consumers
+-- back to v1 first requires an explicit producer restore.  Historical v1 rows,
+-- derived files, reviews, assignments, and every original/Overview image are
+-- retained unchanged by this migration and by either control transition.
+ALTER TABLE public.vehicle_reid_control
+  ADD COLUMN IF NOT EXISTS v1_producer_state VARCHAR(16) NOT NULL DEFAULT 'active'
+    CHECK (v1_producer_state IN ('active','stopped')),
+  ADD COLUMN IF NOT EXISTS v1_producer_revision INTEGER NOT NULL DEFAULT 1
+    CHECK (v1_producer_revision > 0),
+  ADD COLUMN IF NOT EXISTS v1_producer_actor_user_id BIGINT
+    REFERENCES public.users(id) ON DELETE SET NULL,
+  ADD COLUMN IF NOT EXISTS v1_producer_actor_username VARCHAR(64),
+  ADD COLUMN IF NOT EXISTS v1_producer_actor_display_name VARCHAR(120),
+  ADD COLUMN IF NOT EXISTS v1_producer_reason VARCHAR(160),
+  ADD COLUMN IF NOT EXISTS v1_producer_changed_at TIMESTAMPTZ;
+
+CREATE OR REPLACE FUNCTION public.validate_vehicle_reid_control_transition()
+RETURNS TRIGGER AS $$
+DECLARE
+  producer_changed BOOLEAN := FALSE;
+BEGIN
+  IF TG_OP = 'DELETE' THEN
+    RAISE EXCEPTION 'The ReID authority control singleton cannot be deleted'
+      USING ERRCODE = '23514',
+            CONSTRAINT = 'vehicle_reid_control_singleton_immutable';
+  END IF;
+
+  IF TG_OP = 'UPDATE' THEN
+    producer_changed := NEW.v1_producer_state IS DISTINCT FROM OLD.v1_producer_state;
+
+    IF NEW.mode = OLD.mode AND NOT producer_changed
+      AND (TO_JSONB(NEW) - 'updated_at') IS DISTINCT FROM
+          (TO_JSONB(OLD) - 'updated_at') THEN
+      RAISE EXCEPTION 'ReID authority provenance is immutable without a mode transition'
+        USING ERRCODE = '23514',
+              CONSTRAINT = 'vehicle_reid_control_same_mode_immutable';
+    END IF;
+
+    IF producer_changed THEN
+      IF NEW.mode IS DISTINCT FROM OLD.mode THEN
+        RAISE EXCEPTION 'ReID authority and v1 producer transitions must be separate operations'
+          USING ERRCODE = '23514',
+                CONSTRAINT = 'vehicle_reid_control_separate_transitions';
+      END IF;
+      IF NEW.mode <> 'v2_primary' THEN
+        RAISE EXCEPTION 'The ReID v1 producer can change state only while v2 remains primary'
+          USING ERRCODE = '23514',
+                CONSTRAINT = 'vehicle_reid_control_v1_producer_requires_v2';
+      END IF;
+      IF NEW.v1_producer_revision <> OLD.v1_producer_revision + 1
+        OR NEW.v1_producer_changed_at IS NULL
+        OR (OLD.v1_producer_changed_at IS NOT NULL
+          AND NEW.v1_producer_changed_at <= OLD.v1_producer_changed_at) THEN
+        RAISE EXCEPTION 'ReID v1 producer transitions require the next revision and a new timestamp'
+          USING ERRCODE = '23514',
+                CONSTRAINT = 'vehicle_reid_control_v1_producer_revision';
+      END IF;
+      IF NULLIF(BTRIM(NEW.v1_producer_actor_username), '') IS NULL
+        OR NULLIF(BTRIM(NEW.v1_producer_actor_display_name), '') IS NULL
+        OR NULLIF(BTRIM(NEW.v1_producer_reason), '') IS NULL THEN
+        RAISE EXCEPTION 'ReID v1 producer transitions require an actor snapshot and reason'
+          USING ERRCODE = '23514',
+                CONSTRAINT = 'vehicle_reid_control_v1_producer_actor';
+      END IF;
+      IF (TO_JSONB(NEW)
+            - 'updated_at'
+            - 'v1_producer_state'
+            - 'v1_producer_revision'
+            - 'v1_producer_actor_user_id'
+            - 'v1_producer_actor_username'
+            - 'v1_producer_actor_display_name'
+            - 'v1_producer_reason'
+            - 'v1_producer_changed_at') IS DISTINCT FROM
+         (TO_JSONB(OLD)
+            - 'updated_at'
+            - 'v1_producer_state'
+            - 'v1_producer_revision'
+            - 'v1_producer_actor_user_id'
+            - 'v1_producer_actor_username'
+            - 'v1_producer_actor_display_name'
+            - 'v1_producer_reason'
+            - 'v1_producer_changed_at') THEN
+        RAISE EXCEPTION 'A ReID v1 producer transition cannot rewrite authority provenance'
+          USING ERRCODE = '23514',
+                CONSTRAINT = 'vehicle_reid_control_v1_producer_sealed';
+      END IF;
+    ELSIF NEW.mode <> OLD.mode AND (
+      NEW.v1_producer_state IS DISTINCT FROM OLD.v1_producer_state
+      OR NEW.v1_producer_revision IS DISTINCT FROM OLD.v1_producer_revision
+      OR NEW.v1_producer_actor_user_id IS DISTINCT FROM OLD.v1_producer_actor_user_id
+      OR NEW.v1_producer_actor_username IS DISTINCT FROM OLD.v1_producer_actor_username
+      OR NEW.v1_producer_actor_display_name IS DISTINCT FROM OLD.v1_producer_actor_display_name
+      OR NEW.v1_producer_reason IS DISTINCT FROM OLD.v1_producer_reason
+      OR NEW.v1_producer_changed_at IS DISTINCT FROM OLD.v1_producer_changed_at
+    ) THEN
+      RAISE EXCEPTION 'An authority transition cannot rewrite ReID v1 producer provenance'
+        USING ERRCODE = '23514',
+              CONSTRAINT = 'vehicle_reid_control_authority_seals_v1_producer';
+    END IF;
+  END IF;
+
+  IF TG_OP = 'UPDATE' AND NEW.mode <> OLD.mode AND (
+    NEW.previous_mode IS DISTINCT FROM OLD.mode
+    OR NEW.revision <> OLD.revision + 1
+    OR NEW.transitioned_at <= OLD.transitioned_at
+  ) THEN
+    RAISE EXCEPTION 'ReID authority transitions require the prior mode, next revision, and a new timestamp'
+      USING ERRCODE = '23514',
+            CONSTRAINT = 'vehicle_reid_control_transition_revision';
+  END IF;
+
+  IF TG_OP = 'UPDATE' AND NEW.mode <> OLD.mode AND NOT (
+    (OLD.mode = 'v1_primary' AND NEW.mode = 'v2_shadow')
+    OR (OLD.mode IN ('v2_shadow','v1_rollback') AND NEW.mode = 'v2_primary')
+    OR (OLD.mode = 'v2_primary' AND NEW.mode = 'v1_rollback')
+  ) THEN
+    RAISE EXCEPTION 'Invalid ReID authority transition from % to %',
+      OLD.mode, NEW.mode
+      USING ERRCODE = '23514',
+            CONSTRAINT = 'vehicle_reid_control_transition_path';
+  END IF;
+
+  IF NEW.mode = 'v2_primary' AND NOT EXISTS (
+    SELECT 1 FROM public.vehicle_reid_v2_conversion_runs runs
+    WHERE runs.id = NEW.transition_run_id
+      AND runs.status = 'completed'
+      AND runs.phase = 'complete'
+      AND runs.accepted_preview_fingerprint = runs.preview_fingerprint
+      AND runs.last_revalidation_status = 'current'
+      AND runs.last_revalidation_fingerprint = runs.identity_evidence_fingerprint
+      AND runs.last_revalidated_at IS NOT NULL
+      AND runs.completed_at IS NOT NULL
+  ) THEN
+    RAISE EXCEPTION 'v2_primary requires one completed, exactly revalidated conversion run'
+      USING ERRCODE = '23514',
+            CONSTRAINT = 'vehicle_reid_control_v2_primary_run';
+  END IF;
+
+  IF NEW.mode = 'v2_primary' THEN
+    PERFORM public.assert_vehicle_reid_v2_exact_materialization(
+      NEW.transition_run_id
+    );
+  END IF;
+
+  IF NEW.mode = 'v1_rollback' AND (
+    NEW.previous_mode IS DISTINCT FROM 'v2_primary'
+    OR NEW.transition_run_id IS NULL
+    OR (TG_OP = 'UPDATE'
+      AND NEW.transition_run_id IS DISTINCT FROM OLD.transition_run_id)
+  ) THEN
+    RAISE EXCEPTION 'v1_rollback must immediately retain the v2_primary conversion run'
+      USING ERRCODE = '23514',
+            CONSTRAINT = 'vehicle_reid_control_v1_rollback_path';
+  END IF;
+
+  IF NEW.mode = 'v1_rollback' AND NEW.v1_producer_state <> 'active' THEN
+    RAISE EXCEPTION 'v1_rollback requires an active ReID v1 producer'
+      USING ERRCODE = '23514',
+            CONSTRAINT = 'vehicle_reid_control_v1_producer_active_for_rollback';
+  END IF;
+
+  IF NEW.mode IN ('v2_primary','v1_rollback') AND (
+    NULLIF(BTRIM(NEW.transition_actor_username), '') IS NULL
+    OR NULLIF(BTRIM(NEW.transition_actor_display_name), '') IS NULL
+    OR NULLIF(BTRIM(NEW.transition_reason), '') IS NULL
+  ) THEN
+    RAISE EXCEPTION 'ReID authority transitions require an actor snapshot and reason'
+      USING ERRCODE = '23514',
+            CONSTRAINT = 'vehicle_reid_control_transition_actor';
+  END IF;
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE OR REPLACE FUNCTION public.guard_stopped_vehicle_reid_v1_writes()
+RETURNS TRIGGER AS $$
+BEGIN
+  IF EXISTS (
+    SELECT 1 FROM public.vehicle_reid_control
+    WHERE singleton = TRUE AND v1_producer_state = 'stopped'
+  ) THEN
+    RAISE EXCEPTION 'The retained ReID v1 producer is stopped'
+      USING ERRCODE = '55000',
+            CONSTRAINT = 'vehicle_reid_v1_producer_stopped';
+  END IF;
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS capture_assets_v1_producer_guard ON public.capture_assets;
+CREATE TRIGGER capture_assets_v1_producer_guard
+BEFORE INSERT OR UPDATE ON public.capture_assets
+FOR EACH ROW EXECUTE FUNCTION public.guard_stopped_vehicle_reid_v1_writes();
+
+DROP TRIGGER IF EXISTS vehicle_match_feedback_v1_producer_guard
+  ON public.vehicle_match_feedback;
+CREATE TRIGGER vehicle_match_feedback_v1_producer_guard
+BEFORE INSERT OR UPDATE ON public.vehicle_match_feedback
+FOR EACH ROW EXECUTE FUNCTION public.guard_stopped_vehicle_reid_v1_writes();
+
+DROP TRIGGER IF EXISTS vehicle_clusters_v1_producer_guard
+  ON public.vehicle_clusters;
+CREATE TRIGGER vehicle_clusters_v1_producer_guard
+BEFORE INSERT OR UPDATE ON public.vehicle_clusters
+FOR EACH ROW EXECUTE FUNCTION public.guard_stopped_vehicle_reid_v1_writes();
+
+DROP TRIGGER IF EXISTS vehicle_cluster_assignments_v1_producer_guard
+  ON public.vehicle_cluster_assignments;
+CREATE TRIGGER vehicle_cluster_assignments_v1_producer_guard
+BEFORE INSERT OR UPDATE ON public.vehicle_cluster_assignments
+FOR EACH ROW EXECUTE FUNCTION public.guard_stopped_vehicle_reid_v1_writes();
+
+DROP TRIGGER IF EXISTS vehicle_plate_associations_v1_producer_guard
+  ON public.vehicle_plate_associations;
+CREATE TRIGGER vehicle_plate_associations_v1_producer_guard
+BEFORE INSERT OR UPDATE ON public.vehicle_plate_associations
+FOR EACH ROW EXECUTE FUNCTION public.guard_stopped_vehicle_reid_v1_writes();
+
+INSERT INTO public.schema_migrations(version,description) VALUES
+ ('2026082101_vehicle_reid_v1_producer_stop','Add an audited, reversible, default-active ReID v1 producer stop that requires v2_primary, preserves every historical row and file, blocks new legacy asset/feedback/cluster/association writes, and requires an explicit restore before consumer rollback.')
+ON CONFLICT(version) DO NOTHING;

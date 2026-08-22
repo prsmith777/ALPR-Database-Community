@@ -1083,10 +1083,23 @@ be restored. Monochrome nighttime captures do not receive a direction result.
   now adds exact accepted-preview materialization, current-contract compatibility
   reads, explicit primary cutover, bounded live assignment, final consumer
   routes, audited merge/split history, observable exceptions, and retained v1
-  rollback. A deployment and any actual environment cutover still require
-  separate approval and verification. Stage 3 v1 producer shutdown, historical
-  preservation/export, derived-file cleanup, and table retirement remain planned
-  and must not begin from this Stage 2 candidate.
+  rollback. The first Stage 3 source candidate now adds a reversible,
+  default-active v1 producer control. An exact typed Administrator action may
+  stop it only while v2 remains primary; the transition serializes current
+  derived-file writers, blocks new v1 asset, match-review, cluster, assignment,
+  and plate-association writes, exposes retained v1 counts, and requires an
+  explicit producer restore before any v1 consumer rollback. The visual-index
+  worker becomes inert while stopped, so it also stops creating new legacy
+  read-owned LPR crops and their legacy automatic color, body-type, and
+  ReID-direction fallback work. The canonical Overview catalog, crop,
+  embedding, authoritative v2, and v2 live workers remain independent.
+  Deploying the candidate changes no producer state: it defaults active. The
+  stop/restore control deletes no row or file and preserves all original LPR
+  images, thumbnails, Overview images, v2 crops/embeddings, plate reads, v2
+  authority/audit evidence, and retained v1 history. Historical v1 export,
+  derived-file cleanup, and table retirement remain planned as later,
+  separately inventoried, backed-up, staged, approved, and verified operations.
+  This source candidate does not itself deploy or stop a production producer.
   Shared Street images must continue to
   count once, and Entry-to-Street display fallbacks must never become an
   additional identity observation. Keep the existing ReID path available until
