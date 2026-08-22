@@ -19,6 +19,7 @@ const rangeFromValue = (value) => ({
 export default function LiveFeedDateRangeFilter({
   value,
   onChange,
+  onInteractionChange = () => {},
   embedded = false,
 }) {
   const fromMs = value?.from?.getTime?.() ?? null;
@@ -26,8 +27,13 @@ export default function LiveFeedDateRangeFilter({
   const [draft, setDraft] = useState(() => rangeFromValue(value));
 
   useEffect(() => {
-    setDraft(rangeFromValue(value));
-  }, [fromMs, toMs, value]);
+    setDraft({
+      from: fromMs === null ? undefined : new Date(fromMs),
+      to: toMs === null ? undefined : new Date(toMs),
+    });
+  }, [fromMs, toMs]);
+
+  useEffect(() => () => onInteractionChange(false), [onInteractionChange]);
 
   const handleSelect = useCallback((range) => {
     const nextRange = range || {};
@@ -56,7 +62,7 @@ export default function LiveFeedDateRangeFilter({
   if (embedded) return calendar;
 
   return (
-    <Popover>
+    <Popover onOpenChange={onInteractionChange}>
       <PopoverTrigger asChild>
         <Button
           variant="outline"
