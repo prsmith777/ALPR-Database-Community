@@ -9,6 +9,10 @@ import {
 import {
   writeTablePageSizePreference,
 } from "@/lib/table-page-size-preference.mjs";
+import {
+  recognitionFeedFilterPreferenceFromSearchParams,
+  writeRecognitionFeedFilterPreference,
+} from "@/lib/recognition-feed-filter-preference.mjs";
 import { scrollMainToTop } from "@/lib/page-scroll.mjs";
 import {
   elapsedMilliseconds,
@@ -58,6 +62,8 @@ export default function PlateTableWrapper({
   const [directionOverrides, setDirectionOverrides] = useState({});
   const [reviewOverrides, setReviewOverrides] = useState({});
   const [isViewerOpen, setIsViewerOpen] = useState(false);
+  const [isFilterInteractionActive, setIsFilterInteractionActive] =
+    useState(false);
   const [serverDataRevision, setServerDataRevision] = useState(0);
 
   // State to control if live updates are active (toggled by user)
@@ -129,6 +135,7 @@ export default function PlateTableWrapper({
   // becomes an assigned direction (or a genuine Unknown) without user action.
   useEffect(() => {
     if (!isLiveModeActive || isViewerOpen) return undefined;
+    if (isFilterInteractionActive) return undefined;
     const timer = window.setInterval(
       () => {
         if (document.visibilityState === "visible") {
@@ -138,7 +145,12 @@ export default function PlateTableWrapper({
       LIVE_REFRESH_INTERVAL_MS
     );
     return () => window.clearInterval(timer);
-  }, [isLiveModeActive, isViewerOpen, requestLiveRefresh]);
+  }, [
+    isFilterInteractionActive,
+    isLiveModeActive,
+    isViewerOpen,
+    requestLiveRefresh,
+  ]);
 
   useEffect(() => {
     setDirectionOverrides((current) => {
@@ -308,6 +320,11 @@ export default function PlateTableWrapper({
         writeTablePageSizePreference("live-feed", newParams.pageSize);
       }
       const queryString = createQueryString({ ...newParams, page: "1" });
+      writeRecognitionFeedFilterPreference(
+        recognitionFeedFilterPreferenceFromSearchParams(
+          new URLSearchParams(queryString)
+        )
+      );
       router.push(`${pathname}?${queryString}`);
     },
     [createQueryString, pathname, router]
@@ -480,12 +497,16 @@ export default function PlateTableWrapper({
         newDirection = currentSortDirection === "desc" ? "asc" : "desc";
       }
 
-      router.push(
-        `${pathname}?${createQueryString({
-          sortField: field,
-          sortDirection: newDirection,
-        })}`
+      const queryString = createQueryString({
+        sortField: field,
+        sortDirection: newDirection,
+      });
+      writeRecognitionFeedFilterPreference(
+        recognitionFeedFilterPreferenceFromSearchParams(
+          new URLSearchParams(queryString)
+        )
       );
+      router.push(`${pathname}?${queryString}`);
     },
     [createQueryString, params, pathname, router]
   );
@@ -577,6 +598,7 @@ export default function PlateTableWrapper({
       onReviewDirection={handleReviewDirection}
       onValidate={handleValidatePlate}
       onViewerOpenChange={handleViewerOpenChange}
+      onFilterInteractionChange={setIsFilterInteractionActive}
       isLive={isLiveModeActive} // Pass the live mode state
       onLiveChange={setIsLiveModeActive} // Pass the setter for live mode
       loading={false} // Loading state is now more complex. For simplicity, we'll keep it false here.

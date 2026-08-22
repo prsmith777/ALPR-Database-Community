@@ -14,6 +14,8 @@ test("Live Feed date ranges isolate draft selection and keep timestamp predicate
   assert.doesNotMatch(table, /dateRangeDraft/);
   assert.match(table, /<LiveFeedDateRangeFilter/);
   assert.match(dateFilter, /const \[draft, setDraft\] = useState/);
+  assert.match(dateFilter, /\}, \[fromMs, toMs\]\);/);
+  assert.doesNotMatch(dateFilter, /\[fromMs, toMs, value\]/);
   assert.match(dateFilter, /if \(!nextRange\.from \|\| !nextRange\.to\) return/);
   assert.match(dateFilter, /selected=\{draft\}/);
   assert.match(dateFilter, /onSelect=\{handleSelect\}/);
@@ -21,6 +23,21 @@ test("Live Feed date ranges isolate draft selection and keep timestamp predicate
   assert.match(database, /pr\.timestamp >= \$\{dateFromParameter\}::date/);
   assert.match(database, /pr\.timestamp < \(\$\{dateToParameter\}::date \+ INTERVAL '1 day'\)/);
   assert.doesNotMatch(database, /pr\.timestamp::date BETWEEN/);
+});
+
+test("Live Feed pauses polling while a date or mobile-filter interaction is active", async () => {
+  const [table, dateFilter, wrapper] = await Promise.all([
+    source("components/PlateTable.jsx"),
+    source("components/LiveFeedDateRangeFilter.jsx"),
+    source("components/PlateTableWrapper.jsx"),
+  ]);
+
+  assert.match(dateFilter, /onOpenChange=\{onInteractionChange\}/);
+  assert.match(table, /handleFilterSheetOpenChange = useCallback[\s\S]*?onFilterInteractionChange\(open\)/);
+  assert.match(table, /onOpenChange=\{handleFilterSheetOpenChange\}/);
+  assert.match(table, /onInteractionChange=\{onFilterInteractionChange\}/);
+  assert.match(wrapper, /if \(isFilterInteractionActive\) return undefined/);
+  assert.match(wrapper, /onFilterInteractionChange=\{setIsFilterInteractionActive\}/);
 });
 
 test("Live Feed does not eagerly preload every full capture", async () => {

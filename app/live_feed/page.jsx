@@ -19,9 +19,16 @@ import TitleNavbar from "@/components/layout/LiveFeedNav";
 import { Button } from "@/components/ui/button";
 import { unstable_noStore as noStore } from "next/cache";
 import { cookies } from "next/headers";
+import { redirect } from "next/navigation";
 import { requirePagePermission } from "@/lib/page-permission.mjs";
 import { readPlateMatchCookiePreference } from "@/lib/plate-match-preference.mjs";
 import { readTablePageSizeCookiePreference } from "@/lib/table-page-size-preference.mjs";
+import {
+  hasExplicitRecognitionFeedFilterState,
+  hasRecognitionFeedFilterPreference,
+  readRecognitionFeedFilterCookiePreference,
+  recognitionFeedFilterPreferenceToSearchParams,
+} from "@/lib/recognition-feed-filter-preference.mjs";
 import {
   DASHBOARD_FEED_METRIC_LABELS,
   DASHBOARD_TIME_FRAME_LABELS,
@@ -54,6 +61,17 @@ export default async function LivePlates(props) {
 
   const searchParams = await props.searchParams;
   const cookieStore = await cookies();
+  const savedFilterPreference =
+    readRecognitionFeedFilterCookiePreference(cookieStore);
+  if (
+    !hasExplicitRecognitionFeedFilterState(searchParams) &&
+    hasRecognitionFeedFilterPreference(savedFilterPreference)
+  ) {
+    const savedQuery = recognitionFeedFilterPreferenceToSearchParams(
+      savedFilterPreference
+    ).toString();
+    redirect(`/live_feed?${savedQuery}`);
+  }
   const defaultMatchMode = readPlateMatchCookiePreference(
     "recognition-feed",
     cookieStore

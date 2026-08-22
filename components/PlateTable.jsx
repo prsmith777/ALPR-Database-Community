@@ -348,6 +348,7 @@ export default function PlateTable({
   isLive = true,
   onLiveChange = () => {},
   onViewerOpenChange = () => {},
+  onFilterInteractionChange = () => {},
 }) {
   const { can } = useAccess();
   const canRead = can("plate.read");
@@ -439,6 +440,10 @@ export default function PlateTable({
   const [searchInput, setSearchInput] = useState(filters.search || "");
   const [isFilterSheetOpen, setIsFilterSheetOpen] = useState(false);
   const [isSearchOptionsOpen, setIsSearchOptionsOpen] = useState(false);
+  const handleFilterSheetOpenChange = useCallback((open) => {
+    setIsFilterSheetOpen(open);
+    onFilterInteractionChange(open);
+  }, [onFilterInteractionChange]);
 
   const correctionInputRef = useRef(null);
   const confirmNextTokenSequenceRef = useRef(0);
@@ -1953,12 +1958,15 @@ export default function PlateTable({
           className="flex-1"
           onClick={() => {
             clearFilters();
-            setIsFilterSheetOpen(false);
+            handleFilterSheetOpenChange(false);
           }}
         >
           Clear Filters
         </Button>
-        <Button className="flex-1" onClick={() => setIsFilterSheetOpen(false)}>
+        <Button
+          className="flex-1"
+          onClick={() => handleFilterSheetOpenChange(false)}
+        >
           Apply Filters
         </Button>
       </div>
@@ -2052,7 +2060,7 @@ export default function PlateTable({
                 {/* Mobile Filter Button */}
                 <Sheet
                   open={isFilterSheetOpen}
-                  onOpenChange={setIsFilterSheetOpen}
+                  onOpenChange={handleFilterSheetOpenChange}
                 >
                   <Tooltip>
                     <TooltipTrigger asChild>
@@ -2152,6 +2160,7 @@ export default function PlateTable({
               <LiveFeedDateRangeFilter
                 value={filters.dateRange}
                 onChange={handleDateRangeChange}
+                onInteractionChange={onFilterInteractionChange}
               />
 
               <HourRangeFilter
