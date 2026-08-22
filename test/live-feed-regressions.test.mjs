@@ -54,3 +54,9 @@ test("Live Feed count and page queries avoid optional joins and prefer Blue Iris
   assert.match(table, /selectedImage\?\.plateBiCamera/);
   assert.match(migrations, /2026082202_blue_iris_camera_inventory/);
 });
+
+test("Blue Iris camera inventory refreshes at runtime startup without waiting for ingestion", async () => {
+  const runtime = await source("lib/blue-iris-vehicle-frame-runtime.mjs");
+  assert.match(runtime, /queue\.refreshCameraInventory\(\{ force: true \}\)/);
+  assert.match(runtime, /blue_iris_camera_inventory_startup_refresh_failed/);
+});

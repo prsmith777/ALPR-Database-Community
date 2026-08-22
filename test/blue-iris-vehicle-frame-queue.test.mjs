@@ -44,6 +44,38 @@ test("Blue Iris camera discovery persists sanitized display-to-short-name mappin
   assert.equal(blueIrisVehicleFrameQueueInternals.uniqueCamera(index, "Street Overview").id, "Cam149");
 });
 
+test("Blue Iris camera inventory can refresh independently of plate ingestion", async () => {
+  const synchronized = [];
+  let connectionCount = 0;
+  const queue = new BlueIrisVehicleFrameQueue({
+    repository: {
+      async syncBlueIrisCameraInventory(cameras) { synchronized.push(cameras); },
+    },
+    fileStorage: {},
+    loadConfig: async () => configured,
+    clientFactory: () => ({
+      async testConnection() {
+        connectionCount += 1;
+        return {
+          cameras: [
+            { id: "Cam136", name: "Entry LPR 1", online: true, enabled: true },
+            { id: "Cam145", name: "Street LPR 1", online: true, enabled: true },
+          ],
+        };
+      },
+    }),
+  });
+
+  const first = await queue.refreshCameraInventory();
+  const second = await queue.refreshCameraInventory();
+
+  assert.equal(first.refreshed, true);
+  assert.equal(second.refreshed, false);
+  assert.equal(connectionCount, 1, "the five-minute cache prevents an idle polling storm");
+  assert.equal(synchronized.length, 1);
+  assert.deepEqual(synchronized[0].map((camera) => camera.id), ["Cam136", "Cam145"]);
+});
+
 test("Blue Iris camera inventory sync upserts current aliases and retires missing aliases atomically", async () => {
   const statements = [];
   const repository = new BlueIrisVehicleFrameRepository({
