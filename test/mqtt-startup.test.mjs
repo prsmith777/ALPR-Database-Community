@@ -173,6 +173,7 @@ test("Next.js Node instrumentation delegates through the Node-only adapter", asy
 test("Node instrumentation starts MQTT and automatic visual indexing together", async () => {
   const { logger } = makeLogger();
   let mqttCalls = 0;
+  let radarCalls = 0;
   let visualCalls = 0;
   let vehicleFrameCalls = 0;
   let notificationCalls = 0;
@@ -190,6 +191,15 @@ test("Node instrumentation starts MQTT and automatic visual indexing together", 
       mqttCalls += 1;
       assert.equal(options.logger, logger);
       return { status: "started" };
+    },
+    async loadRadarStartup() {
+      return {
+        async startRadarRuntime(options) {
+          radarCalls += 1;
+          assert.equal(options.logger, logger);
+          return { status: "started" };
+        },
+      };
     },
     async loadVisualStartup() {
       return {
@@ -293,6 +303,7 @@ test("Node instrumentation starts MQTT and automatic visual indexing together", 
   });
   assert.equal(result.status, "started");
   assert.equal(result.mqtt.status, "started");
+  assert.equal(result.radar.status, "started");
   assert.equal(result.visualIndex.status, "started");
   assert.equal(result.vehicleFrames.status, "started");
   assert.equal(result.notificationOperations.status, "started");
@@ -305,6 +316,7 @@ test("Node instrumentation starts MQTT and automatic visual indexing together", 
   assert.equal(result.vehicleAssetAttributes.status, "started");
   assert.equal(result.vehicleReid.status, "started");
   assert.equal(mqttCalls, 1);
+  assert.equal(radarCalls, 1);
   assert.equal(visualCalls, 1);
   assert.equal(vehicleFrameCalls, 1);
   assert.equal(notificationCalls, 1);
@@ -326,6 +338,9 @@ test("a visual-index instrumentation import failure cannot prevent MQTT startup"
     async startMqtt() {
       mqttCalls += 1;
       return { status: "started" };
+    },
+    async loadRadarStartup() {
+      return { async startRadarRuntime() { return { status: "started" }; } };
     },
     async loadVisualStartup() {
       throw new Error("OpenVINO module is temporarily unavailable");

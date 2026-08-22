@@ -102,7 +102,6 @@ import PlateMatchModeSelect from "@/components/PlateMatchModeSelect";
 import PlateImage from "@/components/PlateImage";
 import MultiSelectFilter from "@/components/MultiSelectFilter";
 import {
-  getSettings,
   retryBlueIrisVehicleFrameForRead,
   reviewVehicleClusterSuggestion,
 } from "@/app/actions";
@@ -118,7 +117,10 @@ import {
   loadLiveFeedPopupView,
   saveLiveFeedPopupView,
 } from "@/lib/live-feed-popup-preference.mjs";
-import { buildBlueIrisUiUrl } from "@/lib/blue-iris-ui-url.mjs";
+import {
+  buildBlueIrisTimelinePath,
+  buildBlueIrisUiUrl,
+} from "@/lib/blue-iris-ui-url.mjs";
 import {
   elapsedMilliseconds,
   recordLiveFeedPerformance,
@@ -312,6 +314,13 @@ function PlateTimestamp({ timestamp, timeFormat }) {
   );
 }
 
+function formatSpeed(speed) {
+  if (speed === null || speed === undefined || speed === "") return "—";
+  const numeric = Number(speed);
+  if (!Number.isFinite(numeric)) return "—";
+  return `${numeric.toFixed(Number.isInteger(numeric) ? 0 : 1)} mph`;
+}
+
 export default function PlateTable({
   data,
   loading,
@@ -335,6 +344,7 @@ export default function PlateTable({
   sort = { field: "", direction: "" },
   onSort = () => {},
   matchingSettings,
+  biHost,
   isLive = true,
   onLiveChange = () => {},
   onViewerOpenChange = () => {},
@@ -428,7 +438,6 @@ export default function PlateTable({
   const [directionReviewError, setDirectionReviewError] = useState("");
   const [searchInput, setSearchInput] = useState(filters.search || "");
   const [prefetchedImages, setPrefetchedImages] = useState(new Set());
-  const [biHost, setBiHost] = useState(null);
   const [isFilterSheetOpen, setIsFilterSheetOpen] = useState(false);
   const [isSearchOptionsOpen, setIsSearchOptionsOpen] = useState(false);
 
@@ -581,16 +590,6 @@ export default function PlateTable({
     setVehicleImageRetryError("");
   }, [selectedImage?.id]);
 
-  useEffect(() => {
-    async function fetchBiHost() {
-      const config = await getSettings();
-      if (config?.blueiris?.host) {
-        setBiHost(config.blueiris.host);
-      }
-    }
-    fetchBiHost();
-  }, []);
-
   // Helper functions
   const getImageUrl = (base64Data) => {
     if (!base64Data) return "/placeholder-image.jpg";
@@ -656,6 +655,11 @@ export default function PlateTable({
       reviewStatus: plate.review_status || (plate.validated ? "confirmed" : "unreviewed"),
       reviewRevision: plate.review_revision || 0,
       occurrenceCount: plate.occurrence_count ?? null,
+      timestamp: plate.timestamp,
+      speedMph: plate.speed_mph == null ? null : Number(plate.speed_mph),
+      radarDirection: plate.radar_direction || null,
+      radarTimestamp: plate.radar_timestamp || null,
+      radarMatchDeltaMs: plate.radar_match_delta_ms == null ? null : Number(plate.radar_match_delta_ms),
       appliedAliasId: plate.applied_alias_id || null,
       cameraName: plate.camera_name || "",
       knownName: plate.known_name || "",
@@ -690,6 +694,7 @@ export default function PlateTable({
       id: plate.id,
       validated: plate.validated,
       bi_path: bi_url,
+      vehicleBiCamera: plate.vehicle_bi_camera || null,
       crop_coordinates: plate.crop_coordinates,
     });
 
@@ -857,7 +862,13 @@ export default function PlateTable({
   const displayedImageView =
     selectedImageView === "vehicle" && selectedImage?.vehicleImageUrl
       ? "vehicle"
-      : "plate";
+    : "plate";
+  const selectedBlueIrisPath = displayedImageView === "vehicle"
+    ? buildBlueIrisTimelinePath(
+        selectedImage?.vehicleBiCamera,
+        selectedImage?.vehicleImageTimestamp || selectedImage?.timestamp,
+      )
+    : selectedImage?.bi_path || "";
 
   const handleViewerImageLoad = useCallback(({ url, width, height }) => {
     const timing = viewerNavigationTimingRef.current;
@@ -1363,6 +1374,11 @@ export default function PlateTable({
     onUpdateFilters({ direction: values });
   };
 
+  const applySpeedFilter = (name, value) => {
+    const normalized = String(value || "").trim();
+    onUpdateFilters({ [name]: normalized || null });
+  };
+
   const handleDateRangeSelect = (range) => {
     onUpdateFilters({
       dateFrom: range.from ? range.from.toDateString() : null,
@@ -1548,6 +1564,8 @@ export default function PlateTable({
       camera: null,
       reviewStatus: null,
       direction: null,
+      minimumSpeed: null,
+      maximumSpeed: null,
     });
   };
 
@@ -1790,6 +1808,14 @@ export default function PlateTable({
         />
       </div>
 
+      <div className="space-y-2">
+        <h4 className="text-sm font-medium">Filter by Speed (mph)</h4>
+        <div className="grid grid-cols-2 gap-2">
+          <Input key={`minimum-${filters.minimumSpeed || ""}`} type="number" min="0" max="200" step="1" defaultValue={filters.minimumSpeed} placeholder="Minimum" onBlur={(event) => applySpeedFilter("minimumSpeed", event.target.value)} />
+          <Input key={`maximum-${filters.maximumSpeed || ""}`} type="number" min="0" max="200" step="1" defaultValue={filters.maximumSpeed} placeholder="Maximum" onBlur={(event) => applySpeedFilter("maximumSpeed", event.target.value)} />
+        </div>
+      </div>
+
       <div className="space-y-3">
         <h4 className="text-sm font-medium">Date Range</h4>
         <Calendar
@@ -2006,7 +2032,7 @@ export default function PlateTable({
             <div className="flex flex-col sm:flex-row sm:items-center gap-2 w-full sm:w-auto">
               <div className="flex items-center w-full sm:w-auto">
                 <Input
-                  placeholder="Search plates..."
+                  placeholder="Search plates or speed..."
                   icon={
                     <Search className="text-gray-400 dark:text-gray-500 absolute left-1.5 top-1/2 transform -translate-y-1/2 h-4 w-4" />
                   }
@@ -2096,6 +2122,24 @@ export default function PlateTable({
                 onChange={handleDirectionChange}
                 className="h-9 w-[190px] dark:bg-[#161618]"
               />
+              <Popover>
+                <PopoverTrigger asChild>
+                  <Button variant="outline" className="h-9 gap-2 dark:bg-[#161618]">
+                    Speed{filters.minimumSpeed || filters.maximumSpeed
+                      ? `: ${filters.minimumSpeed || "0"}–${filters.maximumSpeed || "200"} mph`
+                      : ""}
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent align="start" className="w-64 p-4">
+                  <div className="space-y-3">
+                    <div className="text-sm font-medium">Speed range (mph)</div>
+                    <div className="grid grid-cols-2 gap-2">
+                      <Input key={`minimum-${filters.minimumSpeed || ""}`} type="number" min="0" max="200" step="1" defaultValue={filters.minimumSpeed} placeholder="Minimum" onBlur={(event) => applySpeedFilter("minimumSpeed", event.target.value)} />
+                      <Input key={`maximum-${filters.maximumSpeed || ""}`} type="number" min="0" max="200" step="1" defaultValue={filters.maximumSpeed} placeholder="Maximum" onBlur={(event) => applySpeedFilter("maximumSpeed", event.target.value)} />
+                    </div>
+                  </div>
+                </PopoverContent>
+              </Popover>
 
               <Popover>
                 <PopoverTrigger asChild>
@@ -2168,6 +2212,8 @@ export default function PlateTable({
                 filters.search ||
                 selectedTags.length > 0 ||
                 selectedDirections.length > 0 ||
+                filters.minimumSpeed ||
+                filters.maximumSpeed ||
                 filters.dashboardTimeFrame ||
                 filters.dashboardMetric ||
                 filters.dateRange.from ||
@@ -2230,6 +2276,8 @@ export default function PlateTable({
           selectedCameras.length > 0 ||
           selectedReviewStatuses.length > 0 ||
           selectedDirections.length > 0 ||
+          filters.minimumSpeed ||
+          filters.maximumSpeed ||
           filters.dashboardTimeFrame ||
           filters.dashboardMetric ||
           (filters.hourRange?.from !== undefined &&
@@ -2312,6 +2360,12 @@ export default function PlateTable({
               </Badge>
             )}
 
+            {(filters.minimumSpeed || filters.maximumSpeed) && (
+              <Badge variant="outline" className="text-xs h-6 whitespace-nowrap">
+                Speed: {filters.minimumSpeed || "0"}–{filters.maximumSpeed || "200"} mph
+              </Badge>
+            )}
+
             {filters.dateRange.from && (
               <Badge
                 variant="outline"
@@ -2391,6 +2445,9 @@ export default function PlateTable({
                       onSort={onSort}
                     />
                   </TableHead>
+                  <TableHead className="w-24 hidden md:table-cell">
+                    <SortButton label="Speed" field="speed" sort={sort} onSort={onSort} />
+                  </TableHead>
                   <TableHead className="w-24 sm:w-40">
                     <SortButton
                       label="Timestamp"
@@ -2407,13 +2464,13 @@ export default function PlateTable({
               <TableBody>
                 {loading ? (
                   <TableRow>
-                    <TableCell colSpan={9} className="text-center py-4">
+                    <TableCell colSpan={10} className="text-center py-4">
                       Loading...
                     </TableCell>
                   </TableRow>
                 ) : data.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={9} className="text-center py-4">
+                    <TableCell colSpan={10} className="text-center py-4">
                       No results found
                     </TableCell>
                   </TableRow>
@@ -2491,6 +2548,9 @@ export default function PlateTable({
                       </TableCell>
                       <TableCell className="hidden md:table-cell">
                         <DirectionBadge plate={plate} />
+                      </TableCell>
+                      <TableCell className="hidden whitespace-nowrap md:table-cell">
+                        {formatSpeed(plate.speed_mph)}
                       </TableCell>
                       <TableCell className="text-xs sm:text-sm">
                         <PlateTimestamp
@@ -2905,7 +2965,7 @@ export default function PlateTable({
                             {formatConfidence(plate.confidence)}
                           </div>
                           <div>
-                            <span className="font-medium">Occurrences: </span>
+                            <span className="font-medium">Count: </span>
                             {plate.occurrence_count}
                           </div>
                           <div>
@@ -2922,6 +2982,10 @@ export default function PlateTable({
                                 minute: "numeric",
                               }
                             )}
+                          </div>
+                          <div>
+                            <span className="font-medium">Speed: </span>
+                            {formatSpeed(plate.speed_mph)}
                           </div>
                           <div className="col-span-2">
                             <span className="font-medium">Date: </span>
@@ -2978,21 +3042,21 @@ export default function PlateTable({
             {selectedImage && (
               <div className="contents">
                 <div className="grid min-h-0 grid-rows-[auto_minmax(0,1fr)] gap-3 lg:col-start-1 lg:row-start-1">
-                  <div className="grid gap-3 rounded-lg border p-3 text-sm sm:grid-cols-2 md:grid-cols-4 lg:grid-cols-8">
+                  <div className="grid gap-x-2 gap-y-3 rounded-lg border px-2.5 py-2 text-sm sm:grid-cols-2 md:grid-cols-5 lg:grid-cols-10">
                 <div>
                   <div className="text-xs uppercase text-muted-foreground">Observed</div>
-                  <div className="font-mono text-lg font-semibold leading-tight">{selectedImage.observedPlate}</div>
+                  <Link href={`/live_feed?search=${encodeURIComponent(selectedImage.observedPlate)}&matchMode=off`} className="font-mono text-lg font-semibold leading-tight text-blue-500 hover:underline">{selectedImage.observedPlate}</Link>
                 </div>
                 <div>
                   <div className="text-xs uppercase text-muted-foreground">Effective</div>
-                  <div className="font-mono text-lg font-semibold leading-tight">{selectedImage.plateNumber}</div>
+                  <Link href={`/live_feed?search=${encodeURIComponent(selectedImage.plateNumber)}&matchMode=off`} className="font-mono text-lg font-semibold leading-tight text-blue-500 hover:underline">{selectedImage.plateNumber}</Link>
                 </div>
                 <div>
                   <div className="text-xs uppercase text-muted-foreground">Review status</div>
                   <div>{REVIEW_STATUS_LABELS[selectedImage.reviewStatus] || selectedImage.reviewStatus}</div>
                 </div>
                 <div>
-                  <div className="text-xs uppercase text-muted-foreground">Occurrences</div>
+                  <div className="text-xs uppercase text-muted-foreground">Count</div>
                   <div>{selectedImage.occurrenceCount ?? "—"}</div>
                 </div>
                 <div>
@@ -3025,6 +3089,14 @@ export default function PlateTable({
                   ) : (
                     <div className="text-muted-foreground">No tags</div>
                   )}
+                </div>
+                <div>
+                  <div className="text-xs uppercase text-muted-foreground">Time</div>
+                  <PlateTimestamp timestamp={selectedImage.timestamp} timeFormat={timeFormat} />
+                </div>
+                <div>
+                  <div className="text-xs uppercase text-muted-foreground">Speed</div>
+                  <div>{formatSpeed(selectedImage.speedMph)}</div>
                 </div>
                 <div>
                   <div className="text-xs uppercase text-muted-foreground">
@@ -3509,7 +3581,7 @@ export default function PlateTable({
                       </Button>
                     </PopupActionSlot>
                     <PopupActionSlot reserve className="col-start-6">
-                      {biHost && selectedImage?.bi_path && <Button
+                      {biHost && selectedBlueIrisPath && <Button
                         variant="outline"
                         size="sm"
                         className={POPUP_ACTION_BUTTON_CLASS}
@@ -3517,7 +3589,7 @@ export default function PlateTable({
                         title="Open recording in Blue Iris"
                         onClick={() =>
                           window.open(
-                            buildBlueIrisUiUrl(biHost, selectedImage.bi_path),
+                            buildBlueIrisUiUrl(biHost, selectedBlueIrisPath),
                             "_blank"
                           )
                         }

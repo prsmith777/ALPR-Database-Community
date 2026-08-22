@@ -550,6 +550,8 @@ export default function PlateTableWrapper({
         cameraNames: params.getAll("camera").filter(Boolean),
         reviewStatuses: params.getAll("reviewStatus").filter(Boolean),
         directionLabels: params.getAll("direction").filter(Boolean),
+        minimumSpeed: params.get("minimumSpeed") || "",
+        maximumSpeed: params.get("maximumSpeed") || "",
         dashboardTimeFrame,
         dashboardMetric,
       }}
