@@ -2681,8 +2681,12 @@ async function testCommittedStage2MaterializationAndRollback(fixtures) {
   );
   await assert.rejects(
     pool.query(
-      `UPDATE public.capture_assets SET updated_at = CURRENT_TIMESTAMP
-       WHERE id = (SELECT MIN(id) FROM public.capture_assets)`
+      `INSERT INTO public.capture_assets (
+         read_id, algorithm_version, status, source_image_path, error_code
+       )
+       SELECT id, 'stage3-stopped-producer-guard-v1', 'failed',
+              '/tmp/stage3-stopped-producer-guard.jpg', 'stopped_producer_guard'
+       FROM public.plate_reads ORDER BY id LIMIT 1`
     ),
     (error) => error?.code === "55000"
       && error?.constraint === "vehicle_reid_v1_producer_stopped"
