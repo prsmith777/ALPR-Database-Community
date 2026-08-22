@@ -118,9 +118,9 @@ import {
   saveLiveFeedPopupView,
 } from "@/lib/live-feed-popup-preference.mjs";
 import {
+  buildBlueIrisPlatePlaybackPath,
   buildBlueIrisTimelinePath,
   buildBlueIrisUiUrl,
-  withBlueIrisCamera,
 } from "@/lib/blue-iris-ui-url.mjs";
 import {
   elapsedMilliseconds,
@@ -896,9 +896,10 @@ export default function PlateTable({
         selectedImage?.vehicleBiCamera,
         selectedImage?.vehicleImageTimestamp || selectedImage?.timestamp,
       )
-    : withBlueIrisCamera(
+    : buildBlueIrisPlatePlaybackPath(
         selectedImage?.bi_path,
         selectedImage?.plateBiCamera,
+        selectedImage?.timestamp,
       );
 
   const handleViewerImageLoad = useCallback(({ url, width, height }) => {
@@ -2677,7 +2678,11 @@ export default function PlateTable({
                             </TooltipTrigger>
                             <TooltipContent>Review history</TooltipContent>
                           </Tooltip>}
-                          {biHost && plate.bi_path ? (
+                          {biHost && buildBlueIrisPlatePlaybackPath(
+                            plate.bi_path,
+                            plate.plate_bi_camera,
+                            plate.timestamp,
+                          ) ? (
                             <Tooltip>
                               <TooltipTrigger asChild>
                                 <Button
@@ -2689,7 +2694,11 @@ export default function PlateTable({
                                     window.open(
                                       buildBlueIrisUiUrl(
                                         biHost,
-                                        withBlueIrisCamera(plate.bi_path, plate.plate_bi_camera),
+                                        buildBlueIrisPlatePlaybackPath(
+                                          plate.bi_path,
+                                          plate.plate_bi_camera,
+                                          plate.timestamp,
+                                        ),
                                       ),
                                       "_blank"
                                     )
@@ -2849,13 +2858,21 @@ export default function PlateTable({
                                 <History className="h-4 w-4 mr-2" />
                                 Review History
                               </DropdownMenuItem>}
-                              {biHost && plate.bi_path ? (
+                              {biHost && buildBlueIrisPlatePlaybackPath(
+                                plate.bi_path,
+                                plate.plate_bi_camera,
+                                plate.timestamp,
+                              ) ? (
                                 <DropdownMenuItem
                                   onClick={() =>
                                     window.open(
                                       buildBlueIrisUiUrl(
                                         biHost,
-                                        withBlueIrisCamera(plate.bi_path, plate.plate_bi_camera),
+                                        buildBlueIrisPlatePlaybackPath(
+                                          plate.bi_path,
+                                          plate.plate_bi_camera,
+                                          plate.timestamp,
+                                        ),
                                       ),
                                       "_blank"
                                     )

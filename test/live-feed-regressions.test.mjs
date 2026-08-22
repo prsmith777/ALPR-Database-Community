@@ -50,7 +50,7 @@ test("Live Feed count and page queries avoid optional joins and prefer Blue Iris
   assert.match(database, /vehicle_image_selection_metadata->>'sourceCameraId'/);
   assert.match(database, /blue_iris_camera_inventory inventory/);
   assert.match(database, /plate_playback\.source_camera AS plate_bi_camera/);
-  assert.match(table, /withBlueIrisCamera\(plate\.bi_path, plate\.plate_bi_camera\)/);
+  assert.match(table, /buildBlueIrisPlatePlaybackPath\(/);
   assert.match(table, /selectedImage\?\.plateBiCamera/);
   assert.match(migrations, /2026082202_blue_iris_camera_inventory/);
 });
