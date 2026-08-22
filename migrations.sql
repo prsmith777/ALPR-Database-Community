@@ -9427,7 +9427,7 @@ BEGIN
     IF NEW.mode = OLD.mode AND NOT producer_changed
       AND (TO_JSONB(NEW) - 'updated_at') IS DISTINCT FROM
           (TO_JSONB(OLD) - 'updated_at') THEN
-      RAISE EXCEPTION 'ReID authority provenance is immutable without a control transition'
+      RAISE EXCEPTION 'ReID authority provenance is immutable without a mode transition'
         USING ERRCODE = '23514',
               CONSTRAINT = 'vehicle_reid_control_same_mode_immutable';
     END IF;
