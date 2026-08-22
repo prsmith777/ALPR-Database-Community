@@ -54,6 +54,14 @@ test("Stage 2 schema adds reviewed plate anchors, bounded live jobs, and audited
   assert.match(stage2, /vehicle_reid_v2_current_read_assignments/);
   assert.match(stage2, /profile merge history permits only one audited withdrawal/);
   assert.match(stage2, /one exact-current assignment per read/);
+  assert.doesNotMatch(
+    migration,
+    /CREATE UNIQUE INDEX IF NOT EXISTS idx_reid_v2_assignment_one_active_read/
+  );
+  assert.match(
+    migration,
+    /Do not recreate the original Stage 1 one-active-row index[\s\S]*DROP INDEX IF EXISTS public\.idx_reid_v2_assignment_one_active_read/
+  );
   assert.match(stage2, /exact-current audited Same review/);
   assert.match(stage2, /clearly different reviewed plates cannot merge/);
   assert.match(stage2, /low_existing_merge\.target_profile_id, low_member\.profile_id/);

@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import crypto from "node:crypto";
+import { readFile } from "node:fs/promises";
 import { setTimeout as delay } from "node:timers/promises";
 
 import pg from "pg";
@@ -2809,6 +2810,90 @@ async function assertFinalBoundary(stage2) {
   });
 }
 
+async function assertMigrationsReplayWithRetainedAssignmentHistory() {
+  const before = await pool.query(
+    `SELECT
+       COUNT(*)::integer AS assignments,
+       COUNT(DISTINCT read_id)::integer AS assigned_reads,
+       COUNT(*) FILTER (WHERE status = 'active')::integer AS active_history,
+       (
+         SELECT COUNT(*)::integer
+         FROM (
+           SELECT read_id
+           FROM public.vehicle_reid_v2_read_assignments
+           WHERE status = 'active'
+           GROUP BY read_id
+           HAVING COUNT(*) > 1
+         ) duplicates
+       ) AS reads_with_active_history`
+  );
+  assert.ok(
+    before.rows[0].reads_with_active_history > 0,
+    "the committed lifecycle must retain at least one stale active assignment beside its replacement"
+  );
+
+  const migrations = await readFile(new URL("../migrations.sql", import.meta.url), "utf8");
+  const client = await pool.connect();
+  try {
+    await client.query("SET statement_timeout = 0");
+    await client.query("SET lock_timeout = '5s'");
+    await client.query(migrations);
+  } finally {
+    client.release();
+  }
+
+  const after = await pool.query(
+    `SELECT
+       COUNT(*)::integer AS assignments,
+       COUNT(DISTINCT read_id)::integer AS assigned_reads,
+       COUNT(*) FILTER (WHERE status = 'active')::integer AS active_history,
+       (
+         SELECT COUNT(*)::integer
+         FROM (
+           SELECT read_id
+           FROM public.vehicle_reid_v2_read_assignments
+           WHERE status = 'active'
+           GROUP BY read_id
+           HAVING COUNT(*) > 1
+         ) duplicates
+       ) AS reads_with_active_history,
+       to_regclass('public.idx_reid_v2_assignment_one_active_read')::text
+         AS obsolete_unique_index,
+       to_regclass('public.idx_reid_v2_assignment_active_read_history')::text
+         AS history_index,
+       (
+         SELECT COUNT(*)::integer
+         FROM (
+           SELECT read_id
+           FROM public.vehicle_reid_v2_current_read_assignments
+           GROUP BY read_id
+           HAVING COUNT(*) > 1
+         ) duplicates
+       ) AS reads_with_multiple_current_assignments`
+  );
+  assert.deepEqual(
+    {
+      assignments: after.rows[0].assignments,
+      assignedReads: after.rows[0].assigned_reads,
+      activeHistory: after.rows[0].active_history,
+      readsWithActiveHistory: after.rows[0].reads_with_active_history,
+    },
+    {
+      assignments: before.rows[0].assignments,
+      assignedReads: before.rows[0].assigned_reads,
+      activeHistory: before.rows[0].active_history,
+      readsWithActiveHistory: before.rows[0].reads_with_active_history,
+    },
+    "migration replay must preserve every sealed and current assignment history row"
+  );
+  assert.equal(after.rows[0].obsolete_unique_index, null);
+  assert.equal(
+    after.rows[0].history_index,
+    "idx_reid_v2_assignment_active_read_history"
+  );
+  assert.equal(after.rows[0].reads_with_multiple_current_assignments, 0);
+}
+
 let succeeded = false;
 try {
   await guard();
@@ -2820,6 +2905,7 @@ try {
   await testAuthorityAndRollbackSchema(fixtures, previewResult.latestRunId);
   await testOlderFailedRunCannotBeRevived(previewResult.latestRunId);
   const stage2 = await testCommittedStage2MaterializationAndRollback(fixtures);
+  await assertMigrationsReplayWithRetainedAssignmentHistory();
   await assertFinalBoundary(stage2);
   succeeded = true;
 } finally {
