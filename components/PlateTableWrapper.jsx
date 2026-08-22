@@ -418,12 +418,12 @@ export default function PlateTableWrapper({
     if (
       wasOpen &&
       !nextOpen &&
-      (refreshAfterViewerCloseRef.current || isLiveModeActive)
+      refreshAfterViewerCloseRef.current
     ) {
       refreshAfterViewerCloseRef.current = false;
       requestLiveRefresh("viewer_close");
     }
-  }, [isLiveModeActive, requestLiveRefresh]);
+  }, [requestLiveRefresh]);
 
   const handleViewerDataRefresh = useCallback(() => {
     refreshAfterViewerCloseRef.current = false;

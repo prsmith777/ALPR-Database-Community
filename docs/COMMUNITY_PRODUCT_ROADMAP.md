@@ -20,6 +20,16 @@ reliable background processing.
 
 ## Release candidate baseline — August 22, 2026
 
+- Recognition Feed plate links now close the image viewer before navigating and
+  avoid an unrelated live-mode refresh. Date filtering waits for a complete
+  range, applies indexable timestamp bounds, and keeps optional direction joins
+  out of count/page selection unless the active filter or sort needs them.
+- Blue Iris playback now follows the selected evidence with short camera IDs.
+  Plate Capture rewrites the retained alert pointer with the matched LPR short
+  ID, while Vehicle View prefers the actual short ID persisted by the overview
+  worker and falls back through a sanitized display-to-short camera inventory.
+  Ambiguous display names fail closed, credentials are not copied into the
+  inventory, and the original read/image evidence remains unchanged.
 - Live Feed now hydrates only the already paged read identities, summarizes
   tags per plate without grouping legacy inline image payloads, and keeps radar
   joins out of count/page selection unless a speed filter or speed sort needs
