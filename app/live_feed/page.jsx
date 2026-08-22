@@ -103,6 +103,8 @@ export default async function LivePlates(props) {
       : "",
     reviewStatuses: searchParamList(searchParams?.reviewStatus),
     directionLabels: searchParamList(searchParams?.direction),
+    minimumSpeed: searchParams?.minimumSpeed || "",
+    maximumSpeed: searchParams?.maximumSpeed || "",
     dashboardMetric,
     sortField: searchParams?.sortField,
     sortDirection: searchParams?.sortDirection,

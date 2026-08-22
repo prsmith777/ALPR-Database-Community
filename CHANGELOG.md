@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+- Added direct, authenticated OPS9243-A-PE MQTT ingestion without HomeSeer.
+  Vehicle detections on `A26260220/#` are bounded, deduplicated, stored, and
+  correlated one-to-one to ALPR reads by configurable direction and timestamp
+  proximity. Matched mph is searchable, sortable, range-filterable, and shown
+  on Live Feed desktop, mobile, and popup views.
+- Made the Live Feed popup Blue Iris action follow the selected evidence view:
+  Plate capture opens its retained LPR recording, while Vehicle view opens the
+  corresponding Street Overview or Entry Overview timeline at the vehicle
+  frame timestamp. The popup also adds Time and Speed, uses Count, and links
+  Observed and Effective plate values to filtered Recognition Feed results.
+
 - Added operator-created immutable ReID v2 shadow profile candidate snapshots.
   Membership is evidence-backed only: exact effective/corrected plate agreement
   and audited human Same-vehicle labels may connect current canonical crops,

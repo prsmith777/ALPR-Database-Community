@@ -414,7 +414,7 @@ test("the image viewer summarizes known-plate and tag associations", async () =>
   assert.match(table, /selectedImage\.knownName \|\| "Not known"/);
   assert.match(
     table,
-    />Review status<\/div>[\s\S]*?>Occurrences<\/div>[\s\S]*?>Camera<\/div>[\s\S]*?>Known plate<\/div>/
+    />Observed<\/div>[\s\S]*?>Effective<\/div>[\s\S]*?>Review status<\/div>[\s\S]*?>Count<\/div>[\s\S]*?>Camera<\/div>[\s\S]*?>Known plate<\/div>[\s\S]*?>Tags<\/div>[\s\S]*?>Time<\/div>[\s\S]*?>Speed<\/div>/
   );
   assert.match(table, /selectedImage\.cameraName \|\| "Unknown"/);
   assert.match(table, /occurrenceCount: plate\.occurrence_count \?\? null/);
