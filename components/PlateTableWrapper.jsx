@@ -130,7 +130,11 @@ export default function PlateTableWrapper({
   useEffect(() => {
     if (!isLiveModeActive || isViewerOpen) return undefined;
     const timer = window.setInterval(
-      () => requestLiveRefresh("live_poll"),
+      () => {
+        if (document.visibilityState === "visible") {
+          requestLiveRefresh("live_poll");
+        }
+      },
       LIVE_REFRESH_INTERVAL_MS
     );
     return () => window.clearInterval(timer);

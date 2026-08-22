@@ -1,7 +1,7 @@
 import Image from "next/image";
 import { useState } from "react";
 
-export default function PlateImage({ plate, onClick, className }) {
+export default function PlateImage({ plate, onClick, className, priority = false }) {
   const [error, setError] = useState(false);
 
   const getImageUrl = () => {
@@ -39,7 +39,7 @@ export default function PlateImage({ plate, onClick, className }) {
       width={100}
       height={75}
       unoptimized
-      priority={true}
+      priority={priority}
       placeholder="blur"
       blurDataURL="/fallback.jpg"
       className={`rounded cursor-pointer ${className || ""}`}
