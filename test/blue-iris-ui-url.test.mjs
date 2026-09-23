@@ -1,0 +1,88 @@
+import assert from "node:assert/strict";
+import test from "node:test";
+
+import {
+  buildBlueIrisPlatePlaybackPath,
+  buildBlueIrisTimelinePath,
+  buildBlueIrisUiUrl,
+  withBlueIrisCamera,
+} from "../lib/blue-iris-ui-url.mjs";
+
+test("Blue Iris UI URLs accept saved hosts with or without a scheme", () => {
+  const path = "ui3.htm?rec=14638483532154750-919666&cam=Street%20LPR%202";
+
+  assert.equal(
+    buildBlueIrisUiUrl("192.0.2.167:81", path),
+    "http://192.0.2.167:81/ui3.htm?rec=14638483532154750-919666&cam=Street%20LPR%202"
+  );
+  assert.equal(
+    buildBlueIrisUiUrl("http://192.0.2.167:81/", `/${path}`),
+    "http://192.0.2.167:81/ui3.htm?rec=14638483532154750-919666&cam=Street%20LPR%202"
+  );
+});
+
+test("Blue Iris UI URLs reject incomplete inputs", () => {
+  assert.equal(buildBlueIrisUiUrl("", "ui3.htm"), "");
+  assert.equal(buildBlueIrisUiUrl("192.0.2.167:81", ""), "");
+  assert.equal(buildBlueIrisUiUrl("192.0.2.167:81", "https://example.com/ui3.htm"), "");
+});
+
+test("vehicle-view playback targets the overview camera at the captured frame time", () => {
+  const path = buildBlueIrisTimelinePath(
+    "Cam149",
+    "2026-08-22T18:20:31.456Z"
+  );
+
+  assert.equal(
+    path,
+    "ui3.htm?tab=timeline&cam=Cam149&timeline=1787422831456&maximize=1"
+  );
+  assert.equal(
+    buildBlueIrisUiUrl("192.0.2.167:81", path),
+    "http://192.0.2.167:81/ui3.htm?tab=timeline&cam=Cam149&timeline=1787422831456&maximize=1"
+  );
+  assert.equal(buildBlueIrisTimelinePath("", "2026-08-22T18:20:31.456Z"), "");
+  assert.equal(buildBlueIrisTimelinePath("Gate Overview", "invalid"), "");
+});
+
+test("saved alert playback paths replace display names with Blue Iris short camera IDs", () => {
+  assert.equal(
+    withBlueIrisCamera(
+      "ui3.htm?rec=14638483532154750-919666&cam=Street%20LPR%202",
+      "Cam146",
+    ),
+    "ui3.htm?rec=14638483532154750-919666&cam=Cam146",
+  );
+  assert.equal(withBlueIrisCamera("ui3.htm?tab=clips", "Cam146"), "ui3.htm?tab=clips&cam=Cam146");
+  assert.equal(withBlueIrisCamera("", "Cam146"), "");
+});
+
+test("plate playback retains a valid recording and replaces its camera with the short ID", () => {
+  assert.equal(
+    buildBlueIrisPlatePlaybackPath(
+      "ui3.htm?rec=14638483532154750-919666&cam=Street%20LPR%202",
+      "Cam146",
+      "2026-08-22T18:20:31.456Z",
+    ),
+    "ui3.htm?rec=14638483532154750-919666&cam=Cam146",
+  );
+});
+
+test("plate playback falls back to the short-camera timeline when Blue Iris reports recording zero", () => {
+  assert.equal(
+    buildBlueIrisPlatePlaybackPath(
+      "ui3.htm?rec=0-1036848&cam=Street%20LPR%201",
+      "Cam145",
+      "2026-08-22T20:17:18.919Z",
+    ),
+    "ui3.htm?tab=timeline&cam=Cam145&timeline=1787429838919&maximize=1",
+  );
+  assert.equal(
+    buildBlueIrisPlatePlaybackPath(
+      "ui3.htm?rec=0-1036848&cam=Street%20LPR%201",
+      "Cam145",
+      "invalid",
+    ),
+    "",
+  );
+});

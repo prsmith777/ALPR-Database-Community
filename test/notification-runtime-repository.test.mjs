@@ -1,0 +1,135 @@
+import assert from "node:assert/strict";
+import test from "node:test";
+
+import { NotificationRuntimeRepository } from "../lib/notification-runtime-repository.mjs";
+
+test("the unified runtime loads every supported notification action without credentials", async () => {
+  const queries = [];
+  const executor = {
+    async query(sql, values = []) {
+      const compact = sql.replace(/\s+/g, " ").trim();
+      queries.push({ sql: compact, values });
+      if (compact.includes("SELECT r.id, r.name")) return { rows: [{ id: 4, name: "Monitored", description: "", event_type: "plate_read.accepted", cooldown_seconds: 300, version: 2 }] };
+      if (compact.includes("SELECT g.id, g.rule_id")) return { rows: [{ id: 8, rule_id: 4, parent_group_id: null, combinator: "all", negated: false, position: 0 }] };
+      if (compact.includes("SELECT c.id, c.group_id")) return { rows: [{ id: 9, group_id: 8, condition_type: "watchlist", operator: "is_true", operand: { expected: true }, position: 0 }] };
+      if (compact.includes("SELECT a.id, a.rule_id")) return { rows: [{ id: 12, rule_id: 4, position: 0, configuration: { priority: 1 }, channel_id: 11, channel_type: "pushover", credential_reference: "settings:notifications.pushover", channel_configuration: {} }] };
+      throw new Error(`Unexpected query: ${compact}`);
+    },
+  };
+  const repository = new NotificationRuntimeRepository({ executor });
+  const rules = await repository.loadEnabledRules();
+  assert.equal(rules[0].conditionTree.children[0].conditionType, "watchlist");
+  assert.equal(rules[0].actions[0].channelType, "pushover");
+  assert.equal(rules[0].actions[0].configuration.priority, 1);
+  assert.equal(queries.every((query) => !query.sql.includes("app_token") && !query.sql.includes("user_key")), true);
+  assert.equal(queries.every((query) => query.sql.includes("deleted_at IS NULL")), true);
+  assert.match(queries[0].sql, /channel_type IN \('mqtt', 'pushover', 'email', 'webhook'\)/);
+});
+
+test("the shared durable worker claims Pushover, email, and webhook deliveries", async () => {
+  const executor = {
+    async query(sql, values) {
+      assert.match(sql, /ch\.channel_type = ANY\(\$4::text\[\]\)/);
+      assert.deepEqual(values[3], ["pushover", "email", "webhook"]);
+      return { rows: [{
+        id: "71",
+        attempt_count: 0,
+        max_attempts: 5,
+        channel_type: "email",
+        credential_reference: "settings:notifications.email",
+      }] };
+    },
+  };
+  const repository = new NotificationRuntimeRepository({ executor });
+  const claimed = await repository.claimDueDeliveries({ workerId: "worker-1" });
+  assert.deepEqual(claimed[0], {
+    id: 71,
+    attempt_count: 0,
+    max_attempts: 5,
+    channel_type: "email",
+    credential_reference: "settings:notifications.email",
+    attemptCount: 0,
+    maxAttempts: 5,
+    channelType: "email",
+    credentialReference: "settings:notifications.email",
+  });
+});
+
+test("permanent channel failures enter dead-letter state without another retry", async () => {
+  const executor = {
+    async query(sql, values) {
+      assert.match(sql, /\$5::boolean = FALSE/);
+      assert.equal(values[4], false);
+      return { rows: [{ id: 72, status: "dead" }] };
+    },
+  };
+  const repository = new NotificationRuntimeRepository({ executor });
+  const error = new Error("Webhook returned HTTP 400");
+  error.retryable = false;
+  const failed = await repository.recordDeliveryFailure({
+    deliveryId: 72,
+    workerId: "worker-1",
+    error,
+  });
+  assert.equal(failed.status, "dead");
+});
+
+test("cooldown history is loaded only for explicit enabled rule IDs", async () => {
+  const executor = {
+    async query(sql, values) {
+      assert.match(sql, /outcome = 'matched'/);
+      assert.deepEqual(values, [[4, 8]]);
+      return { rows: [{ rule_id: 4, last_matched_at: "2026-07-24T12:00:00.000Z" }] };
+    },
+  };
+  const repository = new NotificationRuntimeRepository({ executor });
+  assert.deepEqual(await repository.loadLastMatchedAt([4, 8, 4, "bad"]), {
+    4: "2026-07-24T12:00:00.000Z",
+  });
+});
+
+test("plate context keeps tag membership independent from known-plate membership", async () => {
+  const calls = [];
+  const repository = new NotificationRuntimeRepository({ executor: {
+    async query(sql, values) {
+      calls.push({ sql, values });
+      return { rows: [{
+        plate_number: "3MP894",
+        known_plate: false,
+        known_name: "",
+        watchlisted: false,
+        tags: ["Delivery"],
+      }] };
+    },
+  } });
+
+  const context = await repository.loadPlateContext({ plateNumber: "3mp894" });
+
+  assert.deepEqual(context, {
+    plateNumber: "3MP894",
+    knownPlate: false,
+    knownName: "",
+    tags: ["Delivery"],
+    watchlisted: false,
+  });
+  assert.deepEqual(calls[0].values, ["3MP894"]);
+  assert.match(calls[0].sql, /LEFT JOIN public\.known_plates kp/);
+  assert.match(calls[0].sql, /LEFT JOIN public\.plate_tags pt/);
+  assert.doesNotMatch(calls[0].sql, /plate_tags pt ON pt\.plate_number = kp\.plate_number/);
+});
+
+test("read-count metrics are deduplicated and scoped to the event at evaluation time", async () => {
+  const calls = [];
+  const repository = new NotificationRuntimeRepository({ executor: {
+    async query(sql, values) {
+      calls.push({ sql, values });
+      return { rows: [{ count: values[2] === "plate" ? 4 : 9 }] };
+    },
+  } });
+  const count = (scope, windowSeconds) => ({ kind: "condition", conditionType: "read_count", value: { scope, windowSeconds } });
+  const rules = [{ conditionTree: { kind: "group", children: [count("plate", 600), count("plate", 600), count("global", 0)] } }];
+  const metrics = await repository.loadReadCountMetrics({ rules, event: { plateNumber: "ABC123", cameraName: "Gate", timestamp: "2026-07-24T12:00:00Z" } });
+  assert.equal(calls.length, 2);
+  assert.deepEqual(metrics.readCounts.map((metric) => metric.count), [4, 9]);
+  assert.match(calls[0].sql, /pr\.timestamp <= \$1::timestamptz/);
+});

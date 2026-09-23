@@ -1,0 +1,568 @@
+import assert from "node:assert/strict";
+import fs from "node:fs";
+import path from "node:path";
+import test from "node:test";
+import { fileURLToPath } from "node:url";
+
+import {
+  buildEntryLprFallbackDecisions,
+  EntryLprRouteFallbackService,
+  entryLprRouteFallbackInternals,
+} from "../lib/entry-lpr-route-fallback.mjs";
+import { BlueIrisVehicleFrameRepository } from "../lib/blue-iris-vehicle-frame-repository.mjs";
+
+const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+
+const BASE = Date.parse("2026-08-10T18:00:00.000Z");
+
+function target(overrides = {}) {
+  return {
+    id: 39380,
+    plate_number: "BZGJ52",
+    camera_name: "Street LPR 2",
+    timestamp: new Date(BASE).toISOString(),
+    bi_trigger_direction_status: "ready",
+    bi_trigger_direction_label: "Eastbound",
+    vehicle_image_path: null,
+    vehicle_image_status: "failed",
+    vehicle_image_retryable: false,
+    vehicle_image_queue_kind: "overview",
+    vehicle_image_claim_token: null,
+    vehicle_image_error_code: "VEHICLE_NOT_VISIBLE",
+    route_profile_id: 11,
+    route_name: "Street eastbound entering driveway",
+    route_revision: 1,
+    route_target_camera_name: "Street LPR 2",
+    route_target_direction_label: "Eastbound",
+    route_source_direction_label: "Entering",
+    route_source_camera_names: ["Gate LPR 1", "Gate LPR 2"],
+    route_expected_delta_ms: 10_600,
+    route_tolerance_ms: 3_000,
+    route_event_window_ms: 3_000,
+    route_minimum_source_count: 2,
+    route_priority: 0,
+    ...overrides,
+  };
+}
+
+function source(id, cameraName, offsetMs, plateNumber, overrides = {}) {
+  return {
+    id,
+    plate_number: plateNumber,
+    camera_name: cameraName,
+    timestamp: new Date(BASE + offsetMs).toISOString(),
+    image_path: `images/${id}.jpg`,
+    bi_trigger_direction_status: "ready",
+    bi_trigger_direction_label: "Entering",
+    crop_box: { left: 120, top: 90, width: 900, height: 550 },
+    image_width: 1600,
+    image_height: 900,
+    detection_confidence: 0.82,
+    color_evaluated: true,
+    color_reason: null,
+    overview_status: "ready",
+    overview_image_path: `derived/entry/${id}.jpg`,
+    overview_source_kind: "entry_overview_primary",
+    overview_timestamp: new Date(BASE + offsetMs + 250).toISOString(),
+    overview_detection_confidence: 0.91,
+    overview_detection_box: { left: 0.1, top: 0.15, right: 0.85, bottom: 0.9 },
+    overview_image_width: 2688,
+    overview_image_height: 1520,
+    overview_score: 0.88,
+    overview_sampled_count: 61,
+    overview_selection_metadata: {
+      overviewContext: "entry",
+      sourceCameraName: "Gate Overview",
+      sourceCameraShortName: "Overview01",
+      sourceCameraId: "Overview01",
+    },
+    ...overrides,
+  };
+}
+
+test("BZGJ52 entering route uses two Entry cameras and permits one corroborating OCR error", () => {
+  const currentTarget = target();
+  const decisions = buildEntryLprFallbackDecisions({
+    targets: [currentTarget],
+    sourcesByTarget: new Map([[
+      currentTarget.id,
+      [
+        source(39381, "Gate LPR 1", 9_854, "BZGJ52", { detection_confidence: 0.78 }),
+        source(39382, "Gate LPR 2", 11_338, "8ZGJJ52", { detection_confidence: 0.94 }),
+      ],
+    ]]),
+    now: BASE + 30_000,
+  });
+  assert.equal(decisions.length, 1);
+  assert.equal(decisions[0].status, "proposed");
+  assert.equal(decisions[0].reason, "UNIQUE_ENTRY_ROUTE_EVENT");
+  assert.equal(decisions[0].sourceReadId, 39381, "the selected Overview01 payload owner is the copy source");
+  assert.equal(decisions[0].payloadReadId, 39381, "equal Overview01 payloads use a stable read-id tie break");
+  assert.equal(decisions[0].metadata.payloadSourceKind, "entry_overview_primary");
+  assert.equal(decisions[0].metadata.payloadSelectionMetadata.sourceCameraShortName, "Overview01");
+  assert.deepEqual(decisions[0].corroboratingReadIds, [39382]);
+  assert.equal(decisions[0].metadata.plateEvidenceClass, "exact_with_dual_camera_fuzzy_corroboration");
+  assert.match(decisions[0].sourceEventKey, /^[0-9a-f]{64}$/);
+});
+
+test("approved exiting route supports an earlier dual-camera Entry event", () => {
+  const currentTarget = target({
+    id: 39387,
+    plate_number: "BZG5J52",
+    camera_name: "Street LPR 1",
+    route_profile_id: 12,
+    route_name: "Driveway exiting to Street eastbound",
+    route_target_camera_name: "Street LPR 1",
+    route_source_direction_label: "Exiting",
+    route_expected_delta_ms: -10_600,
+  });
+  const sources = [
+    source(39385, "Gate LPR 1", -11_379, "BZGJ52", { bi_trigger_direction_label: "Exiting" }),
+    source(39386, "Gate LPR 2", -9_962, "BZGJ52", { bi_trigger_direction_label: "Exiting" }),
+  ];
+  const [decision] = buildEntryLprFallbackDecisions({
+    targets: [currentTarget],
+    sourcesByTarget: new Map([[currentTarget.id, sources]]),
+    now: BASE + 20_000,
+  });
+  assert.equal(decision.status, "proposed");
+  assert.equal(decision.metadata.plateEvidenceClass, "dual_camera_fuzzy");
+  assert.equal(decision.metadata.sourceDirectionLabel, "Exiting");
+});
+
+test("one direction-authoritative Entry read may safely establish exact or guarded fuzzy identity", () => {
+  const exactTarget = target({ id: 1 });
+  const [exact] = buildEntryLprFallbackDecisions({
+    targets: [exactTarget],
+    sourcesByTarget: new Map([[exactTarget.id, [source(10, "Gate LPR 1", 10_000, "BZGJ52")]]]),
+    now: BASE + 30_000,
+  });
+  assert.equal(exact.status, "proposed");
+  assert.equal(exact.metadata.plateEvidenceClass, "single_camera_exact");
+  assert.equal(exact.metadata.directionEvidenceCount, 1);
+
+  const fuzzyTarget = target({ id: 2, plate_number: "ERIA47" });
+  const [fuzzy] = buildEntryLprFallbackDecisions({
+    targets: [fuzzyTarget],
+    sourcesByTarget: new Map([[fuzzyTarget.id, [source(20, "Gate LPR 2", 10_000, "ER1A47")]]]),
+    now: BASE + 30_000,
+  });
+  assert.equal(fuzzy.status, "proposed");
+  assert.equal(fuzzy.metadata.plateEvidenceClass, "single_camera_fuzzy");
+  assert.equal(fuzzy.sourceReadId, 20);
+});
+
+test("single-read relaxation remains fail closed for night, direction conflicts, short fuzzy plates, and unsupported targets", () => {
+  const nightTarget = target({ id: 21 });
+  assert.equal(buildEntryLprFallbackDecisions({
+    targets: [nightTarget],
+    sourcesByTarget: new Map([[nightTarget.id, [
+      source(210, "Gate LPR 1", 10_000, "BZGJ52", { color_reason: "monochrome_capture" }),
+    ]]]),
+    now: BASE + 30_000,
+  })[0].status, "rejected");
+
+  const wrongDirectionTarget = target({ id: 22 });
+  assert.equal(buildEntryLprFallbackDecisions({
+    targets: [wrongDirectionTarget],
+    sourcesByTarget: new Map([[wrongDirectionTarget.id, [
+      source(220, "Gate LPR 1", 10_000, "BZGJ52", { bi_trigger_direction_label: "Exiting" }),
+    ]]]),
+    now: BASE + 30_000,
+  })[0].status, "rejected");
+
+  const shortFuzzyTarget = target({ id: 23, plate_number: "AB12" });
+  assert.equal(buildEntryLprFallbackDecisions({
+    targets: [shortFuzzyTarget],
+    sourcesByTarget: new Map([[shortFuzzyTarget.id, [source(230, "Gate LPR 1", 10_000, "AB13")]]]),
+    now: BASE + 30_000,
+  })[0].status, "rejected");
+
+  const unsupportedTarget = target({ id: 24, bi_trigger_direction_label: "Westbound" });
+  assert.deepEqual(buildEntryLprFallbackDecisions({
+    targets: [unsupportedTarget],
+    sourcesByTarget: new Map([[unsupportedTarget.id, [source(240, "Gate LPR 1", 10_000, "BZGJ52")]]]),
+    now: BASE + 30_000,
+  }), []);
+});
+
+test("ERIA47 succeeds with one missing Entry direction when the other exact read owns authoritative Overview01 evidence", () => {
+  const currentTarget = target({
+    id: 43000,
+    plate_number: "ERIA47",
+    route_expected_delta_ms: 6_500,
+  });
+  const [decision] = buildEntryLprFallbackDecisions({
+    targets: [currentTarget],
+    sourcesByTarget: new Map([[currentTarget.id, [
+      source(43001, "Gate LPR 1", 6_000, "ERIA47", {
+        bi_trigger_direction_status: null,
+        bi_trigger_direction_label: null,
+        overview_status: "failed",
+        overview_image_path: null,
+      }),
+      source(43002, "Gate LPR 2", 7_000, "ERIA47"),
+    ]]]),
+    now: BASE + 30_000,
+  });
+  assert.equal(decision.status, "proposed");
+  assert.equal(decision.sourceReadId, 43002);
+  assert.equal(decision.payloadReadId, 43002);
+  assert.equal(decision.metadata.sourceEvidenceCount, 2);
+  assert.equal(decision.metadata.directionEvidenceCount, 1);
+  assert.equal(decision.metadata.plateEvidenceClass, "exact");
+  assert.equal(decision.metadata.identityReads[0].directionStatus, "");
+});
+
+test("a missing-direction singleton waits for direction-authoritative Overview01 evidence", () => {
+  const currentTarget = target({ id: 43010, plate_number: "ERIA47" });
+  const decisions = buildEntryLprFallbackDecisions({
+    targets: [currentTarget],
+    sourcesByTarget: new Map([[currentTarget.id, [
+      source(43011, "Gate LPR 1", 10_000, "ERIA47", {
+        bi_trigger_direction_status: null,
+        bi_trigger_direction_label: null,
+      }),
+    ]]]),
+    now: BASE + 30_000,
+  });
+  assert.deepEqual(decisions, []);
+});
+
+test("two competing single-camera events remain ambiguous", () => {
+  const currentTarget = target({
+    id: 43020,
+    route_expected_delta_ms: 10_600,
+    route_tolerance_ms: 3_000,
+    route_event_window_ms: 3_000,
+  });
+  const [decision] = buildEntryLprFallbackDecisions({
+    targets: [currentTarget],
+    sourcesByTarget: new Map([[currentTarget.id, [
+      source(43021, "Gate LPR 1", 8_000, "BZGJ52"),
+      source(43022, "Gate LPR 1", 13_200, "BZGJ52"),
+    ]]]),
+    now: BASE + 30_000,
+  });
+  assert.equal(decision.status, "rejected");
+  assert.equal(decision.reason, "ENTRY_FALLBACK_AMBIGUOUS");
+});
+
+test("two plausible Entry events fail closed and one event cannot serve two Street targets", () => {
+  const currentTarget = target();
+  const sources = [
+    source(101, "Gate LPR 1", 9_500, "BZGJ52"),
+    source(102, "Gate LPR 2", 10_000, "BZGJ52"),
+    source(103, "Gate LPR 1", 11_800, "BZGJ52"),
+    source(104, "Gate LPR 2", 12_200, "BZGJ52"),
+  ];
+  const [ambiguous] = buildEntryLprFallbackDecisions({
+    targets: [currentTarget],
+    sourcesByTarget: new Map([[currentTarget.id, sources]]),
+    now: BASE + 30_000,
+  });
+  assert.equal(ambiguous.status, "rejected");
+  assert.equal(ambiguous.reason, "ENTRY_FALLBACK_AMBIGUOUS");
+
+  const secondTarget = target({ id: 39390, timestamp: new Date(BASE + 100).toISOString() });
+  const sharedSources = [source(111, "Gate LPR 1", 10_000, "BZGJ52"), source(112, "Gate LPR 2", 11_000, "BZGJ52")];
+  const competing = buildEntryLprFallbackDecisions({
+    targets: [currentTarget, secondTarget],
+    sourcesByTarget: new Map([[currentTarget.id, sharedSources], [secondTarget.id, sharedSources]]),
+    now: BASE + 30_000,
+  });
+  assert.equal(competing.length, 2);
+  assert.ok(competing.every((decision) => decision.reason === "ENTRY_EVENT_COMPETES_FOR_MULTIPLE_STREET_READS"));
+});
+
+test("active service copies a validated Overview01 payload to a unique target path", async () => {
+  const writes = [];
+  const repository = {
+    async getEntryFallbackSettings() {
+      return { mode: "active", overview_payload_mode: "active", observation_started_at: new Date(BASE) };
+    },
+    async listEntryFallbackTargets() { return []; },
+    async listEntryFallbackSourceReads() { return []; },
+    async recordEntryFallbackDecisions() { return 0; },
+    async claimNextEntryFallback() {
+      return {
+        id: 8,
+        claim_token: "5ee6970f-1679-4d04-81d9-913e850b6d84",
+        target_read_id: 99,
+        source_read_id: 88,
+        payload_read_id: 89,
+        payload_image_path_snapshot: "derived/entry/89.jpg",
+        target_read_timestamp: new Date(BASE).toISOString(),
+      };
+    },
+    async withDerivedStorageWriterLock(operation) { return operation(this); },
+    async applyEntryFallback(id, token, targetPath) {
+      writes.push({ id, token, targetPath });
+      return { id, target_read_id: 99, source_read_id: 89 };
+    },
+    async markEntryFallbackFailed() { throw new Error("should not fail"); },
+  };
+  const fileStorage = {
+    async getImage() { return Buffer.from("full-entry-image"); },
+    async saveDerivedImageAtomic(targetPath, buffer) { writes.push({ targetPath, buffer: buffer.toString() }); },
+    async deleteImage() {},
+  };
+  const result = await new EntryLprRouteFallbackService({ repository, fileStorage }).processNext();
+  assert.equal(result.status, "shared");
+  assert.equal(result.sourceReadId, 89);
+  assert.equal(result.targetReadId, 99);
+  assert.match(result.framePath, /entry_lpr_vehicle_99_5ee6970f16794d0481d9913e850b6d84\.jpg$/);
+  assert.equal(writes[0].buffer, "full-entry-image");
+});
+
+test("a lost immutable apply CAS terminalizes the claimed decision", async () => {
+  const transitions = [];
+  const repository = {
+    async getEntryFallbackSettings() {
+      return { mode: "active", overview_payload_mode: "active", observation_started_at: new Date(BASE) };
+    },
+    async listEntryFallbackTargets() { return []; },
+    async listEntryFallbackSourceReads() { return []; },
+    async recordEntryFallbackDecisions() { return 0; },
+    async claimNextEntryFallback() {
+      return {
+        id: 18,
+        claim_token: "5ee6970f-1679-4d04-81d9-913e850b6d84",
+        target_read_id: 199,
+        payload_read_id: 189,
+        payload_image_path_snapshot: "derived/entry/189.jpg",
+        target_read_timestamp: new Date(BASE).toISOString(),
+      };
+    },
+    async withDerivedStorageWriterLock(operation) { return operation(this); },
+    async applyEntryFallback() { return null; },
+    async markEntryFallbackFailed(id, token, failure) {
+      transitions.push({ id, token, failure });
+      return { id };
+    },
+  };
+  const deleted = [];
+  const fileStorage = {
+    async getImage() { return Buffer.from("full-entry-image"); },
+    async saveDerivedImageAtomic() {},
+    async deleteImage(targetPath) { deleted.push(targetPath); },
+  };
+  const result = await new EntryLprRouteFallbackService({ repository, fileStorage }).processNext();
+  assert.equal(result.status, "superseded");
+  assert.equal(deleted.length, 1);
+  assert.equal(transitions.length, 1);
+  assert.equal(transitions[0].failure.errorCode, "ENTRY_FALLBACK_SUPERSEDED");
+});
+
+test("identity waits for a READY Overview01 payload and rejects wrong overview provenance", () => {
+  const currentTarget = target({ id: 41000 });
+  const baseSources = [
+    source(41001, "Gate LPR 1", 10_000, "BZGJ52"),
+    source(41002, "Gate LPR 2", 11_000, "BZGJ52"),
+  ];
+  const waiting = baseSources.map((item) => ({
+    ...item,
+    overview_status: "processing",
+    overview_image_path: null,
+  }));
+  assert.deepEqual(buildEntryLprFallbackDecisions({
+    targets: [currentTarget],
+    sourcesByTarget: new Map([[currentTarget.id, waiting]]),
+    now: BASE + 30_000,
+  }), []);
+
+  const wrongCamera = baseSources.map((item) => ({
+    ...item,
+    overview_selection_metadata: {
+      ...item.overview_selection_metadata,
+      sourceCameraShortName: "Cam149",
+      sourceCameraId: "Cam149",
+    },
+  }));
+  assert.deepEqual(buildEntryLprFallbackDecisions({
+    targets: [currentTarget],
+    sourcesByTarget: new Map([[currentTarget.id, wrongCamera]]),
+    now: BASE + 30_000,
+  }), []);
+});
+
+test("when both corroborating reads own Overview01 views, the strongest overview payload wins", () => {
+  const currentTarget = target({ id: 42000 });
+  const [decision] = buildEntryLprFallbackDecisions({
+    targets: [currentTarget],
+    sourcesByTarget: new Map([[currentTarget.id, [
+      source(42001, "Gate LPR 1", 10_000, "BZGJ52", {
+        detection_confidence: 0.99,
+        overview_detection_confidence: 0.72,
+      }),
+      source(42002, "Gate LPR 2", 11_000, "BZGJ52", {
+        detection_confidence: 0.75,
+        overview_detection_confidence: 0.96,
+      }),
+    ]]]),
+    now: BASE + 30_000,
+  });
+  assert.equal(decision.sourceReadId, 42002, "the selected payload owner is the immutable copy source");
+  assert.equal(decision.payloadReadId, 42002, "stronger Overview01 detection wins the copied payload");
+});
+
+test("payload mode is an independent shadow-first write gate", async () => {
+  let claims = 0;
+  const repository = {
+    async getEntryFallbackSettings() {
+      return { mode: "active", overview_payload_mode: "shadow", observation_started_at: new Date(BASE) };
+    },
+    async listEntryFallbackTargets() { return []; },
+    async listEntryFallbackSourceReads() { return []; },
+    async recordEntryFallbackDecisions() { return 0; },
+    async claimNextEntryFallback() { claims += 1; return null; },
+  };
+  const result = await new EntryLprRouteFallbackService({ repository }).processNext();
+  assert.equal(result, null);
+  assert.equal(claims, 0);
+});
+
+test("repository exposes and preserves the independent payload mode", async () => {
+  const statements = [];
+  const parameters = [];
+  const pool = {
+    async query(sql, values = []) {
+      statements.push(sql);
+      parameters.push(values);
+      if (/^BEGIN|^COMMIT/.test(sql)) return { rows: [] };
+      if (/UPDATE public\.vehicle_entry_fallback_settings/.test(sql)) {
+        return { rows: [{
+          mode: "active",
+          overview_payload_mode: "shadow",
+          observation_started_at: new Date(BASE).toISOString(),
+        }] };
+      }
+      if (/INSERT INTO public\.audit_events/.test(sql)) return { rows: [] };
+      return { rows: [{
+        mode: "active",
+        overview_payload_mode: "shadow",
+        observation_started_at: new Date(BASE).toISOString(),
+      }] };
+    },
+  };
+  const repository = new BlueIrisVehicleFrameRepository(pool);
+  const settings = await repository.getEntryFallbackSettings();
+  assert.equal(settings.overview_payload_mode, "shadow");
+  await repository.setEntryFallbackMode("active", {
+    overviewPayloadMode: "shadow",
+    observationStartedAt: new Date(BASE).toISOString(),
+    actor: { id: 7 },
+  });
+  const updateIndex = statements.findIndex((sql) => /UPDATE public\.vehicle_entry_fallback_settings/.test(sql));
+  assert.deepEqual(parameters[updateIndex], [
+    "active", "shadow", new Date(BASE).toISOString(), 7,
+  ]);
+  assert.match(statements[updateIndex], /overview_payload_mode = COALESCE\(\$2, overview_payload_mode\)/);
+});
+
+test("entry fallback Shadow status excludes legacy raw-image decisions", async () => {
+  const statements = [];
+  const repository = new BlueIrisVehicleFrameRepository({
+    async query(sql) {
+      statements.push(sql);
+      if (/GROUP BY settings\.mode/.test(sql)) {
+        return { rows: [{ mode: "shadow", overview_payload_mode: "shadow" }] };
+      }
+      return { rows: [] };
+    },
+  });
+  const status = await repository.getEntryFallbackStatus();
+  assert.equal(status.mode, "shadow");
+  assert.equal(status.overviewPayloadMode, "shadow");
+  assert.match(
+    statements[0],
+    /decision\.algorithm_revision = 'entry-lpr-route-fallback-v3-guarded-entry-overview'/,
+  );
+  assert.match(
+    statements[1],
+    /WHERE algorithm_revision = 'entry-lpr-route-fallback-v3-guarded-entry-overview'/,
+  );
+});
+
+test("claim and apply require immutable Overview01 payload evidence and both active gates", async () => {
+  const statements = [];
+  const repository = new BlueIrisVehicleFrameRepository({
+    async query(sql) {
+      statements.push(sql);
+      return { rows: [] };
+    },
+  });
+  assert.equal(await repository.claimNextEntryFallback(), null);
+  assert.equal(await repository.applyEntryFallback(
+    8,
+    "5ee6970f-1679-4d04-81d9-913e850b6d84",
+    "derived/route.jpg",
+  ), null);
+  const [claim, apply] = statements;
+  for (const sql of [claim, apply]) {
+    assert.match(sql, /settings\.mode = 'active'/);
+    assert.match(sql, /settings\.overview_payload_mode = 'active'/);
+    assert.match(sql, /entry-lpr-route-fallback-v3-guarded-entry-overview/);
+    assert.match(sql, /payload\.vehicle_image_source_kind =/);
+    assert.match(sql, /payload\.vehicle_image_path = decision\.payload_image_path_snapshot/);
+    assert.match(sql, /payload\.vehicle_image_selection_metadata IS NOT DISTINCT FROM decision\.payload_selection_metadata/);
+    assert.match(sql, /sourceCameraName[^]*gate overview/i);
+    assert.match(sql, /sourceCameraShortName[^]*overview01/i);
+    assert.match(sql, /jsonb_array_elements\(decision\.decision_metadata->'identityReads'\)/);
+  }
+  assert.match(apply, /JOIN public\.vehicle_entry_route_profiles route/);
+  assert.match(apply, /route\.revision = decision\.route_profile_revision/);
+  assert.match(apply, /target\.camera_name[^]*decision\.target_camera_name_snapshot/);
+  assert.match(apply, /target\.bi_trigger_direction_label[^]*decision\.target_direction_label_snapshot/);
+  assert.match(apply, /target\.plate_number[^]*decision\.target_plate_snapshot/);
+  assert.match(apply, /vehicle_image_source_kind = 'entry_overview_route_fallback'/);
+  assert.match(apply, /vehicle_image_source_read_id = decision\.payload_read_id/);
+  assert.match(apply, /decision\.payload_read_id = decision\.source_read_id/);
+  assert.match(apply, /target\.vehicle_image_path IS NULL/);
+});
+
+test("stale fallback processing is reclaimed once and then terminalized", async () => {
+  const statements = [];
+  const repository = new BlueIrisVehicleFrameRepository({
+    async query(sql) {
+      statements.push(sql);
+      return { rows: [], rowCount: 0 };
+    },
+  });
+  assert.equal(await repository.claimNextEntryFallback(), null);
+  assert.equal(await repository.terminalizeExpiredEntryFallbackDecisions(), 0);
+  assert.match(statements[0], /decision\.status = 'processing'/);
+  assert.match(statements[0], /decision\.attempt_count < 2/);
+  assert.match(statements[0], /INTERVAL '5 minutes'/);
+  assert.match(statements[1], /attempt_count >= 2/);
+  assert.match(statements[1], /ENTRY_FALLBACK_PROCESSING_EXPIRED/);
+  assert.match(statements[1], /FOR UPDATE SKIP LOCKED/);
+});
+
+test("OCR helper allows one normalized edit but not broad fuzzy matching", () => {
+  assert.equal(entryLprRouteFallbackInternals.editDistanceAtMostOne("BZGJ52", "8ZGJJ52"), true);
+  assert.equal(entryLprRouteFallbackInternals.editDistanceAtMostOne("BZGJ52", "ABC123"), false);
+});
+
+test("Entry fallback migration is additive, payload-shadow-first, and read-to-read only", () => {
+  const migration = fs.readFileSync(path.join(ROOT, "migrations.sql"), "utf8");
+  assert.match(migration, /CREATE TABLE IF NOT EXISTS public\.vehicle_entry_fallback_settings/);
+  assert.match(migration, /mode VARCHAR\(12\) NOT NULL DEFAULT 'shadow'/);
+  assert.match(migration, /CREATE TABLE IF NOT EXISTS public\.vehicle_entry_route_profiles/);
+  assert.match(migration, /CREATE TABLE IF NOT EXISTS public\.vehicle_entry_fallback_decisions/);
+  assert.match(migration, /overview_payload_mode VARCHAR\(12\) NOT NULL DEFAULT 'shadow'/);
+  assert.match(migration, /payload_read_id INTEGER REFERENCES public\.plate_reads/);
+  assert.match(migration, /payload_source_kind_snapshot VARCHAR\(40\)/);
+  assert.match(migration, /ALTER COLUMN vehicle_image_source_kind TYPE VARCHAR\(40\)/);
+  assert.match(migration, /FROM pg_constraint constraint/);
+  assert.match(migration, /ARRAY\['target_read_id','route_profile_id','route_profile_revision'\]::name\[\]/);
+  assert.match(migration, /'entry_overview_route_fallback'/);
+  const sourceKindConstraints = [...migration.matchAll(
+    /ADD CONSTRAINT plate_reads_vehicle_image_source_kind_check CHECK \([\s\S]*?\)(?: NOT VALID)?;/g,
+  )];
+  assert.ok(sourceKindConstraints.length >= 3);
+  assert.ok(sourceKindConstraints.every((match) => match[0].includes("'entry_overview_route_fallback'")));
+  assert.match(migration, /target_read_id INTEGER NOT NULL REFERENCES public\.plate_reads/);
+  assert.match(migration, /source_read_id INTEGER REFERENCES public\.plate_reads/);
+  assert.doesNotMatch(migration.slice(migration.indexOf("2026081004_entry_lpr_route_fallback") - 5_000), /vehicle_overview_candidates/);
+});

@@ -1,0 +1,106 @@
+import assert from "node:assert/strict";
+import fs from "node:fs/promises";
+import test from "node:test";
+
+const source = (path) => fs.readFile(path, "utf8");
+
+test("Live Feed date ranges isolate draft selection and keep timestamp predicates indexable", async () => {
+  const [table, dateFilter, database] = await Promise.all([
+    source("components/PlateTable.jsx"),
+    source("components/LiveFeedDateRangeFilter.jsx"),
+    source("lib/db.js"),
+  ]);
+
+  assert.doesNotMatch(table, /dateRangeDraft/);
+  assert.match(table, /<LiveFeedDateRangeFilter/);
+  assert.match(dateFilter, /const \[draft, setDraft\] = useState/);
+  assert.match(dateFilter, /\}, \[fromMs, toMs\]\);/);
+  assert.doesNotMatch(dateFilter, /\[fromMs, toMs, value\]/);
+  assert.match(dateFilter, /if \(!nextRange\.from \|\| !nextRange\.to\) return/);
+  assert.match(dateFilter, /selected=\{draft\}/);
+  assert.match(dateFilter, /onSelect=\{handleSelect\}/);
+  assert.match(table, /if \(!range\) \{[\s\S]*?dateFrom: null,[\s\S]*?dateTo: null/);
+  assert.match(database, /pr\.timestamp >= \$\{dateFromParameter\}::date/);
+  assert.match(database, /pr\.timestamp < \(\$\{dateToParameter\}::date \+ INTERVAL '1 day'\)/);
+  assert.doesNotMatch(database, /pr\.timestamp::date BETWEEN/);
+});
+
+test("Live Feed pauses polling while a date or mobile-filter interaction is active", async () => {
+  const [table, dateFilter, wrapper] = await Promise.all([
+    source("components/PlateTable.jsx"),
+    source("components/LiveFeedDateRangeFilter.jsx"),
+    source("components/PlateTableWrapper.jsx"),
+  ]);
+
+  assert.match(dateFilter, /onOpenChange=\{onInteractionChange\}/);
+  assert.match(table, /onFilterInteractionChange\(isSearchOptionsOpen \|\| isFilterSheetOpen\)/);
+  assert.match(table, /onOpenChange=\{handleFilterSheetOpenChange\}/);
+  assert.doesNotMatch(table, /onInteractionChange=\{onFilterInteractionChange\}/);
+  assert.match(wrapper, /if \(isFilterInteractionActive\) return undefined/);
+  assert.match(wrapper, /onFilterInteractionChange=\{setIsFilterInteractionActive\}/);
+  assert.doesNotMatch(
+    wrapper,
+    /filters are updated[\s\S]*?setIsLiveModeActive\(false\)/i
+  );
+  assert.match(wrapper, /pendingFilterQueryRef\.current = queryString;[\s\S]*?setOptimisticQueryString\(queryString\)/);
+  assert.match(table, /SEARCH_FILTER_DEBOUNCE_MS = 250/);
+  assert.match(table, /window\.clearTimeout\(searchFilterTimerRef\.current\)/);
+});
+
+test("Live Feed does not eagerly preload every full capture", async () => {
+  const [table, image] = await Promise.all([
+    source("components/PlateTable.jsx"),
+    source("components/PlateImage.jsx"),
+  ]);
+
+  assert.doesNotMatch(table, /prefetchedImages|new Image\(\)/);
+  assert.match(table, /priority=\{plateIndex < 3\}/);
+  assert.match(image, /priority = false/);
+  assert.match(image, /priority=\{priority\}/);
+});
+
+test("Live Feed plate links close the viewer without starting a competing refresh", async () => {
+  const [table, wrapper] = await Promise.all([
+    source("components/PlateTable.jsx"),
+    source("components/PlateTableWrapper.jsx"),
+  ]);
+
+  assert.match(table, /const handlePlateFilterNavigation = useCallback/);
+  assert.match(table, /onLiveChange\(false\);\s*closeImageViewer\(\)/);
+  assert.equal((table.match(/onClick=\{handlePlateFilterNavigation\}/g) || []).length, 2);
+  assert.match(table, /if \(!open\) closeImageViewer\(\)/);
+  assert.match(wrapper, /wasOpen &&\s*!nextOpen &&\s*refreshAfterViewerCloseRef\.current/);
+  assert.doesNotMatch(wrapper, /refreshAfterViewerCloseRef\.current \|\| isLiveModeActive/);
+});
+
+test("Live Feed count and page queries avoid optional joins and prefer Blue Iris short camera names", async () => {
+  const [database, table, migrations] = await Promise.all([
+    source("lib/db.js"),
+    source("components/PlateTable.jsx"),
+    source("migrations.sql"),
+  ]);
+
+  assert.match(database, /SELECT COUNT\(\*\)\s+FROM plate_reads pr/);
+  assert.match(database, /const countDirectionJoin = requiresDirectionFilter/);
+  assert.match(database, /const pagedDirectionJoin = requiresDirectionFilter/);
+  assert.match(database, /includesUnknownDirection \? "LEFT JOIN" : "JOIN"/);
+  assert.match(database, /FROM public\.vehicle_overview_associations association/);
+  assert.match(database, /profile\.source_camera_short_name/);
+  assert.match(database, /overview_candidate_playback\.source_camera/);
+  assert.match(database, /vehicle_image_selection_metadata->>'sourceCameraId'/);
+  assert.match(database, /blue_iris_camera_inventory inventory/);
+  assert.match(database, /plate_playback\.source_camera AS plate_bi_camera/);
+  assert.match(table, /buildBlueIrisPlatePlaybackPath\(/);
+  assert.match(table, /selectedImage\?\.plateBiCamera/);
+  assert.match(migrations, /2026082202_blue_iris_camera_inventory/);
+  assert.match(migrations, /2026082203_recognition_filter_indexes/);
+  assert.match(migrations, /idx_plate_reads_filter_camera/);
+  assert.match(migrations, /idx_plate_tags_filter_tag/);
+  assert.match(migrations, /idx_vehicle_direction_filter_label/);
+});
+
+test("Blue Iris camera inventory refreshes at runtime startup without waiting for ingestion", async () => {
+  const runtime = await source("lib/blue-iris-vehicle-frame-runtime.mjs");
+  assert.match(runtime, /queue\.refreshCameraInventory\(\{ force: true \}\)/);
+  assert.match(runtime, /blue_iris_camera_inventory_startup_refresh_failed/);
+});

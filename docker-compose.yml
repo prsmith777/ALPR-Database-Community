@@ -1,0 +1,135 @@
+services:
+  app:
+    image: "${ALPR_APP_IMAGE:-alpr-dashboard:local}"
+    pull_policy: never
+    restart: unless-stopped
+    ports:
+      - "${APP_PORT:-3000}:3000"
+    environment:
+      NODE_ENV: production
+      ALPR_RELEASE_IMAGE: "${ALPR_APP_IMAGE:-alpr-dashboard:local}"
+      ALPR_RELEASE_SHA: "${ALPR_RELEASE_SHA:-}"
+      ALPR_RELEASE_CHANNEL: "${ALPR_RELEASE_CHANNEL:-self-hosted}"
+      ADMIN_PASSWORD: "${ADMIN_PASSWORD:?Set ADMIN_PASSWORD in .env}"
+      DB_PASSWORD: "${DB_PASSWORD:?Set DB_PASSWORD in .env}"
+      SESSION_COOKIE_SECURE: "${SESSION_COOKIE_SECURE:-false}"
+      TZ: "${TZ:-UTC}"
+      BLUEIRIS_HOST: "${BLUEIRIS_HOST:-}"
+      BLUEIRIS_USERNAME: "${BLUEIRIS_USERNAME:-}"
+      BLUEIRIS_PASSWORD: "${BLUEIRIS_PASSWORD:-}"
+      BLUEIRIS_TIMEOUT_SECONDS: "${BLUEIRIS_TIMEOUT_SECONDS:-10}"
+      BLUEIRIS_TIMELINE_EXPORT_PROFILE: "${BLUEIRIS_TIMELINE_EXPORT_PROFILE:-0}"
+      BLUEIRIS_TIMELINE_EXPORT_MIN_WIDTH: "${BLUEIRIS_TIMELINE_EXPORT_MIN_WIDTH:-1920}"
+      BLUEIRIS_TIMELINE_EXPORT_MIN_HEIGHT: "${BLUEIRIS_TIMELINE_EXPORT_MIN_HEIGHT:-1080}"
+      VISUAL_INDEX_ENABLED: "${VISUAL_INDEX_ENABLED:-true}"
+      VISUAL_INDEX_PAUSED: "${VISUAL_INDEX_PAUSED:-false}"
+      VISUAL_INDEX_BATCH_SIZE: "${VISUAL_INDEX_BATCH_SIZE:-20}"
+      VISUAL_INDEX_INTERVAL_SECONDS: "${VISUAL_INDEX_INTERVAL_SECONDS:-30}"
+      VISUAL_INDEX_MINIMUM_FREE_DISK_GB: "${VISUAL_INDEX_MINIMUM_FREE_DISK_GB:-5}"
+      VISUAL_INDEX_MAXIMUM_LOAD_PERCENT: "${VISUAL_INDEX_MAXIMUM_LOAD_PERCENT:-90}"
+      SMTP_ENABLED: "${SMTP_ENABLED:-false}"
+      SMTP_HOST: "${SMTP_HOST:-}"
+      SMTP_PORT: "${SMTP_PORT:-587}"
+      SMTP_SECURE: "${SMTP_SECURE:-false}"
+      SMTP_VERIFY_TLS: "${SMTP_VERIFY_TLS:-true}"
+      SMTP_USERNAME: "${SMTP_USERNAME:-}"
+      SMTP_PASSWORD: "${SMTP_PASSWORD:-}"
+      SMTP_FROM_ADDRESS: "${SMTP_FROM_ADDRESS:-}"
+      SMTP_FROM_NAME: "${SMTP_FROM_NAME:-ALPR Database}"
+      WEBHOOK_ENABLED: "${WEBHOOK_ENABLED:-false}"
+      WEBHOOK_SIGNING_SECRET: "${WEBHOOK_SIGNING_SECRET:-}"
+      WEBHOOK_TIMEOUT_SECONDS: "${WEBHOOK_TIMEOUT_SECONDS:-10}"
+      WEBHOOK_ALLOW_HTTP: "${WEBHOOK_ALLOW_HTTP:-false}"
+      WEBHOOK_ALLOW_PRIVATE_NETWORKS: "${WEBHOOK_ALLOW_PRIVATE_NETWORKS:-false}"
+      ALPR_LOG_DIR: "/app/logs"
+      ALPR_LOG_LEVEL: "${ALPR_LOG_LEVEL:-info}"
+      ALPR_OPERATIONAL_LOG_FILE_MAX_BYTES: "${ALPR_OPERATIONAL_LOG_FILE_MAX_BYTES:-5242880}"
+      ALPR_OPERATIONAL_LOG_MAX_FILES: "${ALPR_OPERATIONAL_LOG_MAX_FILES:-20}"
+      ALPR_INTEGRATION_MAX_BODY_BYTES: "${ALPR_INTEGRATION_MAX_BODY_BYTES:-33554432}"
+      ALPR_INGRESS_RECEIPT_RETENTION_DAYS: "${ALPR_INGRESS_RECEIPT_RETENTION_DAYS:-14}"
+      ALPR_INGRESS_RECEIPT_MAX_ROWS: "${ALPR_INGRESS_RECEIPT_MAX_ROWS:-25000}"
+      ALPR_AUDIT_HOT_RETENTION_DAYS: "${ALPR_AUDIT_HOT_RETENTION_DAYS:-90}"
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    volumes:
+      - app-auth:/app/auth
+      - app-config:/app/config
+      - app-logs:/app/logs
+      - app-plate_images:/app/storage
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "5m"
+        max-file: "3"
+
+  db:
+    image: postgres:17.10
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: postgres
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: "${DB_PASSWORD:?Set DB_PASSWORD in .env}"
+      TZ: "${TZ:-UTC}"
+    volumes:
+      - db-data:/var/lib/postgresql/data
+      - ./schema.sql:/docker-entrypoint-initdb.d/10-schema.sql:ro
+    ports:
+      - "127.0.0.1:${DB_PORT:-5432}:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U postgres -d postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "${ALPR_POSTGRES_LOG_MAX_SIZE:-10m}"
+        max-file: "${ALPR_POSTGRES_LOG_MAX_FILES:-5}"
+
+  migrate:
+    image: postgres:17.10
+    restart: "no"
+    environment:
+      PGPASSWORD: "${DB_PASSWORD:?Set DB_PASSWORD in .env}"
+    depends_on:
+      db:
+        condition: service_healthy
+    command:
+      - psql
+      - --no-psqlrc
+      - --set
+      - ON_ERROR_STOP=1
+      - --single-transaction
+      - --host
+      - db
+      - --username
+      - postgres
+      - --dbname
+      - postgres
+      - --file
+      - /migrations.sql
+    volumes:
+      - ./migrations.sql:/migrations.sql:ro
+
+volumes:
+  db-data:
+  app-auth:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: ./auth
+  app-config:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: ./config
+  app-logs:
+  app-plate_images:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: ./storage

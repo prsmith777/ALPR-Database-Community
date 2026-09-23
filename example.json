@@ -1,0 +1,40 @@
+[
+  {
+    "api": "alpr",
+    "found": {
+      "success": true,
+      "processMs": 436,
+      "inferenceMs": 354,
+      "predictions": [
+        {
+          "confidence": 0.9422435760498047,
+          "label": "Plate: T121396C",
+          "plate": "T121396C",
+          "x_min": 469,
+          "y_min": 557,
+          "x_max": 614,
+          "y_max": 677
+        },
+        {
+          "confidence": 0.7209769487380981,
+          "label": "Plate: KYJ5",
+          "plate": "KYJ5",
+          "x_min": 210,
+          "y_min": 481,
+          "x_max": 295,
+          "y_max": 558
+        }
+      ],
+      "message": "Found Plate: T121396C, Plate: KYJ5",
+      "moduleId": "ALPR",
+      "moduleName": "License Plate Reader",
+      "code": 200,
+      "command": "alpr",
+      "requestId": "6a5d387c-807a-47b6-a4f7-17425b934318",
+      "inferenceDevice": "GPU",
+      "analysisRoundTripMs": 633,
+      "processedBy": "localhost",
+      "timestampUTC": "Tue, 19 Nov 2024 23:51:20 GMT"
+    }
+  }
+]

@@ -1,0 +1,26 @@
+{
+  "theme_color": "#ffffff",
+  "background_color": "#09090b",
+  "icons": [
+    {
+      "src": "/192.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "/1024.png",
+      "sizes": "1024x1024",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ],
+  "orientation": "any",
+  "display": "standalone",
+  "dir": "auto",
+  "lang": "en-US",
+  "name": "ALPR Database Community",
+  "short_name": "ALPR Community",
+  "start_url": "/",
+  "scope": "/",
+  "description": "A self-hosted ALPR database and automation dashboard for Blue Iris."
+}

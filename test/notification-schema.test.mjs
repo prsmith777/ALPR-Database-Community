@@ -1,0 +1,87 @@
+import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
+import test from "node:test";
+
+const migration = await readFile(new URL("../migrations.sql", import.meta.url), "utf8");
+const compact = migration.replace(/\s+/g, " ");
+
+test("unified notifications have normalized rule, condition, action, and delivery records", () => {
+  for (const table of [
+    "notification_rules",
+    "notification_condition_groups",
+    "notification_conditions",
+    "notification_channels",
+    "notification_actions",
+    "notification_executions",
+    "notification_deliveries",
+    "notification_delivery_attempts",
+    "notification_rule_migrations",
+    "notification_rule_cutover_events",
+  ]) {
+    assert.match(migration, new RegExp(`CREATE TABLE IF NOT EXISTS public\\.${table}\\b`, "i"));
+  }
+});
+
+test("new notification rules and channels are fail-closed until migration is explicit", () => {
+  assert.match(compact, /notification_rules \([\s\S]*?enabled BOOLEAN NOT NULL DEFAULT FALSE/i);
+  assert.match(compact, /notification_channels \([\s\S]*?enabled BOOLEAN NOT NULL DEFAULT FALSE/i);
+  assert.match(migration, /migration neither copies nor changes any existing notification behavior/i);
+  assert.equal(/DROP TABLE\s+(?:IF EXISTS\s+)?(?:public\.)?plate_notifications/i.test(migration), false);
+  assert.equal(/DROP TABLE\s+(?:IF EXISTS\s+)?(?:public\.)?mqtt_rules/i.test(migration), false);
+});
+
+test("condition and event constraints match the deterministic evaluator contract", () => {
+  for (const conditionType of [
+    "plate_match",
+    "camera",
+    "known_plate",
+    "known_name",
+    "tag",
+    "watchlist",
+    "confidence",
+    "read_count",
+    "local_time_window",
+  ]) {
+    assert.match(migration, new RegExp(`'${conditionType}'`));
+  }
+  assert.match(migration, /event_type IN \('plate_read\.accepted', 'camera\.activity_check'\)/i);
+  assert.match(migration, /combinator IN \('all', 'any', 'not'\)/i);
+  assert.match(migration, /notification_condition_groups_parent_same_rule/i);
+  assert.match(migration, /uq_notification_condition_groups_root/i);
+});
+
+test("execution and delivery history enforce idempotence, retry, and lock state", () => {
+  assert.match(migration, /execution_key VARCHAR\(100\) NOT NULL UNIQUE/i);
+  assert.match(migration, /dedupe_key VARCHAR\(100\) NOT NULL UNIQUE/i);
+  assert.match(migration, /notification_deliveries_due/i);
+  assert.match(migration, /status IN \('pending', 'processing', 'retry', 'succeeded', 'dead', 'cancelled'\)/i);
+  assert.match(migration, /notification_deliveries_lock_state/i);
+  assert.match(migration, /UNIQUE \(delivery_id, attempt_number\)/i);
+  assert.match(migration, /2026072201_unified_notification_foundation/i);
+  assert.match(migration, /2026072202_notification_migration_preview/i);
+  assert.match(migration, /2026072203_disabled_notification_rule_migration/i);
+  assert.match(migration, /2026072204_notification_shadow_review/i);
+  assert.match(migration, /2026072205_guarded_notification_cutover/i);
+  assert.match(migration, /notification_rule_cutover_events is append-only/i);
+});
+
+test("notification action revisions preserve delivery foreign keys", () => {
+  assert.match(migration, /ADD COLUMN IF NOT EXISTS retired_at TIMESTAMPTZ/i);
+  assert.match(migration, /uq_notification_actions_active_position[\s\S]*?WHERE retired_at IS NULL/i);
+  assert.match(migration, /2026072703_notification_action_history/i);
+  assert.match(
+    migration,
+    /action_id BIGINT NOT NULL REFERENCES public\.notification_actions\(id\) ON DELETE RESTRICT/i
+  );
+});
+
+test("legacy notification copies have durable one-to-one provenance", () => {
+  assert.match(
+    compact,
+    /notification_rule_migrations \([\s\S]*?UNIQUE \(source_type, source_id\)/i
+  );
+  assert.match(
+    compact,
+    /target_rule_id BIGINT NOT NULL UNIQUE[\s\S]*?REFERENCES public\.notification_rules\(id\) ON DELETE RESTRICT/i
+  );
+});

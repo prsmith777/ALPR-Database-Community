@@ -1,0 +1,29 @@
+.dockerignore
+
+# Not needed as we are bundling the whole app
+node_modules
+# Log files
+logs
+*.log
+npm-debug.log*
+pnpm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.next
+.git
+
+# Runtime credentials belong to the host, never to an image layer.
+.env
+.env.*
+!.env.example
+
+config/*
+logs/*
+auth/*
+storage/*
+storage2/*
+backups/*
+*.backup
+*.dump
+*.pgdump
+*.sql.gz

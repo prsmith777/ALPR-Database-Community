@@ -1,0 +1,324 @@
+import test from "node:test";
+import assert from "node:assert/strict";
+
+import {
+  IdentityInputError,
+  IdentityService,
+  hashSessionToken,
+  hasPermission,
+  legacyAdministratorPrincipal,
+} from "../lib/identity-service.mjs";
+
+function makeService(overrides = {}) {
+  const calls = [];
+  const repository = {
+    getBootstrapState: async () => ({ user_count: 0, active_user_count: 0 }),
+    bootstrapOwner: async (input) => {
+      calls.push(["bootstrapOwner", input]);
+      return { id: 1, username: input.username, roles: ["administrator"] };
+    },
+    findUserByUsername: async () => null,
+    getLoginThrottle: async () => null,
+    recordFailedLogin: async (input) => {
+      calls.push(["failed", input]);
+      return { blocked: false };
+    },
+    clearLoginThrottle: async (subjectHash) =>
+      calls.push(["throttle-cleared", subjectHash]),
+    createSession: async (input) => calls.push(["session", input]),
+    getSessionPrincipal: async () => null,
+    touchSession: async () => {},
+    revokeSession: async () => true,
+    listUsers: async () => [],
+    createUser: async (input) => input,
+    setUserStatus: async (input) => calls.push(["status", input]),
+    setUserRole: async (input) => calls.push(["role", input]),
+    updateUserPassword: async (input) => calls.push(["password", input]),
+    deleteUser: async (input) => calls.push(["delete", input]),
+    findUserById: async () => null,
+    ...overrides,
+  };
+  const service = new IdentityService({
+    repository,
+    passwordHasher: async (password) => `hash:${password}`,
+    passwordVerifier: async (password, hash) => hash === `hash:${password}`,
+    randomToken: () => "a".repeat(64),
+    now: () => new Date("2026-07-19T00:00:00.000Z"),
+  });
+  return { service, calls };
+}
+
+test("owner bootstrap normalizes identity and stores only a session hash", async () => {
+  const { service, calls } = makeService();
+  const result = await service.bootstrapOwner({
+    username: "  Sample.Admin ",
+    displayName: " Sample Administrator ",
+    password: "correct horse",
+    userAgent: "Browser",
+  });
+
+  assert.equal(result.sessionToken, "a".repeat(64));
+  const input = calls[0][1];
+  assert.equal(input.username, "sample.admin");
+  assert.equal(input.displayName, "Sample Administrator");
+  assert.equal(input.passwordHash, "hash:correct horse");
+  assert.equal(input.tokenHash, hashSessionToken(result.sessionToken));
+  assert.notEqual(input.tokenHash, result.sessionToken);
+});
+
+test("named login is generic on failure and records the attempt", async () => {
+  const { service, calls } = makeService({
+    findUserByUsername: async () => ({
+      id: 7,
+      status: "active",
+      password_hash: "hash:different",
+    }),
+  });
+  assert.equal(
+    await service.authenticate({ username: "person", password: "wrong" }),
+    null
+  );
+  assert.equal(calls[0][0], "failed");
+  assert.equal(calls[0][1].userId, 7);
+  assert.equal(calls[0][1].username, "person");
+  assert.equal(calls[0][1].failureLimit, 10);
+});
+
+test("unknown usernames still perform password verification", async () => {
+  let passwordChecks = 0;
+  const { service } = makeService();
+  service.passwordVerifier = async () => {
+    passwordChecks += 1;
+    return false;
+  };
+  assert.equal(
+    await service.authenticate({ username: "missing.user", password: "wrong" }),
+    null
+  );
+  assert.equal(passwordChecks, 1);
+});
+
+test("named login stops before password verification while the account is throttled", async () => {
+  let passwordChecks = 0;
+  let userLookups = 0;
+  const { service } = makeService({
+    getLoginThrottle: async () => ({
+      blockedUntil: new Date("2026-07-19T00:05:00.000Z"),
+    }),
+    findUserByUsername: async () => {
+      userLookups += 1;
+      return null;
+    },
+  });
+  service.passwordVerifier = async () => {
+    passwordChecks += 1;
+    return true;
+  };
+
+  const result = await service.authenticate({
+    username: "person",
+    password: "not checked",
+  });
+  assert.equal(result.rateLimited, true);
+  assert.equal(result.retryAfterSeconds, 300);
+  assert.equal(userLookups, 0);
+  assert.equal(passwordChecks, 0);
+});
+
+test("successful named login clears the persistent throttle before creating a session", async () => {
+  const { service, calls } = makeService({
+    findUserByUsername: async () => ({
+      id: 7,
+      status: "active",
+      password_hash: "hash:correct horse",
+    }),
+  });
+  await service.authenticate({
+    username: "person",
+    password: "correct horse",
+    userAgent: "Browser",
+  });
+  assert.deepEqual(
+    calls.map(([name]) => name),
+    ["throttle-cleared", "session"]
+  );
+});
+
+test("named login creates a persistent hashed session", async () => {
+  const { service, calls } = makeService({
+    findUserByUsername: async () => ({
+      id: 7,
+      status: "active",
+      password_hash: "hash:correct horse",
+    }),
+  });
+  const result = await service.authenticate({
+    username: "person",
+    password: "correct horse",
+    userAgent: "Browser",
+  });
+  assert.equal(result.sessionToken, "a".repeat(64));
+  const sessionCall = calls.find(([name]) => name === "session");
+  assert.equal(sessionCall[1].tokenHash, hashSessionToken(result.sessionToken));
+});
+
+test("user inputs and last-administrator repository guards remain errors", async () => {
+  const { service } = makeService({
+    setUserRole: async () => {
+      const error = new Error("Keep one active administrator.");
+      error.code = "LAST_ADMINISTRATOR";
+      throw error;
+    },
+  });
+  await assert.rejects(
+    service.createUser({
+      actor: { id: 1 },
+      username: "x",
+      displayName: "X",
+      password: "long enough",
+      role: "viewer",
+    }),
+    IdentityInputError
+  );
+  await assert.rejects(
+    service.setUserRole({ actor: { id: 1 }, userId: 1, role: "viewer" }),
+    { code: "LAST_ADMINISTRATOR" }
+  );
+});
+
+test("legacy administrator retains all permissions during migration", () => {
+  const principal = legacyAdministratorPrincipal();
+  assert.equal(hasPermission(principal, "system.manage_users"), true);
+  assert.equal(hasPermission(principal, "system.manage_settings"), true);
+});
+
+
+test("administrators cannot use reset to bypass their own current password", async () => {
+  const { service } = makeService();
+  await assert.rejects(
+    service.resetUserPassword({
+      actor: { id: 1 },
+      userId: 1,
+      password: "new password",
+      currentPassword: "",
+    }),
+    { code: "CANNOT_RESET_SELF" }
+  );
+});
+
+test("administrator password is required to reset another user", async () => {
+  const { service, calls } = makeService({
+    findUserById: async () => ({
+      id: 1,
+      password_hash: "hash:administrator password",
+    }),
+  });
+
+  await assert.rejects(
+    service.resetUserPassword({
+      actor: { id: 1 },
+      userId: 2,
+      password: "new password",
+      currentPassword: "wrong password",
+    }),
+    { code: "INVALID_PASSWORD" }
+  );
+
+  await service.resetUserPassword({
+    actor: { id: 1 },
+    userId: 2,
+    password: "new password",
+    currentPassword: "administrator password",
+  });
+  assert.deepEqual(calls.at(-1), [
+    "password",
+    {
+      actorUserId: 1,
+      targetUserId: 2,
+      passwordHash: "hash:new password",
+      eventType: "identity.user_password_reset",
+      mustChangePassword: true,
+    },
+  ]);
+});
+
+test("account deletion forbids self-delete and requires administrator password", async () => {
+  const { service, calls } = makeService({
+    findUserById: async () => ({
+      id: 1,
+      password_hash: "hash:administrator password",
+    }),
+  });
+
+  await assert.rejects(
+    service.deleteUser({
+      actor: { id: 1 },
+      userId: 1,
+      confirmUsername: "admin",
+      currentPassword: "administrator password",
+    }),
+    { code: "CANNOT_DELETE_SELF" }
+  );
+  await assert.rejects(
+    service.deleteUser({
+      actor: { id: 1 },
+      userId: 2,
+      confirmUsername: "operator",
+      currentPassword: "wrong",
+    }),
+    { code: "INVALID_PASSWORD" }
+  );
+
+  await service.deleteUser({
+    actor: { id: 1 },
+    userId: 2,
+    confirmUsername: "Operator",
+    currentPassword: "administrator password",
+  });
+  assert.equal(calls.at(-1)[0], "delete");
+  assert.equal(calls.at(-1)[1].targetUserId, 2);
+  assert.equal(calls.at(-1)[1].confirmUsername, "operator");
+  assert.match(calls.at(-1)[1].deletedPasswordHash, /^hash:/);
+});
+
+
+test("new non-administrators must change temporary passwords", async () => {
+  const { service } = makeService({ createUser: async (input) => input });
+  const viewer = await service.createUser({
+    actor: { id: 1 },
+    username: "new.viewer",
+    displayName: "New Viewer",
+    password: "temporary password",
+    role: "viewer",
+  });
+  assert.equal(viewer.mustChangePassword, true);
+  const administrator = await service.createUser({
+    actor: { id: 1 },
+    username: "new.admin",
+    displayName: "New Admin",
+    password: "temporary password",
+    role: "administrator",
+  });
+  assert.equal(administrator.mustChangePassword, false);
+});
+
+test("changing the user's own password clears the reminder", async () => {
+  const { service, calls } = makeService({
+    findUserById: async () => ({ id: 2, password_hash: "hash:temporary password" }),
+  });
+  await service.changeOwnPassword({
+    actor: { id: 2 },
+    currentPassword: "temporary password",
+    newPassword: "permanent password",
+  });
+  assert.deepEqual(calls.at(-1), [
+    "password",
+    {
+      actorUserId: 2,
+      targetUserId: 2,
+      passwordHash: "hash:permanent password",
+      eventType: "identity.password_changed",
+      mustChangePassword: false,
+    },
+  ]);
+});

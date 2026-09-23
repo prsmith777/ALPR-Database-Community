@@ -1,0 +1,231 @@
+name: Health Check
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  health-check:
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:17.10
+        env:
+          POSTGRES_PASSWORD: testpassword
+          POSTGRES_USER: testuser
+          POSTGRES_DB: testdb
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+
+    env:
+      DATABASE_URL: postgresql://testuser:testpassword@localhost:5432/testdb
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Setup Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "24"
+          cache: "yarn"
+
+      - name: Install dependencies
+        run: |
+          yarn install --frozen-lockfile --ignore-scripts --network-timeout 100000
+          node scripts/install-openvino-runtime.mjs
+
+      - name: Install PostgreSQL Client and Setup Database
+        run: |
+          # Install PostgreSQL client
+          sudo apt-get update
+          sudo apt-get install -y postgresql-client
+
+          # Run schema first to create base tables
+          echo "Creating database schema..."
+          psql --no-psqlrc --set ON_ERROR_STOP=1 --single-transaction "$DATABASE_URL" --file schema.sql || {
+            echo "❌ Database schema creation failed"
+            exit 1
+          }
+
+          # Run migrations for any updates
+          echo "Running database migrations..."
+          psql --no-psqlrc --set ON_ERROR_STOP=1 --single-transaction "$DATABASE_URL" --file migrations.sql || {
+            echo "❌ Database migrations failed"
+            exit 1
+          }
+          echo "✅ Database setup completed successfully"
+
+      - name: Test Database Extensions
+        run: |
+          echo "Testing required PostgreSQL extensions..."
+          psql --no-psqlrc --set ON_ERROR_STOP=1 "$DATABASE_URL" --command "SELECT * FROM pg_extension WHERE extname IN ('pg_trgm', 'fuzzystrmatch');" | grep -E "(pg_trgm|fuzzystrmatch)" || {
+            echo "❌ Required extensions not found"
+            exit 1
+          }
+          echo "✅ Required extensions are installed"
+
+      - name: Test Database Connectivity
+        run: |
+          echo "Testing basic database operations..."
+
+          # Test basic CRUD operations
+          psql --no-psqlrc --set ON_ERROR_STOP=1 "$DATABASE_URL" --command "
+            INSERT INTO plates (plate_number) VALUES ('TEST123') ON CONFLICT DO NOTHING;
+            SELECT plate_number FROM plates WHERE plate_number = 'TEST123';
+          " | grep "TEST123" || {
+            echo "❌ Basic database operations failed"
+            exit 1
+          }
+          echo "✅ Database connectivity and basic operations work"
+
+      - name: Build Application
+        run: |
+          echo "Building Next.js application..."
+          yarn build
+          echo "✅ Application built successfully"
+
+      - name: Test Application Startup and API Endpoints
+        env:
+          ADMIN_PASSWORD: health-check-admin-password
+          DB_HOST: localhost:5432
+          DB_NAME: testdb
+          DB_USER: testuser
+          DB_PASSWORD: testpassword
+          ALPR_AUTH_FILE_PATH: ${{ runner.temp }}/alpr-health-auth.json
+          STORAGE_PATH: ${{ runner.temp }}/alpr-health-storage
+        run: |
+          echo "Testing application startup and critical API endpoints..."
+
+          # Start the app in background
+          yarn start &
+          APP_PID=$!
+          trap 'kill "$APP_PID" 2>/dev/null || true' EXIT
+
+          # Wait for the public health endpoint to report ready
+          for attempt in {1..30}; do
+            if curl -fsS http://localhost:3000/api/health-check >/dev/null; then
+              break
+            fi
+            sleep 1
+          done
+
+          # Test if app responds
+          curl -fsS http://localhost:3000/api/health-check || {
+            echo "❌ Application failed to start or respond"
+            exit 1
+          }
+          echo "✅ Application starts and responds successfully"
+
+          # Protected application APIs must reject missing browser sessions
+          MQTT_STATUS=$(curl -sS -o /dev/null -w "%{http_code}" \
+            http://localhost:3000/api/mqtt/brokers)
+          if [ "$MQTT_STATUS" -ne 401 ]; then
+            echo "❌ MQTT brokers endpoint returned $MQTT_STATUS instead of 401"
+            exit 1
+          fi
+          echo "✅ Protected application API rejects unauthenticated access"
+
+          # Test plate-reads integration authentication
+          echo "Testing plate-reads endpoint with test payload..."
+          HTTP_STATUS=$(curl -w "%{http_code}" -X POST \
+            -H "Content-Type: application/json" \
+            -d @test-payload.json \
+            -s -o /dev/null \
+            http://localhost:3000/api/plate-reads)
+
+          if [ "$HTTP_STATUS" -eq 401 ]; then
+            echo "✅ Plate-reads endpoint rejects a missing API key"
+          else
+            echo "❌ Plate-reads endpoint returned $HTTP_STATUS instead of 401"
+            exit 1
+          fi
+
+          # Verify database connectivity with app running
+          echo "Verifying database connectivity..."
+          PLATE_COUNT=$(psql --no-psqlrc --set ON_ERROR_STOP=1 "$DATABASE_URL" --tuples-only --command "SELECT COUNT(*) FROM plates;")
+          echo "✅ Database accessible from app environment (plates table has $PLATE_COUNT records)"
+
+          echo "✅ All application and API tests completed successfully"
+
+      - name: Validate Configuration Files
+        run: |
+          echo "Validating configuration files..."
+
+          # Check if package.json is valid
+          node -e "JSON.parse(require('fs').readFileSync('package.json'))" || {
+            echo "❌ package.json is invalid"
+            exit 1
+          }
+
+          # Check if next.config.js loads without errors
+          node -e "require('./next.config.js')" || {
+            echo "❌ next.config.js has errors"
+            exit 1
+          }
+
+          echo "✅ Configuration files are valid"
+
+      - name: Test Database Schema Integrity
+        run: |
+          echo "Testing database schema integrity..."
+
+          # Test foreign key constraints
+          psql --no-psqlrc --set ON_ERROR_STOP=1 "$DATABASE_URL" --command "
+            SELECT 
+              tc.table_name, 
+              kcu.column_name,
+              ccu.table_name AS foreign_table_name,
+              ccu.column_name AS foreign_column_name
+            FROM information_schema.table_constraints AS tc 
+            JOIN information_schema.key_column_usage AS kcu
+              ON tc.constraint_name = kcu.constraint_name
+              AND tc.table_schema = kcu.table_schema
+            JOIN information_schema.constraint_column_usage AS ccu
+              ON ccu.constraint_name = tc.constraint_name
+              AND ccu.table_schema = tc.table_schema
+            WHERE tc.constraint_type = 'FOREIGN KEY'
+              AND tc.table_name IN ('mqttnotifications', 'plate_tags', 'plate_reads');
+          " || {
+            echo "❌ Foreign key constraints check failed"
+            exit 1
+          }
+
+          echo "✅ Database schema integrity verified"
+
+      - name: Test Environment Variables
+        run: |
+          echo "Testing environment variable handling..."
+
+          # Test that the app can handle missing env vars gracefully
+          node -e "
+            try {
+              require('./lib/settings.js');
+              console.log('✅ Settings module loads correctly');
+            } catch (error) {
+              console.error('❌ Settings module failed to load:', error.message);
+              process.exit(1);
+            }
+          "
+
+      - name: Summary
+        run: |
+          echo "🎉 Health check completed!"
+          echo "All critical systems verified:"
+          echo "  ✅ SQL schema validation"
+          echo "  ✅ Database connectivity" 
+          echo "  ✅ Application build and startup"
+          echo "  ✅ Critical API endpoints"
+          echo "  ✅ Configuration validation"
+          echo "  ✅ Database schema integrity"

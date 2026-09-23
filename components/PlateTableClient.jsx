@@ -1,0 +1,184 @@
+// components/PlateTableClient.jsx
+"use client";
+
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { useCallback, useMemo } from "react";
+import debounce from "lodash/debounce";
+import {
+  readPlateMatchPreference,
+  writePlateMatchPreference,
+} from "@/lib/plate-match-preference.mjs";
+import {
+  readTablePageSizePreference,
+  writeTablePageSizePreference,
+} from "@/lib/table-page-size-preference.mjs";
+import { scrollMainToTop } from "@/lib/page-scroll.mjs";
+import PlateTable from "./PlateTable";
+import {
+  addKnownPlate,
+  correctPlateRead,
+  deletePlateRead,
+  tagPlate,
+  untagPlate,
+} from "@/app/actions";
+
+export default function PlateTableClient({
+  data,
+  total,
+  tags,
+  cameras,
+  timeFormat,
+  matchingSettings,
+}) {
+  const router = useRouter();
+  const pathname = usePathname();
+  const params = useSearchParams();
+  const preferredMatchMode =
+    params.get("fuzzySearch") === "true"
+      ? "balanced"
+      : readPlateMatchPreference("recognition-feed");
+  const preferredPageSize = readTablePageSizePreference("live-feed");
+
+  const createQueryString = (updates) => {
+    const current = new URLSearchParams(params);
+    Object.entries(updates).forEach(([key, value]) => {
+      if (Array.isArray(value)) {
+        current.delete(key);
+        value.filter(Boolean).forEach((item) => current.append(key, item));
+        return;
+      }
+      if (value === null || value === undefined || value === "") {
+        current.delete(key);
+      } else {
+        current.set(key, value);
+      }
+    });
+    return current.toString();
+  };
+
+  const updateFilters = (newParams) => {
+    if (newParams.matchMode) {
+      writePlateMatchPreference("recognition-feed", newParams.matchMode);
+    }
+    if (newParams.pageSize !== undefined) {
+      writeTablePageSizePreference("live-feed", newParams.pageSize);
+    }
+    const queryString = createQueryString({ ...newParams, page: "1" });
+    router.push(`${pathname}?${queryString}`);
+  };
+
+  const handlePageChange = (direction, { scrollToTop = true } = {}) => {
+    const currentPage = parseInt(params.get("page") || "1");
+    const pageSize = parseInt(params.get("pageSize") || "25");
+    const newPage = direction === "next" ? currentPage + 1 : currentPage - 1;
+
+    if (
+      newPage < 1 ||
+      (direction === "next" && currentPage * pageSize >= total)
+    ) {
+      return;
+    }
+
+    if (scrollToTop) scrollMainToTop();
+    router.push(
+      `${pathname}?${createQueryString({ page: newPage.toString() })}`,
+      { scroll: false }
+    );
+  };
+
+  const handleAddTag = async (plateNumber, tagName) => {
+    const formData = new FormData();
+    formData.append("plateNumber", plateNumber);
+    formData.append("tagName", tagName);
+
+    const result = await tagPlate(formData);
+    if (result.success) {
+      router.refresh();
+    }
+  };
+
+  const handleRemoveTag = async (plateNumber, tagName) => {
+    const formData = new FormData();
+    formData.append("plateNumber", plateNumber);
+    formData.append("tagName", tagName);
+
+    const result = await untagPlate(formData);
+    if (result.success) {
+      router.refresh();
+    }
+  };
+
+  const handleAddKnownPlate = async (plateNumber, name, notes) => {
+    const formData = new FormData();
+    formData.append("plateNumber", plateNumber);
+    formData.append("name", name);
+    formData.append("notes", notes);
+
+    const result = await addKnownPlate(formData);
+    if (result.success) {
+      router.refresh();
+    }
+  };
+
+  const handleDeleteRecord = async (plateNumber) => {
+    const formData = new FormData();
+    formData.append("plateNumber", plateNumber);
+
+    const result = await deletePlateRead(formData);
+    if (result.success) {
+      router.refresh();
+    }
+  };
+
+  const handleCorrectPlate = async (formData) => {
+    const result = await correctPlateRead(formData);
+    if (result.success) {
+      router.refresh();
+    }
+    return result;
+  };
+
+  return (
+    <PlateTable
+      data={data}
+      availableTags={tags}
+      availableCameras={cameras}
+      timeFormat={timeFormat}
+      pagination={{
+        page: parseInt(params.get("page") || "1"),
+        pageSize: parseInt(params.get("pageSize") || String(preferredPageSize)),
+        total,
+        onNextPage: () => handlePageChange("next"),
+        onPreviousPage: () => handlePageChange("prev"),
+        onViewerPageChange: (direction) =>
+          handlePageChange(direction, { scrollToTop: false }),
+      }}
+      filters={{
+        search: params.get("search") || "",
+        matchMode: params.get("matchMode") || preferredMatchMode,
+        tags: params.getAll("tag").filter((tag) => tag && tag !== "all"),
+        dateRange: {
+          from: params.get("dateFrom")
+            ? new Date(params.get("dateFrom"))
+            : null,
+          to: params.get("dateTo") ? new Date(params.get("dateTo")) : null,
+        },
+        hourRange:
+          params.get("hourFrom") && params.get("hourTo")
+            ? {
+                from: parseInt(params.get("hourFrom")),
+                to: parseInt(params.get("hourTo")),
+              }
+            : null,
+        cameraNames: params.getAll("camera").filter(Boolean),
+      }}
+      onUpdateFilters={updateFilters}
+      onAddTag={handleAddTag}
+      onRemoveTag={handleRemoveTag}
+      onAddKnownPlate={handleAddKnownPlate}
+      onDeleteRecord={handleDeleteRecord}
+      onCorrectPlate={handleCorrectPlate}
+      matchingSettings={matchingSettings}
+    />
+  );
+}
