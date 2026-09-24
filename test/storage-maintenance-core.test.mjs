@@ -741,7 +741,8 @@ test("maintenance notification UI exposes inline test results and explicit write
     readFile(new URL("../app/actions.js", import.meta.url), "utf8"),
     readFile(new URL("../lib/storage-maintenance-service.mjs", import.meta.url), "utf8"),
   ]);
-  assert.match(panel, /webhookConfigured \? "Configured" : "Not configured"/);
+  assert.match(panel, /webhookConfigured \? "Destination configured" : "No destination"/);
+  assert.match(panel, /webhookReady \? "Integration ready" : "Setup required"/);
   assert.match(panel, />Replace<\/Button>/);
   assert.match(panel, />Test<\/Button>/);
   assert.match(panel, />Clear<\/Button>/);

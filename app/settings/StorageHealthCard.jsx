@@ -25,6 +25,7 @@ import {
 } from "@/lib/hydration-safe-date.mjs";
 
 const countFormatter = new Intl.NumberFormat();
+const MAX_ACTIONABLE_PROJECTION_DAYS = 3650;
 
 function formatBytes(value) {
   if (!Number.isFinite(value)) return "Unavailable";
@@ -60,10 +61,13 @@ function Metric({ icon: Icon, label, value, detail }) {
 }
 
 function Projection({ projection, timeZone }) {
+  const isDistantProjection = projection.status === "projected"
+    && Number(projection.days) > MAX_ACTIONABLE_PROJECTION_DAYS;
   let detail = "Capacity measurement unavailable";
   if (projection.status === "reached") detail = "Already at or above this threshold";
   if (projection.status === "stable") detail = "No current growth estimate";
-  if (projection.status === "projected") {
+  if (isDistantProjection) detail = "No capacity concern at the current observed rate";
+  else if (projection.status === "projected") {
     detail = `${formatDate(projection.projectedAt, timeZone)} · about ${formatCount(projection.days)} days`;
   }
 
@@ -74,7 +78,7 @@ function Projection({ projection, timeZone }) {
         <p className="text-xs text-muted-foreground">{detail}</p>
       </div>
       <Badge variant={projection.status === "reached" ? "destructive" : "outline"}>
-        {projection.status === "projected" ? "Estimated" : projection.status}
+        {isDistantProjection ? "Stable" : projection.status === "projected" ? "Estimated" : projection.status}
       </Badge>
     </div>
   );
@@ -95,6 +99,9 @@ export default function StorageHealthCard({ snapshot, view = "all" }) {
   const reconciliationRun = reconciliation?.run;
   const showStorage = view === "all" || view === "storage";
   const showMonitoring = view === "all" || view === "monitoring";
+  const visibleErrors = (snapshot?.errors || []).filter(
+    (error) => error !== "Host storage snapshot is not configured."
+  );
   const indexedTotal = assets
     ? assets.readyCount + assets.failedCount + assets.pendingCount
     : 0;
@@ -135,14 +142,14 @@ export default function StorageHealthCard({ snapshot, view = "all" }) {
       </CardHeader>
       <CardContent className="space-y-6">
         {showStorage && <>
-        {snapshot?.errors?.length > 0 && (
+        {visibleErrors.length > 0 && (
           <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-4 text-sm">
             <div className="flex items-center gap-2 font-medium text-amber-700 dark:text-amber-300">
               <AlertTriangle className="h-4 w-4" aria-hidden="true" />
               Some measurements are unavailable
             </div>
             <ul className="mt-2 list-disc space-y-1 pl-5 text-muted-foreground">
-              {snapshot.errors.map((error) => <li key={error}>{error}</li>)}
+              {visibleErrors.map((error) => <li key={error}>{error}</li>)}
             </ul>
           </div>
         )}
@@ -173,7 +180,7 @@ export default function StorageHealthCard({ snapshot, view = "all" }) {
           <div>
             <h3 id="storage-breakdown-title" className="font-semibold">Storage breakdown</h3>
             <p className="mt-1 text-xs text-muted-foreground">
-              Application categories are measured from their approved roots. Docker and backups require a current read-only host snapshot.
+              Application-managed categories measured from their approved storage roots.
             </p>
           </div>
           <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
@@ -201,25 +208,22 @@ export default function StorageHealthCard({ snapshot, view = "all" }) {
               value={formatBytes(breakdown?.database?.bytes)}
               detail="Current database size"
             />
-            <Metric
+            {breakdown?.docker && <Metric
               icon={HardDrive}
               label="Docker"
-              value={formatBytes(breakdown?.docker?.bytes)}
-              detail={breakdown?.docker
-                ? `${formatBytes(breakdown.docker.imagesBytes)} images · ${formatBytes(breakdown.docker.buildCacheBytes)} build cache`
-                : "Host snapshot unavailable"}
-            />
-            <Metric
+              value={formatBytes(breakdown.docker.bytes)}
+              detail={`${formatBytes(breakdown.docker.imagesBytes)} images · ${formatBytes(breakdown.docker.buildCacheBytes)} build cache`}
+            />}
+            {breakdown?.backups && <Metric
               icon={ShieldCheck}
               label="Verified backups"
-              value={formatBytes(breakdown?.backups?.bytes)}
-              detail={breakdown?.backups
-                ? `${formatCount(breakdown.backups.count)} backups · latest ${formatDate(breakdown.backups.latestVerifiedAt, timeZone)}`
-                : "Host snapshot unavailable"}
-            />
+              value={formatBytes(breakdown.backups.bytes)}
+              detail={`${formatCount(breakdown.backups.count)} backups · latest ${formatDate(breakdown.backups.latestVerifiedAt, timeZone)}`}
+            />}
           </div>
           <p className="mt-3 text-xs text-muted-foreground">
-            Category measurement: {formatDate(breakdown?.measuredAt, timeZone)}. Host snapshot: {formatDate(breakdown?.hostSnapshotMeasuredAt, timeZone)}.
+            Category measurement: {formatDate(breakdown?.measuredAt, timeZone)}.
+            {breakdown?.hostSnapshotMeasuredAt ? ` Host snapshot: ${formatDate(breakdown.hostSnapshotMeasuredAt, timeZone)}.` : ""}
           </p>
         </section>
 
@@ -304,7 +308,7 @@ export default function StorageHealthCard({ snapshot, view = "all" }) {
                 Scheduled maintenance preview
               </h3>
               <p className="mt-1 text-sm text-muted-foreground">
-                Retention and record-limit candidates are calculated outside plate ingestion. This job is dry-run only.
+                Planning only. This job never enforces the record limit or retention period and never deletes plate reads or images.
               </p>
             </div>
             <Badge variant={maintenance?.status === "failed" ? "destructive" : "secondary"}>
@@ -418,7 +422,7 @@ export default function StorageHealthCard({ snapshot, view = "all" }) {
         <div className="rounded-lg border border-blue-500/30 bg-blue-500/10 p-4 text-sm">
           <p className="font-medium text-blue-700 dark:text-blue-300">Measurement never performs cleanup</p>
           <p className="mt-1 text-muted-foreground">
-            Refresh, retention previews, reconciliation, and category measurement do not delete anything. Guarded cleanup is a separate confirmed action below and is limited to generated, still-unreferenced derived files.
+            Refresh, retention previews, reconciliation, and category measurement do not delete anything. Guarded cleanup is a separate confirmed action in Advanced Maintenance and is limited to generated, still-unreferenced derived files.
           </p>
         </div>
 

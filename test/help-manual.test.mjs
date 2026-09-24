@@ -14,7 +14,7 @@ async function source(path) {
 }
 
 test("the user guide is structured, searchable, and role-aware", () => {
-  assert.equal(HELP_MANUAL.manualVersion, "1.0");
+  assert.equal(HELP_MANUAL.manualVersion, "1.1");
   assert.ok(HELP_MANUAL.sections.length >= 14);
 
   const ids = HELP_MANUAL.sections.map((section) => section.id);
@@ -50,6 +50,9 @@ test("the guide covers required workflows and clearly labels planned features", 
     "vehicle image similarity search",
     "read storage health safely",
     "cannot delete original plate images",
+    "monitoring & alerts",
+    "advanced maintenance",
+    "planning inputs only",
     "portable camera setup",
     "logical dump",
     "privileged host maintenance",

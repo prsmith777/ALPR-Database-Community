@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.1.22 — 2026-09-24
+
+- Simplified Storage & Privacy for first-time Community administrators and
+  moved specialist diagnostics and cleanup controls under Advanced Maintenance.
+- Hid optional Docker and backup measurements when no host snapshot is
+  configured, and suppressed that expected first-run warning.
+- Replaced impractical long-range capacity dates with a stable status.
+- Clarified that retention and record-limit values are planning inputs only and
+  never automatically delete plate reads or source images.
+- Added Email and Webhook readiness guidance and corrected the privacy page's
+  integration inventory.
+- Updated the Community user guide to version 1.1.
+
 ## 0.1.21 — 2026-09-24
 
 - Removed radar-only speed columns, filters, details, and query paths from the

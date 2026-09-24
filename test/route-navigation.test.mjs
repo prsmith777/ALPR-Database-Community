@@ -60,7 +60,7 @@ test("page-level tabs use clean route segments site-wide", async () => {
   assert.match(settingsForm, /monitoring: "\/settings\/data-privacy\/monitoring"/);
   assert.match(settingsForm, /cleanup: "\/settings\/data-privacy\/cleanup"/);
   assert.match(settingsForm, /privacy: "\/settings\/data-privacy\/privacy"/);
-  assert.match(settingsForm, /aria-label="Data and privacy sections"/);
+  assert.match(settingsForm, /aria-label="Storage and privacy sections"/);
 });
 
 test("every clean page-level tab path has an application route", async () => {
