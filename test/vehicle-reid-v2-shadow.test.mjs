@@ -851,14 +851,14 @@ test("shadow review surface keeps assignments unchanged, gates pair labels, and 
   assert.doesNotMatch(`${service}\n${repository}`, /openvino-node/);
 });
 
-test("primary Vehicle Search route fails closed and never substitutes invalid read or source input", async () => {
+test("Vehicle Search supports the legacy v2-shadow mode and fails closed for unknown modes", async () => {
   const [page, actions, component, help] = await Promise.all([
     source("app/visual_search/page.jsx"),
     source("app/actions.js"),
     source("components/VehicleReidV2Shadow.jsx"),
     source("lib/help-manual.mjs"),
   ]);
-  assert.match(page, /!modeResult\?\.success \|\| !\["v1_primary", "v1_rollback", "v2_primary"\]\.includes\(mode\)/);
+  assert.match(page, /!modeResult\?\.success \|\| !\["v1_primary", "v2_shadow", "v1_rollback", "v2_primary"\]\.includes\(mode\)/);
   assert.doesNotMatch(page, /modeResult\?\.success \? modeResult\.data\.control\?\.mode : "v1_primary"/);
   assert.match(page, /parseVehicleReidV2SearchId\(parameters\?\.source\)/);
   assert.match(page, /requestedSource\.present && !requestedSource\.valid/);
