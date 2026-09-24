@@ -122,6 +122,10 @@ import {
   buildBlueIrisUiUrl,
 } from "@/lib/blue-iris-ui-url.mjs";
 import {
+  formatHydrationSafeDateTime,
+  useHydrationSafeTimeZone,
+} from "@/lib/hydration-safe-date.mjs";
+import {
   elapsedMilliseconds,
   recordLiveFeedPerformance,
 } from "@/lib/live-feed-performance.mjs";
@@ -298,6 +302,7 @@ function DirectionBadge({ plate }) {
 
 function PlateTimestamp({ timestamp, timeFormat }) {
   const value = new Date(timestamp);
+  const timeZone = useHydrationSafeTimeZone();
   if (Number.isNaN(value.getTime())) {
     return <span className="text-muted-foreground">—</span>;
   }
@@ -307,19 +312,25 @@ function PlateTimestamp({ timestamp, timeFormat }) {
       dateTime={value.toISOString()}
       className="block whitespace-nowrap leading-tight"
     >
-      <span className="block">{value.toLocaleDateString("en-US")}</span>
+      <span className="block">
+        {formatHydrationSafeDateTime(value, {
+          timeZone,
+          options: { year: "numeric", month: "numeric", day: "numeric" },
+        })}
+      </span>
       <span className="mt-0.5 block">
-        {value.toLocaleTimeString("en-US", { hour12: timeFormat === 12 })}
+        {formatHydrationSafeDateTime(value, {
+          timeZone,
+          options: {
+            hour: "numeric",
+            minute: "2-digit",
+            second: "2-digit",
+            hour12: timeFormat === 12,
+          },
+        })}
       </span>
     </time>
   );
-}
-
-function formatSpeed(speed) {
-  if (speed === null || speed === undefined || speed === "") return "—";
-  const numeric = Number(speed);
-  if (!Number.isFinite(numeric)) return "—";
-  return `${numeric.toFixed(Number.isInteger(numeric) ? 0 : 1)} mph`;
 }
 
 export default function PlateTable({
@@ -352,6 +363,7 @@ export default function PlateTable({
   onFilterInteractionChange = () => {},
 }) {
   const { can } = useAccess();
+  const hydrationSafeTimeZone = useHydrationSafeTimeZone();
   const canRead = can("plate.read");
   const canReview = can("plate.review");
   const canBatchReview = can("plate.review.batch");
@@ -697,10 +709,6 @@ export default function PlateTable({
       reviewRevision: plate.review_revision || 0,
       occurrenceCount: plate.occurrence_count ?? null,
       timestamp: plate.timestamp,
-      speedMph: plate.speed_mph == null ? null : Number(plate.speed_mph),
-      radarDirection: plate.radar_direction || null,
-      radarTimestamp: plate.radar_timestamp || null,
-      radarMatchDeltaMs: plate.radar_match_delta_ms == null ? null : Number(plate.radar_match_delta_ms),
       appliedAliasId: plate.applied_alias_id || null,
       cameraName: plate.camera_name || "",
       knownName: plate.known_name || "",
@@ -1417,11 +1425,6 @@ export default function PlateTable({
     onUpdateFilters({ direction: values });
   };
 
-  const applySpeedFilter = (name, value) => {
-    const normalized = String(value || "").trim();
-    onUpdateFilters({ [name]: normalized || null });
-  };
-
   const handleDateRangeChange = useCallback((range) => {
     if (!range) {
       onUpdateFilters({
@@ -1622,8 +1625,6 @@ export default function PlateTable({
       camera: null,
       reviewStatus: null,
       direction: null,
-      minimumSpeed: null,
-      maximumSpeed: null,
     });
   };
 
@@ -1638,11 +1639,7 @@ export default function PlateTable({
 
     const numericConfidence = Number(confidence); // Ensure it's a number
 
-    if (numericConfidence.toFixed(0) == 100) {
-      return "100%";
-    }
-
-    return `${numericConfidence * 100}%`; // Keep formatting consistent
+    return `${Number((numericConfidence * 100).toFixed(1))}%`;
   };
 
   const HourRangeFilter = ({
@@ -1871,14 +1868,6 @@ export default function PlateTable({
         />
       </div>
 
-      <div className="space-y-2">
-        <h4 className="text-sm font-medium">Filter by Speed (mph)</h4>
-        <div className="grid grid-cols-2 gap-2">
-          <Input key={`minimum-${filters.minimumSpeed || ""}`} type="number" min="0" max="200" step="1" defaultValue={filters.minimumSpeed} placeholder="Minimum" onBlur={(event) => applySpeedFilter("minimumSpeed", event.target.value)} />
-          <Input key={`maximum-${filters.maximumSpeed || ""}`} type="number" min="0" max="200" step="1" defaultValue={filters.maximumSpeed} placeholder="Maximum" onBlur={(event) => applySpeedFilter("maximumSpeed", event.target.value)} />
-        </div>
-      </div>
-
       <div className="space-y-3">
         <h4 className="text-sm font-medium">Date Range</h4>
         <LiveFeedDateRangeFilter
@@ -2096,7 +2085,7 @@ export default function PlateTable({
             <div className="contents">
               <div className="flex w-full items-center sm:col-span-2">
                 <Input
-                  placeholder="Search plates or speed..."
+                  placeholder="Search plates..."
                   icon={
                     <Search className="text-gray-400 dark:text-gray-500 absolute left-1.5 top-1/2 transform -translate-y-1/2 h-4 w-4" />
                   }
@@ -2209,24 +2198,6 @@ export default function PlateTable({
                 onChange={handleDirectionChange}
                 className="h-9 w-full dark:bg-[#161618]"
               />
-              <Popover>
-                <PopoverTrigger asChild>
-                  <Button variant="outline" className="h-9 w-full justify-start gap-2 dark:bg-[#161618]">
-                    Speed{filters.minimumSpeed || filters.maximumSpeed
-                      ? `: ${filters.minimumSpeed || "0"}–${filters.maximumSpeed || "200"} mph`
-                      : ""}
-                  </Button>
-                </PopoverTrigger>
-                <PopoverContent align="start" className="w-64 p-4">
-                  <div className="space-y-3">
-                    <div className="text-sm font-medium">Speed range (mph)</div>
-                    <div className="grid grid-cols-2 gap-2">
-                      <Input key={`minimum-${filters.minimumSpeed || ""}`} type="number" min="0" max="200" step="1" defaultValue={filters.minimumSpeed} placeholder="Minimum" onBlur={(event) => applySpeedFilter("minimumSpeed", event.target.value)} />
-                      <Input key={`maximum-${filters.maximumSpeed || ""}`} type="number" min="0" max="200" step="1" defaultValue={filters.maximumSpeed} placeholder="Maximum" onBlur={(event) => applySpeedFilter("maximumSpeed", event.target.value)} />
-                    </div>
-                  </div>
-                </PopoverContent>
-              </Popover>
             </div>
           </div>
 
@@ -2252,8 +2223,6 @@ export default function PlateTable({
           selectedCameras.length > 0 ||
           selectedReviewStatuses.length > 0 ||
           selectedDirections.length > 0 ||
-          filters.minimumSpeed ||
-          filters.maximumSpeed ||
           filters.dashboardTimeFrame ||
           filters.dashboardMetric ||
           (filters.hourRange?.from !== undefined &&
@@ -2333,12 +2302,6 @@ export default function PlateTable({
                 Direction: {selectedDirections
                   .map((direction) => direction === "__unknown__" ? "Unknown" : direction)
                   .join(", ")}
-              </Badge>
-            )}
-
-            {(filters.minimumSpeed || filters.maximumSpeed) && (
-              <Badge variant="outline" className="text-xs h-6 whitespace-nowrap">
-                Speed: {filters.minimumSpeed || "0"}–{filters.maximumSpeed || "200"} mph
               </Badge>
             )}
 
@@ -2430,9 +2393,6 @@ export default function PlateTable({
                       sort={sort}
                       onSort={onSort}
                     />
-                  </TableHead>
-                  <TableHead className="w-24 hidden md:table-cell">
-                    <SortButton label="Speed" field="speed" sort={sort} onSort={onSort} />
                   </TableHead>
                   <TableHead className="w-24 sm:w-40">
                     <SortButton
@@ -2535,9 +2495,6 @@ export default function PlateTable({
                       </TableCell>
                       <TableCell className="hidden md:table-cell">
                         <DirectionBadge plate={plate} />
-                      </TableCell>
-                      <TableCell className="hidden whitespace-nowrap md:table-cell">
-                        {formatSpeed(plate.speed_mph)}
                       </TableCell>
                       <TableCell className="text-xs sm:text-sm">
                         <PlateTimestamp
@@ -2984,22 +2941,21 @@ export default function PlateTable({
                           </div>
                           <div>
                             <span className="font-medium">Time: </span>
-                            {new Date(plate.timestamp).toLocaleTimeString(
-                              "en-US",
-                              {
+                            {formatHydrationSafeDateTime(plate.timestamp, {
+                              timeZone: hydrationSafeTimeZone,
+                              options: {
                                 hour12: timeFormat === 12,
                                 hour: "numeric",
                                 minute: "numeric",
-                              }
-                            )}
-                          </div>
-                          <div>
-                            <span className="font-medium">Speed: </span>
-                            {formatSpeed(plate.speed_mph)}
+                              },
+                            })}
                           </div>
                           <div className="col-span-2">
                             <span className="font-medium">Date: </span>
-                            {new Date(plate.timestamp).toLocaleDateString()}
+                            {formatHydrationSafeDateTime(plate.timestamp, {
+                              timeZone: hydrationSafeTimeZone,
+                              options: { year: "numeric", month: "numeric", day: "numeric" },
+                            })}
                           </div>
                         </div>
                       </div>
@@ -3094,10 +3050,6 @@ export default function PlateTable({
                 <div>
                   <div className="text-xs uppercase text-muted-foreground">Time</div>
                   <PlateTimestamp timestamp={selectedImage.timestamp} timeFormat={timeFormat} />
-                </div>
-                <div>
-                  <div className="text-xs uppercase text-muted-foreground">Speed</div>
-                  <div>{formatSpeed(selectedImage.speedMph)}</div>
                 </div>
                 <div>
                   <div className="text-xs uppercase text-muted-foreground">Vehicle</div>
@@ -3868,7 +3820,7 @@ export default function PlateTable({
                           <div className="text-muted-foreground">
                             {correctionPreview.already_reviewed} already reviewed
                             {correctionPreview.first_seen && correctionPreview.last_seen
-                              ? ` · ${new Date(correctionPreview.first_seen).toLocaleString()} through ${new Date(correctionPreview.last_seen).toLocaleString()}`
+                              ? ` · ${formatHydrationSafeDateTime(correctionPreview.first_seen, { timeZone: hydrationSafeTimeZone })} through ${formatHydrationSafeDateTime(correctionPreview.last_seen, { timeZone: hydrationSafeTimeZone })}`
                               : ""}
                           </div>
                         </div>
@@ -3989,7 +3941,9 @@ export default function PlateTable({
                     <div className="flex flex-wrap items-center justify-between gap-2">
                       <Badge variant="outline">{entry.action.replaceAll("_", " ")}</Badge>
                       <span className="text-xs text-muted-foreground">
-                        {new Date(entry.created_at).toLocaleString()}
+                        {formatHydrationSafeDateTime(entry.created_at, {
+                          timeZone: hydrationSafeTimeZone,
+                        })}
                       </span>
                     </div>
                     <div className="mt-2 font-mono">

@@ -37,8 +37,8 @@ test("Live Feed timestamps reserve their final two-line layout before hydration"
   );
 
   assert.match(source, /function PlateTimestamp/);
-  assert.match(source, /toLocaleDateString\("en-US"\)/);
-  assert.match(source, /toLocaleTimeString\("en-US"/);
+  assert.match(source, /useHydrationSafeTimeZone\(\)/);
+  assert.match(source, /formatHydrationSafeDateTime\(value/);
   assert.match(source, /className="block whitespace-nowrap leading-tight"/);
   assert.doesNotMatch(
     source,

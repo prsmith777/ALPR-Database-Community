@@ -26,3 +26,5 @@
 - Added a repository sanitation test and public PostgreSQL 17 deployment guide.
 - Restored legacy visual search for the default `v2_shadow` compatibility mode
   used by clean Community installations.
+- Redirected successful manual image migrations to the dashboard only after
+  the database update-completion marker is confirmed.

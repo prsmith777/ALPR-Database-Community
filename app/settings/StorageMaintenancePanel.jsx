@@ -28,6 +28,10 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import {
+  formatHydrationSafeDateTime,
+  useHydrationSafeTimeZone,
+} from "@/lib/hydration-safe-date.mjs";
 
 function formatBytes(value) {
   if (!Number.isFinite(value)) return "Unavailable";
@@ -38,10 +42,11 @@ function formatBytes(value) {
   return `${amount.toFixed(amount >= 100 || unit === 0 ? 0 : 1)} ${units[unit]}`;
 }
 
-function formatDate(value) {
-  if (!value) return "Not available";
-  const date = new Date(value);
-  return Number.isNaN(date.getTime()) ? "Not available" : date.toLocaleString();
+function formatDate(value, timeZone) {
+  return formatHydrationSafeDateTime(value, {
+    fallback: "Not available",
+    timeZone,
+  });
 }
 
 function formatDuration(value) {
@@ -60,6 +65,7 @@ function noticeClass(kind) {
 
 export default function StorageMaintenancePanel({ overview, canManage, canApproveAutomaticCleanup = false, view = "all" }) {
   const router = useRouter();
+  const timeZone = useHydrationSafeTimeZone();
   const settings = overview?.settings || {};
   const scheduler = overview?.jobs?.scheduler || {};
   const cleanupRuns = overview?.runs || [];
@@ -459,7 +465,7 @@ export default function StorageMaintenancePanel({ overview, canManage, canApprov
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
             <div><p className="text-muted-foreground">Approval revision</p><p className="font-medium">{automaticApproval?.revision ?? "None"}</p></div>
             <div><p className="text-muted-foreground">Approved by user</p><p className="font-medium">{automaticApproval?.actorUserId ?? "Not approved"}</p></div>
-            <div><p className="text-muted-foreground">Next eligible run</p><p className="font-medium">{formatDate(automaticState?.nextRunAt)}</p></div>
+            <div><p className="text-muted-foreground">Next eligible run</p><p className="font-medium">{formatDate(automaticState?.nextRunAt, timeZone)}</p></div>
             <div><p className="text-muted-foreground">Source reconciliation</p><p className="font-medium">{automaticState?.sourceReconciliationRunId ?? "Not used"}</p></div>
             <div><p className="text-muted-foreground">Approved grace</p><p className="font-medium">{automaticGraceDays} day(s)</p></div>
             <div><p className="text-muted-foreground">Minimum interval</p><p className="font-medium">{automaticIntervalHours} hour(s)</p></div>
@@ -504,8 +510,8 @@ export default function StorageMaintenancePanel({ overview, canManage, canApprov
               <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
                 <div><p className="text-muted-foreground">Dead tuples</p><p className="font-medium">{postgres.deadTuples?.toLocaleString?.() ?? 0}</p></div>
                 <div><p className="text-muted-foreground">Live tuples</p><p className="font-medium">{postgres.liveTuples?.toLocaleString?.() ?? 0}</p></div>
-                <div><p className="text-muted-foreground">Last autovacuum</p><p className="font-medium">{formatDate(postgres.lastAutovacuumAt)}</p></div>
-                <div><p className="text-muted-foreground">Last autoanalyze</p><p className="font-medium">{formatDate(postgres.lastAutoanalyzeAt)}</p></div>
+                <div><p className="text-muted-foreground">Last autovacuum</p><p className="font-medium">{formatDate(postgres.lastAutovacuumAt, timeZone)}</p></div>
+                <div><p className="text-muted-foreground">Last autoanalyze</p><p className="font-medium">{formatDate(postgres.lastAutoanalyzeAt, timeZone)}</p></div>
                 <div><p className="text-muted-foreground">Transaction ID age</p><p className="font-medium">{postgres.transactionIdAge?.toLocaleString?.() ?? "Unavailable"} / {postgres.freezeMaxAge?.toLocaleString?.() ?? "Unavailable"}</p></div>
               </div>
               {(postgres.tables || []).filter((table) => table.needsAttention).map((table) => (
@@ -529,8 +535,8 @@ export default function StorageMaintenancePanel({ overview, canManage, canApprov
           </CardHeader>
           <CardContent className="space-y-3 text-sm">
             <div className="flex justify-between gap-4"><span className="text-muted-foreground">Scheduler</span><Badge variant={scheduler.status === "stale" || scheduler.status === "missing" ? "destructive" : "secondary"}>{scheduler.status || "unknown"}</Badge></div>
-            <div className="flex justify-between gap-4"><span className="text-muted-foreground">Last heartbeat</span><span className="text-right font-medium">{formatDate(scheduler.heartbeatAt)}</span></div>
-            <div className="flex justify-between gap-4"><span className="text-muted-foreground">Next expected check</span><span className="text-right font-medium">{formatDate(nextExpectedCheck)}</span></div>
+            <div className="flex justify-between gap-4"><span className="text-muted-foreground">Last heartbeat</span><span className="text-right font-medium">{formatDate(scheduler.heartbeatAt, timeZone)}</span></div>
+            <div className="flex justify-between gap-4"><span className="text-muted-foreground">Next expected check</span><span className="text-right font-medium">{formatDate(nextExpectedCheck, timeZone)}</span></div>
             <div className="flex justify-between gap-4"><span className="text-muted-foreground">Recent alert events</span><span className="font-medium">{alertStates.length}</span></div>
             <div className="flex justify-between gap-4"><span className="text-muted-foreground">Suppressed repeats</span><span className="font-medium">{suppressedAlerts}</span></div>
             <div className="flex justify-between gap-4"><span className="text-muted-foreground">Pending/retrying alerts</span><span className="font-medium">{alertDeliveries.filter((item) => ["pending", "retry", "processing"].includes(item.status)).length}</span></div>
@@ -553,7 +559,7 @@ export default function StorageMaintenancePanel({ overview, canManage, canApprov
           <CardContent className="space-y-4 text-sm">
             <div className="grid gap-3 sm:grid-cols-2">
               <div><p className="text-muted-foreground">Last cleanup</p><p className="font-medium">{lastCleanup?.status || "Never run"}</p></div>
-              <div><p className="text-muted-foreground">Completed</p><p className="font-medium">{formatDate(lastCleanup?.completedAt)}</p></div>
+              <div><p className="text-muted-foreground">Completed</p><p className="font-medium">{formatDate(lastCleanup?.completedAt, timeZone)}</p></div>
               <div><p className="text-muted-foreground">Duration</p><p className="font-medium">{formatDuration(lastCleanup?.durationMs)}</p></div>
               <div><p className="text-muted-foreground">Reclaimed</p><p className="font-medium">{formatBytes(lastCleanup?.reclaimedBytes)}</p></div>
               <div><p className="text-muted-foreground">Failures</p><p className="font-medium">{lastCleanup?.failureCount ?? 0}</p></div>
@@ -563,7 +569,7 @@ export default function StorageMaintenancePanel({ overview, canManage, canApprov
                   {automaticState?.circuitBreakerOpen
                     ? "Automatic cleanup suspended"
                     : automatic.enabled
-                      ? formatDate(automaticState?.nextRunAt)
+                      ? formatDate(automaticState?.nextRunAt, timeZone)
                       : "Automatic cleanup disabled"}
                 </p>
               </div>
@@ -577,7 +583,7 @@ export default function StorageMaintenancePanel({ overview, canManage, canApprov
               <div className="rounded-md border p-3">
                 <p className="font-medium">Preview #{preview.runId}</p>
                 <p className="mt-1 text-muted-foreground">
-                  {preview.candidateCount.toLocaleString()} derived file(s), {formatBytes(preview.candidateBytes)}. Expires {formatDate(preview.expiresAt)}.
+                  {preview.candidateCount.toLocaleString()} derived file(s), {formatBytes(preview.candidateBytes)}. Expires {formatDate(preview.expiresAt, timeZone)}.
                 </p>
                 <Button type="button" variant="destructive" className="mt-3" disabled={!canManage || isPending || preview.candidateCount === 0} onClick={() => setDialogOpen(true)}>
                   Review and confirm cleanup

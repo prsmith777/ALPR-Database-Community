@@ -63,6 +63,14 @@ test("Integrations has no overview menu or landing-page cards", async () => {
   assert.doesNotMatch(shell, /title: "Overview"/);
 });
 
+test("nested integration routes retain their channel heading", async () => {
+  const shell = await source("components/settings/IntegrationsLayoutShell.jsx");
+  assert.match(shell, /pathname\.startsWith\(`\$\{path\}\/`\)/);
+  assert.match(shell, /title: "Pushover"/);
+  assert.match(shell, /title: "Email"/);
+  assert.match(shell, /title: "Webhook"/);
+});
+
 test("settings updates revalidate dedicated channel pages", async () => {
   const actions = await source("app/actions.js");
   const updateSettings = actions.match(/export async function updateSettings[\s\S]*?(?=export async function updatePassword)/)?.[0];

@@ -170,6 +170,37 @@ test("valid authenticated update actions preserve existing behavior", async () =
   assert.equal(markCalls, 2);
 });
 
+test("the completed manual migration redirects only after marking the update complete", async () => {
+  const page = await fs.readFile(
+    new URL("../app/update/page.jsx", import.meta.url),
+    "utf8"
+  );
+  const cleanup = page.slice(
+    page.indexOf("const handleCleanup"),
+    page.indexOf("const totalSteps")
+  );
+
+  assert.match(cleanup, /const completionResult = await completeUpdate\(\)/);
+  assert.match(cleanup, /if \(!completionResult\.success\)/);
+  assert.match(cleanup, /router\.push\("\/dashboard"\)/);
+  assert.ok(
+    cleanup.indexOf("if (!completionResult.success)")
+      < cleanup.indexOf('router.push("/dashboard")')
+  );
+});
+
+test("completed migrations are redirected away from every legacy migration page", async () => {
+  for (const file of [
+    "../app/update/layout.jsx",
+    "../app/backfill/page.jsx",
+    "../app/jpeg_migration/layout.jsx",
+  ]) {
+    const source = await fs.readFile(new URL(file, import.meta.url), "utf8");
+    assert.match(source, /await checkUpdateStatus\(\)/);
+    assert.match(source, /redirect\("\/dashboard"\)/);
+  }
+});
+
 test("app server actions delegate all five operations to the authenticated action set", async () => {
   const source = await fs.readFile(new URL("../app/actions.js", import.meta.url), "utf8");
 

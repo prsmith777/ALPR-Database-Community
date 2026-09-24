@@ -230,7 +230,10 @@ const ClickableBar = ({
   });
 
   return (
-    <Link href={href}>
+    <Link
+      href={href}
+      aria-label={`View ${payload.fullLabel} in Recognition Feed`}
+    >
       <g>
         <rect
           x={x}
