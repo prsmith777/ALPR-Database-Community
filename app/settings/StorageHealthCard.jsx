@@ -19,6 +19,10 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
+import {
+  formatHydrationSafeDateTime,
+  useHydrationSafeTimeZone,
+} from "@/lib/hydration-safe-date.mjs";
 
 const countFormatter = new Intl.NumberFormat();
 
@@ -35,10 +39,11 @@ function formatCount(value) {
   return Number.isFinite(value) ? countFormatter.format(value) : "Unavailable";
 }
 
-function formatDate(value) {
-  if (!value) return "Not available";
-  const date = new Date(value);
-  return Number.isNaN(date.getTime()) ? "Not available" : date.toLocaleString();
+function formatDate(value, timeZone) {
+  return formatHydrationSafeDateTime(value, {
+    fallback: "Not available",
+    timeZone,
+  });
 }
 
 function Metric({ icon: Icon, label, value, detail }) {
@@ -54,12 +59,12 @@ function Metric({ icon: Icon, label, value, detail }) {
   );
 }
 
-function Projection({ projection }) {
+function Projection({ projection, timeZone }) {
   let detail = "Capacity measurement unavailable";
   if (projection.status === "reached") detail = "Already at or above this threshold";
   if (projection.status === "stable") detail = "No current growth estimate";
   if (projection.status === "projected") {
-    detail = `${formatDate(projection.projectedAt)} · about ${formatCount(projection.days)} days`;
+    detail = `${formatDate(projection.projectedAt, timeZone)} · about ${formatCount(projection.days)} days`;
   }
 
   return (
@@ -77,6 +82,7 @@ function Projection({ projection }) {
 
 export default function StorageHealthCard({ snapshot, view = "all" }) {
   const router = useRouter();
+  const timeZone = useHydrationSafeTimeZone();
   const [isRefreshing, startRefresh] = useTransition();
   const filesystem = snapshot?.filesystem;
   const database = snapshot?.database;
@@ -208,12 +214,12 @@ export default function StorageHealthCard({ snapshot, view = "all" }) {
               label="Verified backups"
               value={formatBytes(breakdown?.backups?.bytes)}
               detail={breakdown?.backups
-                ? `${formatCount(breakdown.backups.count)} backups · latest ${formatDate(breakdown.backups.latestVerifiedAt)}`
+                ? `${formatCount(breakdown.backups.count)} backups · latest ${formatDate(breakdown.backups.latestVerifiedAt, timeZone)}`
                 : "Host snapshot unavailable"}
             />
           </div>
           <p className="mt-3 text-xs text-muted-foreground">
-            Category measurement: {formatDate(breakdown?.measuredAt)}. Host snapshot: {formatDate(breakdown?.hostSnapshotMeasuredAt)}.
+            Category measurement: {formatDate(breakdown?.measuredAt, timeZone)}. Host snapshot: {formatDate(breakdown?.hostSnapshotMeasuredAt, timeZone)}.
           </p>
         </section>
 
@@ -262,7 +268,7 @@ export default function StorageHealthCard({ snapshot, view = "all" }) {
               </div>
               <div className="flex justify-between gap-4">
                 <dt className="text-muted-foreground">Last visual asset indexed</dt>
-                <dd className="text-right font-medium">{formatDate(assets?.lastIndexedAt)}</dd>
+                <dd className="text-right font-medium">{formatDate(assets?.lastIndexedAt, timeZone)}</dd>
               </div>
             </dl>
             {assets && (
@@ -282,7 +288,7 @@ export default function StorageHealthCard({ snapshot, view = "all" }) {
             </p>
             <div className="mt-4">
               {growth?.projections?.map((projection) => (
-                <Projection key={projection.percent} projection={projection} />
+                <Projection key={projection.percent} projection={projection} timeZone={timeZone} />
               )) || <p className="text-sm text-muted-foreground">Projection unavailable.</p>}
             </div>
           </section>
@@ -308,11 +314,11 @@ export default function StorageHealthCard({ snapshot, view = "all" }) {
           <dl className="mt-4 grid gap-3 text-sm sm:grid-cols-2 xl:grid-cols-4">
             <div>
               <dt className="text-muted-foreground">Next scheduled check</dt>
-              <dd className="mt-1 font-medium">{formatDate(maintenance?.nextRunAt)}</dd>
+              <dd className="mt-1 font-medium">{formatDate(maintenance?.nextRunAt, timeZone)}</dd>
             </div>
             <div>
               <dt className="text-muted-foreground">Last completed</dt>
-              <dd className="mt-1 font-medium">{formatDate(maintenance?.lastCompletedAt)}</dd>
+              <dd className="mt-1 font-medium">{formatDate(maintenance?.lastCompletedAt, timeZone)}</dd>
             </div>
             <div>
               <dt className="text-muted-foreground">Record-limit candidates</dt>
@@ -369,11 +375,11 @@ export default function StorageHealthCard({ snapshot, view = "all" }) {
             </div>
             <div>
               <dt className="text-muted-foreground">Started</dt>
-              <dd className="mt-1 font-medium">{formatDate(reconciliationRun?.scanStartedAt)}</dd>
+              <dd className="mt-1 font-medium">{formatDate(reconciliationRun?.scanStartedAt, timeZone)}</dd>
             </div>
             <div>
               <dt className="text-muted-foreground">Completed</dt>
-              <dd className="mt-1 font-medium">{formatDate(reconciliationRun?.completedAt)}</dd>
+              <dd className="mt-1 font-medium">{formatDate(reconciliationRun?.completedAt, timeZone)}</dd>
             </div>
             <div>
               <dt className="text-muted-foreground">Recent files deferred</dt>
@@ -416,7 +422,7 @@ export default function StorageHealthCard({ snapshot, view = "all" }) {
           </p>
         </div>
 
-        <p className="text-xs text-muted-foreground">Measured {formatDate(snapshot?.measuredAt)}</p>
+        <p className="text-xs text-muted-foreground">Measured {formatDate(snapshot?.measuredAt, timeZone)}</p>
       </CardContent>
     </Card>
   );

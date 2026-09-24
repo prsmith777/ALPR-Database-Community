@@ -29,6 +29,10 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Textarea } from "@/components/ui/textarea";
+import {
+  formatHydrationSafeDateTime,
+  useHydrationSafeTimeZone,
+} from "@/lib/hydration-safe-date.mjs";
 
 const PRIORITIES = ["low", "normal", "high", "critical"];
 
@@ -38,6 +42,7 @@ function priorityVariant(priority) {
 
 export function FlaggedPlatesTable({ initialData }) {
   const { can } = useAccess();
+  const timeZone = useHydrationSafeTimeZone();
   const canReview = can("plate.review");
   const [data, setData] = useState(initialData);
   const [open, setOpen] = useState(false);
@@ -51,7 +56,7 @@ export function FlaggedPlatesTable({ initialData }) {
   useEffect(() => setData(initialData), [initialData]);
 
   const formatDate = (value, empty) =>
-    value ? new Date(value).toLocaleString() : empty;
+    formatHydrationSafeDateTime(value, { fallback: empty, timeZone });
 
   const closeEditor = () => {
     setOpen(false);

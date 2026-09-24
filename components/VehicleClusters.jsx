@@ -33,9 +33,13 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import {
+  formatHydrationSafeDateTime,
+  useHydrationSafeTimeZone,
+} from "@/lib/hydration-safe-date.mjs";
 
-function when(value) {
-  return value ? new Date(value).toLocaleString() : "Unknown";
+function when(value, timeZone) {
+  return formatHydrationSafeDateTime(value, { fallback: "Unknown", timeZone });
 }
 
 function percent(value) {
@@ -114,6 +118,7 @@ function AttentionSummary({ data }) {
 
 export default function VehicleClusters({ initialResult, view = "profiles", initialQueue = "vehicle" }) {
   const router = useRouter();
+  const timeZone = useHydrationSafeTimeZone();
   const searchParams = useSearchParams();
   const [result, setResult] = useState(initialResult);
   const [busy, setBusy] = useState("");
@@ -326,7 +331,7 @@ export default function VehicleClusters({ initialResult, view = "profiles", init
                     <CardContent className="space-y-4">
                       <div className="grid grid-cols-2 gap-3">
                         <div><div className="relative aspect-video overflow-hidden rounded-md bg-muted"><NextImage src={association.representativeImageUrl} alt={`Vehicle ${association.clusterId} representative`} fill sizes="40vw" className="object-cover" unoptimized /></div><div className="mt-2 text-xs text-muted-foreground">Profile representative · {association.representativeCamera}</div></div>
-                        <div><div className="relative aspect-video overflow-hidden rounded-md bg-muted"><NextImage src={association.evidenceImageUrl} alt={`Confirmed evidence for ${association.plateNumber}`} fill sizes="40vw" className="object-cover" unoptimized /></div><div className="mt-2 text-xs text-muted-foreground">Confirmed evidence · {association.evidenceCamera} · {when(association.evidenceTimestamp)}</div></div>
+                        <div><div className="relative aspect-video overflow-hidden rounded-md bg-muted"><NextImage src={association.evidenceImageUrl} alt={`Confirmed evidence for ${association.plateNumber}`} fill sizes="40vw" className="object-cover" unoptimized /></div><div className="mt-2 text-xs text-muted-foreground">Confirmed evidence · {association.evidenceCamera} · {when(association.evidenceTimestamp, timeZone)}</div></div>
                       </div>
                       <div className="flex flex-wrap gap-2">{association.knownName && <Badge>{association.knownName}</Badge>}{association.tags.map((tag) => <Badge key={tag.name} variant="secondary">{tag.name}</Badge>)}</div>
                       {data.canReview && <AssociationDecision association={association} busy={busy} onReview={(plateNumber, decision) => reviewAssociation(association.clusterId, plateNumber, decision)} />}
@@ -349,7 +354,7 @@ export default function VehicleClusters({ initialResult, view = "profiles", init
                   <Card key={capture.readId} className="overflow-hidden">
                     <div className="relative aspect-video bg-muted"><NextImage src={capture.imageUrl} alt={`Direction review ${capture.plateNumber}`} fill sizes="(min-width:1280px) 30vw, 50vw" className="object-cover" unoptimized /></div>
                     <CardContent className="space-y-3 p-4">
-                      <div className="flex items-start justify-between gap-2"><div><div className="font-mono font-semibold">{capture.plateNumber}</div><div className="text-xs text-muted-foreground">{capture.cameraName} · {when(capture.timestamp)}</div></div><Badge variant="outline">Unknown</Badge></div>
+                      <div className="flex items-start justify-between gap-2"><div><div className="font-mono font-semibold">{capture.plateNumber}</div><div className="text-xs text-muted-foreground">{capture.cameraName} · {when(capture.timestamp, timeZone)}</div></div><Badge variant="outline">Unknown</Badge></div>
                       {data.canReview && <div className="grid grid-cols-2 gap-2">
                         <Button size="sm" variant="outline" disabled={Boolean(busy)} onClick={() => reviewDirection(capture.readId, "front")}>
                           {busy === `direction:${capture.readId}:front` ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}Front view
@@ -403,7 +408,7 @@ export default function VehicleClusters({ initialResult, view = "profiles", init
                   <div className="text-sm">{cluster.captureCount} captures · {cluster.confirmedCount} confirmed</div>
                   {cluster.representativeColor && <div className="text-sm capitalize">{cluster.representativeColor} · {percent(cluster.representativeColorConfidence)} color</div>}
                   {cluster.representativeBodyType && <div className="text-sm capitalize">{cluster.representativeBodyType} · {percent(cluster.representativeBodyTypeConfidence)} type</div>}
-                  <div className="text-xs text-muted-foreground">Last seen {when(cluster.lastSeen)}</div>
+                  <div className="text-xs text-muted-foreground">Last seen {when(cluster.lastSeen, timeZone)}</div>
                   {cluster.confirmedPlateAssociations.length > 0 && <div className="space-y-1"><div className="text-xs font-medium text-muted-foreground">Confirmed plates</div><div className="flex flex-wrap gap-1">{cluster.confirmedPlateAssociations.map((association) => <Badge key={association.plateNumber} className="font-mono">{association.plateNumber}</Badge>)}</div></div>}
                   {cluster.suggestedPlateAssociations.length > 0 && <div className="flex items-center gap-1 text-xs text-amber-600 dark:text-amber-400"><AlertTriangle className="h-3.5 w-3.5" />Review in Legacy Needs Review &gt; Plate Associations</div>}
                   <div className="flex flex-wrap gap-1">{cluster.observedPlates.slice(0, 5).map((plate) => <Badge key={plate} variant="outline" className="font-mono">{plate}</Badge>)}</div>

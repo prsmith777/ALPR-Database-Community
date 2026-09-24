@@ -29,6 +29,8 @@ const pageDetails = {
 
 export function IntegrationsLayoutShell({ children }) {
   const pathname = usePathname();
-  const details = pageDetails[pathname] || pageDetails["/settings/integrations/mqtt"];
+  const details = Object.entries(pageDetails).find(
+    ([path]) => pathname === path || pathname.startsWith(`${path}/`)
+  )?.[1] || pageDetails["/settings/integrations/mqtt"];
   return <SettingsShell activeId={details.id} title={details.title} description={details.description}>{children}</SettingsShell>;
 }

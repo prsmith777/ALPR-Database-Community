@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import Image from "next/image";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -41,16 +41,10 @@ export default function LiveRecognitionViewer({
 
   const router = useRouter();
   const refreshTimerRef = useRef(null);
-
-  // Fetch insights when the plate changes
-  useEffect(() => {
-    if (latestPlate && latestPlate.plate_number) {
-      fetchInsightsData(latestPlate.plate_number);
-    }
-  }, [latestPlate]);
+  const latestPlateIdRef = useRef(initialPlate?.id ?? null);
 
   // Helper function to fetch insights
-  const fetchInsightsData = async (plateNumber) => {
+  const fetchInsightsData = useCallback(async (plateNumber) => {
     try {
       setIsLoadingInsights(true);
       const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
@@ -64,10 +58,17 @@ export default function LiveRecognitionViewer({
     } finally {
       setIsLoadingInsights(false);
     }
-  };
+  }, []);
+
+  // Fetch insights when the plate changes
+  useEffect(() => {
+    if (latestPlate?.plate_number) {
+      fetchInsightsData(latestPlate.plate_number);
+    }
+  }, [fetchInsightsData, latestPlate?.plate_number]);
 
   // Helper function to handle plate reads
-  const fetchLatestPlateRead = async () => {
+  const fetchLatestPlateRead = useCallback(async () => {
     try {
       setIsRefreshing(true);
       const params = {
@@ -83,7 +84,8 @@ export default function LiveRecognitionViewer({
         const newPlate = platesRes.data[0];
 
         // Only update if we have a new plate or the component just mounted
-        if (!latestPlate || newPlate.id !== latestPlate.id) {
+        if (newPlate.id !== latestPlateIdRef.current) {
+          latestPlateIdRef.current = newPlate.id;
           setLatestPlate(newPlate);
           setLastUpdateTime(new Date());
         }
@@ -96,12 +98,12 @@ export default function LiveRecognitionViewer({
     } finally {
       setIsRefreshing(false);
     }
-  };
+  }, []);
 
   // Set up auto-refresh
   useEffect(() => {
     // Initial fetch on mount
-    if (!latestPlate) {
+    if (latestPlateIdRef.current === null) {
       fetchLatestPlateRead();
     }
 
@@ -116,7 +118,7 @@ export default function LiveRecognitionViewer({
         clearInterval(refreshTimerRef.current);
       }
     };
-  }, [refreshInterval]);
+  }, [fetchLatestPlateRead, refreshInterval]);
 
   // Calculate the time since last update
   const getTimeSinceUpdate = () => {

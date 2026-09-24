@@ -5,6 +5,10 @@ import { useEffect, useId, useState } from "react";
 import { Check, ChevronDown, Copy, ReceiptText } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { copyTextToClipboard } from "@/lib/browser-clipboard.mjs";
+import {
+  formatHydrationSafeDateTime,
+  useHydrationSafeTimeZone,
+} from "@/lib/hydration-safe-date.mjs";
 
 function levelColor(level) {
   switch (level) {
@@ -19,10 +23,11 @@ function levelColor(level) {
   }
 }
 
-function formattedTimestamp(timestamp) {
-  if (!timestamp) return "Time unavailable";
-  const value = new Date(timestamp);
-  return Number.isNaN(value.getTime()) ? "Time unavailable" : value.toLocaleString();
+function formattedTimestamp(timestamp, timeZone) {
+  return formatHydrationSafeDateTime(timestamp, {
+    fallback: "Time unavailable",
+    timeZone,
+  });
 }
 
 function InlineFieldPill({ children, fieldKey, onReveal }) {
@@ -51,6 +56,7 @@ function formattedField(key, value, isLast) {
 }
 
 export default function LogMessage({ log, expanded = false, onExpandedChange }) {
+  const timeZone = useHydrationSafeTimeZone();
   const [highlightedField, setHighlightedField] = useState(null);
   const [copied, setCopied] = useState(false);
   const detailsId = useId();
@@ -157,7 +163,7 @@ export default function LogMessage({ log, expanded = false, onExpandedChange }) 
 
         <div className="flex items-start justify-between gap-2 lg:justify-end">
           <time className="whitespace-nowrap font-mono text-[11px] text-muted-foreground">
-            {formattedTimestamp(log.timestamp)}
+            {formattedTimestamp(log.timestamp, timeZone)}
           </time>
           {log.requestId && (
             <div className="flex items-center gap-0.5">

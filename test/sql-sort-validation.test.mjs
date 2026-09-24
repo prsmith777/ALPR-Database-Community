@@ -82,7 +82,6 @@ test("plate-read sorting accepts only fixed fields and directions", () => {
       "ARRAY_AGG(DISTINCT LOWER(t.name) ORDER BY LOWER(t.name)) FILTER (WHERE t.name IS NOT NULL)",
     camera_name: "LOWER(pr.camera_name)",
     direction: "LOWER(direction.direction_label)",
-    speed: "radar.speed_mph",
     timestamp: "pr.timestamp",
   };
 
@@ -125,6 +124,13 @@ test("malicious plate-read sort values cannot enter SQL", () => {
   );
   assert.equal(directionResult.includes(directionAttack), false);
   assert.equal(fieldResult.includes(fieldAttack), false);
+});
+
+test("Community rejects unsupported radar speed sorting", () => {
+  assert.equal(
+    getPlateReadsOrderBy({ field: "speed", direction: "asc" }),
+    "ORDER BY pr.timestamp DESC NULLS LAST, pr.id DESC"
+  );
 });
 
 test("database queries delegate sorting to the validated helper", async () => {

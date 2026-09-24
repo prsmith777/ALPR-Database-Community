@@ -189,6 +189,18 @@ test("the completed manual migration redirects only after marking the update com
   );
 });
 
+test("completed migrations are redirected away from every legacy migration page", async () => {
+  for (const file of [
+    "../app/update/layout.jsx",
+    "../app/backfill/page.jsx",
+    "../app/jpeg_migration/layout.jsx",
+  ]) {
+    const source = await fs.readFile(new URL(file, import.meta.url), "utf8");
+    assert.match(source, /await checkUpdateStatus\(\)/);
+    assert.match(source, /redirect\("\/dashboard"\)/);
+  }
+});
+
 test("app server actions delegate all five operations to the authenticated action set", async () => {
   const source = await fs.readFile(new URL("../app/actions.js", import.meta.url), "utf8");
 

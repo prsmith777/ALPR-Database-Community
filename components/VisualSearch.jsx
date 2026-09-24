@@ -38,13 +38,19 @@ import {
 } from "@/components/ui/select";
 import { Slider } from "@/components/ui/slider";
 import { calculateVehicleCrop } from "@/lib/image-similarity.mjs";
+import {
+  formatHydrationSafeDateTime,
+  useHydrationSafeTimeZone,
+} from "@/lib/hydration-safe-date.mjs";
 
 const UPLOAD_TYPES = new Set(["image/jpeg", "image/png", "image/webp"]);
 const MAX_UPLOAD_BYTES = 5 * 1024 * 1024;
 
-function formatTimestamp(value) {
-  if (!value) return "Unknown time";
-  return new Date(value).toLocaleString();
+function formatTimestamp(value, timeZone) {
+  return formatHydrationSafeDateTime(value, {
+    fallback: "Unknown time",
+    timeZone,
+  });
 }
 
 function formatDuration(seconds) {
@@ -67,6 +73,7 @@ function CaptureCard({
   feedbackSaving = false,
   feedbackSavingLabel = null,
 }) {
+  const timeZone = useHydrationSafeTimeZone();
   return (
     <Card className={source ? "border-blue-500/50" : "overflow-hidden"}>
       <div className="relative aspect-video overflow-hidden bg-muted">
@@ -93,7 +100,7 @@ function CaptureCard({
           </div>
           {capture.label && <Badge variant="outline">{capture.label}</Badge>}
         </div>
-        <div className="text-xs text-muted-foreground">{formatTimestamp(capture.timestamp)}</div>
+        <div className="text-xs text-muted-foreground">{formatTimestamp(capture.timestamp, timeZone)}</div>
         {capture.label && (
           <p className="text-xs text-muted-foreground">
             {capture.exact
@@ -200,6 +207,7 @@ function percentBox(box, width, height) {
 }
 
 function CameraDetectorSetup({ profiles, onSaved }) {
+  const timeZone = useHydrationSafeTimeZone();
   const [selectedCamera, setSelectedCamera] = useState(profiles[0]?.cameraName || "");
   const selected = profiles.find((profile) => profile.cameraName === selectedCamera) || profiles[0];
   const [draft, setDraft] = useState(selected || null);
@@ -318,7 +326,7 @@ function CameraDetectorSetup({ profiles, onSaved }) {
                     {plate && <div className="absolute border-2 border-amber-400" style={percentBox(plate, preview.width, preview.height)} />}
                   </div>
                   <div className="flex flex-wrap justify-between gap-2 text-xs text-muted-foreground">
-                    <span>Latest: {preview.plateNumber} · {formatTimestamp(preview.timestamp)}</span>
+                    <span>Latest: {preview.plateNumber} · {formatTimestamp(preview.timestamp, timeZone)}</span>
                     <span><span className="text-amber-500">Amber</span> plate · <span className="text-emerald-500">Green</span> detector fallback</span>
                   </div>
                 </>
@@ -373,6 +381,7 @@ function CameraDetectorSetup({ profiles, onSaved }) {
 }
 
 export default function VisualSearch({ initialResult, initialReadId }) {
+  const timeZone = useHydrationSafeTimeZone();
   const initialData = initialResult?.success ? initialResult.data : null;
   const [bootstrap, setBootstrap] = useState(initialData);
   const [error, setError] = useState(initialResult?.success ? "" : initialResult?.error || "Unable to load visual search.");
@@ -744,7 +753,7 @@ export default function VisualSearch({ initialResult, initialReadId }) {
                   </Button>
                   {worker?.lastBatch && (
                     <div className="text-xs text-muted-foreground">
-                      Last batch: {worker.lastBatch.succeeded} indexed, {worker.lastBatch.failed} failed · {formatTimestamp(worker.lastBatch.at)}
+                      Last batch: {worker.lastBatch.succeeded} indexed, {worker.lastBatch.failed} failed · {formatTimestamp(worker.lastBatch.at, timeZone)}
                     </div>
                   )}
                 </div>
