@@ -74,12 +74,22 @@ export default function SystemUpdatePage() {
     try {
       const result = await clearImageData();
       if (result.success) {
+        const completionResult = await completeUpdate();
         setStep3Complete(true);
+        if (!completionResult.success) {
+          setMessage(
+            `Cleanup succeeded, but the update could not be marked complete: ${completionResult.error}`
+          );
+          setMessageType("error");
+          return;
+        }
         setMessage(
           `Successfully cleared base64 data from ${result.clearedCount.toLocaleString()} records`
         );
         setMessageType("success");
-        await completeUpdate();
+        setTimeout(() => {
+          router.push("/dashboard");
+        }, 1000);
       } else {
         setMessage(`Cleanup failed: ${result.error}`);
         setMessageType("error");
