@@ -24,6 +24,10 @@ test("synthetic fixtures are explicit and excluded from normal startup SQL", () 
   assert.match(fixtureSql, /current_database\(\) = :'fixture_database'/);
 });
 
+test("schema installation preserves the selected database role", () => {
+  assert.doesNotMatch(schemaSql, /\bOWNER\s+TO\b/i);
+});
+
 test("fixture ownership and cleanup use an exact manifest", () => {
   assert.match(fixtureSql, /CREATE TABLE IF NOT EXISTS public\.codex_staging_fixture_sets/);
   assert.match(fixtureSql, /CREATE TABLE IF NOT EXISTS public\.codex_staging_fixture_manifest/);
