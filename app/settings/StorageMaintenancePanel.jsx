@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState, useTransition } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { AlertTriangle, BellRing, Clock3, Mail, Play, ShieldCheck, Webhook } from "lucide-react";
 
@@ -87,6 +88,10 @@ export default function StorageMaintenancePanel({ overview, canManage, canApprov
     (automaticApproval?.intervalSeconds ?? automatic?.limits?.minimumIntervalSeconds ?? 86400) / 3600
   );
   const postgres = overview?.postgresMaintenance || {};
+  const emailIntegration = overview?.integrations?.email || {};
+  const webhookIntegration = overview?.integrations?.webhook || {};
+  const emailReady = emailIntegration.enabled === true && emailIntegration.configured === true;
+  const webhookReady = webhookIntegration.enabled === true && webhookIntegration.configured === true;
   const [policy, setPolicy] = useState({
     warningPercent: String(settings.warningPercent ?? 80),
     criticalPercent: String(settings.criticalPercent ?? 90),
@@ -109,7 +114,6 @@ export default function StorageMaintenancePanel({ overview, canManage, canApprov
   const [emailMessage, setEmailMessage] = useState(null);
   const [webhookMessage, setWebhookMessage] = useState(null);
   const [isPending, startTransition] = useTransition();
-  const showStorage = view === "all" || view === "storage";
   const showMonitoring = view === "all" || view === "monitoring";
   const showCleanup = view === "all" || view === "cleanup";
 
@@ -348,15 +352,19 @@ export default function StorageMaintenancePanel({ overview, canManage, canApprov
 
             <div className="grid gap-4 lg:grid-cols-2">
               <div className="space-y-3 rounded-lg border p-4">
-                <div className="flex items-center gap-2 font-medium"><Mail className="h-4 w-4" aria-hidden="true" />Email alerts</div>
+                <div className="flex items-center justify-between gap-3">
+                  <div className="flex items-center gap-2 font-medium"><Mail className="h-4 w-4" aria-hidden="true" />Email alerts</div>
+                  <Badge variant={emailReady ? "secondary" : "outline"}>{emailReady ? "Ready" : "Setup required"}</Badge>
+                </div>
                 <label className="flex items-center gap-2 text-sm">
-                  <input type="checkbox" checked={policy.emailEnabled} onChange={(event) => updatePolicy("emailEnabled", event.target.checked)} disabled={!canManage || isPending} />
+                  <input type="checkbox" checked={policy.emailEnabled} onChange={(event) => updatePolicy("emailEnabled", event.target.checked)} disabled={!canManage || isPending || (!emailReady && !policy.emailEnabled)} />
                   Send maintenance alerts through the configured SMTP integration
                 </label>
+                {!emailReady && <p className="text-xs text-muted-foreground">Enable and complete the <Link href="/settings/integrations/email" className="text-primary underline-offset-4 hover:underline">Email integration</Link> before enabling maintenance email alerts.</p>}
                 <Label htmlFor="storage-alert-recipients">Recipients</Label>
                 <Input id="storage-alert-recipients" type="text" value={policy.emailRecipients} onChange={(event) => updatePolicy("emailRecipients", event.target.value)} placeholder="owner@example.com, ops@example.com" disabled={!canManage || isPending} />
                 <div className="flex flex-wrap gap-2">
-                  <Button type="button" variant="outline" size="sm" onClick={testEmail} disabled={!canManage || isPending || !policy.emailRecipients.trim()}>Test email</Button>
+                  <Button type="button" variant="outline" size="sm" onClick={testEmail} disabled={!canManage || isPending || !emailReady || !policy.emailRecipients.trim()}>Test email</Button>
                 </div>
                 {emailMessage && (
                   <p className={`rounded-md border p-3 text-sm ${noticeClass(emailMessage.kind)}`} role="status">
@@ -367,14 +375,18 @@ export default function StorageMaintenancePanel({ overview, canManage, canApprov
               <div className="space-y-3 rounded-lg border p-4">
                 <div className="flex items-center justify-between gap-3">
                   <div className="flex items-center gap-2 font-medium"><Webhook className="h-4 w-4" aria-hidden="true" />Webhook alerts</div>
-                  <Badge variant="outline">{webhookConfigured ? "Configured" : "Not configured"}</Badge>
+                  <div className="flex flex-wrap gap-2">
+                    <Badge variant={webhookReady ? "secondary" : "outline"}>{webhookReady ? "Integration ready" : "Setup required"}</Badge>
+                    <Badge variant="outline">{webhookConfigured ? "Destination configured" : "No destination"}</Badge>
+                  </div>
                 </div>
                 <label className="flex items-center gap-2 text-sm">
-                  <input type="checkbox" checked={policy.webhookEnabled} onChange={(event) => updatePolicy("webhookEnabled", event.target.checked)} disabled={!canManage || isPending || (!webhookConfigured && !policy.webhookEnabled)} />
+                  <input type="checkbox" checked={policy.webhookEnabled} onChange={(event) => updatePolicy("webhookEnabled", event.target.checked)} disabled={!canManage || isPending || (!webhookReady && !policy.webhookEnabled) || (!webhookConfigured && !policy.webhookEnabled)} />
                   Send HMAC-signed maintenance JSON through the configured webhook integration
                 </label>
-                <Label htmlFor="storage-alert-webhook-replacement">Replacement destination URL</Label>
-                <Input id="storage-alert-webhook-replacement" type="url" value={webhookReplacement} onChange={(event) => setWebhookReplacement(event.target.value)} placeholder="https://automation.example.com/alpr-maintenance" autoComplete="off" disabled={!canManage || isPending} />
+                {!webhookReady && <p className="text-xs text-muted-foreground">Enable the <Link href="/settings/integrations/webhook" className="text-primary underline-offset-4 hover:underline">Webhook integration</Link> and configure its signing secret before setting a maintenance destination.</p>}
+                <Label htmlFor="storage-alert-webhook-replacement">Maintenance-specific destination URL</Label>
+                <Input id="storage-alert-webhook-replacement" type="url" value={webhookReplacement} onChange={(event) => setWebhookReplacement(event.target.value)} placeholder="https://automation.example.com/alpr-maintenance" autoComplete="off" disabled={!canManage || isPending || !webhookReady} />
                 <p className="text-xs text-muted-foreground">
                   The saved URL is write-only and is never returned to this page. Enter a URL only to test or replace it.
                 </p>
@@ -382,8 +394,8 @@ export default function StorageMaintenancePanel({ overview, canManage, canApprov
                   Replace uses the new destination for queued alerts; Clear retires them. A request already in flight during either change may still finish at the prior destination.
                 </p>
                 <div className="flex flex-wrap gap-2">
-                  <Button type="button" variant="outline" size="sm" onClick={replaceWebhook} disabled={!canManage || isPending || !webhookReplacement.trim()}>Replace</Button>
-                  <Button type="button" variant="outline" size="sm" onClick={testWebhook} disabled={!canManage || isPending || (!webhookConfigured && !webhookReplacement.trim())}>Test</Button>
+                  <Button type="button" variant="outline" size="sm" onClick={replaceWebhook} disabled={!canManage || isPending || !webhookReady || !webhookReplacement.trim()}>Replace</Button>
+                  <Button type="button" variant="outline" size="sm" onClick={testWebhook} disabled={!canManage || isPending || !webhookReady || (!webhookConfigured && !webhookReplacement.trim())}>Test</Button>
                   <Button type="button" variant="outline" size="sm" onClick={clearWebhook} disabled={!canManage || isPending || !webhookConfigured}>Clear</Button>
                 </div>
                 {webhookMessage && (
@@ -395,7 +407,7 @@ export default function StorageMaintenancePanel({ overview, canManage, canApprov
             </div>
 
             <div className="rounded-md border border-blue-500/30 bg-blue-500/10 p-3 text-sm">
-              Monitoring policy saves never activate deletion. Cleanup safety and approval remain separate on the Cleanup tab.
+              Monitoring policy saves never activate deletion. Cleanup safety and approval remain separate on the Advanced Maintenance tab.
             </div>
 
             <Button type="submit" disabled={!canManage || isPending}>
@@ -498,7 +510,7 @@ export default function StorageMaintenancePanel({ overview, canManage, canApprov
       </Card>
       )}
 
-      {showStorage && (
+      {showCleanup && (
       <Card>
         <CardHeader>
           <CardTitle>PostgreSQL maintenance observability</CardTitle>
@@ -525,9 +537,9 @@ export default function StorageMaintenancePanel({ overview, canManage, canApprov
       </Card>
       )}
 
-      {(showMonitoring || showCleanup) && (
-      <div className={`grid gap-4 ${showMonitoring && showCleanup ? "lg:grid-cols-2" : ""}`}>
-        {showMonitoring && (
+      {showCleanup && (
+      <div className="grid gap-4 lg:grid-cols-2">
+        {showCleanup && (
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2"><Clock3 className="h-5 w-5 text-primary" aria-hidden="true" />Maintenance runtime</CardTitle>
@@ -537,7 +549,7 @@ export default function StorageMaintenancePanel({ overview, canManage, canApprov
             <div className="flex justify-between gap-4"><span className="text-muted-foreground">Scheduler</span><Badge variant={scheduler.status === "stale" || scheduler.status === "missing" ? "destructive" : "secondary"}>{scheduler.status || "unknown"}</Badge></div>
             <div className="flex justify-between gap-4"><span className="text-muted-foreground">Last heartbeat</span><span className="text-right font-medium">{formatDate(scheduler.heartbeatAt, timeZone)}</span></div>
             <div className="flex justify-between gap-4"><span className="text-muted-foreground">Next expected check</span><span className="text-right font-medium">{formatDate(nextExpectedCheck, timeZone)}</span></div>
-            <div className="flex justify-between gap-4"><span className="text-muted-foreground">Recent alert events</span><span className="font-medium">{alertStates.length}</span></div>
+            <div className="flex justify-between gap-4"><span className="text-muted-foreground">Tracked alert states</span><span className="font-medium">{alertStates.length}</span></div>
             <div className="flex justify-between gap-4"><span className="text-muted-foreground">Suppressed repeats</span><span className="font-medium">{suppressedAlerts}</span></div>
             <div className="flex justify-between gap-4"><span className="text-muted-foreground">Pending/retrying alerts</span><span className="font-medium">{alertDeliveries.filter((item) => ["pending", "retry", "processing"].includes(item.status)).length}</span></div>
             <div className="flex justify-between gap-4"><span className="text-muted-foreground">Dead alert deliveries</span><span className="font-medium">{alertDeliveries.filter((item) => item.status === "dead").length}</span></div>

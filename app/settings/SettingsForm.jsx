@@ -273,10 +273,10 @@ export default function SettingsForm({
       <div className="space-y-6">
         <div className="space-y-2">
           <Label htmlFor="maxRecords" className="text-sm font-medium">
-            Maximum number of records to keep in live feed
+            Record-limit planning threshold
           </Label>
           <p className="text-xs text-muted-foreground mb-2">
-            100k records = &lt;100 MB
+            Used by the read-only maintenance preview. Community does not automatically delete plate reads.
           </p>
           <Input
             id="maxRecords"
@@ -289,7 +289,7 @@ export default function SettingsForm({
         </div>
         <div className="space-y-2">
           <Label htmlFor="retention" className="text-sm font-medium">
-            Image Retention Period (Months)
+            Image-retention planning period (months)
           </Label>
           <Input
             id="retention"
@@ -299,6 +299,9 @@ export default function SettingsForm({
             autoComplete="off"
             className="max-w-xs"
           />
+          <p className="text-xs text-muted-foreground">
+            Used to estimate retention-eligible reads. Community does not automatically delete plate reads or source images.
+          </p>
         </div>
         <div className="space-y-2 w-fit">
           <Label htmlFor="timeFormat" className="text-sm font-medium">
@@ -674,22 +677,22 @@ export default function SettingsForm({
     <div key="privacy-section" className="space-y-6">
       <div>
         <h2 className="text-2xl font-semibold text-foreground mb-2">
-          Data &amp; Privacy
+          Storage &amp; Privacy
         </h2>
         <p className="text-muted-foreground">
-          Review how this community build handles information leaving the app.
+          Review storage health, maintenance, and how Community handles outbound data.
         </p>
       </div>
       <Tabs value={privacyTab.active} onValueChange={privacyTab.navigate} className="max-w-5xl space-y-6">
-        <TabsList aria-label="Data and privacy sections" className="grid h-auto w-full grid-cols-2 gap-1 p-1 lg:grid-cols-4">
+        <TabsList aria-label="Storage and privacy sections" className="grid h-auto w-full grid-cols-2 gap-1 p-1 lg:grid-cols-4">
           <TabsTrigger value="storage" className="gap-2 py-2">
-            <HardDrive className="h-4 w-4" aria-hidden="true" />Storage Health
+            <HardDrive className="h-4 w-4" aria-hidden="true" />Storage Overview
           </TabsTrigger>
           <TabsTrigger value="monitoring" className="gap-2 py-2">
-            <BellRing className="h-4 w-4" aria-hidden="true" />Monitoring
+            <BellRing className="h-4 w-4" aria-hidden="true" />Monitoring &amp; Alerts
           </TabsTrigger>
           <TabsTrigger value="cleanup" className="gap-2 py-2">
-            <Trash2 className="h-4 w-4" aria-hidden="true" />Cleanup
+            <Trash2 className="h-4 w-4" aria-hidden="true" />Advanced Maintenance
           </TabsTrigger>
           <TabsTrigger value="privacy" className="gap-2 py-2">
             <Shield className="h-4 w-4" aria-hidden="true" />Privacy
@@ -698,16 +701,9 @@ export default function SettingsForm({
 
         <TabsContent value="storage" className="mt-0 space-y-4">
           <StorageHealthCard snapshot={initialStorageHealth} view="storage" />
-          <StorageMaintenancePanel
-            overview={initialStorageMaintenance}
-            canManage={canManageMaintenance}
-            canApproveAutomaticCleanup={canApproveAutomaticCleanup}
-            view="storage"
-          />
         </TabsContent>
 
         <TabsContent value="monitoring" className="mt-0 space-y-4">
-          <StorageHealthCard snapshot={initialStorageHealth} view="monitoring" />
           <StorageMaintenancePanel
             overview={initialStorageMaintenance}
             canManage={canManageMaintenance}
@@ -716,7 +712,8 @@ export default function SettingsForm({
           />
         </TabsContent>
 
-        <TabsContent value="cleanup" className="mt-0">
+        <TabsContent value="cleanup" className="mt-0 space-y-4">
+          <StorageHealthCard snapshot={initialStorageHealth} view="monitoring" />
           <StorageMaintenancePanel
             overview={initialStorageMaintenance}
             canManage={canManageMaintenance}
@@ -737,7 +734,7 @@ export default function SettingsForm({
           <div className="rounded-lg border p-5">
             <h3 className="font-semibold">Configured integrations remain explicit</h3>
             <p className="mt-2 text-sm text-muted-foreground">
-              Pushover, MQTT, Blue Iris, Home Assistant, and AI-agent connections
+              Pushover, MQTT, Email, signed webhooks, Blue Iris, and Home Assistant
               communicate only when you configure and use those integrations.
               Local retention planning and storage reconciliation are read-only.
               Automatic deletion remains off until separately activated by an

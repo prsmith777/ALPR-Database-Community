@@ -35,7 +35,7 @@ const navigationSections = [
       { title: "Plate Matching", id: "plateMatching", href: "/settings/plate-matching", icon: ScanSearch },
       { title: "Review & Corrections", id: "plateReview", href: "/settings/review-corrections", icon: ShieldCheck },
       { title: "Vehicle Setup", id: "vehicleIntelligence", href: "/settings/vehicle-intelligence", icon: CarFront },
-      { title: "Data & Privacy", id: "privacy", href: "/settings/data-privacy", icon: Shield },
+      { title: "Storage & Privacy", id: "privacy", href: "/settings/data-privacy", icon: Shield },
       { title: "Release", id: "release", href: "/settings/release", icon: PackageOpen },
     ],
   },
