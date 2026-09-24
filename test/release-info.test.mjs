@@ -23,7 +23,7 @@ test("release information resolves a commit-pinned deployment image", () => {
     ALPR_RELEASE_CHANNEL: "staging",
   });
 
-  assert.equal(release.version, "0.1.20");
+  assert.equal(release.version, "0.1.21");
   assert.equal(release.manualVersion, "1.0");
   assert.equal(release.manualUpdatedAt, "September 22, 2026");
   assert.equal(release.gitSha, "8cd2fa8");
@@ -32,15 +32,15 @@ test("release information resolves a commit-pinned deployment image", () => {
   assert.equal(release.readOnly, true);
   assert.equal(
     release.notes.title,
-    "Clean Community baseline candidate"
+    "Community UI reliability fixes"
   );
-  assert.equal(release.notes.publishedAt, "2026-09-22");
+  assert.equal(release.notes.publishedAt, "2026-09-24");
   assert.ok(release.notes.items.length >= 4);
   const notes = release.notes.items.join(" ");
-  assert.match(notes, /without inherited Git history/i);
-  assert.match(notes, /installation-specific defaults/i);
-  assert.match(notes, /private-only chat, TPMS, radar traffic/i);
-  assert.match(notes, /PostgreSQL 17 deployment guidance/i);
+  assert.match(notes, /radar-only speed columns/i);
+  assert.match(notes, /confidence formatting/i);
+  assert.match(notes, /hydration-safe/i);
+  assert.match(notes, /accessible labels/i);
 });
 
 test("an explicit valid SHA overrides the image tag", () => {
