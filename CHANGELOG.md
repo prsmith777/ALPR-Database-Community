@@ -14,6 +14,11 @@
 - Marked the legacy image migration complete in newly initialized databases so
   clean installations proceed directly to the dashboard after sign-in while
   restored legacy databases preserve their migration requirement.
+- Generalized the guarded database importer for validated PostgreSQL 13 and 17
+  sources, pinned Original ALPR v0.1.9 as the legacy application baseline,
+  added application-schema fingerprinting, repaired and verified derived plate
+  occurrence counts during import, added resumable image-storage transfer
+  guidance, and updated the Community user guide to version 1.2.
 
 ## 0.1.22 — 2026-09-24
 

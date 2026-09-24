@@ -64,7 +64,11 @@ use the administrator password from `.env`. Then create a named administrator
 under Settings and configure Blue Iris.
 
 See [Community deployment](docs/DEPLOYMENT.md) for persistent storage,
-PostgreSQL 17 upgrade, external database, validation, and rollback guidance.
+guarded PostgreSQL 13 or 17 database import, image-storage transfer, external
+database configuration, validation, and rollback guidance. Original ALPR
+Database imports use the pinned v0.1.9 database schema as their supported
+baseline; the preflight rejects unknown or partially updated schemas before it
+creates a dump.
 
 ## Blue Iris ingestion
 

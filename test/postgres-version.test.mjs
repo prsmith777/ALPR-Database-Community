@@ -23,7 +23,7 @@ test("bundled database services use the supported PostgreSQL release", () => {
 });
 
 test("the deployment runbook warns that a fresh volume is required", () => {
-  assert.match(deploymentRunbook, /must not be started with the PostgreSQL 17 image/);
-  assert.match(deploymentRunbook, /restoring it into a fresh\s+PostgreSQL 17 volume/);
-  assert.match(deploymentRunbook, /retaining the PostgreSQL\s+13 volume/);
+  assert.match(deploymentRunbook, /must (?:never|not) be started with\s+the PostgreSQL 17 image/);
+  assert.match(deploymentRunbook, /empty PostgreSQL 17 database on a fresh volume/);
+  assert.match(deploymentRunbook, /retaining that source and the verified logical dump/);
 });

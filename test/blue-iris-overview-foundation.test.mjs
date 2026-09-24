@@ -991,4 +991,8 @@ test("compose database startup fails closed on any migration error", async () =>
     migrationHelper,
     /"--set", "ON_ERROR_STOP=1",\s*"--single-transaction",\s*\.\.\.connectionArguments\(target\)/
   );
+  assert.match(
+    migrationHelper,
+    /executable\("pg_restore", environment\)[\s\S]*?"--single-transaction"/
+  );
 });

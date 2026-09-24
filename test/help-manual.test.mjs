@@ -14,7 +14,7 @@ async function source(path) {
 }
 
 test("the user guide is structured, searchable, and role-aware", () => {
-  assert.equal(HELP_MANUAL.manualVersion, "1.1");
+  assert.equal(HELP_MANUAL.manualVersion, "1.2");
   assert.ok(HELP_MANUAL.sections.length >= 14);
 
   const ids = HELP_MANUAL.sections.map((section) => section.id);
@@ -96,7 +96,7 @@ test("Community releases include public deployment and roadmap guidance", async 
 
   assert.match(readme, /docs\/DEPLOYMENT\.md/);
   assert.match(readme, /docs\/COMMUNITY_PRODUCT_ROADMAP\.md/);
-  assert.match(runbook, /fresh PostgreSQL 17 volume/);
+  assert.match(runbook, /empty PostgreSQL 17 database on a fresh volume/);
   assert.match(roadmap, /Community/i);
   assert.doesNotMatch(`${readme}\n${runbook}\n${roadmap}`, /personal-deployment\.md/);
 });

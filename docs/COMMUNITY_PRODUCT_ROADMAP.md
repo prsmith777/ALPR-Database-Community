@@ -10,7 +10,8 @@ Git history. The release gate requires:
 - no private deployment scripts or privileged host-maintenance controls;
 - no fixed installation-specific camera, radar, or network configuration;
 - persistent authentication, configuration, log, image, and database storage;
-- PostgreSQL 17 fresh-install and logical restore guidance;
+- PostgreSQL 17 fresh-install and guarded PostgreSQL 13 or 17 imports from the
+  pinned Original ALPR v0.1.9 or Community v0.1.20-plus schema baselines;
 - passing sanitation, unit, lint, type, build, and isolated container checks.
 
 ## Initial Community release

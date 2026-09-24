@@ -14,6 +14,7 @@
     "test:sanitize": "node scripts/check-community-sanitization.mjs",
     "test:runtime-image": "node scripts/verify-runtime-image.mjs",
     "migrate:postgres": "node scripts/postgres-major-migration.mjs",
+    "migrate:database": "node scripts/postgres-major-migration.mjs",
     "test:overview-export:postgres": "node scripts/test-overview-export-postgres.mjs",
     "test:vehicle-image-asset-cleanup:postgres": "node scripts/test-vehicle-image-asset-cleanup-postgres.mjs",
     "test:vehicle-image-asset:postgres": "node scripts/test-vehicle-image-asset-postgres.mjs",
