@@ -58,7 +58,6 @@ END;
 $$;
 
 
-ALTER FUNCTION public.update_updated_at_column() OWNER TO postgres;
 
 SET default_tablespace = '';
 
@@ -80,7 +79,6 @@ CREATE TABLE public.known_plates (
 );
 
 
-ALTER TABLE public.known_plates OWNER TO postgres;
 
 --
 -- Name: plate_notifications; Type: TABLE; Schema: public; Owner: postgres
@@ -96,7 +94,6 @@ CREATE TABLE public.plate_notifications (
 );
 
 
-ALTER TABLE public.plate_notifications OWNER TO postgres;
 
 --
 -- Name: plate_notifications_id_seq; Type: SEQUENCE; Schema: public; Owner: postgres
@@ -111,7 +108,6 @@ CREATE SEQUENCE public.plate_notifications_id_seq
     CACHE 1;
 
 
-ALTER TABLE public.plate_notifications_id_seq OWNER TO postgres;
 
 --
 -- Name: plate_notifications_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: postgres
@@ -147,7 +143,6 @@ CREATE TABLE public.plate_reads (
 );
 
 
-ALTER TABLE public.plate_reads OWNER TO postgres;
 
 --
 -- Name: plate_reads_id_seq; Type: SEQUENCE; Schema: public; Owner: postgres
@@ -162,7 +157,6 @@ CREATE SEQUENCE public.plate_reads_id_seq
     CACHE 1;
 
 
-ALTER TABLE public.plate_reads_id_seq OWNER TO postgres;
 
 --
 -- Name: plate_reads_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: postgres
@@ -182,7 +176,6 @@ CREATE TABLE public.plate_tags (
 );
 
 
-ALTER TABLE public.plate_tags OWNER TO postgres;
 
 --
 -- Name: plates; Type: TABLE; Schema: public; Owner: postgres
@@ -197,7 +190,6 @@ CREATE TABLE public.plates (
 );
 
 
-ALTER TABLE public.plates OWNER TO postgres;
 
 
 CREATE INDEX idx_plates_occurrence_count ON public.plates(occurrence_count);
@@ -214,7 +206,6 @@ CREATE TABLE public.tags (
 );
 
 
-ALTER TABLE public.tags OWNER TO postgres;
 
 CREATE TABLE public.devmgmt (
     id SERIAL PRIMARY KEY,
@@ -222,7 +213,6 @@ CREATE TABLE public.devmgmt (
     training_last_record INTEGER DEFAULT 0
 );
 
-ALTER TABLE public.devmgmt OWNER TO postgres;
 
 INSERT INTO public.devmgmt (id, update1)
 SELECT 1, false
@@ -243,7 +233,6 @@ CREATE SEQUENCE public.tags_id_seq
     CACHE 1;
 
 
-ALTER TABLE public.tags_id_seq OWNER TO postgres;
 
 --
 -- Name: tags_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: postgres
@@ -499,7 +488,6 @@ BEGIN
 END;
 $$;
 
-ALTER FUNCTION public.update_plate_occurrence_count() OWNER TO postgres;
 
 CREATE TRIGGER plate_reads_count_trigger AFTER INSERT OR UPDATE OR DELETE ON public.plate_reads FOR EACH ROW EXECUTE FUNCTION public.update_plate_occurrence_count();
 
