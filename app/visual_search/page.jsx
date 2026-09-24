@@ -22,7 +22,7 @@ export default async function VisualSearchPage({ searchParams }) {
   const parameters = await searchParams;
   const modeResult = await getVehicleReidAuthorityMode();
   const mode = modeResult?.success ? modeResult.data.control?.mode : null;
-  if (!modeResult?.success || !["v1_primary", "v1_rollback", "v2_primary"].includes(mode)) {
+  if (!modeResult?.success || !["v1_primary", "v2_shadow", "v1_rollback", "v2_primary"].includes(mode)) {
     return (
       <DashboardLayout>
         <TitleNavbar title="Vehicle Intelligence" navigation={[]}>
