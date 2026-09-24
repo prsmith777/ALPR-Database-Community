@@ -246,3 +246,6 @@ jobs:
 
       - name: Build production Docker image
         run: docker build --tag alpr-ci:${{ github.sha }} .
+
+      - name: Verify runtime-only image contents
+        run: node scripts/verify-runtime-image.mjs alpr-ci:${{ github.sha }}

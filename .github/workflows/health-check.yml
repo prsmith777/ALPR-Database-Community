@@ -67,6 +67,41 @@ jobs:
           }
           echo "✅ Database setup completed successfully"
 
+      - name: Verify fresh database contains no test data
+        run: |
+          set -euo pipefail
+
+          counts="$(psql --no-psqlrc --set ON_ERROR_STOP=1 \
+            --tuples-only --no-align "$DATABASE_URL" --command "
+              SELECT concat_ws('|',
+                (SELECT count(*) FROM public.plates),
+                (SELECT count(*) FROM public.plate_reads),
+                (SELECT count(*) FROM public.known_plates),
+                (SELECT count(*) FROM public.tags),
+                (SELECT count(*) FROM public.plate_tags),
+                (SELECT count(*) FROM public.plate_notifications)
+              );
+            ")"
+          test "$counts" = '0|0|0|0|0|0'
+
+          fixture_tables="$(psql --no-psqlrc --set ON_ERROR_STOP=1 \
+            --tuples-only --no-align "$DATABASE_URL" --command "
+              SELECT count(*)
+              FROM (VALUES
+                (to_regclass('public.codex_staging_fixture_sets')),
+                (to_regclass('public.codex_staging_fixture_manifest'))
+              ) AS fixture_tables(table_name)
+              WHERE table_name IS NOT NULL;
+            ")"
+          test "$fixture_tables" = '0'
+
+          update_complete="$(psql --no-psqlrc --set ON_ERROR_STOP=1 \
+            --tuples-only --no-align "$DATABASE_URL" --command "
+              SELECT update1 FROM public.devmgmt WHERE id = 1;
+            ")"
+          test "$update_complete" = 't'
+          echo "✅ Fresh database contains no application or fixture data"
+
       - name: Test Database Extensions
         run: |
           echo "Testing required PostgreSQL extensions..."

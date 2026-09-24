@@ -15,6 +15,8 @@ writable by UID/GID `1000`, as shown in the README quick start. These paths are
 bind-mounted and intentionally do not come from the repository or image.
 On startup, Compose waits for PostgreSQL's first-time schema initialization,
 then applies `migrations.sql` in one transaction before it starts the app.
+A newly initialized database is marked as not needing the legacy base64 image
+migration and proceeds directly to the dashboard after first sign-in.
 
 ## PostgreSQL 17 upgrades
 
@@ -91,6 +93,13 @@ acknowledgement:
 ```text
 ALPR_MIGRATION_ACKNOWLEDGE=PG13_TO_PG17_EMPTY_TARGET
 ```
+
+The restore includes the source database's `devmgmt` migration marker. An
+installation with unfinished base64 image conversion therefore still opens the
+guided migration page; an installation that previously completed it proceeds
+to the dashboard. If a very old source has no marker table, `migrations.sql`
+creates it as incomplete so the user must verify the migration rather than
+silently skipping it.
 
 `validate` rechecks the dump digest and compares every PostgreSQL 13 public
 table count with the live source, manifest, and PostgreSQL 17 target. This

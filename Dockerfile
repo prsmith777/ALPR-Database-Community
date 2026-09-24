@@ -21,16 +21,25 @@ FROM node:24-bookworm-slim
 WORKDIR /app
 
 ENV NEXT_TELEMETRY_DISABLED=1
+ENV NODE_ENV=production
+ENV HOSTNAME=0.0.0.0
+ENV PORT=3000
 
 RUN apt-get update \
     && apt-get install -y --no-install-recommends ffmpeg \
     && rm -rf /var/lib/apt/lists/*
 
-COPY --from=builder --chown=node:node /app /app
+# The builder needs the complete source tree, tests, and validation fixtures.
+# The runtime image intentionally receives only the standalone server, static
+# assets, and the model files used by the application.
+COPY --from=builder --chown=node:node /app/.next/standalone ./
+COPY --from=builder --chown=node:node /app/.next/static ./.next/static
+COPY --from=builder --chown=node:node /app/public ./public
+COPY --from=builder --chown=node:node /app/models/visual-search ./models/visual-search
 
 RUN mkdir -p /app/auth /app/config /app/logs /app/storage \
     && chown -R node:node /app/auth /app/config /app/logs /app/storage
 
 EXPOSE 3000
 USER node
-CMD ["node", "node_modules/next/dist/bin/next", "start"]
+CMD ["node", "server.js"]

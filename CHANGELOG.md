@@ -1,5 +1,20 @@
 # Changelog
 
+## Unreleased
+
+- Reduced the production Docker image to the standalone application runtime,
+  public assets, and required visual-search models. Test suites, synthetic
+  fixture tooling, CI files, and development payloads remain in the source
+  repository but are no longer copied into the runtime image.
+- Added release gates that inspect the runtime image and prove a freshly
+  initialized database contains no plates, reads, tags, notifications, or
+  staging-fixture registry.
+- Clarified the first-run login mode so new administrators are told to leave
+  the username blank and use the configured administrator password.
+- Marked the legacy image migration complete in newly initialized databases so
+  clean installations proceed directly to the dashboard after sign-in while
+  restored legacy databases preserve their migration requirement.
+
 ## 0.1.22 — 2026-09-24
 
 - Simplified Storage & Privacy for first-time Community administrators and

@@ -59,8 +59,9 @@ docker build --tag alpr-dashboard:local .
 docker compose up -d
 ```
 
-Open `http://<host>:3000`, sign in with the administrator password from
-`.env`, and configure Blue Iris under Settings.
+Open `http://<host>:3000`. For the first sign-in, leave the username blank and
+use the administrator password from `.env`. Then create a named administrator
+under Settings and configure Blue Iris.
 
 See [Community deployment](docs/DEPLOYMENT.md) for persistent storage,
 PostgreSQL 17 upgrade, external database, validation, and rollback guidance.
