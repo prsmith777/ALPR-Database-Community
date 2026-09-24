@@ -1,11 +1,16 @@
 "use client";
 
 import { ChevronDown, Clock3 } from "lucide-react";
+import {
+  formatHydrationSafeDateTime,
+  useHydrationSafeTimeZone,
+} from "@/lib/hydration-safe-date.mjs";
 
-function formattedTimestamp(timestamp) {
-  if (!timestamp) return "Time unavailable";
-  const value = new Date(timestamp);
-  return Number.isNaN(value.getTime()) ? "Time unavailable" : value.toLocaleString();
+function formattedTimestamp(timestamp, timeZone) {
+  return formatHydrationSafeDateTime(timestamp, {
+    fallback: "Time unavailable",
+    timeZone,
+  });
 }
 
 function readableEventType(value) {
@@ -43,6 +48,7 @@ export default function ReadPipelineTimeline({
   expanded = false,
   onExpandedChange,
 }) {
+  const timeZone = useHydrationSafeTimeZone();
   const events = timeline?.events || [];
   const summary = timeline?.error
     ? "Timeline unavailable"
@@ -96,7 +102,7 @@ export default function ReadPipelineTimeline({
                       </span>
                     </span>
                     <time className="shrink-0 font-mono text-[10px] text-muted-foreground">
-                      {formattedTimestamp(event.occurredAt)}
+                      {formattedTimestamp(event.occurredAt, timeZone)}
                     </time>
                   </div>
                   {Object.keys(event.details || {}).length > 0 && (

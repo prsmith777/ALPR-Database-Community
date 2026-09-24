@@ -615,8 +615,6 @@ export async function getLatestPlateReads({
   cameraNames = [],
   reviewStatuses = [],
   directionLabels = [],
-  minimumSpeed = "",
-  maximumSpeed = "",
   dashboardMetric = "",
   sortField = "",
   sortDirection = "",
@@ -651,8 +649,6 @@ export async function getLatestPlateReads({
               : [],
         reviewStatuses: Array.isArray(reviewStatuses) ? reviewStatuses : [],
         directionLabels: Array.isArray(directionLabels) ? directionLabels : [],
-        minimumSpeed,
-        maximumSpeed,
         dashboardMetric,
       },
       sort: {

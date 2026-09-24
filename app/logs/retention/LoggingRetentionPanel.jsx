@@ -12,6 +12,10 @@ import {
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import {
+  formatHydrationSafeDateTime,
+  useHydrationSafeTimeZone,
+} from "@/lib/hydration-safe-date.mjs";
 
 function formatBytes(value) {
   const bytes = Number(value) || 0;
@@ -21,13 +25,14 @@ function formatBytes(value) {
   return `${(bytes / 1024 / 1024 / 1024).toFixed(2)} GB`;
 }
 
-function formatTime(value) {
-  if (!value) return "Not available";
-  const date = new Date(value);
-  return Number.isNaN(date.getTime()) ? value : date.toLocaleString();
+function formatTime(value, timeZone) {
+  return formatHydrationSafeDateTime(value, {
+    fallback: value || "Not available",
+    timeZone,
+  });
 }
 
-function HealthCard({ title, count, bytes, oldest, detail }) {
+function HealthCard({ title, count, bytes, oldest, detail, timeZone }) {
   return (
     <div className="rounded-lg border bg-card p-4">
       <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{title}</p>
@@ -35,19 +40,20 @@ function HealthCard({ title, count, bytes, oldest, detail }) {
         <p className="text-2xl font-semibold">{Number(count || 0).toLocaleString()}</p>
         <p className="text-sm text-muted-foreground">{formatBytes(bytes)}</p>
       </div>
-      <p className="mt-2 text-xs text-muted-foreground">Oldest: {formatTime(oldest)}</p>
+      <p className="mt-2 text-xs text-muted-foreground">Oldest: {formatTime(oldest, timeZone)}</p>
       {detail && <p className="mt-1 text-xs text-muted-foreground">{detail}</p>}
     </div>
   );
 }
 
-function scopeLabel(incident) {
+function scopeLabel(incident, timeZone) {
   if (incident.scopeType === "request") return `Request ${incident.requestId}`;
   if (incident.scopeType === "read") return `Read ${incident.readId}`;
-  return `${formatTime(incident.windowStart)} through ${formatTime(incident.windowEnd)}`;
+  return `${formatTime(incident.windowStart, timeZone)} through ${formatTime(incident.windowEnd, timeZone)}`;
 }
 
 export default function LoggingRetentionPanel({ initialOverview, canManage }) {
+  const timeZone = useHydrationSafeTimeZone();
   const [overview, setOverview] = useState(initialOverview);
   const [notice, setNotice] = useState(null);
   const [preview, setPreview] = useState(null);
@@ -164,6 +170,7 @@ export default function LoggingRetentionPanel({ initialOverview, canManage }) {
           bytes={operational.retainedBytes}
           oldest={operational.oldestTimestamp}
           detail={`${formatBytes(operational.activeBytes)} active · ${operational.maximumFiles || 0} files configured`}
+          timeZone={timeZone}
         />
         <HealthCard
           title="Ingress receipts"
@@ -171,6 +178,7 @@ export default function LoggingRetentionPanel({ initialOverview, canManage }) {
           bytes={overview.receipts?.bytes}
           oldest={overview.receipts?.oldest}
           detail={`${overview.receipts?.candidateCount || 0} currently previewable`}
+          timeZone={timeZone}
         />
         <HealthCard
           title="Read timeline"
@@ -178,6 +186,7 @@ export default function LoggingRetentionPanel({ initialOverview, canManage }) {
           bytes={overview.pipeline?.bytes}
           oldest={overview.pipeline?.oldest}
           detail="Retention follows its parent read"
+          timeZone={timeZone}
         />
         <HealthCard
           title="Audit hot / archive"
@@ -185,6 +194,7 @@ export default function LoggingRetentionPanel({ initialOverview, canManage }) {
           bytes={(audit.hotBytes || 0) + (audit.archiveBytes || 0)}
           oldest={audit.hotOldest}
           detail={`${audit.archiveCount || 0} archived · ${audit.candidateCount || 0} previewable`}
+          timeZone={timeZone}
         />
       </div>
 
@@ -288,8 +298,8 @@ export default function LoggingRetentionPanel({ initialOverview, canManage }) {
               {(overview.incidents || []).map((item) => (
                 <tr key={item.id} className="border-t">
                   <td className="px-3 py-2 font-medium">{item.name}</td>
-                  <td className="px-3 py-2 text-muted-foreground">{scopeLabel(item)}</td>
-                  <td className="px-3 py-2">{formatTime(item.protectedUntil)}</td>
+                  <td className="px-3 py-2 text-muted-foreground">{scopeLabel(item, timeZone)}</td>
+                  <td className="px-3 py-2">{formatTime(item.protectedUntil, timeZone)}</td>
                   <td className="px-3 py-2 text-muted-foreground">
                     {Object.values(item.evidenceCounts || {}).reduce((sum, value) => sum + Number(value || 0), 0)} entries
                     {Object.values(item.truncatedCounts || {}).reduce((sum, value) => sum + Number(value || 0), 0) > 0
@@ -337,7 +347,7 @@ export default function LoggingRetentionPanel({ initialOverview, canManage }) {
               Preview {preview.id}: {preview.candidateCount} rows · {formatBytes(preview.candidateBytes)}
             </p>
             <p className="mt-1 text-sm text-muted-foreground">
-              {preview.auditEventCount} audit events will be archived; {preview.receiptCount} expired receipts will be removed. Expires {formatTime(preview.expiresAt)}.
+              {preview.auditEventCount} audit events will be archived; {preview.receiptCount} expired receipts will be removed. Expires {formatTime(preview.expiresAt, timeZone)}.
             </p>
             <details className="mt-3 text-sm">
               <summary className="cursor-pointer font-medium">Show exact candidate IDs</summary>

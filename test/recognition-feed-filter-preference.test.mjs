@@ -41,9 +41,7 @@ test("Recognition Feed preferences round-trip every stable filter and sort optio
     ["camera", "Street LPR 2"],
     ["reviewStatus", "unreviewed"],
     ["direction", "Eastbound"],
-    ["minimumSpeed", "10"],
-    ["maximumSpeed", "45.5"],
-    ["sortField", "speed"],
+    ["sortField", "direction"],
     ["sortDirection", "asc"],
   ]);
 
@@ -58,9 +56,7 @@ test("Recognition Feed preferences round-trip every stable filter and sort optio
     cameras: ["Street LPR 1", "Street LPR 2"],
     reviewStatuses: ["unreviewed"],
     directions: ["Eastbound"],
-    minimumSpeed: "10",
-    maximumSpeed: "45.5",
-    sortField: "speed",
+    sortField: "direction",
     sortDirection: "asc",
   });
   assert.deepEqual(
@@ -79,8 +75,6 @@ test("Recognition Feed preferences reject malformed values and preserve explicit
     hourFrom: -1,
     hourTo: 100,
     reviewStatuses: ["confirmed", "invalid"],
-    minimumSpeed: -5,
-    maximumSpeed: 500,
     sortField: "DROP TABLE",
     sortDirection: "sideways",
   });
@@ -88,8 +82,6 @@ test("Recognition Feed preferences reject malformed values and preserve explicit
   assert.deepEqual(preference.reviewStatuses, ["confirmed"]);
   assert.equal(preference.dateFrom, "");
   assert.equal(preference.hourFrom, "");
-  assert.equal(preference.minimumSpeed, "");
-  assert.equal(preference.maximumSpeed, "");
   assert.equal(preference.sortField, "timestamp");
   assert.equal(preference.sortDirection, "desc");
   assert.equal(hasRecognitionFeedFilterPreference(preference), true);
@@ -122,7 +114,6 @@ test("Recognition Feed preferences survive browser and application restarts thro
     {
       cameras: ["Street LPR 1"],
       directions: ["Eastbound"],
-      minimumSpeed: "12",
     },
     storage,
     documentRef
@@ -194,7 +185,7 @@ test("Recognition Feed desktop search and filters use one aligned five-column gr
   assert.match(desktopSearchGrid, /className="hidden w-full sm:block"/);
   assert.match(desktopSearchGrid, /className="hidden sm:contents"/);
   const labels = [
-    'placeholder="Search plates or speed..."',
+    'placeholder="Search plates..."',
     'prefixLabel="Plate matching"',
     'allLabel="All tags"',
     'allLabel="All cameras"',
@@ -202,7 +193,6 @@ test("Recognition Feed desktop search and filters use one aligned five-column gr
     "<HourRangeFilter",
     'allLabel="All review statuses"',
     'allLabel="All directions"',
-    "Speed{filters.minimumSpeed",
   ];
   let previousIndex = -1;
   for (const label of labels) {
@@ -212,4 +202,19 @@ test("Recognition Feed desktop search and filters use one aligned five-column gr
   }
   assert.match(desktopSearchGrid, /triggerClassName="w-full justify-start"/);
   assert.doesNotMatch(desktopSearchGrid, />\s*Clear Filters\s*</);
+  assert.doesNotMatch(table, /minimumSpeed|maximumSpeed|Speed range|field="speed"/);
+});
+
+test("Community ignores legacy radar query keys and speed sorting", () => {
+  const params = new URLSearchParams(
+    "minimumSpeed=10&maximumSpeed=45&sortField=speed&sortDirection=asc"
+  );
+  const preference = recognitionFeedFilterPreferenceFromSearchParams(params);
+  assert.equal(Object.hasOwn(preference, "minimumSpeed"), false);
+  assert.equal(Object.hasOwn(preference, "maximumSpeed"), false);
+  assert.equal(preference.sortField, "timestamp");
+  const serialized = recognitionFeedFilterPreferenceToSearchParams(preference);
+  assert.equal(serialized.has("minimumSpeed"), false);
+  assert.equal(serialized.has("maximumSpeed"), false);
+  assert.equal(serialized.get("sortField"), "timestamp");
 });
