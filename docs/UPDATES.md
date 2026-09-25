@@ -72,9 +72,11 @@ The equivalent individual commands are:
 ./alpr-community status
 ```
 
-Use `./alpr-community update --to v0.1.26` to select a specific newer stable
+Use `./alpr-community update --to v0.1.27` to select a specific newer stable
 release. The updater refuses `latest`, branches, prereleases, tags that are not
 on canonical `origin/main`, and a tag whose package version does not match.
+It fetches canonical `main` explicitly, so verification also works when the
+installation was originally cloned with a tag-only Git refspec.
 
 ## What installation does
 

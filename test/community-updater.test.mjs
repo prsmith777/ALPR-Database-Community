@@ -191,7 +191,7 @@ test("the guided engine backs up, applies, validates, accepts, and rolls back wi
         return JSON.stringify({ version: checkedOutCommit === currentCommit ? "0.1.22" : "0.1.23" });
       }
       if (joined === "remote get-url origin") return "https://github.com/prsmith777/ALPR-Database-Community.git";
-      if (joined === "fetch --prune --prune-tags --tags origin") return "";
+      if (joined === "fetch --prune --prune-tags --tags origin +refs/heads/main:refs/remotes/origin/main") return "";
       if (joined === "tag --list v* --merged origin/main") return "v0.1.22\nv0.1.23";
       if (joined === "rev-list -n 1 v0.1.23^{commit}") return targetCommit;
       if (joined === `merge-base --is-ancestor ${targetCommit} origin/main`) return "";
@@ -347,6 +347,7 @@ test("public update tooling has no Docker socket mount or broad prune command", 
   assert.doesNotMatch(compose, /docker\.sock/);
   assert.doesNotMatch(script, /docker["', ]+system["', ]+prune|system prune|-a.*prune/i);
   assert.match(script, /runner\("docker", \["image", "rm", image\]/);
+  assert.match(script, /\+refs\/heads\/main:refs\/remotes\/origin\/main/);
   assert.match(`${readme}\n${guide}`, /standard Linux/i);
   assert.match(guide, /does not copy.*storage/i);
   assert.match(guide, /Windows/i);
