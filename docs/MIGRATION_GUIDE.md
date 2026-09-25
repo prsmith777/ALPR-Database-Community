@@ -12,6 +12,17 @@ Supported database sources are:
 - Original ALPR Database v0.1.9-compatible on PostgreSQL 13 or 17;
 - ALPR Database Community v0.1.20 or newer on PostgreSQL 13 or 17.
 
+The Community compatibility matrix is acceptance-tested from these exact
+clean-history release states:
+
+- v0.1.20: `4cb70c2c5cbe24c7451e5c468692250331b7cbd0`;
+- v0.1.21: `c783fcafc62396f437c4fa811ce33bce658119b8`;
+- v0.1.22: `316742ebbd6ba6fc2e2135a4b5c96b61bc160859`.
+
+The matrix covers PostgreSQL 13 and 17 sources, always restores into
+PostgreSQL 17, and includes a refused non-empty restore followed by a clean,
+same-endpoint resume and rollback verification.
+
 An older Original ALPR installation must first update its database to the
 pinned v0.1.9 baseline. Unknown and partially updated schemas fail preflight.
 
@@ -236,3 +247,19 @@ npm run migrate:guided -- rollback-check
 
 The lower-level `npm run migrate:database -- <command>` interface remains
 available for diagnosis and advanced automation.
+
+## Maintainer acceptance matrix
+
+Maintainers with complete clean-history Git objects, Docker, Node.js 24, and
+PostgreSQL 17 client utilities can reproduce the supported Community upgrade
+matrix without using an installed ALPR database:
+
+```text
+npm run test:community-upgrades
+```
+
+Use `npm run test:community-upgrades -- --only 0.1.22` to isolate one baseline.
+The harness creates uniquely named disposable PostgreSQL containers on random
+loopback ports, stores dumps in a private operating-system temporary
+directory, and removes its containers and artifacts on success or failure. It
+does not discover, stop, or modify an existing ALPR stack.

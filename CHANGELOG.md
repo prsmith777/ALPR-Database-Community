@@ -23,6 +23,10 @@
   state, endpoint-drift protection, explicit source-quiesce and empty-target
   checkpoints, non-repeating successful phases, separate storage/application
   acceptance, rollback verification, and a step-by-step operator runbook.
+- Added a disposable Community upgrade matrix that recreates the exact stable
+  v0.1.20, v0.1.21, and v0.1.22 database baselines, proves PostgreSQL 13/17 to
+  PostgreSQL 17 imports, exercises failed-restore resume, verifies count
+  reconciliation, and confirms the retained source remains rollback-ready.
 
 ## 0.1.22 — 2026-09-24
 
