@@ -32,7 +32,7 @@ override files, Kubernetes installations, Docker Desktop on Windows, Synology
 Container Manager, or QNAP Container Station. Those platforms need dedicated
 adapters because their service control, paths, and recovery behavior differ.
 
-## Install from an exact release
+## Install the current release
 
 New installations should clone the repository and check out the release tag
 shown on the GitHub Releases page, rather than deploying moving `main`:
@@ -40,12 +40,20 @@ shown on the GitHub Releases page, rather than deploying moving `main`:
 ```bash
 git clone https://github.com/prsmith777/ALPR-Database-Community.git
 cd ALPR-Database-Community
-git checkout --detach v0.1.23
+git checkout --detach v0.1.27
+./alpr-community install
 ```
 
-Complete the normal `.env`, directory ownership, image build, and
-`docker compose up -d` steps in the deployment guide. The updater included in
-that release handles later Community-to-Community updates.
+The guided installer collects the administrator password, generates the
+database password, creates the private runtime directories, builds a
+commit-qualified image, initializes PostgreSQL 17, and proves the empty
+installation is healthy. Follow the complete
+[fresh-install guide](INSTALL.md). The updater included in the release handles
+later Community-to-Community updates.
+
+Do not install v0.1.23 as a new deployment merely because it was the first
+release containing the updater. A retained installation already running exact
+v0.1.23 can update directly to v0.1.27 with the guarded workflow below.
 
 ## Guided menu
 
@@ -72,11 +80,14 @@ The equivalent individual commands are:
 ./alpr-community status
 ```
 
-Use `./alpr-community update --to v0.1.27` to select a specific newer stable
-release. The updater refuses `latest`, branches, prereleases, tags that are not
-on canonical `origin/main`, and a tag whose package version does not match.
-It fetches canonical `main` explicitly, so verification also works when the
-installation was originally cloned with a tag-only Git refspec.
+Run `./alpr-community check` to discover the newest stable release and
+`./alpr-community update` to select it through the guided menu. A retained
+exact-v0.1.23 installation can use
+`./alpr-community update --to v0.1.27` to select this release explicitly. The
+updater refuses `latest`, branches, prereleases, tags that are not on canonical
+`origin/main`, and a tag whose package version does not match. It fetches
+canonical `main` explicitly, so verification also works when the installation
+was originally cloned with a tag-only Git refspec.
 
 ## What installation does
 

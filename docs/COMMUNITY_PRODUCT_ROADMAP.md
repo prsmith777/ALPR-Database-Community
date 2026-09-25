@@ -1,9 +1,9 @@
 # Community product roadmap
 
-## Clean-history baseline
+## Published clean-history baseline
 
-The Community repository starts from a reviewed source snapshot with no prior
-Git history. The release gate requires:
+The Community repository was published from a reviewed source snapshot with no
+prior Git history. Every release gate requires:
 
 - no credentials, password hashes, session data, database dumps, private LAN
   addresses, personal screenshots, or production-derived imagery;
@@ -14,9 +14,9 @@ Git history. The release gate requires:
   pinned Original ALPR v0.1.9 or Community v0.1.20-plus schema baselines;
 - passing sanitation, unit, lint, type, build, and isolated container checks.
 
-## Initial Community release
+## Current Community release boundary
 
-The first clean release focuses on the portable ALPR application:
+The published Community releases focus on the portable ALPR application:
 
 - authenticated plate ingestion;
 - live feed, search, tags, corrections, known vehicles, and exports;
@@ -27,11 +27,13 @@ The first clean release focuses on the portable ALPR application:
 - application-level storage monitoring and guarded cleanup;
 - guarded, resumable database migration from the supported Original and
   Community schema baselines;
-- Docker Compose deployment on x86-64 with PostgreSQL 17.
+- Docker Compose deployment on x86-64 with PostgreSQL 17;
 - guided fresh installation with generated database credentials, collision
   checks, empty-database proof, and narrow failed-install recovery;
 - exact-tag routine updates on standard Linux hosts and Linux virtual machines,
-  with a one-generation database/configuration rollback policy.
+  with a one-generation database/configuration rollback policy;
+- automated container checks for fresh installation, restart persistence,
+  ingestion, logical database restore, and reversible synthetic fixtures.
 
 Experimental radar traffic correlation, fixed-camera recovery campaigns,
 privileged host operations, advanced ReID conversion/cutover controls,
@@ -45,5 +47,3 @@ release boundary.
   timestamps, or camera identifiers.
 - Reintroduce advanced visual-search operations only after their configuration
   is portable, documented, default-off, and independently reviewed.
-- Add automated container smoke tests for fresh install, restart persistence,
-  ingestion, and logical database restore.
