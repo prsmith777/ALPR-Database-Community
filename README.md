@@ -135,6 +135,21 @@ rather than deploying moving `main`. See the
 release boundary and later work, and the [changelog](CHANGELOG.md) for shipped
 changes.
 
+## Support and feedback
+
+- [Ask a question or leave general feedback](https://github.com/prsmith777/ALPR-Database-Community/discussions)
+  in GitHub Discussions.
+- [Report a reproducible bug](https://github.com/prsmith777/ALPR-Database-Community/issues/new?template=bug_report.yml)
+  with the guided form.
+- [Request a feature](https://github.com/prsmith777/ALPR-Database-Community/issues/new?template=feature_request.yml)
+  after reviewing the Community roadmap.
+- [Report a security vulnerability privately](https://github.com/prsmith777/ALPR-Database-Community/security/advisories/new).
+
+Issues and discussions are public. Remove credentials, real license plates,
+camera images, private addresses, and other identifying data before posting.
+See [Contributing and getting help](CONTRIBUTING.md) for the full reporting and
+sanitization guidance.
+
 ## Security and privacy
 
 - Keep `.env`, `auth/`, `config/`, `storage/`, logs, and database backups out of

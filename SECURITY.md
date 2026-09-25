@@ -8,18 +8,19 @@ already have been corrected.
 
 ## Reporting a vulnerability
 
-Please report suspected vulnerabilities privately through GitHub's
-**Security** tab by selecting **Report a vulnerability**. Do not open a public
-issue containing credentials, license-plate data, images, private network
-details, or reproduction steps for an unpatched vulnerability.
+Please [report suspected vulnerabilities privately](https://github.com/prsmith777/ALPR-Database-Community/security/advisories/new)
+through GitHub's **Security** tab by selecting **Report a vulnerability**. Do
+not open a public issue containing credentials, license-plate data, images,
+private network details, or reproduction steps for an unpatched vulnerability.
 
 Include the affected version, deployment type, impact, and the smallest safe
 set of reproduction steps. Remove API keys, passwords, session cookies,
 database contents, and personally identifying plate data from logs and
 screenshots.
 
-If private vulnerability reporting is unavailable, open a public issue that
-only requests a private contact channel and contains no vulnerability details.
+If private vulnerability reporting is unavailable, [open a public issue](https://github.com/prsmith777/ALPR-Database-Community/issues/new?template=bug_report.yml)
+that only requests a private contact channel and contains no vulnerability
+details.
 
 ## Deployment guidance
 

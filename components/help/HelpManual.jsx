@@ -3,11 +3,16 @@
 import { useMemo, useState } from "react";
 import {
   BookOpenCheck,
+  Bug,
   CheckCircle2,
   Download,
+  ExternalLink,
   FileText,
   Info,
+  Lightbulb,
+  MessagesSquare,
   Search,
+  ShieldAlert,
   ShieldCheck,
   TriangleAlert,
 } from "lucide-react";
@@ -26,6 +31,33 @@ import { HELP_ROLE_LABELS, manualSearchText } from "@/lib/help-manual.mjs";
 import { cn } from "@/lib/utils";
 
 const roleOrder = ["administrator", "operator", "viewer", "auditor"];
+
+const supportLinks = [
+  {
+    label: "Ask the Community",
+    description: "Questions, setup help, and general feedback",
+    href: "https://github.com/prsmith777/ALPR-Database-Community/discussions",
+    icon: MessagesSquare,
+  },
+  {
+    label: "Report a bug",
+    description: "A reproducible application problem",
+    href: "https://github.com/prsmith777/ALPR-Database-Community/issues/new?template=bug_report.yml",
+    icon: Bug,
+  },
+  {
+    label: "Request a feature",
+    description: "A proposed Community improvement",
+    href: "https://github.com/prsmith777/ALPR-Database-Community/issues/new?template=feature_request.yml",
+    icon: Lightbulb,
+  },
+  {
+    label: "Report a security issue",
+    description: "Private vulnerability reporting",
+    href: "https://github.com/prsmith777/ALPR-Database-Community/security/advisories/new",
+    icon: ShieldAlert,
+  },
+];
 
 function RoleBadges({ roles }) {
   if (roles.length === roleOrder.length) {
@@ -169,6 +201,41 @@ export default function HelpManual({ manual }) {
           </div>
         </div>
       </header>
+
+      <section aria-labelledby="community-support-heading" className="mt-6 rounded-xl border bg-card p-4 sm:p-5">
+        <h2 id="community-support-heading" className="text-lg font-semibold">
+          Support and feedback
+        </h2>
+        <p className="mt-1 text-sm leading-6 text-muted-foreground">
+          Choose a public channel for questions and product feedback, or the private channel for security vulnerabilities.
+        </p>
+        <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+          {supportLinks.map((link) => {
+            const Icon = link.icon;
+            return (
+              <a
+                key={link.href}
+                href={link.href}
+                target="_blank"
+                rel="noreferrer"
+                className="rounded-lg border p-4 transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              >
+                <div className="flex items-center gap-2 font-medium">
+                  <Icon className="h-4 w-4 text-blue-500" aria-hidden="true" />
+                  {link.label}
+                  <ExternalLink className="ml-auto h-3.5 w-3.5 text-muted-foreground" aria-hidden="true" />
+                </div>
+                <p className="mt-2 text-xs leading-5 text-muted-foreground">
+                  {link.description}
+                </p>
+              </a>
+            );
+          })}
+        </div>
+        <p className="mt-4 text-xs leading-5 text-amber-700 dark:text-amber-300">
+          Issues and discussions are public. Remove credentials, real plate data, camera images, private addresses, and identifying details before posting.
+        </p>
+      </section>
 
       <section aria-label="Find help" className="mt-6 rounded-xl border bg-card p-4 sm:p-5">
         <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-end">
