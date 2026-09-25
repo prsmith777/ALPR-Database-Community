@@ -383,7 +383,7 @@ test("missing environment variables are reported together", () => {
   assert.equal(missing.includes("ALPR_MIGRATION_DUMP_PATH"), true);
 });
 
-test("the package and public runbooks expose the guided workflow and its safety boundary", async () => {
+test("the package and public runbooks expose the guided and automated workflows with their safety boundaries", async () => {
   const [packageJson, readme, deployment, guide] = await Promise.all([
     readFile(new URL("../package.json", import.meta.url), "utf8"),
     readFile(new URL("../README.md", import.meta.url), "utf8"),
@@ -399,6 +399,7 @@ test("the package and public runbooks expose the guided workflow and its safety 
   assert.match(deployment, /\.\/alpr-community migrate start/);
   assert.match(guide, /never switches traffic/i);
   assert.match(guide, /Passwords.*never written/i);
-  assert.match(guide, /ALPR_MIGRATION_STORAGE_VERIFIED=ALPR_STORAGE_VERIFIED/);
-  assert.match(guide, /ALPR_MIGRATION_APPLICATION_VERIFIED=ALPR_APPLICATION_VERIFIED/);
+  assert.match(guide, /\.\/alpr-community migrate wizard/);
+  assert.match(guide, /ALPR_MIGRATION_ACCEPTANCE=ALPR_MIGRATION_ACCEPTED/);
+  assert.match(guide, /ALPR_MIGRATION_ACTIVATION=ALPR_ACTIVATE_MIGRATED_TARGET/);
 });

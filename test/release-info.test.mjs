@@ -23,8 +23,8 @@ test("release information resolves a commit-pinned deployment image", () => {
     ALPR_RELEASE_CHANNEL: "staging",
   });
 
-  assert.equal(release.version, "0.1.30");
-  assert.equal(release.manualVersion, "2.1");
+  assert.equal(release.version, "0.1.31");
+  assert.equal(release.manualVersion, "2.2");
   assert.equal(release.manualUpdatedAt, "September 25, 2026");
   assert.equal(release.gitSha, "8cd2fa8");
   assert.equal(release.channel, "staging");
@@ -32,15 +32,15 @@ test("release information resolves a commit-pinned deployment image", () => {
   assert.equal(release.readOnly, true);
   assert.equal(
     release.notes.title,
-    "Automated Community host bootstrap"
+    "Automated Community migration wizard"
   );
   assert.equal(release.notes.publishedAt, "2026-09-25");
   assert.ok(release.notes.items.length >= 4);
   const notes = release.notes.items.join(" ");
-  assert.match(notes, /Ubuntu 24\.04 x86-64 bootstrap/i);
-  assert.match(notes, /compatibility checks/i);
-  assert.match(notes, /OpenVINO.*ReID/i);
-  assert.match(notes, /BuildKit/i);
+  assert.match(notes, /PostgreSQL 17 target/i);
+  assert.match(notes, /SSH image storage/i);
+  assert.match(notes, /outbound-isolated/i);
+  assert.match(notes, /traffic cutover/i);
 });
 
 test("an explicit valid SHA overrides the image tag", () => {

@@ -88,9 +88,11 @@ baseline; the preflight rejects unknown or partially updated schemas before it
 creates a dump.
 
 Existing-system operators should begin with the
-[guided migration runbook](docs/MIGRATION_GUIDE.md). Its resumable assistant
-records only redacted workflow state, stops at every destructive boundary, and
-never switches traffic or deletes the retained source.
+[automated migration runbook](docs/MIGRATION_GUIDE.md). The resumable wizard
+creates a separate target, performs the guarded dump/restore, copies and
+checksums local or SSH image storage, and starts an outbound-isolated target
+for browser review. It stores no passwords in state and never stops, switches,
+or deletes the retained source.
 
 ## Blue Iris ingestion
 

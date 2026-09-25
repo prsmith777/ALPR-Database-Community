@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
-readonly BOOTSTRAP_VERSION="1"
+readonly BOOTSTRAP_VERSION="2"
 readonly CANONICAL_REPOSITORY="https://github.com/prsmith777/ALPR-Database-Community.git"
 readonly CANONICAL_REPOSITORY_ID="github.com/prsmith777/ALPR-Database-Community"
 readonly PINNED_NODE_VERSION="24.21.0"
@@ -513,11 +513,13 @@ Community target checkout: ${INSTALL_DIRECTORY}
 The source installation has not been changed. Continue with:
 
   cd "${INSTALL_DIRECTORY}"
-  ./alpr-community migrate start
+  ./alpr-community migrate wizard
 
-The migration assistant will require source and empty PostgreSQL 17 target
-credentials. Follow docs/MIGRATION_GUIDE.md and keep the source unchanged until
-database, image-storage, application, and restart validation are accepted.
+The migration wizard creates and validates its own empty PostgreSQL 17 target.
+It will ask for the source database, image-storage location, and a new Community
+administrator password. Follow docs/MIGRATION_GUIDE.md and keep the source
+unchanged until database, image-storage, application, and restart validation
+are accepted.
 EOF
   fi
 }

@@ -2,7 +2,7 @@
 
 This guide creates a new, empty ALPR Database Community installation. It does
 not import an existing database. Existing-system operators should use the
-[guided migration runbook](MIGRATION_GUIDE.md) and keep the source system
+[automated migration runbook](MIGRATION_GUIDE.md) and keep the source system
 unchanged until migration acceptance is complete.
 
 ## Recommended automated path
@@ -54,7 +54,7 @@ Clone the canonical repository and detach at the exact stable release tag:
 ```bash
 git clone https://github.com/prsmith777/ALPR-Database-Community.git
 cd ALPR-Database-Community
-git checkout --detach v0.1.30
+git checkout --detach v0.1.31
 ./alpr-community install
 ```
 

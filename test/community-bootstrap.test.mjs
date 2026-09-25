@@ -25,7 +25,7 @@ test("bootstrap installs and verifies the complete supported host toolchain", as
   assert.match(source, /SHASUMS256\.txt/);
   assert.match(source, /storage\.openvinotoolkit\.org/);
   assert.match(source, /\.\/alpr-community install/);
-  assert.match(source, /\.\/alpr-community migrate start/);
+  assert.match(source, /\.\/alpr-community migrate wizard/);
 });
 
 test("bootstrap refuses unsafe replacement and package-removal behavior", async () => {

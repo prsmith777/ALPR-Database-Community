@@ -1,12 +1,13 @@
 # Automated Community bootstrap
 
 The bootstrap prepares a supported host and then hands control to the guarded
-Community installer or migration assistant. It has three modes:
+Community installer or migration wizard. It has three modes:
 
 - **New installation** installs prerequisites, checks out the newest exact
   stable release, and starts `./alpr-community install`.
 - **Migration preparation** installs the additional PostgreSQL 17, SSH, and
-  `rsync` tools, checks out a separate target, and prints the migration command.
+  `rsync` tools, checks out a separate target, and prints the automated wizard
+  command.
 - **Compatibility check** is read-only and reports missing requirements without
   changing packages, Docker, or ALPR.
 

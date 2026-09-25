@@ -2,6 +2,21 @@
 
 ## Unreleased
 
+## 0.1.31 — 2026-09-25
+
+- Added a resumable `./alpr-community migrate wizard` that creates a separate
+  PostgreSQL 17 target and automates guarded dump, restore, current migrations,
+  reconciliation, and source/target validation.
+- Added local and SSH `rsync` image-storage transfer with checksum verification
+  plus exact state, artifact, and password-handling boundaries.
+- Started migrated applications on an outbound-isolated Docker network and
+  added automated image, health, database restart, and persistence checks.
+- Added explicit browser acceptance, rollback verification, network activation,
+  and narrow pre-acceptance target recovery without automatic source stop,
+  traffic switching, or source deletion.
+- Updated the bootstrap, deployment documentation, and embedded Community user
+  guide to version 2.2.
+
 ## 0.1.30 — 2026-09-25
 
 - Added one verified Ubuntu 24.04 x86-64 bootstrap with new-install,
