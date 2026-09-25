@@ -127,6 +127,13 @@ export default function SoftwareUpdatesPanel({ initialSnapshot, release }) {
   const canRollback = state?.rollbackPresent && ROLLBACK_STATES.has(state?.updaterStatus);
   const canCleanup = state?.rollbackPresent && (state?.updaterStatus === "accepted" || state?.updaterStatus === "rolled-back");
   const checksComplete = useMemo(() => manualChecks.every(Boolean), [manualChecks]);
+  const acceptDisabledReason = !snapshot.agent.online
+    ? "The host update agent is offline. Start it before accepting the update."
+    : snapshot.busy || pending
+      ? "Wait for the current update operation to finish."
+      : !checksComplete
+        ? "Select all five checks before accepting the update."
+        : null;
 
   return (
     <div className="max-w-5xl space-y-6">
@@ -205,7 +212,8 @@ export default function SoftwareUpdatesPanel({ initialSnapshot, release }) {
                 </label>
               ))}
             </div>
-            <Button type="button" disabled={disabled || !checksComplete} onClick={() => submit({ operation: "accept", confirmation: confirmationForCommunityUpdate("accept") })}><CheckCircle2 /> Accept update</Button>
+            <Button type="button" disabled={Boolean(acceptDisabledReason)} onClick={() => submit({ operation: "accept", confirmation: confirmationForCommunityUpdate("accept") })}><CheckCircle2 /> Accept update</Button>
+            {acceptDisabledReason ? <p role="status" className="text-sm text-muted-foreground">{acceptDisabledReason}</p> : null}
           </CardContent>
         </Card>
       ) : null}

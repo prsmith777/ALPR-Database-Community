@@ -165,6 +165,8 @@ test("Software Updates page is permission-guarded, linked, and keeps Docker off 
   assert.match(panel, /Check for updates/);
   assert.match(panel, /Run validation again/);
   assert.match(panel, /Accept update/);
+  assert.match(panel, /The host update agent is offline\. Start it before accepting the update\./);
+  assert.match(panel, /Select all five checks before accepting the update\./);
   assert.match(compose, /\.\/update-control:\/app\/update-control/);
   assert.doesNotMatch(compose, /docker\.sock/);
   assert.match(dockerfile, /\/app\/update-control/);
