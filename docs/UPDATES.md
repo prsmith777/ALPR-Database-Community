@@ -40,7 +40,7 @@ shown on the GitHub Releases page, rather than deploying moving `main`:
 ```bash
 git clone https://github.com/prsmith777/ALPR-Database-Community.git
 cd ALPR-Database-Community
-git checkout --detach v0.1.27
+git checkout --detach v0.1.28
 ./alpr-community install
 ```
 
@@ -53,7 +53,7 @@ later Community-to-Community updates.
 
 Do not install v0.1.23 as a new deployment merely because it was the first
 release containing the updater. A retained installation already running exact
-v0.1.23 can update directly to v0.1.27 with the guarded workflow below.
+v0.1.23 can update directly to v0.1.28 with the guarded workflow below.
 
 ## Guided menu
 
@@ -83,7 +83,7 @@ The equivalent individual commands are:
 Run `./alpr-community check` to discover the newest stable release and
 `./alpr-community update` to select it through the guided menu. A retained
 exact-v0.1.23 installation can use
-`./alpr-community update --to v0.1.27` to select this release explicitly. The
+`./alpr-community update --to v0.1.28` to select this release explicitly. The
 updater refuses `latest`, branches, prereleases, tags that are not on canonical
 `origin/main`, and a tag whose package version does not match. It fetches
 canonical `main` explicitly, so verification also works when the installation

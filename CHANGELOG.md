@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+## 0.1.28 — 2026-09-24
+
+- Corrected the Community update guide so new deployments use the current
+  exact release and `./alpr-community install` instead of the historical
+  v0.1.23 updater baseline.
+- Clarified that exact v0.1.23 installations can update directly through the
+  guarded updater while releases before v0.1.23 do not contain that tool.
+- Updated the public repository status, current product boundary, and embedded
+  manual to describe the published Community release rather than a candidate.
+- Updated release information and the Community user guide to version 1.9.
+
 ## 0.1.27 — 2026-09-24
 
 - Fetched canonical `main` through an explicit remote-tracking refspec during
