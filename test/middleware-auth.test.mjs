@@ -13,6 +13,7 @@ function makeResponse(type, details = {}) {
   return {
     type,
     ...details,
+    headers: new Headers(),
     cookieWrites,
     cookies: {
       set: (name, value, options) =>
@@ -524,7 +525,7 @@ test("document navigations reuse the bounded session and update-status caches", 
     })
   );
 
-  await handler(makeRequest("/dashboard", {
+  const dashboard = await handler(makeRequest("/dashboard", {
     sessionId: VALID_SESSION_ID,
     headers: { "sec-fetch-dest": "document" },
   }));
@@ -534,6 +535,11 @@ test("document navigations reuse the bounded session and update-status caches", 
   }));
 
   assert.deepEqual(calls, ["/api/verify-session", "/api/check-update"]);
+  assert.match(
+    dashboard.headers.get("X-ALPR-Middleware-Timing"),
+    /^auth;dur=\d+(?:\.\d+)?, update;dur=\d+(?:\.\d+)?$/
+  );
+  assert.equal(dashboard.headers.get("Server-Timing"), null);
 });
 
 test("session verification cache expires without caching failed verification", async () => {
