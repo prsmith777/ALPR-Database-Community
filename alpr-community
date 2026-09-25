@@ -2,15 +2,42 @@
 set -euo pipefail
 
 installation_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
+private_node="${XDG_DATA_HOME:-${HOME}/.local/share}/alpr-community/runtime/node-current/bin/node"
+node_binary="${ALPR_NODE_BINARY:-}"
+
+if [[ -z "${node_binary}" ]] && command -v node >/dev/null 2>&1 \
+  && [[ "$(node --version 2>/dev/null || true)" == v24.* ]]; then
+  node_binary="$(command -v node)"
+fi
+if [[ -z "${node_binary}" && -x "${private_node}" ]]; then
+  node_binary="${private_node}"
+fi
+if [[ -z "${node_binary}" || ! -x "${node_binary}" ]]; then
+  echo "Node.js 24 is required. Run bash bootstrap.sh or install Node.js 24 manually." >&2
+  exit 1
+fi
+if [[ "$("${node_binary}" --version 2>/dev/null || true)" != v24.* ]]; then
+  echo "Node.js 24 is required; ${node_binary} reports $("${node_binary}" --version 2>/dev/null || echo unknown)." >&2
+  exit 1
+fi
+
+if [[ -z "${ALPR_PG_BIN_DIR:-}" && -x /usr/lib/postgresql/17/bin/psql ]]; then
+  export ALPR_PG_BIN_DIR=/usr/lib/postgresql/17/bin
+fi
 
 if [[ "${1:-}" == "install" ]]; then
   shift
-  exec node "${installation_dir}/scripts/community-installer.mjs" "$@"
+  exec "${node_binary}" "${installation_dir}/scripts/community-installer.mjs" "$@"
 fi
 
 if [[ "${1:-}" == "agent" ]]; then
   shift
-  exec node "${installation_dir}/scripts/community-update-agent.mjs" "$@"
+  exec "${node_binary}" "${installation_dir}/scripts/community-update-agent.mjs" "$@"
 fi
 
-exec node "${installation_dir}/scripts/community-updater.mjs" "$@"
+if [[ "${1:-}" == "migrate" ]]; then
+  shift
+  exec "${node_binary}" "${installation_dir}/scripts/community-migration-assistant.mjs" "$@"
+fi
+
+exec "${node_binary}" "${installation_dir}/scripts/community-updater.mjs" "$@"

@@ -17,8 +17,9 @@ run the Linux updater through WSL against a Windows Docker installation.
 
 ## Requirements
 
-- a Linux x86-64 host with Docker Engine and Docker Compose;
-- Git and Node.js 24 on the host;
+- a Linux x86-64 host with Docker Engine, Docker Compose, and Docker Buildx;
+- Git and Node.js 24 on the host, or the private Node.js 24 runtime installed
+  by the Community bootstrap;
 - the canonical `prsmith777/ALPR-Database-Community` repository;
 - an installation checked out at an exact stable `vMAJOR.MINOR.PATCH` tag;
 - no tracked local source changes;
@@ -40,7 +41,7 @@ shown on the GitHub Releases page, rather than deploying moving `main`:
 ```bash
 git clone https://github.com/prsmith777/ALPR-Database-Community.git
 cd ALPR-Database-Community
-git checkout --detach v0.1.29
+git checkout --detach v0.1.30
 ./alpr-community install
 ```
 
@@ -53,7 +54,8 @@ later Community-to-Community updates.
 
 Do not install v0.1.23 as a new deployment merely because it was the first
 release containing the updater. A retained installation already running exact
-v0.1.23 can update directly to v0.1.29 with the guarded workflow below.
+v0.1.23 can update directly to the newest stable tag with the guarded workflow
+below.
 
 ## Browser update page
 
@@ -114,7 +116,7 @@ The equivalent individual commands are:
 Run `./alpr-community check` to discover the newest stable release and
 `./alpr-community update` to select it through the guided menu. A retained
 exact-v0.1.23 installation can use
-`./alpr-community update --to v0.1.29` to select this release explicitly. The
+`./alpr-community update --to v0.1.30` to select this release explicitly. The
 updater refuses `latest`, branches, prereleases, tags that are not on canonical
 `origin/main`, and a tag whose package version does not match. It fetches
 canonical `main` explicitly, so verification also works when the installation
@@ -133,7 +135,9 @@ The guarded workflow:
    and `config/` outside the source repository;
 7. verifies and records the dump SHA-256 digest;
 8. checks out the exact target tag and verifies its commit did not move;
-9. builds a commit-qualified local image instead of using `latest`;
+9. builds a commit-qualified local image in an isolated temporary BuildKit
+   builder, removes its cache, and runs real OpenVINO CPU inference with all
+   bundled detection, attribute, and ReID models instead of using `latest`;
 10. applies `migrations.sql` through the transactional Compose migration
     service;
 11. starts the app and validates database readiness, the exact running image,

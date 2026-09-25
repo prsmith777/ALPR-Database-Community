@@ -26,37 +26,33 @@ and prototype TPMS screens are intentionally not included.
 
 ## Quick start
 
-Requirements:
-
-- x86-64 host
-- Docker Engine
-- Docker Compose
-- Git
-- Node.js 24
-- A working Blue Iris ALPR configuration
-
-Clone your copy of the repository and enter it:
+For the simplest supported path, start with Ubuntu Server 24.04 LTS x86-64,
+internet access, and a normal account with `sudo`. Download and verify the
+bootstrap assets from the latest release, then open its menu:
 
 ```bash
-git clone https://github.com/prsmith777/ALPR-Database-Community.git
-cd ALPR-Database-Community
-git checkout --detach v0.1.29
+command -v curl >/dev/null || { sudo apt-get update && sudo apt-get install -y curl; }
+curl -fL https://github.com/prsmith777/ALPR-Database-Community/releases/latest/download/alpr-community-bootstrap.sh \
+  -o alpr-community-bootstrap.sh
+curl -fL https://github.com/prsmith777/ALPR-Database-Community/releases/latest/download/alpr-community-bootstrap.sh.sha256 \
+  -o alpr-community-bootstrap.sh.sha256
+sha256sum --check alpr-community-bootstrap.sh.sha256
+bash alpr-community-bootstrap.sh
 ```
 
-Run the guided fresh installer:
-
-```bash
-./alpr-community install
-```
-
-The installer verifies the exact release and canonical repository, checks the
-host, free space, ports, and existing Docker resources, asks you to choose the
+Choose **Install a new ALPR Community system**. The bootstrap installs and
+validates Git, Docker Engine, Compose, Buildx, and a private Node.js 24 runtime,
+then checks out the newest exact stable release. The guarded installer checks
+free space, ports, and existing Docker resources, asks you to choose the
 administrator password, and generates the database password automatically. It
 creates new persistent directories, builds a commit-qualified image, starts an
 empty PostgreSQL 17 database, and refuses to finish until the application is
 healthy and the database is proven to contain no test data. It never overwrites
-an existing installation. See [Fresh installation](docs/INSTALL.md) for the
-complete prerequisites, non-interactive mode, validation, and recovery steps.
+an existing installation. OpenVINO, ReID, and the visual models are already in
+the image and are verified with real CPU inference during the build. See
+[Automated bootstrap](docs/BOOTSTRAP.md),
+[Host compatibility](docs/COMPATIBILITY.md), and
+[Fresh installation](docs/INSTALL.md) for all paths and recovery steps.
 
 Install a stable release tag rather than deploying moving `main`. Starting
 with v0.1.29, administrators can use **Settings → Software Updates** after a

@@ -1,4 +1,5 @@
 import { spawnSync } from "node:child_process";
+import { readFileSync } from "node:fs";
 
 const image = process.argv[2] || process.env.ALPR_RUNTIME_IMAGE;
 
@@ -85,4 +86,50 @@ if (result.status !== 0) {
 console.log(
   `Runtime image ${image} passed: ${contract.required.length} required paths present, ` +
     `${contract.forbidden.length} development paths absent.`
+);
+
+const openvinoProbe = readFileSync(
+  new URL("./openvino-runtime-probe.cjs", import.meta.url),
+  "utf8"
+);
+const inference = spawnSync(
+  "docker",
+  ["run", "--rm", "--network", "none", "--entrypoint", "node", image],
+  {
+    encoding: "utf8",
+    input: openvinoProbe,
+    stdio: ["pipe", "pipe", "pipe"],
+  }
+);
+
+if (inference.error) {
+  console.error(`Unable to run OpenVINO validation in ${image}: ${inference.error.message}`);
+  process.exit(1);
+}
+if (inference.stderr) process.stderr.write(inference.stderr);
+if (inference.status !== 0) {
+  if (inference.stdout) process.stdout.write(inference.stdout);
+  process.exit(inference.status || 1);
+}
+
+let openvino;
+try {
+  openvino = JSON.parse(inference.stdout || "{}");
+} catch {
+  console.error(`OpenVINO validation returned invalid output: ${inference.stdout}`);
+  process.exit(1);
+}
+if (
+  openvino.status !== "ok" ||
+  openvino.device !== "CPU" ||
+  !Array.isArray(openvino.models) ||
+  openvino.models.length !== 3 ||
+  openvino.models.some((model) => !Number.isInteger(model.outputElements) || model.outputElements < 1)
+) {
+  console.error(`OpenVINO validation returned an invalid result: ${inference.stdout}`);
+  process.exit(1);
+}
+
+console.log(
+  `OpenVINO CPU inference passed for ${openvino.models.map((model) => model.name).join(", ")}.`
 );

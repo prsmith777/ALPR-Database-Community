@@ -5,34 +5,39 @@ not import an existing database. Existing-system operators should use the
 [guided migration runbook](MIGRATION_GUIDE.md) and keep the source system
 unchanged until migration acceptance is complete.
 
-## Supported host
+## Recommended automated path
 
-The first guided installer supports an x86-64 Linux host with:
-
-- Docker Engine with a running daemon;
-- the Docker Compose plugin (`docker compose`);
-- Git;
-- Node.js 24; and
-- at least 8 GiB of free space during the image build.
+Use Ubuntu Server 24.04 LTS x86-64 with a normal account that has `sudo`.
+Allocate 4 vCPU, 8 GiB RAM, and 100 GiB disk; the bootstrap enforces minimums
+of 2 CPUs, 4 GiB RAM, and 20 GiB free before application data. Download,
+checksum, inspect, and run the release bootstrap as described in
+[Automated Community bootstrap](BOOTSTRAP.md), then choose **Install a new
+ALPR Community system**.
 
 A Linux virtual machine is supported regardless of whether its physical host
 uses Unraid, Proxmox, VMware, Hyper-V, VirtualBox, or another hypervisor. The
 guest operating system, Docker Engine, and Compose determine compatibility.
 Native Windows Docker and appliance-managed NAS container interfaces are not
-supported by this first installer; use a Linux VM until a separately tested
-adapter is available.
+supported by this first installer; use an Ubuntu 24.04 Linux VM. See
+[Host compatibility](COMPATIBILITY.md) for other Linux distributions, older
+Ubuntu systems, and failed-check recovery.
 
-Install Docker Engine and Compose from the
-[official Docker documentation](https://docs.docker.com/engine/install/) and
-Node.js 24 from the [official Node.js downloads](https://nodejs.org/en/download).
-The installer validates prerequisites but does not modify operating-system
-packages or firewall rules.
+The bootstrap installs Git, Docker Engine, Compose v2, Buildx, and a private
+checksum-verified Node.js 24 runtime. OpenVINO and ReID do not need host
+installation; they are bundled and inference-tested in the application image.
+
+## Manual fallback
+
+If you deliberately manage dependencies yourself, install Git, Docker Engine,
+the Compose v2 and Buildx plugins, and Node.js 24 from your distribution or
+their official upstream sources. The normal account must be able to use Docker.
 
 Verify the host before downloading ALPR:
 
 ```bash
 docker version
 docker compose version
+docker buildx version
 docker info >/dev/null && echo "Docker operational"
 git --version
 node --version
@@ -42,14 +47,14 @@ node --version
 account that owns the release checkout and has permission to use Docker. Do not
 run the whole installer with `sudo`.
 
-## Interactive installation
+## Manual interactive installation
 
 Clone the canonical repository and detach at the exact stable release tag:
 
 ```bash
 git clone https://github.com/prsmith777/ALPR-Database-Community.git
 cd ALPR-Database-Community
-git checkout --detach v0.1.29
+git checkout --detach v0.1.30
 ./alpr-community install
 ```
 
@@ -77,7 +82,8 @@ Before changing Docker state, the installer refuses:
 - an image whose recorded source revision disagrees with the release; or
 - insufficient disk space.
 
-It then creates a private `.env`, builds a commit-qualified image, assigns the
+It then creates a private `.env`, builds a commit-qualified image in an
+isolated temporary BuildKit builder, removes that builder and its cache, assigns the
 application runtime directories to container UID/GID `1000`, and creates a
 set-group-ID `update-control/` directory shared only with the installing host
 account's primary group. It then starts PostgreSQL, applies the migrations
@@ -85,6 +91,8 @@ transactionally, and starts the application. Installation succeeds
 only after all of these checks pass:
 
 - PostgreSQL is ready;
+- all pinned OpenVINO detection, attribute, and ReID models complete CPU
+  inference inside the final runtime image;
 - `/api/health-check` returns `{"status":"ok"}`;
 - the running image and OCI revision label match the exact release commit;
 - plates, reads, known plates, tags, plate tags, and notifications are empty;

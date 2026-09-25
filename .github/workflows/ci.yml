@@ -46,6 +46,9 @@ jobs:
           node-version: 24
           cache: yarn
 
+      - name: Validate bootstrap shell syntax
+        run: bash -n bootstrap.sh
+
       - name: Install PostgreSQL integration-test dependencies
         run: yarn install --frozen-lockfile --ignore-scripts --network-timeout 100000
 

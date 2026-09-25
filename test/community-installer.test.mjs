@@ -43,16 +43,19 @@ function fakeDockerRunner(options = {}) {
     commands.push([command, ...args]);
     const joined = args.join(" ");
     if (command === "git" && joined === "--version") return "git version 2.51";
+    if (command === process.execPath && joined.includes("verify-runtime-image.mjs")) return "";
     if (command !== "docker") throw new Error(`unexpected command: ${command} ${joined}`);
-    if (["version", "info", "compose version"].includes(joined)) return "ok";
+    if (["version", "info", "compose version", "buildx version"].includes(joined)) return "ok";
     if (joined.startsWith("ps -a --filter label=com.docker.compose.project=")) return "";
     if (joined === "volume ls --format {{.Name}}") return "unrelated-volume";
     if (joined === "network ls --format {{.Name}}") return "bridge";
     if (joined.startsWith("image ls --quiet alpr-community:")) return imageExists ? "image-id" : "";
-    if (joined.startsWith("build --pull --tag alpr-community:")) {
+    if (joined.startsWith("buildx create --name alpr-community-build-")) return "builder";
+    if (joined.startsWith("buildx build --builder alpr-community-build-") && joined.includes("--tag alpr-community:")) {
       imageExists = true;
       return "";
     }
+    if (joined.startsWith("buildx rm --force alpr-community-build-")) return "";
     if (joined.startsWith("run --rm --user 0:0 --entrypoint chown")) return "";
     if (joined.includes(" compose ")) throw new Error("unexpected normalized Docker command");
     if (args[0] === "compose") {
@@ -135,7 +138,9 @@ test("fresh install builds a pinned image, proves an empty database, and stores 
     const serializedState = await readFile(internals.statePath(root), "utf8");
     assert.doesNotMatch(serializedState, /Long\$Admin|DB_PASSWORD|ADMIN_PASSWORD/);
     assert.equal(fake.imageExists(), true);
-    assert.ok(fake.commands.some((entry) => entry.join(" ").includes("build --pull --tag")));
+    assert.ok(fake.commands.some((entry) => entry.join(" ").includes("buildx build --builder")));
+    assert.ok(fake.commands.some((entry) => entry.join(" ").includes("buildx rm --force")));
+    assert.ok(fake.commands.some((entry) => entry.join(" ").includes("verify-runtime-image.mjs")));
     assert.ok(fake.commands.some((entry) => entry.join(" ").includes("pg_isready -h 127.0.0.1")));
     assert.ok(fake.commands.some((entry) => entry.join(" ").includes("run --rm --no-deps migrate")));
     assert.ok(fake.commands.some((entry) => entry.join(" ").includes("concat_ws")));

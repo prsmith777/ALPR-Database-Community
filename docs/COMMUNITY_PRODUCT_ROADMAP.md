@@ -30,6 +30,10 @@ The published Community releases focus on the portable ALPR application:
 - Docker Compose deployment on x86-64 with PostgreSQL 17;
 - guided fresh installation with generated database credentials, collision
   checks, empty-database proof, and narrow failed-install recovery;
+- a verified Ubuntu 24.04 x86-64 bootstrap for new installations and migration
+  targets, plus read-only compatibility reporting for other Linux hosts;
+- final-image CPU inference checks for the bundled OpenVINO detection,
+  attribute, and ReID models, with isolated per-build cache cleanup;
 - exact-tag routine updates on standard Linux hosts and Linux virtual machines,
   with a restricted browser-to-host agent and one-generation
   database/configuration rollback policy;
@@ -43,6 +47,9 @@ release boundary.
 
 ## Later work
 
+- Add separately tested automatic package adapters for additional x86-64 Linux
+  distributions and native Windows deployment only when their service and
+  rollback behavior can be supported safely.
 - Add architecture-neutral image builds after native dependency validation.
 - Publish generic sample data that contains no real plates, people, locations,
   timestamps, or camera identifiers.

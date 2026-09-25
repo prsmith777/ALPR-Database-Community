@@ -20,6 +20,8 @@ import { Writable } from "node:stream";
 import { fileURLToPath } from "node:url";
 import { createServer } from "node:net";
 
+import { buildRuntimeImage } from "./community-image-builder.mjs";
+
 const scriptPath = fileURLToPath(import.meta.url);
 const repositoryRoot = resolve(dirname(scriptPath), "..");
 const CANONICAL_REPOSITORY = "github.com/prsmith777/ALPR-Database-Community";
@@ -169,6 +171,13 @@ function compose(runner, root, envPath, projectName, args, options = {}) {
   return runner("docker", ["compose", "--env-file", envPath, "-p", projectName, ...args], {
     cwd: root,
     ...options,
+  });
+}
+
+function verifyRuntimeImage(runner, root, image) {
+  return runner(process.execPath, [join(root, "scripts", "verify-runtime-image.mjs"), image], {
+    cwd: root,
+    inherit: true,
   });
 }
 
@@ -422,6 +431,7 @@ async function preflight(environment = process.env, options = {}) {
   runner("docker", ["version"], { quiet: true });
   runner("docker", ["info"], { quiet: true });
   runner("docker", ["compose", "version"], { quiet: true });
+  runner("docker", ["buildx", "version"], { quiet: true });
 
   const freeBytes = await (options.freeBytes || defaultFreeBytes)(root);
   if (!Number.isFinite(freeBytes) || freeBytes < MINIMUM_FREE_BYTES) {
@@ -633,16 +643,11 @@ async function installCommunity(environment = process.env, options = {}) {
     await saveState(context.root, state, options.clock);
 
     if (!target.imageAlreadyPresent) {
-      context.runner("docker", [
-        "build", "--pull", "--tag", context.image,
-        "--label", `org.opencontainers.image.version=${context.release.version}`,
-        "--label", `org.opencontainers.image.revision=${context.release.commit}`,
-        "--label", "org.opencontainers.image.source=https://github.com/prsmith777/ALPR-Database-Community",
-        ".",
-      ], { cwd: context.root, inherit: true });
+      buildRuntimeImage(context.runner, context.root, context.release, context.image);
       state.createdImage = true;
       await saveState(context.root, state, options.clock);
     }
+    verifyRuntimeImage(context.runner, context.root, context.image);
 
     for (const directory of RUNTIME_DIRECTORIES) {
       const ownership = directory === "update-control"
@@ -782,6 +787,7 @@ export const communityInstallerInternals = Object.freeze({
   RECOVERY_ACKNOWLEDGEMENT,
   RUNTIME_DIRECTORIES,
   imageForRelease,
+  verifyRuntimeImage,
   normalizeProjectName,
   normalizeRepositoryUrl,
   parseArguments,

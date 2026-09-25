@@ -15,15 +15,19 @@ test("production image copies only standalone runtime artifacts", async () => {
   assert.match(dockerfile, /\/app\/\.next\/static\s+\.\/\.next\/static/);
   assert.match(dockerfile, /\/app\/public\s+\.\/public/);
   assert.match(dockerfile, /\/app\/models\/visual-search\s+\.\/models\/visual-search/);
+  assert.match(dockerfile, /openvino-runtime-probe\.cjs/);
+  assert.match(dockerfile, /RUN node \/tmp\/openvino-runtime-probe\.cjs/);
+  assert.match(dockerfile, /rm -f \/tmp\/openvino-runtime-probe\.cjs/);
   assert.doesNotMatch(dockerfile, /COPY\s+--from=builder[^\n]*\/app\s+\/app(?:\s|$)/);
   assert.match(dockerfile, /CMD\s+\["node",\s*"server\.js"\]/);
 });
 
 test("CI enforces the runtime image and empty-database contracts", async () => {
-  const [ci, health, verifier] = await Promise.all([
+  const [ci, health, verifier, inferenceProbe] = await Promise.all([
     readFile(new URL(".github/workflows/ci.yml", root), "utf8"),
     readFile(new URL(".github/workflows/health-check.yml", root), "utf8"),
     readFile(new URL("scripts/verify-runtime-image.mjs", root), "utf8"),
+    readFile(new URL("scripts/openvino-runtime-probe.cjs", root), "utf8"),
   ]);
 
   assert.match(ci, /verify-runtime-image\.mjs\s+alpr-ci:/);
@@ -35,6 +39,11 @@ test("CI enforces the runtime image and empty-database contracts", async () => {
   assert.match(verifier, /"\/app\/scripts"/);
   assert.match(verifier, /"\/app\/test-payload\.json"/);
   assert.match(verifier, /"\/app\/multi-ai-payload\.json"/);
+  assert.match(verifier, /openvino-runtime-probe\.cjs/);
+  assert.match(verifier, /--network",\s*"none"/);
+  assert.match(inferenceProbe, /openvino-node/);
+  assert.match(inferenceProbe, /compileModelSync\(model, "CPU"\)/);
+  assert.match(inferenceProbe, /infer\(/);
 });
 
 test("fresh installs bypass the legacy image-migration workflow", async () => {

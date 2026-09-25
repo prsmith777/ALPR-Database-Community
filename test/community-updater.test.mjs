@@ -182,6 +182,7 @@ test("the guided engine backs up, applies, validates, accepts, and rolls back wi
 
   const runner = (command, args, options = {}) => {
     commandLog.push([command, ...args]);
+    if (command === process.execPath && args.join(" ").includes("verify-runtime-image.mjs")) return "";
     if (command === "git") {
       const joined = args.join(" ");
       if (joined === "status --porcelain --untracked-files=no") return "";
@@ -207,7 +208,7 @@ test("the guided engine backs up, applies, validates, accepts, and rolls back wi
     }
     if (command === "docker") {
       const joined = args.join(" ");
-      if (joined === "version" || joined === "compose version") return "ok";
+      if (joined === "version" || joined === "compose version" || joined === "buildx version") return "ok";
       if (joined === "compose config --quiet") return "";
       if (joined === "compose config --services") return "app\ndb\nmigrate";
       if (joined === "compose ps -q db") return "database-container";
@@ -226,7 +227,9 @@ test("the guided engine backs up, applies, validates, accepts, and rolls back wi
         writeFileSync(options.stdoutPath, Buffer.from("verified-private-dump"));
         return "";
       }
-      if (joined.startsWith("build ")) return "";
+      if (joined.startsWith("buildx create --name alpr-community-build-")) return "builder";
+      if (joined.startsWith("buildx build --builder alpr-community-build-")) return "";
+      if (joined.startsWith("buildx rm --force alpr-community-build-")) return "";
       if (joined === "compose up -d --no-deps app") {
         runningImage = checkedOutCommit === targetCommit
           ? `alpr-community:0.1.23-${targetCommit.slice(0, 12)}`
@@ -310,6 +313,9 @@ test("the guided engine backs up, applies, validates, accepts, and rolls back wi
     assert.equal(await readFile(join(repository, "auth", "users.json"), "utf8"), "before-auth\n");
     assert.equal(await readFile(join(repository, "config", "settings.yaml"), "utf8"), "before-config\n");
     assert.ok(commandLog.some((entry) => entry.includes("pg_dump")));
+    assert.ok(commandLog.some((entry) => entry.join(" ").includes("buildx build --builder")));
+    assert.ok(commandLog.some((entry) => entry.join(" ").includes("buildx rm --force")));
+    assert.ok(commandLog.some((entry) => entry.join(" ").includes("verify-runtime-image.mjs")));
     assert.ok(commandLog.some((entry) => entry.join(" ").includes("pg_restore")));
     assert.ok(commandLog.some((entry) => entry.join(" ").includes("DROP SCHEMA public CASCADE")));
     assert.ok(commandLog.some((entry) => entry.join(" ").includes("-transaction.sql")));

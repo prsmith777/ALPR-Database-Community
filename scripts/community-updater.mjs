@@ -26,6 +26,8 @@ import { spawnSync } from "node:child_process";
 import { createInterface } from "node:readline/promises";
 import { fileURLToPath } from "node:url";
 
+import { buildRuntimeImage } from "./community-image-builder.mjs";
+
 const scriptPath = fileURLToPath(import.meta.url);
 const repositoryRoot = resolve(dirname(scriptPath), "..");
 const FORMAT_VERSION = 1;
@@ -295,6 +297,13 @@ function compose(runner, root, args, options = {}) {
   return runner("docker", ["compose", ...args], { cwd: root, ...options });
 }
 
+function verifyRuntimeImage(runner, root, image) {
+  return runner(process.execPath, [join(root, "scripts", "verify-runtime-image.mjs"), image], {
+    cwd: root,
+    inherit: true,
+  });
+}
+
 function git(runner, root, args, options = {}) {
   return runner("git", args, { cwd: root, ...options });
 }
@@ -425,6 +434,7 @@ async function preflight(environment, options = {}) {
   verifyCanonicalOrigin(runner, root);
   runner("docker", ["version"], { quiet: true });
   runner("docker", ["compose", "version"], { quiet: true });
+  runner("docker", ["buildx", "version"], { quiet: true });
   compose(runner, root, ["config", "--quiet"], { quiet: true });
   const services = compose(runner, root, ["config", "--services"], { quiet: true })
     .split(/\r?\n/).filter(Boolean);
@@ -606,13 +616,8 @@ async function applyRelease(environment, backupRoot, state, options = {}) {
     git(runner, root, ["checkout", "--detach", state.target.tag], { inherit: true });
     const checkedOut = git(runner, root, ["rev-parse", "HEAD"], { quiet: true }).toLowerCase();
     if (checkedOut !== state.target.commit) throw new Error("target tag changed after release inspection");
-    runner("docker", [
-      "build", "--pull", "--tag", state.target.image,
-      "--label", `org.opencontainers.image.version=${state.target.version}`,
-      "--label", `org.opencontainers.image.revision=${state.target.commit}`,
-      "--label", "org.opencontainers.image.source=https://github.com/prsmith777/ALPR-Database-Community",
-      ".",
-    ], { cwd: root, inherit: true });
+    buildRuntimeImage(runner, root, state.target, state.target.image);
+    verifyRuntimeImage(runner, root, state.target.image);
 
     const envPath = join(root, ".env");
     const envSource = await readFile(envPath, "utf8");
@@ -1102,6 +1107,7 @@ export const communityUpdaterInternals = Object.freeze({
   statePathFor,
   storageInventory,
   upsertEnvironment,
+  verifyRuntimeImage,
   writePrivateJson,
 });
 
