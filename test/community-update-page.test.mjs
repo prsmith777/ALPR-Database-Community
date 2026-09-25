@@ -178,13 +178,13 @@ test("systemd service runs the fixed agent entry point with a private umask", ()
     resolve("/opt/alpr-community/update-control")
   );
   const unit = communityUpdateAgentInternals.serviceFile("/opt/alpr-community", "/usr/bin/node");
-  assert.match(unit, /WorkingDirectory="\/opt\/alpr-community"/);
+  assert.match(unit, /WorkingDirectory=\/opt\/alpr-community/);
+  assert.doesNotMatch(unit, /WorkingDirectory="/);
   assert.match(unit, /ExecStart="\/usr\/bin\/node" "\/opt\/alpr-community\/scripts\/community-update-agent\.mjs" run/);
   assert.match(unit, /UMask=0007/);
   assert.match(unit, /NoNewPrivileges=true/);
   assert.match(unit, /Restart=on-failure/);
-  assert.match(
-    communityUpdateAgentInternals.serviceFile("/opt/ALPR Community", "/opt/Node 24/node"),
-    /ExecStart="\/opt\/Node 24\/node" "\/opt\/ALPR Community\/scripts\/community-update-agent\.mjs" run/
-  );
+  const unitWithSpaces = communityUpdateAgentInternals.serviceFile("/opt/ALPR Community", "/opt/Node 24/node");
+  assert.match(unitWithSpaces, /WorkingDirectory=\/opt\/ALPR\\x20Community/);
+  assert.match(unitWithSpaces, /ExecStart="\/opt\/Node 24\/node" "\/opt\/ALPR Community\/scripts\/community-update-agent\.mjs" run/);
 });
