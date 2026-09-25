@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+## 0.1.32 — 2026-09-25
+
+- Fixed multi-second Live Feed query planning when ReID v2 is in shadow mode by
+  omitting authoritative-only v2 views and asset joins from the generated SQL.
+- Preserved the authoritative ReID projection when v2 is primary and added
+  regression coverage for every supported ReID authority mode.
+
 ## 0.1.31 — 2026-09-25
 
 - Added a resumable `./alpr-community migrate wizard` that creates a separate
