@@ -10,6 +10,8 @@
   regression coverage for every supported ReID authority mode.
 - Replaced five-second full-page Live Feed polling with authenticated
   server-sent change events and bounded changed-row hydration.
+- Replaced the separate Recognition Feed viewer's three-second database poll
+  with the same event-driven changed-row path while retaining manual refresh.
 - Coalesced concurrent browser-session checks, cached update state briefly,
   and removed update checks from image and other subresource requests.
 - Added private immutable image caching with conditional requests, removed the

@@ -31,12 +31,13 @@ test("Live Feed events normalize read ids and fan out one revision", () => {
   resetLiveFeedEventStateForTest();
 });
 
-test("Live Feed stream uses a route-handler ReadableStream and ingestion publishes after commit", async () => {
+test("Live Feed surfaces use a route-handler stream and ingestion publishes after commit", async () => {
   const fs = await import("node:fs/promises");
-  const [route, ingestion, wrapper, delta] = await Promise.all([
+  const [route, ingestion, wrapper, viewer, delta] = await Promise.all([
     fs.readFile("app/api/sse/route.js", "utf8"),
     fs.readFile("app/api/plate-reads/route.js", "utf8"),
     fs.readFile("components/PlateTableWrapper.jsx", "utf8"),
+    fs.readFile("components/LiveRecognitionViewer.jsx", "utf8"),
     fs.readFile("app/api/live-feed/changes/route.js", "utf8"),
   ]);
 
@@ -45,6 +46,9 @@ test("Live Feed stream uses a route-handler ReadableStream and ingestion publish
   assert.match(ingestion, /await dbClient\.query\("COMMIT"\);[\s\S]*?publishPlateReadChanges/);
   assert.doesNotMatch(ingestion, /setTimeout\(resolve, 100\)/);
   assert.match(wrapper, /new EventSource\("\/api\/sse"\)/);
+  assert.match(viewer, /new EventSource\("\/api\/sse"\)/);
+  assert.match(viewer, /fetch\(`\/api\/live-feed\/changes\?\$\{query\}`/);
+  assert.doesNotMatch(viewer, /setInterval/);
   assert.match(delta, /filters: \{ readIds \}/);
   assert.match(delta, /Server-Timing/);
 });

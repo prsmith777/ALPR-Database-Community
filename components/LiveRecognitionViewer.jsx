@@ -7,7 +7,6 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { buildBlueIrisUiUrl } from "@/lib/blue-iris-ui-url.mjs";
 import {
@@ -32,15 +31,11 @@ export default function LiveRecognitionViewer({
 }) {
   const [latestPlate, setLatestPlate] = useState(initialPlate);
   const [plateInsights, setPlateInsights] = useState(null);
-  const [refreshInterval, setRefreshInterval] = useState(3000);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [isLoadingInsights, setIsLoadingInsights] = useState(false);
-  const [lastUpdateTime, setLastUpdateTime] = useState(new Date());
   const [error, setError] = useState(null);
   const [activeTab, setActiveTab] = useState("details");
 
-  const router = useRouter();
-  const refreshTimerRef = useRef(null);
   const latestPlateIdRef = useRef(initialPlate?.id ?? null);
 
   // Helper function to fetch insights
@@ -87,7 +82,6 @@ export default function LiveRecognitionViewer({
         if (newPlate.id !== latestPlateIdRef.current) {
           latestPlateIdRef.current = newPlate.id;
           setLatestPlate(newPlate);
-          setLastUpdateTime(new Date());
         }
       }
 
@@ -100,39 +94,78 @@ export default function LiveRecognitionViewer({
     }
   }, []);
 
-  // Set up auto-refresh
+  // Follow committed read changes without continuously querying the database.
   useEffect(() => {
-    // Initial fetch on mount
-    if (latestPlateIdRef.current === null) {
-      fetchLatestPlateRead();
-    }
+    if (typeof EventSource === "undefined") return undefined;
 
-    // Set up interval for auto-refresh
-    refreshTimerRef.current = setInterval(() => {
-      fetchLatestPlateRead();
-    }, refreshInterval);
+    let cancelled = false;
+    let requestInFlight = false;
+    const pendingChanges = new Map();
+    const eventSource = new EventSource("/api/sse");
 
-    // Clean up interval on unmount
-    return () => {
-      if (refreshTimerRef.current) {
-        clearInterval(refreshTimerRef.current);
+    const flushChanges = async () => {
+      if (cancelled || requestInFlight || pendingChanges.size === 0) return;
+      requestInFlight = true;
+      const batch = [...pendingChanges.entries()].slice(0, 25);
+      batch.forEach(([readId]) => pendingChanges.delete(readId));
+
+      try {
+        const query = new URLSearchParams();
+        batch.forEach(([readId]) => query.append("readId", String(readId)));
+        const response = await fetch(`/api/live-feed/changes?${query}`, {
+          cache: "no-store",
+        });
+        if (!response.ok) throw new Error(`Recognition Feed delta failed with ${response.status}`);
+        const result = await response.json();
+        const rows = Array.isArray(result?.data) ? result.data : [];
+        const includesIngest = batch.some(([, reason]) => reason === "ingested");
+        const currentId = Number(latestPlateIdRef.current);
+        const nextPlate = includesIngest
+          ? rows[0]
+          : rows.find((row) => Number(row.id) === currentId);
+
+        if (!cancelled && nextPlate) {
+          latestPlateIdRef.current = nextPlate.id;
+          setLatestPlate(nextPlate);
+          setError(null);
+        }
+      } catch (eventError) {
+        console.error("Error applying Recognition Feed update:", eventError);
+        if (!cancelled) setError("Live updates are reconnecting. Use Refresh if needed.");
+      } finally {
+        requestInFlight = false;
+        if (!cancelled && pendingChanges.size > 0) {
+          window.setTimeout(() => void flushChanges(), 0);
+        }
       }
     };
-  }, [fetchLatestPlateRead, refreshInterval]);
 
-  // Calculate the time since last update
-  const getTimeSinceUpdate = () => {
-    const now = new Date();
-    const diff = Math.floor((now - lastUpdateTime) / 1000); // in seconds
+    const onPlateReadsChanged = (event) => {
+      try {
+        const message = JSON.parse(event.data);
+        const reason = String(message?.reason || "changed");
+        for (const readId of message?.readIds || []) {
+          const normalizedId = Number(readId);
+          if (Number.isSafeInteger(normalizedId) && normalizedId > 0) {
+            pendingChanges.set(normalizedId, reason);
+          }
+        }
+        void flushChanges();
+      } catch (eventError) {
+        console.error("Invalid Recognition Feed event:", eventError);
+      }
+    };
 
-    if (diff < 60) {
-      return `${diff} seconds ago`;
-    } else if (diff < 3600) {
-      return `${Math.floor(diff / 60)} minutes ago`;
-    } else {
-      return `${Math.floor(diff / 3600)} hours ago`;
-    }
-  };
+    eventSource.addEventListener("plate-reads-changed", onPlateReadsChanged);
+    if (latestPlateIdRef.current === null) void fetchLatestPlateRead();
+
+    return () => {
+      cancelled = true;
+      pendingChanges.clear();
+      eventSource.removeEventListener("plate-reads-changed", onPlateReadsChanged);
+      eventSource.close();
+    };
+  }, [fetchLatestPlateRead]);
 
   const formatConfidence = (confidence) => {
     if (confidence === null || confidence === undefined) return "N/A";
@@ -232,40 +265,6 @@ export default function LiveRecognitionViewer({
 
   return (
     <div className="py-4">
-      {/* Header controls */}
-      {/* <div className="flex flex-wrap justify-between items-center mb-6 gap-4">
-        <div className="flex items-center gap-3">
-          <Button
-            variant="outline"
-            onClick={handleManualRefresh}
-            disabled={isRefreshing}
-          >
-            {isRefreshing ? (
-              <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-            ) : (
-              <RefreshCw className="h-4 w-4 mr-2" />
-            )}
-            Refresh Now
-          </Button>
-          <span className="text-sm text-muted-foreground">
-            Updated {getTimeSinceUpdate()}
-          </span>
-        </div>
-        <div className="flex items-center gap-2">
-          <span className="text-sm text-muted-foreground">Refresh every:</span>
-          <select
-            className="px-2 py-1 text-sm border rounded-md bg-background"
-            value={refreshInterval}
-            onChange={(e) => setRefreshInterval(Number(e.target.value))}
-          >
-            <option value={1000}>1 second</option>
-            <option value={3000}>3 seconds</option>
-            <option value={5000}>5 seconds</option>
-            <option value={10000}>10 seconds</option>
-          </select>
-        </div>
-      </div> */}
-
       {error && (
         <div className="bg-destructive/10 border border-destructive text-destructive rounded-md p-4 mb-6 flex items-center">
           <AlertCircle className="h-5 w-5 mr-2" />
