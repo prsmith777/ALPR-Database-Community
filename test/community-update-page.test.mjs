@@ -153,8 +153,8 @@ test("an update tab reloads when the recovered server reports a new release", ()
   assert.equal(shouldReloadForRunningRelease("0.1.34", "0.1.34"), false);
   assert.equal(shouldReloadForRunningRelease("unknown", "0.1.34"), false);
   assert.equal(
-    softwareUpdateReloadUrl("http://192.168.0.10:3100/settings/software-updates", "0.1.34"),
-    "http://192.168.0.10:3100/settings/software-updates?release=0.1.34",
+    softwareUpdateReloadUrl("https://alpr.example.test/settings/software-updates", "0.1.34"),
+    "https://alpr.example.test/settings/software-updates?release=0.1.34",
   );
 });
 
