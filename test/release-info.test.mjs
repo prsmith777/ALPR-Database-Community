@@ -23,7 +23,7 @@ test("release information resolves a commit-pinned deployment image", () => {
     ALPR_RELEASE_CHANNEL: "staging",
   });
 
-  assert.equal(release.version, "0.1.33");
+  assert.equal(release.version, "0.1.34");
   assert.equal(release.manualVersion, "3.0");
   assert.equal(release.manualUpdatedAt, "September 25, 2026");
   assert.equal(release.gitSha, "8cd2fa8");
@@ -32,15 +32,14 @@ test("release information resolves a commit-pinned deployment image", () => {
   assert.equal(release.readOnly, true);
   assert.equal(
     release.notes.title,
-    "Faster event-driven Recognition Feed"
+    "Reliable updater restart recovery"
   );
   assert.equal(release.notes.publishedAt, "2026-09-25");
-  assert.ok(release.notes.items.length >= 4);
+  assert.ok(release.notes.items.length >= 3);
   const notes = release.notes.items.join(" ");
-  assert.match(notes, /every five seconds/i);
-  assert.match(notes, /event stream/i);
-  assert.match(notes, /session and update checks/i);
-  assert.match(notes, /Server-Timing/i);
+  assert.match(notes, /stable authenticated endpoint/i);
+  assert.match(notes, /cache-busted full navigation/i);
+  assert.match(notes, /permission-guarded/i);
 });
 
 test("an explicit valid SHA overrides the image tag", () => {
