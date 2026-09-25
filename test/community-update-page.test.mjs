@@ -14,6 +14,10 @@ import {
   communityUpdateAgentInternals,
   processCommunityUpdateRequest,
 } from "../scripts/community-update-agent.mjs";
+import {
+  shouldReloadForRunningRelease,
+  softwareUpdateReloadUrl,
+} from "../lib/software-update-browser.mjs";
 
 async function source(path) {
   return readFile(new URL(`../${path}`, import.meta.url), "utf8");
@@ -144,10 +148,21 @@ test("failed validation preserves the guarded rollback state for the page", asyn
   }
 });
 
+test("an update tab reloads when the recovered server reports a new release", () => {
+  assert.equal(shouldReloadForRunningRelease("0.1.33", "0.1.34"), true);
+  assert.equal(shouldReloadForRunningRelease("0.1.34", "0.1.34"), false);
+  assert.equal(shouldReloadForRunningRelease("unknown", "0.1.34"), false);
+  assert.equal(
+    softwareUpdateReloadUrl("https://alpr.example.test/settings/software-updates", "0.1.34"),
+    "https://alpr.example.test/settings/software-updates?release=0.1.34",
+  );
+});
+
 test("Software Updates page is permission-guarded, linked, and keeps Docker off the web container", async () => {
-  const [page, panel, shape, shell, actions, compose, dockerfile, launcher, agent] = await Promise.all([
+  const [page, panel, statusRoute, shape, shell, actions, compose, dockerfile, launcher, agent] = await Promise.all([
     source("app/settings/software-updates/page.jsx"),
     source("app/settings/software-updates/SoftwareUpdatesPanel.jsx"),
+    source("app/api/software-updates/status/route.js"),
     source("lib/community-update-shape.mjs"),
     source("components/settings/SettingsShell.jsx"),
     source("app/actions.js"),
@@ -167,6 +182,12 @@ test("Software Updates page is permission-guarded, linked, and keeps Docker off 
   assert.match(panel, /Accept update/);
   assert.match(panel, /The host update agent is offline\. Start it before accepting the update\./);
   assert.match(panel, /Select all five checks before accepting the update\./);
+  assert.match(panel, /fetch\("\/api\/software-updates\/status"/);
+  assert.doesNotMatch(panel, /getSoftwareUpdateStatus/);
+  assert.match(panel, /window\.location\.replace/);
+  assert.match(statusRoute, /denyUnlessRoutePermission\("maintenance\.manage"\)/);
+  assert.match(statusRoute, /Cache-Control": "no-store"/);
+  assert.match(statusRoute, /getReleaseInfo\(\)/);
   assert.match(compose, /\.\/update-control:\/app\/update-control/);
   assert.doesNotMatch(compose, /docker\.sock/);
   assert.match(dockerfile, /\/app\/update-control/);

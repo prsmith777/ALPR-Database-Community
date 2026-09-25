@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState, useTransition } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from "react";
 import {
   CheckCircle2,
   DownloadCloud,
@@ -13,11 +13,15 @@ import {
   TriangleAlert,
 } from "lucide-react";
 
-import { getSoftwareUpdateStatus, requestSoftwareUpdate } from "@/app/actions";
+import { requestSoftwareUpdate } from "@/app/actions";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { confirmationForCommunityUpdate } from "@/lib/community-update-shape.mjs";
+import {
+  shouldReloadForRunningRelease,
+  softwareUpdateReloadUrl,
+} from "@/lib/software-update-browser.mjs";
 
 const MANUAL_CHECKS = Object.freeze([
   "I signed in successfully.",
@@ -89,16 +93,32 @@ export default function SoftwareUpdatesPanel({ initialSnapshot, release }) {
   const [reconnecting, setReconnecting] = useState(false);
   const [manualChecks, setManualChecks] = useState(() => MANUAL_CHECKS.map(() => false));
   const [pending, startTransition] = useTransition();
+  const reloadingForRelease = useRef(false);
 
   const refresh = useCallback(async () => {
+    if (reloadingForRelease.current) return;
     try {
-      const next = await getSoftwareUpdateStatus();
-      setSnapshot(next);
+      const response = await fetch("/api/software-updates/status", {
+        cache: "no-store",
+        credentials: "same-origin",
+        headers: { Accept: "application/json" },
+      });
+      if (!response.ok) throw new Error("Software update status request failed");
+      const result = await response.json();
+      if (!result?.success || !result.snapshot) throw new Error("Software update status response is invalid");
+
+      if (shouldReloadForRunningRelease(release.version, result.release?.version)) {
+        reloadingForRelease.current = true;
+        window.location.replace(softwareUpdateReloadUrl(window.location.href, result.release.version));
+        return;
+      }
+
+      setSnapshot(result.snapshot);
       setReconnecting(false);
     } catch {
       setReconnecting(true);
     }
-  }, []);
+  }, [release.version]);
 
   useEffect(() => {
     const timer = window.setInterval(refresh, 4_000);

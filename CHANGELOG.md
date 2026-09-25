@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Fixed the Software Updates page so an open tab polls through a stable,
+  authenticated status endpoint and performs a cache-busted full navigation
+  after the application restarts onto a different release.
+
 ## 0.1.33 — 2026-09-25
 
 - Added guided GitHub bug and feature forms, Discussions routing for questions
