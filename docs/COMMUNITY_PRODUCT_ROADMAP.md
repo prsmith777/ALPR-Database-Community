@@ -28,6 +28,8 @@ The first clean release focuses on the portable ALPR application:
 - guarded, resumable database migration from the supported Original and
   Community schema baselines;
 - Docker Compose deployment on x86-64 with PostgreSQL 17.
+- guided fresh installation with generated database credentials, collision
+  checks, empty-database proof, and narrow failed-install recovery;
 - exact-tag routine updates on standard Linux hosts and Linux virtual machines,
   with a one-generation database/configuration rollback policy.
 
@@ -39,7 +41,6 @@ release boundary.
 ## Later work
 
 - Add architecture-neutral image builds after native dependency validation.
-- Improve first-run setup and empty-database diagnostics.
 - Publish generic sample data that contains no real plates, people, locations,
   timestamps, or camera identifiers.
 - Reintroduce advanced visual-search operations only after their configuration

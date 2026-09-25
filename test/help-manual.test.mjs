@@ -14,7 +14,7 @@ async function source(path) {
 }
 
 test("the user guide is structured, searchable, and role-aware", () => {
-  assert.equal(HELP_MANUAL.manualVersion, "1.4");
+  assert.equal(HELP_MANUAL.manualVersion, "1.5");
   assert.ok(HELP_MANUAL.sections.length >= 14);
 
   const ids = HELP_MANUAL.sections.map((section) => section.id);
@@ -56,6 +56,9 @@ test("the guide covers required workflows and clearly labels planned features", 
     "portable camera setup",
     "logical dump",
     "run ./alpr-community",
+    "guided fresh install",
+    "generated database password is not a login password",
+    "empty-database checks",
     "linux guest and docker compose",
     "one compressed database/configuration rollback generation",
     "privileged host maintenance",

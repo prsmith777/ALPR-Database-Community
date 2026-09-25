@@ -2,4 +2,10 @@
 set -euo pipefail
 
 installation_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
+
+if [[ "${1:-}" == "install" ]]; then
+  shift
+  exec node "${installation_dir}/scripts/community-installer.mjs" "$@"
+fi
+
 exec node "${installation_dir}/scripts/community-updater.mjs" "$@"
