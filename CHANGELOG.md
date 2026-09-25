@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.1.33 — 2026-09-25
+
 - Added guided GitHub bug and feature forms, Discussions routing for questions
   and general feedback, and private vulnerability-reporting guidance.
 - Added contribution and sanitization guidance plus direct feedback links in
