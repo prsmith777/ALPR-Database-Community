@@ -16,8 +16,8 @@ test("production image copies only standalone runtime artifacts", async () => {
   assert.match(dockerfile, /\/app\/public\s+\.\/public/);
   assert.match(dockerfile, /\/app\/models\/visual-search\s+\.\/models\/visual-search/);
   assert.match(dockerfile, /openvino-runtime-probe\.cjs/);
-  assert.match(dockerfile, /RUN node \/tmp\/openvino-runtime-probe\.cjs/);
-  assert.match(dockerfile, /rm -f \/tmp\/openvino-runtime-probe\.cjs/);
+  assert.match(dockerfile, /RUN node \/app\/openvino-runtime-probe\.cjs/);
+  assert.match(dockerfile, /rm -f \/app\/openvino-runtime-probe\.cjs/);
   assert.doesNotMatch(dockerfile, /COPY\s+--from=builder[^\n]*\/app\s+\/app(?:\s|$)/);
   assert.match(dockerfile, /CMD\s+\["node",\s*"server\.js"\]/);
 });
