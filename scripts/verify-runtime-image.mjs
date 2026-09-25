@@ -94,7 +94,7 @@ const openvinoProbe = readFileSync(
 );
 const inference = spawnSync(
   "docker",
-  ["run", "--rm", "--network", "none", "--entrypoint", "node", image],
+  ["run", "--rm", "--network", "none", "--entrypoint", "node", image, "-"],
   {
     encoding: "utf8",
     input: openvinoProbe,

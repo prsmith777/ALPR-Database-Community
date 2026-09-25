@@ -41,6 +41,7 @@ test("CI enforces the runtime image and empty-database contracts", async () => {
   assert.match(verifier, /"\/app\/multi-ai-payload\.json"/);
   assert.match(verifier, /openvino-runtime-probe\.cjs/);
   assert.match(verifier, /--network",\s*"none"/);
+  assert.match(verifier, /"--entrypoint",\s*"node",\s*image,\s*"-"/);
   assert.match(inferenceProbe, /openvino-node/);
   assert.match(inferenceProbe, /compileModelSync\(model, "CPU"\)/);
   assert.match(inferenceProbe, /infer\(/);
