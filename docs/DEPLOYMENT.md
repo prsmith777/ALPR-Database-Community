@@ -2,7 +2,7 @@
 
 The Community edition is intended for self-hosted x86-64 Linux systems and
 Linux virtual machines with Docker Engine, Docker Compose, Git, and Node.js 24.
-From exact stable release v0.1.25 onward, run `./alpr-community install` for a
+From exact stable release v0.1.26 onward, run `./alpr-community install` for a
 new empty installation. The guided installer verifies the canonical tagged
 source, generates the database password, collects the administrator password
 without echoing it, builds a commit-qualified image, and proves both health and

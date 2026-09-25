@@ -294,6 +294,7 @@ test("the guided engine backs up, applies, validates, accepts, and rolls back wi
 
     await writeFile(join(repository, "auth", "users.json"), "after-update\n");
     await writeFile(join(repository, "config", "settings.yaml"), "after-update\n");
+    const rollbackLogStart = commandLog.length;
     const rolledBack = await runUpdaterCommand(["rollback"], environment, {
       root: repository,
       runner,
@@ -316,6 +317,10 @@ test("the guided engine backs up, applies, validates, accepts, and rolls back wi
       const command = entry.join(" ");
       return command.includes("pg_restore") && command.includes("--clean");
     }));
+    const rollbackCommands = commandLog.slice(rollbackLogStart);
+    assert.ok(!rollbackCommands.some((entry) => (
+      entry.join(" ").includes("run --rm --no-deps migrate")
+    )));
   } finally {
     await rm(temporaryRoot, { recursive: true, force: true });
   }

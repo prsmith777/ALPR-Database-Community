@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+## 0.1.26 — 2026-09-24
+
+- Prevented rollback from re-running migrations after an exact logical restore,
+  avoiding seed rows that were absent from the recorded pre-update database.
+- Kept the verified dump authoritative for both prior schema and data before
+  exact row-count and application-health validation.
+- Added regression coverage proving rollback does not invoke the migration
+  service after restoring the source snapshot.
+- Updated release information and the Community user guide to version 1.7.
+
 ## 0.1.25 — 2026-09-24
 
 - Fixed rollback for databases containing PostgreSQL partitioned tables by

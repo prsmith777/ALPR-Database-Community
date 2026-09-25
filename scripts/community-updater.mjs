@@ -880,7 +880,6 @@ async function rollbackUpdate(environment = process.env, options = {}) {
     compose(runner, root, ["up", "-d", "db"], { inherit: true });
     await waitForDatabase(runner, root, options.databaseReadyAttempts);
     restoreDatabaseDump(runner, root, state.backup.dumpPath);
-    compose(runner, root, ["run", "--rm", "--no-deps", "migrate"], { inherit: true });
     const counts = databaseTableCounts(runner, root);
     const mismatch = Object.entries(state.backup.counts).filter(([table, before]) => counts[table] !== before);
     if (mismatch.length > 0) throw new Error(`rollback row counts do not match: ${mismatch.map(([table]) => table).join(", ")}`);

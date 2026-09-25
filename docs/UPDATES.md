@@ -72,7 +72,7 @@ The equivalent individual commands are:
 ./alpr-community status
 ```
 
-Use `./alpr-community update --to v0.1.25` to select a specific newer stable
+Use `./alpr-community update --to v0.1.26` to select a specific newer stable
 release. The updater refuses `latest`, branches, prereleases, tags that are not
 on canonical `origin/main`, and a tag whose package version does not match.
 
@@ -152,7 +152,8 @@ acceptance, or during the retained rollback window. It:
 4. restores the prior `.env`, `auth/`, and `config/`;
 5. transactionally replaces the application `public` schema and restores the
    pre-update PostgreSQL dump, including partitioned tables and extensions;
-6. reapplies the prior release's idempotent migrations;
+6. verifies the restored database directly without re-running migrations or
+   introducing seed rows that were absent from the recorded source;
 7. starts the prior app image;
 8. verifies exact pre-update table counts and application health.
 
