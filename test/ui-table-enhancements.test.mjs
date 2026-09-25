@@ -67,10 +67,11 @@ test("live feed image review advances visibly and starts focused on the plate", 
   assert.match(plateTable, /CONFIRM_NEXT_SCAN_TIMEOUT_MS = 15000/);
   assert.doesNotMatch(plateTable, /setInterval\(\(\) => \{\s*router\.refresh\(\)/);
   assert.match(plateTable, /checked=\{isLive\}[\s\S]*?onCheckedChange=\{onLiveChange\}/);
-  assert.match(plateTableWrapper, /LIVE_REFRESH_INTERVAL_MS = 5_000/);
   assert.match(plateTableWrapper, /document\.visibilityState === "visible"/);
-  assert.match(plateTableWrapper, /if \(!isLiveModeActive \|\| isViewerOpen\) return undefined/);
-  assert.match(plateTableWrapper, /requestLiveRefresh\("live_poll"\)/);
+  assert.match(plateTableWrapper, /new EventSource\("\/api\/sse"\)/);
+  assert.match(plateTableWrapper, /pendingLiveReadIdsRef/);
+  assert.match(plateTableWrapper, /metric: "feed_delta"/);
+  assert.doesNotMatch(plateTableWrapper, /requestLiveRefresh\("live_poll"\)/);
   assert.match(plateTableWrapper, /refreshAfterViewerCloseRef\.current = true/);
   assert.match(plateTableWrapper, /setReviewOverrides/);
   assert.match(plateTableWrapper, /reviewStatusFilters\.includes/);
@@ -357,8 +358,8 @@ test("live feed direction is visible, correctable, and filterable by semantic ca
   assert.match(table, /ariaLabel="Filter by direction"/);
   assert.match(table, /<DirectionBadge plate=\{plate\}/);
   assert.match(table, /direction_profile_configured[\s\S]*?"Pending"/);
-  assert.match(wrapper, /requestLiveRefresh\("live_poll"\)/);
-  assert.match(wrapper, /if \(!isLiveModeActive \|\| isViewerOpen\) return undefined/);
+  assert.match(wrapper, /publishPlateReadChanges|plate-reads-changed/);
+  assert.match(wrapper, /if \(!isLiveModeActive \|\| isViewerOpen \|\| isFilterInteractionActive\) return undefined/);
   assert.match(table, /label="Direction"[\s\S]*?field="direction"/);
   assert.match(table, /aria-label="Review vehicle direction"/);
   assert.match(table, /className="h-4 w-4 shrink-0 p-0 text-muted-foreground hover:text-foreground"/);

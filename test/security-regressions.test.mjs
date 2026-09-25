@@ -21,21 +21,20 @@ test("plate-read route delegates to the authentication-first wrapper", async () 
   assert.equal(source.includes("details: error.message"), false);
 });
 
-test("committed plate reads cannot fail because cache revalidation lacks a browser session", async () => {
+test("committed plate reads publish a lightweight feed event instead of revalidating the page", async () => {
   const source = await fs.readFile("app/api/plate-reads/route.js", "utf8");
 
   assert.equal(source.includes('from "@/app/actions"'), false);
-  assert.match(source, /import \{ revalidatePath \} from "next\/cache"/);
-  assert.match(source, /revalidatePath\("\/live_feed"\)/);
+  assert.equal(source.includes('from "next/cache"'), false);
+  assert.equal(source.includes('revalidatePath("/live_feed")'), false);
+  assert.match(source, /import \{ publishPlateReadChanges \} from "@\/lib\/sse"/);
 
-  const start = source.indexOf('revalidatePath("/live_feed")');
-  const revalidationBlock = source.slice(
-    start,
-    source.indexOf("return Response.json", start)
-  );
-  assert.equal(revalidationBlock.includes("throw error"), false);
-  assert.match(revalidationBlock, /plate_feed_revalidation_failed/);
-  assert.match(revalidationBlock, /PLATE_FEED_REVALIDATION_FAILED/);
+  const commitIndex = source.indexOf('dbClient.query("COMMIT")');
+  const publishIndex = source.indexOf("publishPlateReadChanges(");
+  const responseIndex = source.indexOf("return Response.json", publishIndex);
+  assert.ok(commitIndex >= 0, "the plate-read transaction must commit");
+  assert.ok(publishIndex > commitIndex, "the feed event must be published after commit");
+  assert.ok(responseIndex > publishIndex, "the route must return after publishing the event");
 });
 
 test("every non-public server action verifies its own session", async () => {
