@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.1.34 — 2026-09-25
+
 - Fixed the Software Updates page so an open tab polls through a stable,
   authenticated status endpoint and performs a cache-busted full navigation
   after the application restarts onto a different release.
