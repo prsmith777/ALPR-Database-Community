@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+## 0.1.27 — 2026-09-24
+
+- Fetched canonical `main` through an explicit remote-tracking refspec during
+  release discovery instead of relying on the clone's saved branch refspec.
+- Enabled exact-tag installations and tag-only clones to prove that a requested
+  stable release belongs to canonical `origin/main`.
+- Added regression and public-tooling coverage for the explicit main fetch.
+- Updated release information and the Community user guide to version 1.8.
+
 ## 0.1.26 — 2026-09-24
 
 - Prevented rollback from re-running migrations after an exact logical restore,

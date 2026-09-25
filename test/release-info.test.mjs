@@ -23,8 +23,8 @@ test("release information resolves a commit-pinned deployment image", () => {
     ALPR_RELEASE_CHANNEL: "staging",
   });
 
-  assert.equal(release.version, "0.1.26");
-  assert.equal(release.manualVersion, "1.7");
+  assert.equal(release.version, "0.1.27");
+  assert.equal(release.manualVersion, "1.8");
   assert.equal(release.manualUpdatedAt, "September 24, 2026");
   assert.equal(release.gitSha, "8cd2fa8");
   assert.equal(release.channel, "staging");
@@ -32,15 +32,15 @@ test("release information resolves a commit-pinned deployment image", () => {
   assert.equal(release.readOnly, true);
   assert.equal(
     release.notes.title,
-    "Exact rollback restoration"
+    "Portable release discovery"
   );
   assert.equal(release.notes.publishedAt, "2026-09-24");
   assert.ok(release.notes.items.length >= 4);
   const notes = release.notes.items.join(" ");
-  assert.match(notes, /partitioned tables/i);
-  assert.match(notes, /exact authority/i);
-  assert.match(notes, /no longer re-runs migrations/i);
-  assert.match(notes, /exact pre-update row counts/i);
+  assert.match(notes, /fetches canonical main explicitly/i);
+  assert.match(notes, /cloned at one exact tag/i);
+  assert.match(notes, /without re-running migrations/i);
+  assert.match(notes, /partition-safe restore/i);
 });
 
 test("an explicit valid SHA overrides the image tag", () => {

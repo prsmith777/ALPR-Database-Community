@@ -359,7 +359,10 @@ function verifyCanonicalOrigin(runner, root) {
 
 function fetchReleases(runner, root) {
   verifyCanonicalOrigin(runner, root);
-  git(runner, root, ["fetch", "--prune", "--prune-tags", "--tags", "origin"], { inherit: true });
+  git(runner, root, [
+    "fetch", "--prune", "--prune-tags", "--tags", "origin",
+    "+refs/heads/main:refs/remotes/origin/main",
+  ], { inherit: true });
   const output = git(runner, root, ["tag", "--list", "v*", "--merged", "origin/main"], { quiet: true });
   return output.split(/\r?\n/).map((tag) => tag.trim()).filter((tag) => parseVersionTag(tag));
 }

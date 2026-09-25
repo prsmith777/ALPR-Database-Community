@@ -14,7 +14,7 @@ async function source(path) {
 }
 
 test("the user guide is structured, searchable, and role-aware", () => {
-  assert.equal(HELP_MANUAL.manualVersion, "1.7");
+  assert.equal(HELP_MANUAL.manualVersion, "1.8");
   assert.ok(HELP_MANUAL.sections.length >= 14);
 
   const ids = HELP_MANUAL.sections.map((section) => section.id);
@@ -60,6 +60,8 @@ test("the guide covers required workflows and clearly labels planned features", 
     "generated database password is not a login password",
     "empty-database checks",
     "linux guest and docker compose",
+    "fetches canonical main explicitly",
+    "tag-only git refspec",
     "one compressed database/configuration rollback generation",
     "recreates and restores the public schema inside one database transaction",
     "partitioned tables",
