@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+## 0.1.25 — 2026-09-24
+
+- Fixed rollback for databases containing PostgreSQL partitioned tables by
+  restoring a freshly recreated `public` schema inside one transaction.
+- Preserved the standard `public` schema owner and access grants, restored
+  extension objects from the verified dump, and removed only container-local
+  temporary restore files.
+- Added regression coverage proving rollback does not use the incompatible
+  `pg_restore --clean` path that can reject inherited partition constraints.
+- Updated release information and the Community user guide to version 1.6.
+
 ## 0.1.24 — 2026-09-24
 
 - Added `./alpr-community install` for guided fresh installation on Linux

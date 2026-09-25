@@ -788,6 +788,51 @@ async function restorePrivateDirectory(source, destination, ownership) {
   }
 }
 
+function restoreDatabaseDump(runner, root, dumpPath) {
+  const artifactId = randomUUID().replaceAll("-", "");
+  const containerDump = `/tmp/alpr-community-rollback-${artifactId}.dump`;
+  const containerSql = `/tmp/alpr-community-rollback-${artifactId}.sql`;
+  const containerWrapper = `/tmp/alpr-community-rollback-${artifactId}-transaction.sql`;
+  const renderSql = [
+    "umask 077",
+    `pg_restore --file="$2" --no-owner --no-privileges "$1"`,
+  ].join("\n");
+  const wrapSql = [
+    "umask 077",
+    "{",
+    "  printf '%s\\n' '\\set ON_ERROR_STOP on' 'BEGIN;' 'SET client_min_messages = warning;' 'DROP SCHEMA public CASCADE;' 'CREATE SCHEMA public AUTHORIZATION pg_database_owner;' 'GRANT ALL ON SCHEMA public TO pg_database_owner;' 'GRANT USAGE ON SCHEMA public TO PUBLIC;'",
+    '  cat "$1"',
+    "  printf '%s\\n' 'COMMIT;'",
+    '} > "$2"',
+  ].join("\n");
+
+  try {
+    compose(runner, root, ["cp", dumpPath, `db:${containerDump}`]);
+    compose(runner, root, [
+      "exec", "-T", "db", "sh", "-ceu", renderSql,
+      "alpr-community-render-rollback", containerDump, containerSql,
+    ]);
+    compose(runner, root, [
+      "exec", "-T", "db", "sh", "-ceu", wrapSql,
+      "alpr-community-wrap-rollback", containerSql, containerWrapper,
+    ]);
+    compose(runner, root, [
+      "exec", "-T", "db", "psql", "--quiet", "--no-psqlrc",
+      "--set", "ON_ERROR_STOP=1", "--username", "postgres", "--dbname", "postgres",
+      "--file", containerWrapper,
+    ], { inherit: true });
+  } finally {
+    try {
+      compose(runner, root, [
+        "exec", "-T", "db", "rm", "-f", containerDump, containerSql, containerWrapper,
+      ], { quiet: true });
+    } catch {
+      // Container-local temporary files contain no credentials and disappear
+      // with the database container. Never mask the original restore failure.
+    }
+  }
+}
+
 async function rollbackUpdate(environment = process.env, options = {}) {
   const root = options.root || repositoryRoot;
   const runner = options.runner || defaultRunner;
@@ -834,11 +879,7 @@ async function rollbackUpdate(environment = process.env, options = {}) {
     );
     compose(runner, root, ["up", "-d", "db"], { inherit: true });
     await waitForDatabase(runner, root, options.databaseReadyAttempts);
-    compose(runner, root, [
-      "exec", "-T", "db", "pg_restore", "--clean", "--if-exists", "--single-transaction",
-      "--exit-on-error", "--no-owner", "--no-privileges", "--username", "postgres",
-      "--dbname", "postgres",
-    ], { stdinPath: state.backup.dumpPath, inherit: true });
+    restoreDatabaseDump(runner, root, state.backup.dumpPath);
     compose(runner, root, ["run", "--rm", "--no-deps", "migrate"], { inherit: true });
     const counts = databaseTableCounts(runner, root);
     const mismatch = Object.entries(state.backup.counts).filter(([table, before]) => counts[table] !== before);

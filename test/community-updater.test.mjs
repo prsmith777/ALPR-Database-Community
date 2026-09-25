@@ -233,10 +233,7 @@ test("the guided engine backs up, applies, validates, accepts, and rolls back wi
           : "alpr-dashboard:local";
         return "";
       }
-      if (joined.includes("pg_restore")) {
-        assert.ok(options.stdinPath.endsWith("postgres.dump"));
-        return "";
-      }
+      if (joined.includes("pg_restore")) return "";
       if (joined.startsWith("image rm ")) return "";
       return "";
     }
@@ -312,7 +309,13 @@ test("the guided engine backs up, applies, validates, accepts, and rolls back wi
     assert.equal(await readFile(join(repository, "auth", "users.json"), "utf8"), "before-auth\n");
     assert.equal(await readFile(join(repository, "config", "settings.yaml"), "utf8"), "before-config\n");
     assert.ok(commandLog.some((entry) => entry.includes("pg_dump")));
-    assert.ok(commandLog.some((entry) => entry.includes("pg_restore")));
+    assert.ok(commandLog.some((entry) => entry.join(" ").includes("pg_restore")));
+    assert.ok(commandLog.some((entry) => entry.join(" ").includes("DROP SCHEMA public CASCADE")));
+    assert.ok(commandLog.some((entry) => entry.join(" ").includes("-transaction.sql")));
+    assert.ok(!commandLog.some((entry) => {
+      const command = entry.join(" ");
+      return command.includes("pg_restore") && command.includes("--clean");
+    }));
   } finally {
     await rm(temporaryRoot, { recursive: true, force: true });
   }
