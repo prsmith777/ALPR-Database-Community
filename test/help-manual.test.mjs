@@ -14,7 +14,7 @@ async function source(path) {
 }
 
 test("the user guide is structured, searchable, and role-aware", () => {
-  assert.equal(HELP_MANUAL.manualVersion, "1.3");
+  assert.equal(HELP_MANUAL.manualVersion, "1.4");
   assert.ok(HELP_MANUAL.sections.length >= 14);
 
   const ids = HELP_MANUAL.sections.map((section) => section.id);
@@ -55,6 +55,9 @@ test("the guide covers required workflows and clearly labels planned features", 
     "planning inputs only",
     "portable camera setup",
     "logical dump",
+    "run ./alpr-community",
+    "linux guest and docker compose",
+    "one compressed database/configuration rollback generation",
     "privileged host maintenance",
     "radar traffic correlation",
     "advanced visual-identity conversion",

@@ -122,10 +122,11 @@ export default function ReleaseInformationCard({ release }) {
           Updates remain externally orchestrated
         </p>
         <p className="mt-1 text-muted-foreground">
-          This page cannot fetch source code, run Git or Docker, apply migrations,
-          restart services, install an update, or change the host. Releases continue
-          through the documented backup, commit-pinned deployment, verification, and
-          rollback process.
+          This page cannot run Git or Docker, apply migrations, restart services,
+          install an update, or change the host. On a supported Linux Docker Compose
+          installation, run <code className="font-mono">./alpr-community</code> from
+          the installation directory. The external updater performs the documented
+          backup, exact-release installation, verification, and rollback process.
         </p>
       </div>
     </div>
