@@ -124,10 +124,12 @@ paths, runtime data, database dumps, and private-only feature paths.
 
 ## Project status
 
-The clean Community repository is being validated before it replaces the
-historical public repository. See the
-[Community product roadmap](docs/COMMUNITY_PRODUCT_ROADMAP.md) and
-[changelog](CHANGELOG.md).
+The sanitized clean-history Community repository is public. Install supported
+stable builds from [GitHub Releases](https://github.com/prsmith777/ALPR-Database-Community/releases)
+rather than deploying moving `main`. See the
+[Community product roadmap](docs/COMMUNITY_PRODUCT_ROADMAP.md) for the current
+release boundary and later work, and the [changelog](CHANGELOG.md) for shipped
+changes.
 
 ## Security and privacy
 
