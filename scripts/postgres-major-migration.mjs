@@ -864,7 +864,10 @@ Supported legacy application baseline: Original ALPR Database v0.1.9 (${LEGACY_B
 Never commit the dump, manifest, passwords, or a populated .env file.`);
 }
 
-async function main(command = process.argv[2], environment = process.env) {
+export async function runPostgresMigrationCommand(
+  command = process.argv[2],
+  environment = process.env
+) {
   switch (command) {
     case "preflight": return preflight(environment);
     case "dump": return createDump(environment);
@@ -911,7 +914,7 @@ export const postgresMajorMigrationInternals = {
 };
 
 if (process.argv[1] && resolve(process.argv[1]) === scriptPath) {
-  main().catch((error) => {
+  runPostgresMigrationCommand().catch((error) => {
     console.error(`PostgreSQL migration failed: ${error.message}`);
     process.exitCode = 1;
   });

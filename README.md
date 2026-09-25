@@ -70,6 +70,11 @@ Database imports use the pinned v0.1.9 database schema as their supported
 baseline; the preflight rejects unknown or partially updated schemas before it
 creates a dump.
 
+Existing-system operators should begin with the
+[guided migration runbook](docs/MIGRATION_GUIDE.md). Its resumable assistant
+records only redacted workflow state, stops at every destructive boundary, and
+never switches traffic or deletes the retained source.
+
 ## Blue Iris ingestion
 
 Send ALPR JSON to `/api/plate-reads`. Authenticate with either of these HTTP

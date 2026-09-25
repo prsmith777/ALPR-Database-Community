@@ -41,7 +41,24 @@ Keep the complete source installation unchanged until the imported database,
 application, and image storage have all passed validation. Rollback depends on
 retaining that source and the verified logical dump.
 
-The repository includes a guarded migration helper:
+For an operator-guided migration, use the resumable assistant:
+
+```text
+npm run migrate:guided -- start
+npm run migrate:guided -- resume
+npm run migrate:guided -- status
+npm run migrate:guided -- accept
+npm run migrate:guided -- rollback-check
+```
+
+The assistant stores redacted state outside the repository, never stores
+passwords, stops at source-quiesce and empty-target acknowledgements, does not
+repeat completed steps, and requires separate storage and application
+acceptance. It never performs cutover or deletes the retained source. Follow
+the complete [guided migration runbook](MIGRATION_GUIDE.md).
+
+The lower-level guarded migration helper remains available for diagnosis and
+advanced automation:
 
 ```text
 npm run migrate:database -- preflight
