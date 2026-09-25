@@ -18,7 +18,11 @@
   sources, pinned Original ALPR v0.1.9 as the legacy application baseline,
   added application-schema fingerprinting, repaired and verified derived plate
   occurrence counts during import, added resumable image-storage transfer
-  guidance, and updated the Community user guide to version 1.2.
+  guidance, and updated the Community user guide to version 1.3.
+- Added a cross-platform guided migration assistant with redacted resumable
+  state, endpoint-drift protection, explicit source-quiesce and empty-target
+  checkpoints, non-repeating successful phases, separate storage/application
+  acceptance, rollback verification, and a step-by-step operator runbook.
 
 ## 0.1.22 — 2026-09-24
 

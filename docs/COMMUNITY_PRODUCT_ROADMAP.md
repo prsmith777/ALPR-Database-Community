@@ -25,6 +25,8 @@ The first clean release focuses on the portable ALPR application:
 - Blue Iris integration with user-supplied camera configuration;
 - basic local visual search and vehicle profiles;
 - application-level storage monitoring and guarded cleanup;
+- guarded, resumable database migration from the supported Original and
+  Community schema baselines;
 - Docker Compose deployment on x86-64 with PostgreSQL 17.
 
 Experimental radar traffic correlation, fixed-camera recovery campaigns,
