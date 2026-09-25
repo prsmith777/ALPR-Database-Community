@@ -14,7 +14,7 @@ async function source(path) {
 }
 
 test("the user guide is structured, searchable, and role-aware", () => {
-  assert.equal(HELP_MANUAL.manualVersion, "1.9");
+  assert.equal(HELP_MANUAL.manualVersion, "2.0");
   assert.ok(HELP_MANUAL.sections.length >= 14);
 
   const ids = HELP_MANUAL.sections.map((section) => section.id);
@@ -66,7 +66,7 @@ test("the guide covers required workflows and clearly labels planned features", 
     "recreates and restores the public schema inside one database transaction",
     "partitioned tables",
     "does not re-run migrations",
-    "privileged host maintenance",
+    "restricted host agent",
     "radar traffic correlation",
     "advanced visual-identity conversion",
   ]) {

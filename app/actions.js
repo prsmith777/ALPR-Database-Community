@@ -146,6 +146,10 @@ import {
 } from "@/lib/session-cookie.mjs";
 import { createServerActionAuthenticator } from "@/lib/server-action-auth.mjs";
 import { createUpdateActions } from "@/lib/update-actions.mjs";
+import {
+  readCommunityUpdateControlSnapshot,
+  submitCommunityUpdateRequest,
+} from "@/lib/community-update-control.mjs";
 import { formatTimeRange } from "@/lib/utils";
 import {
   getDashboardTimeWindow,
@@ -1371,6 +1375,27 @@ export async function getCurrentAccess() {
     },
     permissions,
   };
+}
+
+export async function getSoftwareUpdateStatus() {
+  await requirePermission("maintenance.manage");
+  return await readCommunityUpdateControlSnapshot();
+}
+
+export async function requestSoftwareUpdate(input = {}) {
+  const principal = await requirePermission("maintenance.manage");
+  try {
+    const request = await submitCommunityUpdateRequest(input, {
+      actor: { id: principal.id, username: principal.username },
+    });
+    return { success: true, request };
+  } catch (error) {
+    const message = String(error?.message || "Software update request was rejected");
+    const safe = /^(?:A software update|An exact target|Target must|The host update agent|Type |Unsupported software update|This operation)/.test(message)
+      ? message
+      : "Software update request was rejected";
+    return { success: false, error: safe };
+  }
 }
 
 export async function bootstrapNamedAdministrator(formData) {

@@ -131,6 +131,7 @@ test("fresh install builds a pinned image, proves an empty database, and stores 
     assert.match(envSource, /^ALPR_APP_IMAGE=alpr-community:0\.1\.24-222222222222$/m);
     assert.match(envSource, /^ALPR_RELEASE_SHA=2{40}$/m);
     assert.match(envSource, /^COMPOSE_PROJECT_NAME=alpr-community-test$/m);
+    assert.match(envSource, /^ALPR_UPDATE_HOST_GID=\d+$/m);
     const serializedState = await readFile(internals.statePath(root), "utf8");
     assert.doesNotMatch(serializedState, /Long\$Admin|DB_PASSWORD|ADMIN_PASSWORD/);
     assert.equal(fake.imageExists(), true);
@@ -144,6 +145,7 @@ test("fresh install builds a pinned image, proves an empty database, and stores 
     }
     assert.match(logger.messages.join("\n"), /installed successfully/);
     assert.match(logger.messages.join("\n"), /username blank/);
+    assert.match(logger.messages.join("\n"), /Software Updates/);
   } finally {
     await rm(root, { recursive: true, force: true });
   }

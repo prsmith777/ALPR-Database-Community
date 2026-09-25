@@ -2,6 +2,20 @@
 
 ## Unreleased
 
+## 0.1.29 — 2026-09-24
+
+- Added **Settings → Software Updates** for checking and installing exact
+  stable releases through the existing guarded updater workflow.
+- Added a restricted host-side update agent with an allow-listed, expiring,
+  private-file request protocol; the web container receives no Docker socket
+  or arbitrary shell access.
+- Added browser-visible validation, manual acceptance, guarded rollback, and
+  rollback-retention cleanup controls with explicit confirmations.
+- Added a portable foreground agent mode and per-user systemd installation for
+  unattended Linux hosts and virtual machines.
+- Updated installation, deployment, update, release, and embedded user-guide
+  documentation to version 2.0.
+
 ## 0.1.28 — 2026-09-24
 
 - Corrected the Community update guide so new deployments use the current

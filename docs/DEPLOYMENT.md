@@ -16,8 +16,10 @@ the installer writes the private `.env` with owner-only permissions.
 The Compose files default to UTC and persist authentication state, application
 configuration, logs, uploaded images, and PostgreSQL data. Keep `.env`, the
 runtime data directories, and database backups out of source control.
-The installer creates `auth/`, `config/`, and `storage/`, makes them writable
-by container UID/GID `1000`, and refuses to reuse nonempty paths. These paths
+The installer creates `auth/`, `config/`, `storage/`, and `update-control/`.
+Application data paths are writable by container UID/GID `1000`; the restricted
+update-control path is shared with the installing host account's primary group.
+The installer refuses to reuse nonempty paths. These paths
 are bind-mounted and intentionally do not come from the repository or image.
 On startup, Compose waits for PostgreSQL's first-time schema initialization,
 then applies `migrations.sql` in one transaction before it starts the app.
@@ -32,8 +34,10 @@ installations, including Linux virtual machines. Compatibility depends on the
 Linux guest, Docker Engine, and Compose—not the physical server or hypervisor.
 Unraid is one supported Linux example, not a requirement.
 
-Run `./alpr-community` from the installation directory to check, install,
-validate, accept, roll back, or clean up an update. The tool keeps Docker host
+From v0.1.29, run `./alpr-community agent install` once on a systemd-based
+Linux host, then use **Settings → Software Updates** to check, install,
+validate, accept, roll back, or clean up an update. The terminal menu at
+`./alpr-community` remains supported. The restricted agent keeps Docker host
 access outside the application container, creates one private rollback
 generation, uses commit-qualified images, and never copies the image-storage
 library or invokes broad Docker pruning. Follow the complete

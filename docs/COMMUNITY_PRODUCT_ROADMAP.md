@@ -7,7 +7,7 @@ prior Git history. Every release gate requires:
 
 - no credentials, password hashes, session data, database dumps, private LAN
   addresses, personal screenshots, or production-derived imagery;
-- no private deployment scripts or privileged host-maintenance controls;
+- no private deployment scripts or operator-specific unrestricted host controls;
 - no fixed installation-specific camera, radar, or network configuration;
 - persistent authentication, configuration, log, image, and database storage;
 - PostgreSQL 17 fresh-install and guarded PostgreSQL 13 or 17 imports from the
@@ -31,7 +31,8 @@ The published Community releases focus on the portable ALPR application:
 - guided fresh installation with generated database credentials, collision
   checks, empty-database proof, and narrow failed-install recovery;
 - exact-tag routine updates on standard Linux hosts and Linux virtual machines,
-  with a one-generation database/configuration rollback policy;
+  with a restricted browser-to-host agent and one-generation
+  database/configuration rollback policy;
 - automated container checks for fresh installation, restart persistence,
   ingestion, logical database restore, and reversible synthetic fixtures.
 

@@ -8,4 +8,9 @@ if [[ "${1:-}" == "install" ]]; then
   exec node "${installation_dir}/scripts/community-installer.mjs" "$@"
 fi
 
+if [[ "${1:-}" == "agent" ]]; then
+  shift
+  exec node "${installation_dir}/scripts/community-update-agent.mjs" "$@"
+fi
+
 exec node "${installation_dir}/scripts/community-updater.mjs" "$@"

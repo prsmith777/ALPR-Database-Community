@@ -52,6 +52,7 @@ next-env.d.ts
 /storage/
 /storage2/
 /data/
+/update-control/
 
 # Database exports, backups, and local restore material
 /backups/

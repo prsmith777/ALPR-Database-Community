@@ -37,8 +37,8 @@ COPY --from=builder --chown=node:node /app/.next/static ./.next/static
 COPY --from=builder --chown=node:node /app/public ./public
 COPY --from=builder --chown=node:node /app/models/visual-search ./models/visual-search
 
-RUN mkdir -p /app/auth /app/config /app/logs /app/storage \
-    && chown -R node:node /app/auth /app/config /app/logs /app/storage
+RUN mkdir -p /app/auth /app/config /app/logs /app/storage /app/update-control \
+    && chown -R node:node /app/auth /app/config /app/logs /app/storage /app/update-control
 
 EXPOSE 3000
 USER node
