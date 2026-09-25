@@ -37,6 +37,10 @@ fi
 
 if [[ "${1:-}" == "migrate" ]]; then
   shift
+  if [[ "${1:-}" == "wizard" ]]; then
+    shift
+    exec "${node_binary}" "${installation_dir}/scripts/community-migration-wizard.mjs" "$@"
+  fi
   exec "${node_binary}" "${installation_dir}/scripts/community-migration-assistant.mjs" "$@"
 fi
 

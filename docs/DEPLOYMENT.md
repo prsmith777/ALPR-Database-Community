@@ -78,7 +78,25 @@ Keep the complete source installation unchanged until the imported database,
 application, and image storage have all passed validation. Rollback depends on
 retaining that source and the verified logical dump.
 
-For an operator-guided migration, use the resumable assistant:
+On a separate supported Linux target, use the automated resumable wizard:
+
+```text
+./alpr-community migrate wizard
+./alpr-community migrate wizard status
+./alpr-community migrate wizard resume
+./alpr-community migrate wizard accept
+./alpr-community migrate wizard activate
+```
+
+It creates its own empty PostgreSQL 17 target, performs the guarded database
+migration, copies and checksums local or SSH image storage, and validates an
+outbound-isolated application plus restart persistence. It stops for an
+operator-confirmed source shutdown and browser review, never stores passwords
+in state, and never stops, switches, or deletes the retained source. Follow the
+complete [automated migration runbook](MIGRATION_GUIDE.md).
+
+For unusual external-database or cross-platform arrangements, the lower-level
+guided assistant remains available:
 
 ```text
 ./alpr-community migrate start
@@ -88,11 +106,8 @@ For an operator-guided migration, use the resumable assistant:
 ./alpr-community migrate rollback-check
 ```
 
-The assistant stores redacted state outside the repository, never stores
-passwords, stops at source-quiesce and empty-target acknowledgements, does not
-repeat completed steps, and requires separate storage and application
-acceptance. It never performs cutover or deletes the retained source. Follow
-the complete [guided migration runbook](MIGRATION_GUIDE.md).
+This assistant stores redacted state outside the repository but deliberately
+does not create the target, copy storage, or start the application.
 
 The lower-level guarded migration helper remains available for diagnosis and
 advanced automation:

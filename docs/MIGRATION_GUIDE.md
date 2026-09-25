@@ -1,280 +1,248 @@
-# Guided existing-system migration
+# Automated existing-system migration
 
-This runbook migrates a supported existing ALPR database into a separate
-PostgreSQL 17 Community target. The guided assistant remembers completed
-checkpoints, but it deliberately does not stop the source, copy image files,
-start the target application, switch traffic, or delete either system.
-It never switches traffic or deletes the retained source on the operator's
-behalf.
+The Community migration wizard moves a supported existing ALPR database and
+image library into a separate PostgreSQL 17 Community target. It creates the
+target, remembers completed checkpoints, verifies the database and files, and
+starts an outbound-isolated application for review.
+
+The wizard never switches traffic and does **not** stop or delete the old
+system. It also does not change
+DNS, a reverse proxy, router rules, VM settings, or the old application's
+service definition. Those boundaries require the operator because the correct
+commands differ by deployment.
 
 Supported database sources are:
 
 - Original ALPR Database v0.1.9-compatible on PostgreSQL 13 or 17;
 - ALPR Database Community v0.1.20 or newer on PostgreSQL 13 or 17.
 
-The Community compatibility matrix is acceptance-tested from these exact
-clean-history release states:
-
-- v0.1.20: `4cb70c2c5cbe24c7451e5c468692250331b7cbd0`;
-- v0.1.21: `c783fcafc62396f437c4fa811ce33bce658119b8`;
-- v0.1.22: `316742ebbd6ba6fc2e2135a4b5c96b61bc160859`.
-
-The matrix covers PostgreSQL 13 and 17 sources, always restores into
-PostgreSQL 17, and includes a refused non-empty restore followed by a clean,
-same-endpoint resume and rollback verification.
-
 An older Original ALPR installation must first update its database to the
-pinned v0.1.9 baseline. Unknown and partially updated schemas fail preflight.
+pinned v0.1.9 baseline. Unknown or partially updated schemas fail before a dump
+is created. The maintainer acceptance matrix covers exact Community v0.1.20,
+v0.1.21, and v0.1.22 sources on PostgreSQL 13 and 17.
 
-## What you need
+## Recommended target
 
-- Node.js 24 and this exact Community source checkout;
-- PostgreSQL 17 `psql`, `pg_dump`, and `pg_restore` client utilities;
-- credentials for the stopped-source database and the empty target database;
-- a separate, empty PostgreSQL 17 target created from `template0` where
-  practical;
-- encrypted free space for the private dump and workflow-state files;
-- the source and target image-storage locations, when images exist.
-
-For the recommended separate Ubuntu 24.04 x86-64 target, first download the
-verified release bootstrap and choose **Prepare migration from an existing ALPR
+Use a separate Ubuntu Server 24.04 x86-64 host or VM. On a new target, download
+and verify the release bootstrap as described in [Automated Community
+bootstrap](BOOTSTRAP.md), then choose **Prepare migration from an existing ALPR
 installation**. It installs Git, Docker Engine, Compose, Buildx, private Node.js
-24, PostgreSQL 17 clients, `rsync`, and OpenSSH, then prepares a separate exact
-Community release checkout. It does not change or stop the source and does not
-create the target database. See [Automated Community bootstrap](BOOTSTRAP.md)
-and [Host compatibility](COMPATIBILITY.md).
+24, PostgreSQL 17 clients, `rsync`, and OpenSSH and checks out an exact stable
+release.
 
-Migrating in place is not required and is less forgiving. Run
-`bash alpr-community-bootstrap.sh --check migration` first. If an older Ubuntu
-release or another distribution fails automatic compatibility, either install
-the equivalent dependencies manually and rerun the check, or move to a new
-supported Ubuntu 24.04 VM. Never let the bootstrap remove or replace the old
-ALPR system.
+The target needs access to the source PostgreSQL endpoint. If the old database
+is bound only to loopback, use an authenticated SSH tunnel or another narrowly
+scoped private connection; do not expose PostgreSQL to the internet. Image
+storage can be a local/mounted absolute path or an SSH `rsync` source. SSH use
+requires key-based access and a verified host key.
 
-Do not initialize the target with `schema.sql`. Do not point the Community
-application at it before restore and validation finish.
+Run the wizard from the prepared target checkout:
 
-## 1. Configure a private terminal
+```bash
+cd ~/alpr-community-target
+./alpr-community migrate wizard
+```
 
-Set these variables in a private terminal or secret manager. Do not put them
-in Git, shell history, screenshots, support tickets, or the workflow-state
-file.
+The interactive wizard asks for:
+
+- source PostgreSQL host, port, database, user, password, and SSL mode;
+- a new Community administrator password, time zone, application port, and
+  local database port;
+- either a locally mounted source image-storage path,
+  `user@host:/absolute/storage`, or confirmation that no image files exist.
+
+Passwords are never written to wizard state. The database and administrator
+passwords remain private. The
+generated target database password is kept only in the owner-readable target
+`.env`. If the command must be resumed in a later terminal, the source database
+password is requested again.
+
+## What the wizard automates
+
+The wizard performs these guarded stages:
+
+1. Verifies the exact canonical release, Linux x86-64 host, Node.js 24, Docker,
+   Compose, Buildx, available ports, free space, and clean target resources.
+2. Generates the target database credential, builds the commit-qualified
+   runtime image, creates private runtime directories, starts PostgreSQL 17,
+   and recreates its application database from `template0` as an empty target.
+3. Identifies the supported source schema and proves the target is distinct
+   and empty.
+4. Pauses until the operator stops the source application, ingestion, jobs,
+   and every other database writer.
+5. Creates a PostgreSQL custom-format dump and manifest, proving the source
+   schema, public-table inventory, and row counts did not change during it.
+6. Restores transactionally, applies current migrations transactionally,
+   reconciles derived occurrence counts, and compares every source table count
+   with the target.
+7. Copies local or SSH image storage with resumable `rsync`, then runs a
+   checksum dry comparison that must report no differences.
+8. Starts the target on a Docker network marked `internal`, verifies public
+   health and the exact runtime image, restarts the application and database,
+   and verifies health again.
+9. Stops at browser review. It never treats automated checks as permission to
+   cut over.
+
+The isolated Docker network prevents SMTP, MQTT, webhook, Pushover, Blue Iris,
+and other outbound connections while migrated settings are reviewed. The
+published application port remains available from the target host or LAN.
+
+## Source-stop checkpoint
+
+When prompted, stop the old ALPR application and all database writers. Keep its
+database and image storage intact and leave the writers stopped through target
+acceptance. Type the exact acknowledgement printed by the wizard:
 
 ```text
+ALPR_SOURCE_QUIESCED
+```
+
+For non-interactive operation, set the value only after the stop is complete:
+
+```bash
+export ALPR_MIGRATION_SOURCE_QUIESCED=ALPR_SOURCE_QUIESCED
+./alpr-community migrate wizard resume
+```
+
+This acknowledgement does not stop anything itself.
+
+## Browser review and acceptance
+
+After automated checks pass, open the printed target address and verify:
+
+- administrator sign-in works;
+- dashboard totals, database search, tags, roles, and audit history are
+  plausible;
+- representative plate and vehicle images display;
+- a controlled non-sensitive plate read can be ingested and found;
+- the legacy image-migration page appears only when the source marker says the
+  old migration was unfinished.
+
+Then accept the isolated target:
+
+```bash
+export ALPR_MIGRATION_ACCEPTANCE=ALPR_MIGRATION_ACCEPTED
+./alpr-community migrate wizard accept
+```
+
+Acceptance rechecks the unchanged source and verified dump needed for rollback.
+It does not enable outbound networking or switch live traffic.
+
+## Activation and service cutover
+
+Before activation, review every integration and notification setting and plan
+the host-specific traffic change. The wizard first proves that the stopped
+source and retained dump still match. Activating then replaces only its
+internal Docker network with the standard Community network, reruns the
+idempotent migration service, and verifies health:
+
+```bash
+export ALPR_MIGRATION_ACTIVATION=ALPR_ACTIVATE_MIGRATED_TARGET
+./alpr-community migrate wizard activate
+```
+
+Activation allows configured outbound integrations to operate. It still does
+not change DNS, reverse proxies, router rules, or source services. Perform that
+final host-specific cutover only after the activation health check passes.
+If activation validation fails, the wizard attempts to return the target to
+its outbound-isolated network and records whether that safety recovery
+succeeded. Do not cut over when the wizard reports an activation failure.
+
+## Resume, status, and recovery
+
+Successful stages are not repeated:
+
+```bash
+./alpr-community migrate wizard status
+./alpr-community migrate wizard resume
+```
+
+If restore or migration fails, `resume` recreates only the wizard-owned
+disposable target database, retains a previously verified dump, rewinds the
+target restore/validation checkpoints, and tries them again. It never repairs
+or rewrites the stopped source.
+
+The default owner-readable state is
+`~/.local/state/alpr-community/migration-wizard.json`; set an absolute
+`ALPR_MIGRATION_WIZARD_STATE_PATH` to choose another private location. Dumps,
+manifests, and guided database state default below
+`~/.local/share/alpr-community/migrations/`. All remain outside the Git
+checkout.
+
+If target preparation fails before acceptance, guarded recovery removes only
+the recorded target Compose project, volumes, private `.env`, runtime
+directories, and a wizard-created image. It retains the old source and private
+dump artifacts:
+
+```bash
+export ALPR_MIGRATION_RECOVERY=ALPR_RECOVER_MIGRATION_TARGET
+./alpr-community migrate wizard recover
+```
+
+Recovery refuses an accepted target or a `.env` modified after creation.
+
+## Non-interactive configuration
+
+Automation can set these values privately rather than answering prompts:
+
+```text
+ALPR_INSTALL_ADMIN_PASSWORD
+ALPR_INSTALL_TIMEZONE
+ALPR_INSTALL_APP_PORT
+ALPR_INSTALL_DB_PORT
+ALPR_INSTALL_PROJECT_NAME
+
 ALPR_MIGRATION_SOURCE_HOST
 ALPR_MIGRATION_SOURCE_PORT
 ALPR_MIGRATION_SOURCE_DATABASE
 ALPR_MIGRATION_SOURCE_USER
 ALPR_MIGRATION_SOURCE_PASSWORD
 ALPR_MIGRATION_SOURCE_SSLMODE
-
-ALPR_MIGRATION_TARGET_HOST
-ALPR_MIGRATION_TARGET_PORT
-ALPR_MIGRATION_TARGET_DATABASE
-ALPR_MIGRATION_TARGET_USER
-ALPR_MIGRATION_TARGET_PASSWORD
-ALPR_MIGRATION_TARGET_SSLMODE
-
-ALPR_MIGRATION_DUMP_PATH
 ```
 
-`ALPR_MIGRATION_DUMP_PATH` must be an absolute path outside the repository.
-`ALPR_MIGRATION_STATE_PATH` is optional; by default the assistant creates
-`<dump-path>.workflow.json` beside the dump. Both files are private.
-
-When source and target storage are locally mounted, these optional variables
-bind their paths to the workflow identity:
+Choose exactly one storage input:
 
 ```text
-ALPR_MIGRATION_SOURCE_STORAGE_PATH
-ALPR_MIGRATION_TARGET_STORAGE_PATH
+ALPR_MIGRATION_SOURCE_STORAGE_PATH=/absolute/local/or/mounted/storage
+ALPR_MIGRATION_SOURCE_STORAGE_SSH=user@source-host:/absolute/storage
+ALPR_MIGRATION_NO_STORAGE=ALPR_NO_IMAGE_STORAGE
 ```
 
-The paths must both be absolute, separate, and non-nested. The assistant
-records the paths but never copies or deletes their contents.
+`ALPR_MIGRATION_ARTIFACT_DIR` and `ALPR_MIGRATION_WIZARD_STATE_PATH` are
+optional absolute paths outside the repository. Do not put passwords in shell
+history, screenshots, support tickets, or Git.
 
-On PowerShell 7, passwords can be entered without echoing them:
+## Rollback retention
 
-```powershell
-$sourcePassword = Read-Host "Source database password" -MaskInput
-$targetPassword = Read-Host "Target database password" -MaskInput
-$env:ALPR_MIGRATION_SOURCE_PASSWORD = $sourcePassword
-$env:ALPR_MIGRATION_TARGET_PASSWORD = $targetPassword
+Keep the stopped source, its matching application and image storage, the dump,
+manifest, and wizard state until the observation window closes. If the target
+fails after cutover, stop its application, return traffic to the unchanged
+source, and restart the old application using the source platform's service
+controls. The wizard never deletes the rollback source.
+
+## Advanced guided interface
+
+The earlier redacted checkpoint assistant remains available for unusual
+external-database or cross-platform arrangements:
+
+```text
+./alpr-community migrate start
+./alpr-community migrate resume
+./alpr-community migrate status
+./alpr-community migrate accept
+./alpr-community migrate rollback-check
 ```
 
-On Bash, use silent reads:
+That lower-level interface does not create the target, copy storage, start the
+application, activate networking, switch traffic, or delete anything. See
+[Community deployment](DEPLOYMENT.md) for its full environment contract.
+
+Maintainers can reproduce the supported clean-history database matrix with:
 
 ```bash
-read -rsp "Source database password: " ALPR_MIGRATION_SOURCE_PASSWORD; echo
-read -rsp "Target database password: " ALPR_MIGRATION_TARGET_PASSWORD; echo
-export ALPR_MIGRATION_SOURCE_PASSWORD ALPR_MIGRATION_TARGET_PASSWORD
-```
-
-## 2. Start and inspect preflight
-
-Run:
-
-```text
-./alpr-community migrate start
-```
-
-The assistant creates the private redacted state file, verifies PostgreSQL 17
-clients, identifies the source application and schema fingerprint, confirms
-the PostgreSQL version, and proves the target is distinct and empty. It then
-stops before creating the dump.
-
-Inspect the checkpoint at any time:
-
-```text
-./alpr-community migrate status
-```
-
-Passwords and acknowledgement values are never written to the state file.
-Changing an endpoint, database name, dump path, state path, or recorded storage
-path changes the workflow identity and cannot silently resume the old run.
-
-## 3. Stop the source and create the dump
-
-Stop the old application, plate ingestion, scheduled jobs, and every other
-database writer. Keep all of them stopped until the complete migration and
-acceptance process ends. Then set:
-
-```text
-ALPR_MIGRATION_SOURCE_QUIESCED=ALPR_SOURCE_QUIESCED
-```
-
-Resume:
-
-```text
-./alpr-community migrate resume
-```
-
-The assistant creates the logical dump and its format-3 manifest, then proves
-the source schema, table inventory, and row counts did not change during the
-dump. It stops again before target restore.
-
-## 4. Confirm and restore the disposable target
-
-Confirm that the target is the separate empty PostgreSQL 17 database you are
-prepared to recreate if restore or migrations fail. Set:
-
-```text
-ALPR_MIGRATION_ACKNOWLEDGE=ALPR_TO_PG17_EMPTY_TARGET
-```
-
-Resume:
-
-```text
-./alpr-community migrate resume
-```
-
-The assistant rechecks the stopped source and dump, restores transactionally,
-applies current migrations in a separate fail-closed transaction, reconciles
-plate occurrence counts, and validates the resulting Community database.
-Successful phases are not repeated on later `resume` commands.
-
-If restore or migrations fail, leave the source stopped and unchanged. Remove
-only the disposable target database or volume, create another empty
-PostgreSQL 17 target at the same configured endpoint, correct the reported
-cause, and run `resume` again. Never attempt to repair a partially tested
-target in place.
-
-## 5. Copy and verify image storage
-
-The database dump contains image paths, not files. Copy the complete source
-`storage/` contents while the source remains stopped. Preserve the relative
-`images/`, `thumbnails/`, and `derived/` paths and make the target writable by
-UID/GID `1000` on Linux.
-
-For Linux, use the resumable copy and checksum dry run in
-[Community deployment](DEPLOYMENT.md#image-storage-and-private-configuration).
-The checksum dry run must report no file differences. On Windows, use a
-resumable file-copy tool followed by a checksum-capable comparison; the Node
-assistant itself works on Windows, but it intentionally does not select or run
-a platform-specific storage-copy program.
-
-Do not blindly copy `.env`, `auth/`, or `config/`. Re-enter credentials and
-integration secrets on the new installation.
-
-## 6. Validate the isolated target application
-
-Point an isolated Community application at the restored target. Before any
-traffic cutover, verify all of the following:
-
-- database and application health checks pass;
-- administrator sign-in works;
-- expected plate totals, searches, tags, roles, and audit history are present;
-- image and thumbnail samples load from copied storage;
-- one controlled plate-ingestion test succeeds;
-- application and database restarts preserve records and images;
-- the legacy image migration page appears only when the source marker says it
-  was unfinished.
-
-The assistant cannot truthfully infer these operator observations, so it will
-not record final acceptance without explicit acknowledgements.
-
-## 7. Record acceptance
-
-Only after database validation, storage comparison, application checks, and
-restart persistence all succeed, set:
-
-```text
-ALPR_MIGRATION_STORAGE_VERIFIED=ALPR_STORAGE_VERIFIED
-ALPR_MIGRATION_APPLICATION_VERIFIED=ALPR_APPLICATION_VERIFIED
-ALPR_MIGRATION_ACCEPTANCE=ALPR_MIGRATION_ACCEPTED
-```
-
-Then run:
-
-```text
-./alpr-community migrate accept
-```
-
-This records acceptance in the private state file. It still does not switch
-traffic, stop the retained source database, or delete anything. Perform
-cutover separately using the deployment method for the target host.
-
-## 8. Preserve rollback until the observation window closes
-
-Before cutover and throughout the rollback window, run:
-
-```text
-./alpr-community migrate rollback-check
-```
-
-The check proves the retained source still matches the dump manifest and that
-the dump remains intact. If target acceptance later fails, stop the target and
-restart the unchanged source with its matching application and storage.
-
-Keep the source, dump, manifest, and workflow state until the chosen rollback
-window closes. Remove private migration artifacts only under the operator's
-backup-retention policy.
-
-## Commands at a glance
-
-```text
-./alpr-community migrate start
-./alpr-community migrate resume
-./alpr-community migrate status
-./alpr-community migrate accept
-./alpr-community migrate rollback-check
-```
-
-The lower-level `npm run migrate:database -- <command>` interface remains
-available for diagnosis and advanced automation.
-
-## Maintainer acceptance matrix
-
-Maintainers with complete clean-history Git objects, Docker, Node.js 24, and
-PostgreSQL 17 client utilities can reproduce the supported Community upgrade
-matrix without using an installed ALPR database:
-
-```text
 npm run test:community-upgrades
 ```
 
-Use `npm run test:community-upgrades -- --only 0.1.22` to isolate one baseline.
-The harness creates uniquely named disposable PostgreSQL containers on random
-loopback ports, stores dumps in a private operating-system temporary
-directory, and removes its containers and artifacts on success or failure. It
-does not discover, stop, or modify an existing ALPR stack.
+The harness uses disposable containers on random loopback ports and removes
+its private temporary dumps and containers after success or failure. It never
+discovers or changes an installed ALPR system.

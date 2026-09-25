@@ -364,15 +364,17 @@ async function collectConfiguration(environment, root, options = {}) {
   }
 
   const defaultProject = normalizeProjectName(basename(root));
+  const defaultAppPort = String(options.defaultAppPort || "3000");
+  const defaultDbPort = String(options.defaultDbPort || "5432");
   const timeZone = value(environment, "ALPR_INSTALL_TIMEZONE") || (interactive
     ? await promptText("IANA time zone", "UTC", options.input, options.output)
     : "UTC");
   const appPort = value(environment, "ALPR_INSTALL_APP_PORT") || (interactive
-    ? await promptText("Application port", "3000", options.input, options.output)
-    : "3000");
+    ? await promptText("Application port", defaultAppPort, options.input, options.output)
+    : defaultAppPort);
   const dbPort = value(environment, "ALPR_INSTALL_DB_PORT") || (interactive
-    ? await promptText("Local PostgreSQL port", "5432", options.input, options.output)
-    : "5432");
+    ? await promptText("Local PostgreSQL port", defaultDbPort, options.input, options.output)
+    : defaultDbPort);
   return {
     administratorPassword: validateAdministratorPassword(administratorPassword),
     timeZone: validateTimeZone(timeZone),
@@ -786,7 +788,18 @@ export const communityInstallerInternals = Object.freeze({
   MINIMUM_FREE_BYTES,
   RECOVERY_ACKNOWLEDGEMENT,
   RUNTIME_DIRECTORIES,
+  assertFreshTarget,
+  collectConfiguration,
+  compose,
+  defaultHealthCheck,
+  defaultRunner,
+  exactRelease,
+  exists,
   imageForRelease,
+  preflight,
+  promptHidden,
+  promptText,
+  sha256File,
   verifyRuntimeImage,
   normalizeProjectName,
   normalizeRepositoryUrl,
@@ -799,6 +812,8 @@ export const communityInstallerInternals = Object.freeze({
   validateAdministratorPassword,
   validatePort,
   validateTimeZone,
+  waitForDatabase,
+  writeEnvironment,
 });
 
 if (process.argv[1] && resolve(process.argv[1]) === scriptPath) {

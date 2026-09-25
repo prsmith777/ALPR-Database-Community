@@ -419,6 +419,29 @@ async function runRollbackCheck(
   return state;
 }
 
+async function rewindTargetWorkflow(
+  environment,
+  { root = repositoryRoot, clock, logger = console } = {}
+) {
+  const configuration = workflowConfiguration(environment, root);
+  const state = await readWorkflowState(configuration.statePath);
+  assertWorkflowMatches(state, configuration);
+  if (state.acceptance.status === "completed") {
+    throw new Error("an accepted migration workflow cannot be rewound");
+  }
+  state.steps.restore = { status: "pending" };
+  state.steps.validate = { status: "pending" };
+  state.status = state.steps.dump.status === "completed"
+    ? "waiting-for-restore"
+    : state.status;
+  state.waitingFor = null;
+  delete state.lastFailure;
+  markUpdated(state, clock);
+  await writeWorkflowState(configuration.statePath, state);
+  logger.log("Reset only the disposable target restore and validation checkpoints; the verified source dump was retained.");
+  return state;
+}
+
 async function showStatus(environment, { root = repositoryRoot, logger = console } = {}) {
   const statePath = resolveWorkflowStatePath(environment, root);
   const state = await readWorkflowState(statePath);
@@ -498,6 +521,7 @@ export const guidedMigrationInternals = {
   optionalStoragePaths,
   requiredAcknowledgement,
   resolveWorkflowStatePath,
+  rewindTargetWorkflow,
   resumeWorkflow,
   workflowConfiguration,
   workflowIdentity,

@@ -7,9 +7,9 @@ repositories, service control, and rollback behavior are predictable.
 | Host situation | Supported path |
 | --- | --- |
 | New Ubuntu Server 24.04 LTS x86-64 | Run the automated bootstrap in new-install mode. |
-| Existing ALPR moving to a new Ubuntu 24.04 VM | Run migration preparation on the new VM, then use the guided migration. This is the recommended migration path. |
+| Existing ALPR moving to a new Ubuntu 24.04 VM | Run migration preparation on the new VM, then use the automated migration wizard. This is the recommended migration path. |
 | Existing ALPR already on Ubuntu 24.04 x86-64 | Run the read-only migration compatibility check first. In-place preparation is possible only when it passes, but a separate target remains safer. |
-| Other x86-64 Linux distribution | Run the read-only check. Install equivalent prerequisites manually, then use the exact-tag installer or migration assistant. Automatic package changes are not performed. |
+| Other x86-64 Linux distribution | Run the read-only check. Install equivalent prerequisites manually, then use the exact-tag installer or migration wizard. Automatic package changes are not performed. |
 | Older Ubuntu release | Prefer a new Ubuntu 24.04 VM. Manual operating-system and dependency upgrades are operator-owned and must pass the compatibility check afterward. |
 | Native Windows Docker, WSL controlling Windows Docker, or appliance container UI | Not supported by the current installer/updater. Use an Ubuntu 24.04 x86-64 VM. |
 | ARM/AArch64 | Not currently supported. |

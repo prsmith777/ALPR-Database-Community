@@ -25,8 +25,9 @@ The published Community releases focus on the portable ALPR application:
 - Blue Iris integration with user-supplied camera configuration;
 - basic local visual search and vehicle profiles;
 - application-level storage monitoring and guarded cleanup;
-- guarded, resumable database migration from the supported Original and
-  Community schema baselines;
+- an automated, resumable migration wizard that creates a separate target,
+  imports supported Original or Community databases, checksums image storage,
+  and validates the application on an outbound-isolated network;
 - Docker Compose deployment on x86-64 with PostgreSQL 17;
 - guided fresh installation with generated database credentials, collision
   checks, empty-database proof, and narrow failed-install recovery;
