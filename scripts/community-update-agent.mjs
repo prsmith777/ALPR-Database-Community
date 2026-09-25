@@ -282,10 +282,15 @@ function defaultRunner(command, args, options = {}) {
   return String(result.stdout || "").trim();
 }
 
+function systemdQuote(value) {
+  const text = String(value);
+  if (!text || /[\0\r\n]/.test(text)) throw new Error("systemd service paths must be nonempty single-line values");
+  return `"${text.replaceAll("%", "%%").replaceAll("\\", "\\\\").replaceAll('"', '\\"')}"`;
+}
+
 function serviceFile(root, nodePath = process.execPath) {
-  const escapedRoot = root.replaceAll("%", "%%");
-  const escapedNode = nodePath.replaceAll("%", "%%");
-  return `[Unit]\nDescription=ALPR Community restricted software update agent\nAfter=docker.service network-online.target\n\n[Service]\nType=simple\nWorkingDirectory=${escapedRoot}\nExecStart=${escapedNode} ${posix.join(escapedRoot, "scripts", "community-update-agent.mjs")} run\nRestart=on-failure\nRestartSec=5\nUMask=0007\nNoNewPrivileges=true\n\n[Install]\nWantedBy=default.target\n`;
+  const agentPath = posix.join(root, "scripts", "community-update-agent.mjs");
+  return `[Unit]\nDescription=ALPR Community restricted software update agent\nAfter=docker.service network-online.target\n\n[Service]\nType=simple\nWorkingDirectory=${systemdQuote(root)}\nExecStart=${systemdQuote(nodePath)} ${systemdQuote(agentPath)} run\nRestart=on-failure\nRestartSec=5\nUMask=0007\nNoNewPrivileges=true\n\n[Install]\nWantedBy=default.target\n`;
 }
 
 export async function installCommunityUpdateAgent(options = {}) {
@@ -353,6 +358,7 @@ export const communityUpdateAgentInternals = Object.freeze({
   safeErrorMessage,
   serviceFile,
   stateSummary,
+  systemdQuote,
   timestamp,
   writePrivateJson,
 });
