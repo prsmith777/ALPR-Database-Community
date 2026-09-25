@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- Added guided GitHub bug and feature forms, Discussions routing for questions
+  and general feedback, and private vulnerability-reporting guidance.
+- Added contribution and sanitization guidance plus direct feedback links in
+  the README and in-app Help Center.
+- Updated the embedded Community user guide to version 2.3.
+
 ## 0.1.32 — 2026-09-25
 
 - Fixed multi-second Live Feed query planning when ReID v2 is in shadow mode by

@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Questions, setup help, and general feedback
+    url: https://github.com/prsmith777/ALPR-Database-Community/discussions
+    about: Use GitHub Discussions for support questions, ideas that are not yet feature requests, and Community feedback.
+  - name: Report a security vulnerability privately
+    url: https://github.com/prsmith777/ALPR-Database-Community/security/advisories/new
+    about: Do not disclose vulnerabilities, credentials, plate data, images, or private infrastructure in a public issue.

@@ -14,7 +14,7 @@ async function source(path) {
 }
 
 test("the user guide is structured, searchable, and role-aware", () => {
-  assert.equal(HELP_MANUAL.manualVersion, "2.2");
+  assert.equal(HELP_MANUAL.manualVersion, "2.3");
   assert.ok(HELP_MANUAL.sections.length >= 14);
 
   const ids = HELP_MANUAL.sections.map((section) => section.id);
@@ -74,6 +74,8 @@ test("the guide covers required workflows and clearly labels planned features", 
     "restricted host agent",
     "radar traffic correlation",
     "advanced visual-identity conversion",
+    "use github discussions for setup questions",
+    "public reports must be sanitized",
   ]) {
     assert.match(text, new RegExp(required, "i"));
   }
@@ -101,6 +103,18 @@ test("the desktop guide index scrolls independently", async () => {
   assert.match(help, /lg:max-h-\[calc\(100vh-2rem\)\]/);
   assert.match(help, /lg:overflow-y-auto/);
   assert.match(help, /lg:overscroll-contain/);
+});
+
+test("the Help Center links users to safe public and private feedback channels", async () => {
+  const help = await source("components/help/HelpManual.jsx");
+
+  assert.match(help, /ALPR-Database-Community\/discussions/);
+  assert.match(help, /issues\/new\?template=bug_report\.yml/);
+  assert.match(help, /issues\/new\?template=feature_request\.yml/);
+  assert.match(help, /security\/advisories\/new/);
+  assert.match(help, /Issues and discussions are public/);
+  assert.match(help, /target="_blank"/);
+  assert.match(help, /rel="noreferrer"/);
 });
 
 test("Community releases include public deployment and roadmap guidance", async () => {

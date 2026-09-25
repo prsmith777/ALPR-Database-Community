@@ -1,0 +1,61 @@
+name: Feature request
+description: Suggest an improvement to ALPR Database Community.
+title: "[Feature]: "
+labels:
+  - enhancement
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Describe the problem you want solved before proposing an implementation. GitHub issues are public, so use synthetic examples and remove identifying information.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem or use case
+      description: Who needs this, and what task is difficult or impossible today?
+      placeholder: As a Community operator, I need ... so that ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed change
+      description: Describe the desired behavior. Screenshots or mockups must contain only synthetic data.
+      placeholder: The application could ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Note any current workaround or other design you considered.
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - Recognition feed and review
+        - Search and exports
+        - Known plates and tags
+        - Images and visual search
+        - Notifications and integrations
+        - Installation, migration, or updates
+        - Security and privacy
+        - Documentation
+        - Other
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: confirmations
+    attributes:
+      label: Pre-submission checks
+      options:
+        - label: I searched existing issues, discussions, and the Community roadmap.
+          required: true
+        - label: I removed credentials, private addresses, real plate data, camera imagery, and other personal information.
+          required: true

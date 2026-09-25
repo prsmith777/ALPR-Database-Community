@@ -1,0 +1,104 @@
+name: Bug report
+description: Report a reproducible problem in ALPR Database Community.
+title: "[Bug]: "
+labels:
+  - bug
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for helping improve ALPR Database Community.
+
+        **Privacy warning:** GitHub issues are public. Do not include passwords, API keys, session cookies, database dumps, real license-plate data, private IP addresses, camera URLs, or unsanitized images and logs. Report security vulnerabilities through the private security link in the issue chooser.
+
+  - type: input
+    id: version
+    attributes:
+      label: ALPR Community version
+      description: Find this under Settings → Software Updates or in the release used to install or update the system.
+      placeholder: v0.1.32
+    validations:
+      required: true
+
+  - type: dropdown
+    id: installation
+    attributes:
+      label: Installation type
+      options:
+        - New Community installation
+        - Migrated Original ALPR installation
+        - Existing Community installation updated in place
+        - Development checkout
+        - Other
+    validations:
+      required: true
+
+  - type: dropdown
+    id: platform
+    attributes:
+      label: Host environment
+      description: Choose the closest match. Add distribution and hypervisor details below if relevant.
+      options:
+        - Ubuntu Server 24.04 LTS x86-64
+        - Other Linux x86-64
+        - Linux virtual machine
+        - Unraid-hosted Linux virtual machine
+        - Unsupported or experimental platform
+        - Other
+    validations:
+      required: true
+
+  - type: input
+    id: environment
+    attributes:
+      label: Environment details
+      description: Linux distribution/version, browser, and hypervisor or server platform. Do not include hostnames or private addresses.
+      placeholder: Ubuntu Server 24.04 LTS VM on Proxmox; Chrome 128
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: What happened?
+      description: Describe the problem and when it began.
+      placeholder: Tell us what you observed.
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Steps to reproduce
+      description: Use synthetic plate values and sanitized examples.
+      placeholder: |
+        1. Open ...
+        2. Select ...
+        3. Observe ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+      placeholder: What should have happened?
+    validations:
+      required: true
+
+  - type: textarea
+    id: diagnostics
+    attributes:
+      label: Sanitized diagnostics
+      description: Paste only the smallest relevant, redacted log excerpt or error message. Attach screenshots only after removing real plates, images, addresses, and credentials.
+      render: shell
+
+  - type: checkboxes
+    id: confirmations
+    attributes:
+      label: Pre-submission checks
+      options:
+        - label: I searched existing issues and discussions for this problem.
+          required: true
+        - label: I tested the latest stable Community release or explained above why I could not.
+          required: true
+        - label: I removed credentials, private addresses, real plate data, camera imagery, and other personal information.
+          required: true
