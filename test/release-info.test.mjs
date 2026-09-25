@@ -23,8 +23,8 @@ test("release information resolves a commit-pinned deployment image", () => {
     ALPR_RELEASE_CHANNEL: "staging",
   });
 
-  assert.equal(release.version, "0.1.22");
-  assert.equal(release.manualVersion, "1.3");
+  assert.equal(release.version, "0.1.23");
+  assert.equal(release.manualVersion, "1.4");
   assert.equal(release.manualUpdatedAt, "September 24, 2026");
   assert.equal(release.gitSha, "8cd2fa8");
   assert.equal(release.channel, "staging");
@@ -32,15 +32,15 @@ test("release information resolves a commit-pinned deployment image", () => {
   assert.equal(release.readOnly, true);
   assert.equal(
     release.notes.title,
-    "Storage and privacy onboarding"
+    "Guarded Community updates"
   );
   assert.equal(release.notes.publishedAt, "2026-09-24");
   assert.ok(release.notes.items.length >= 4);
   const notes = release.notes.items.join(" ");
-  assert.match(notes, /first-time Community administrators/i);
-  assert.match(notes, /optional host metrics/i);
-  assert.match(notes, /planning inputs/i);
-  assert.match(notes, /Email and Webhook readiness/i);
+  assert.match(notes, /standard Linux Docker Compose/i);
+  assert.match(notes, /exact stable Git tags/i);
+  assert.match(notes, /rollback generation/i);
+  assert.match(notes, /never receives the Docker socket/i);
 });
 
 test("an explicit valid SHA overrides the image tag", () => {
@@ -110,6 +110,7 @@ test("the administrator Release page remains read-only", async () => {
   assert.match(card, /Installed release/);
   assert.match(card, /User manual/);
   assert.match(card, /Updates remain externally orchestrated/);
+  assert.match(card, /\.\/alpr-community/);
   assert.doesNotMatch(card, /onClick=/);
   assert.doesNotMatch(module, /child_process|\bexec\b|\bspawn\b|fetch\s*\(/);
   assert.match(compose, /ALPR_RELEASE_IMAGE/);

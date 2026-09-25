@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+installation_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
+exec node "${installation_dir}/scripts/community-updater.mjs" "$@"

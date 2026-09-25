@@ -38,6 +38,7 @@ Clone your copy of the repository and enter it:
 ```bash
 git clone https://github.com/prsmith777/ALPR-Database-Community.git
 cd ALPR-Database-Community
+git checkout --detach v0.1.23
 ```
 
 Create the local environment file and set unique passwords:
@@ -58,6 +59,21 @@ Build the reviewed source and start the stack:
 docker build --tag alpr-dashboard:local .
 docker compose up -d
 ```
+
+Install a stable release tag rather than deploying moving `main`. Starting
+with v0.1.23, standard Linux systems and Linux virtual machines can use the
+host-side maintenance menu for later exact-tag updates:
+
+```bash
+./alpr-community
+```
+
+The guest operating system and Docker environment determine compatibility;
+the physical server or hypervisor does not. This supports ordinary Linux hosts
+and Linux VMs on platforms such as Proxmox, VMware, Hyper-V, VirtualBox,
+Unraid, TrueNAS, and others. See [Community updates](docs/UPDATES.md) for the
+safety checks, one-generation rollback policy, platform boundary, and
+non-interactive commands.
 
 Open `http://<host>:3000`. For the first sign-in, leave the username blank and
 use the administrator password from `.env`. Then create a named administrator

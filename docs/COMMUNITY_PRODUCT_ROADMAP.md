@@ -28,6 +28,8 @@ The first clean release focuses on the portable ALPR application:
 - guarded, resumable database migration from the supported Original and
   Community schema baselines;
 - Docker Compose deployment on x86-64 with PostgreSQL 17.
+- exact-tag routine updates on standard Linux hosts and Linux virtual machines,
+  with a one-generation database/configuration rollback policy.
 
 Experimental radar traffic correlation, fixed-camera recovery campaigns,
 privileged host operations, advanced ReID conversion/cutover controls,

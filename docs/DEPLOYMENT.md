@@ -18,6 +18,26 @@ then applies `migrations.sql` in one transaction before it starts the app.
 A newly initialized database is marked as not needing the legacy base64 image
 migration and proceeds directly to the dashboard after first sign-in.
 
+## Routine Community updates
+
+Deploy an exact stable tag rather than moving `main`. Beginning with v0.1.23,
+the repository includes a host-side updater for standard Linux Docker Compose
+installations, including Linux virtual machines. Compatibility depends on the
+Linux guest, Docker Engine, and Compose—not the physical server or hypervisor.
+Unraid is one supported Linux example, not a requirement.
+
+Run `./alpr-community` from the installation directory to check, install,
+validate, accept, roll back, or clean up an update. The tool keeps Docker host
+access outside the application container, creates one private rollback
+generation, uses commit-qualified images, and never copies the image-storage
+library or invokes broad Docker pruning. Follow the complete
+[Community update guide](UPDATES.md) before the first update.
+
+The first updater release intentionally refuses external-database deployments,
+Compose overrides, native Windows Docker, and appliance-managed container
+stacks until their platform-specific service and recovery behavior is
+implemented and tested.
+
 ## Import an existing ALPR database
 
 The bundled database image is PostgreSQL 17.10. The guarded import helper

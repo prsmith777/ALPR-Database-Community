@@ -2,6 +2,20 @@
 
 ## Unreleased
 
+## 0.1.23 — 2026-09-24
+
+- Added a guided host-side updater for standard Linux Docker Compose systems
+  and Linux virtual machines, independent of the underlying hypervisor.
+- Required clean exact stable tags from the canonical repository and built
+  commit-qualified local images instead of using a moving `latest` tag.
+- Added pre-update database/configuration backup, transactional migration,
+  health and row-count validation, manual acceptance, exact rollback, and a
+  bounded one-generation retention policy.
+- Kept Docker control outside the application container, excluded the image
+  library from per-update copies, and prohibited broad Docker pruning.
+- Documented supported hosts, deliberate first-release platform refusals, and
+  interactive and non-interactive update workflows in user guide 1.4.
+
 - Reduced the production Docker image to the standalone application runtime,
   public assets, and required visual-search models. Test suites, synthetic
   fixture tooling, CI files, and development payloads remain in the source
