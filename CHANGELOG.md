@@ -6,7 +6,13 @@
   and general feedback, and private vulnerability-reporting guidance.
 - Added contribution and sanitization guidance plus direct feedback links in
   the README and in-app Help Center.
-- Updated the embedded Community user guide to version 2.3.
+- Rebuilt the embedded Community user guide as version 3.0 with exact coverage
+  for every visible Settings page, complete Blue Iris ingestion and direction
+  setup, integration tests, update/rollback flow, and security boundaries.
+- Added Settings-route documentation contracts so a new visible Settings page
+  or a missing critical instruction fails automated tests.
+- Reconciled the public product roadmap with the shipped Community feature set,
+  supported deployment boundary, and current backlog.
 
 ## 0.1.32 — 2026-09-25
 

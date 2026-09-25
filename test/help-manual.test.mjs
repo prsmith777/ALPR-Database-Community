@@ -8,14 +8,18 @@ import {
   manualSearchText,
 } from "../lib/help-manual.mjs";
 import { generateHelpManualPdf } from "../lib/help-manual-pdf.mjs";
+import {
+  SETTINGS_HELP_COVERAGE,
+  SETTINGS_HELP_ROUTES,
+} from "../lib/settings-help-coverage.mjs";
 
 async function source(path) {
   return readFile(new URL(`../${path}`, import.meta.url), "utf8");
 }
 
 test("the user guide is structured, searchable, and role-aware", () => {
-  assert.equal(HELP_MANUAL.manualVersion, "2.3");
-  assert.ok(HELP_MANUAL.sections.length >= 14);
+  assert.equal(HELP_MANUAL.manualVersion, "3.0");
+  assert.ok(HELP_MANUAL.sections.length >= 24);
 
   const ids = HELP_MANUAL.sections.map((section) => section.id);
   assert.equal(new Set(ids).size, ids.length, "help anchors must be unique");
@@ -35,6 +39,52 @@ test("the user guide is structured, searchable, and role-aware", () => {
   }
 });
 
+test("every visible Settings route has specific manual coverage", async () => {
+  const sectionById = new Map(HELP_MANUAL.sections.map((section) => [section.id, section]));
+  assert.equal(new Set(SETTINGS_HELP_ROUTES).size, SETTINGS_HELP_ROUTES.length, "Settings routes must be unique");
+
+  for (const entry of SETTINGS_HELP_COVERAGE) {
+    const section = sectionById.get(entry.sectionId);
+    assert.ok(section, `missing manual section ${entry.sectionId}`);
+    assert.deepEqual(
+      [...(section.settingsViews || [])].sort(),
+      [...entry.routes].sort(),
+      `${entry.sectionId} route metadata drifted from the coverage contract`
+    );
+    const text = manualSearchText(section);
+    for (const term of entry.requiredTerms) {
+      assert.ok(text.includes(term.toLowerCase()), `${entry.sectionId} must explain ${term}`);
+    }
+  }
+
+  const shell = await source("components/settings/SettingsShell.jsx");
+  const navigationRoutes = [...shell.matchAll(/href:\s*"(\/settings\/[^"]+)"/g)].map((match) => match[1]);
+  for (const route of navigationRoutes) {
+    assert.ok(SETTINGS_HELP_ROUTES.includes(route), `visible Settings navigation route ${route} is undocumented`);
+  }
+});
+
+test("every concrete nested Settings page has a coverage entry", async () => {
+  const { readdir } = await import("node:fs/promises");
+  const settingsRoot = new URL("../app/settings/", import.meta.url);
+  const discovered = [];
+
+  async function walk(directory, parts = []) {
+    for (const entry of await readdir(directory, { withFileTypes: true })) {
+      if (entry.isDirectory()) {
+        if (!entry.name.startsWith("[")) await walk(new URL(`${entry.name}/`, directory), [...parts, entry.name]);
+      } else if (entry.name === "page.jsx" && parts.length > 0) {
+        discovered.push(`/settings/${parts.join("/")}`);
+      }
+    }
+  }
+
+  await walk(settingsRoot);
+  for (const route of discovered.filter((route) => route !== "/settings/integrations")) {
+    assert.ok(SETTINGS_HELP_ROUTES.includes(route), `concrete Settings page ${route} is undocumented`);
+  }
+});
+
 test("the guide covers required workflows and clearly labels planned features", () => {
   const text = HELP_MANUAL.sections
     .map((section) => manualSearchText(section))
@@ -46,32 +96,35 @@ test("the guide covers required workflows and clearly labels planned features", 
     "safely configure mqtt",
     "save a disabled draft",
     "recent real reads",
-    "activity & delivery",
+    "test & activity",
     "vehicle image similarity search",
-    "read storage health safely",
+    "storage overview",
     "cannot delete original plate images",
     "monitoring & alerts",
     "advanced maintenance",
-    "planning inputs only",
-    "portable camera setup",
-    "logical dump",
+    "planning thresholds never delete plate reads",
+    "create the blue iris plate-read action",
+    "two credential directions",
+    "home assistant integration",
+    "rollback discards newer records",
+    "guarded logical database migration",
     "run ./alpr-community",
     "guided fresh install",
-    "verified release bootstrap",
+    "verified release bootstrap on ubuntu server 24.04",
     "openvino, reid",
     "migration-preparation mode",
     "migrate wizard",
     "outbound-isolated target",
     "generated database password is not a login password",
-    "empty-database checks",
+    "empty-database proof",
     "linux guest and docker compose",
     "fetches canonical main explicitly",
     "tag-only git refspec",
     "one compressed database/configuration rollback generation",
-    "recreates and restores the public schema inside one database transaction",
+    "recreates the public schema",
     "partitioned tables",
     "does not re-run migrations",
-    "restricted host agent",
+    "restricted host update service",
     "radar traffic correlation",
     "advanced visual-identity conversion",
     "use github discussions for setup questions",
@@ -127,7 +180,20 @@ test("Community releases include public deployment and roadmap guidance", async 
   assert.match(readme, /docs\/DEPLOYMENT\.md/);
   assert.match(readme, /docs\/COMMUNITY_PRODUCT_ROADMAP\.md/);
   assert.match(runbook, /empty PostgreSQL 17 database on a fresh volume/);
-  assert.match(roadmap, /Community/i);
+  for (const required of [
+    "Available now",
+    "Vehicle images and direction",
+    "Notifications and integrations",
+    "Installation, migration, and updates",
+    "Intentionally not shipped",
+    "Prioritized later work",
+    "sample plate reads",
+    "restricted browser-to-host service",
+    "ARM support is deferred",
+  ]) {
+    assert.match(roadmap, new RegExp(required, "i"));
+  }
+  assert.doesNotMatch(roadmap, /Publish generic sample data/i);
   assert.doesNotMatch(`${readme}\n${runbook}\n${roadmap}`, /personal-deployment\.md/);
 });
 
@@ -153,10 +219,12 @@ test("the generated download is a multi-page PDF containing the manual", () => {
   assert.match(sourceText, /\/Title \(ALPR Database Community User Guide\)/);
   assert.match(sourceText, /Getting started/);
   assert.match(sourceText, /Known plates, monitored plates, and tags/);
+  assert.match(sourceText, /Blue Iris integration/);
+  assert.match(sourceText, /Home Assistant integration/);
   assert.match(sourceText, /Planned features that are not available yet/);
 
   const pageCount = Number(sourceText.match(/\/Type \/Pages \/Count (\d+)/)?.[1]);
-  assert.ok(pageCount >= 5, `expected at least 5 PDF pages, received ${pageCount}`);
+  assert.ok(pageCount >= 12, `expected at least 12 PDF pages, received ${pageCount}`);
   assert.equal(
     (sourceText.match(/\/Type \/Page \/Parent/g) || []).length,
     pageCount,
@@ -169,4 +237,13 @@ test("PDF generation rejects an empty content model", () => {
     () => generateHelpManualPdf({ title: "Empty", sections: [] }),
     /populated help manual/
   );
+});
+
+test("PDF block headings reserve room for following content", async () => {
+  const pdfSource = await source("lib/help-manual-pdf.mjs");
+  const blockStart = pdfSource.indexOf("renderBlock(block)");
+  const noteStart = pdfSource.indexOf('if (block.type === "note")', blockStart);
+  assert.ok(blockStart >= 0 && noteStart > blockStart);
+  assert.match(pdfSource.slice(blockStart, noteStart), /ensureSpace\(54\)/);
+  assert.match(pdfSource, /section heading, summary, role line, and first block together[\s\S]*ensureSpace\(130\)/);
 });
