@@ -9,6 +9,8 @@ test("login retires compatibility access after named-user bootstrap", async () =
   assert.match(page, /name="username"/);
   assert.match(page, /showCompatibilityHelp/);
   assert.match(page, /\/api\/login-state/);
+  assert.match(page, /First-time setup: use your administrator password/);
+  assert.match(page, /Leave blank during setup/);
   assert.match(route, /getBootstrapState/);
   assert.match(route, /bootstrapped: true/);
   assert.match(actions, /identityService\.getBootstrapState\(\)/);

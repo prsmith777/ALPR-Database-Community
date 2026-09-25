@@ -15,7 +15,7 @@ export default function LoginPage() {
   const [error, setError] = useState("");
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
-  const [showCompatibilityHelp, setShowCompatibilityHelp] = useState(false);
+  const [showCompatibilityHelp, setShowCompatibilityHelp] = useState(null);
   const [isPending, startTransition] = useTransition();
   const passwordInputRef = useRef(null);
   const router = useRouter();
@@ -94,7 +94,11 @@ export default function LoginPage() {
             ALPR Database
           </h1>
           <p className="text-sm sm:text-base text-muted-foreground">
-            Sign in with your named account
+            {showCompatibilityHelp === true
+              ? "First-time setup: use your administrator password"
+              : showCompatibilityHelp === false
+                ? "Sign in with your named account"
+                : "Checking sign-in mode..."}
           </p>
         </div>
 
@@ -114,8 +118,12 @@ export default function LoginPage() {
                   value={username}
                   onChange={(event) => setUsername(event.target.value)}
                   autoComplete="username"
-                  autoFocus
-                  placeholder="Enter your username"
+                  autoFocus={showCompatibilityHelp === false}
+                  placeholder={
+                    showCompatibilityHelp === true
+                      ? "Leave blank during setup"
+                      : "Enter your username"
+                  }
                   className="h-10 sm:h-12 px-4 bg-background/50"
                 />
                 {showCompatibilityHelp && (
@@ -133,6 +141,7 @@ export default function LoginPage() {
                   name="password"
                   visibilityLabel="password"
                   ref={passwordInputRef}
+                  autoFocus={showCompatibilityHelp === true}
                   value={password}
                   onChange={(event) => setPassword(event.target.value)}
                   required

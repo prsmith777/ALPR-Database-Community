@@ -1,5 +1,25 @@
 # Changelog
 
+## Unreleased
+
+- Reduced the production Docker image to the standalone application runtime,
+  public assets, and required visual-search models. Test suites, synthetic
+  fixture tooling, CI files, and development payloads remain in the source
+  repository but are no longer copied into the runtime image.
+- Added release gates that inspect the runtime image and prove a freshly
+  initialized database contains no plates, reads, tags, notifications, or
+  staging-fixture registry.
+- Clarified the first-run login mode so new administrators are told to leave
+  the username blank and use the configured administrator password.
+- Marked the legacy image migration complete in newly initialized databases so
+  clean installations proceed directly to the dashboard after sign-in while
+  restored legacy databases preserve their migration requirement.
+- Generalized the guarded database importer for validated PostgreSQL 13 and 17
+  sources, pinned Original ALPR v0.1.9 as the legacy application baseline,
+  added application-schema fingerprinting, repaired and verified derived plate
+  occurrence counts during import, added resumable image-storage transfer
+  guidance, and updated the Community user guide to version 1.2.
+
 ## 0.1.22 — 2026-09-24
 
 - Simplified Storage & Privacy for first-time Community administrators and

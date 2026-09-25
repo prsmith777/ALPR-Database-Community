@@ -209,13 +209,13 @@ CREATE TABLE public.tags (
 
 CREATE TABLE public.devmgmt (
     id SERIAL PRIMARY KEY,
-    update1 BOOLEAN DEFAULT FALSE,
+    update1 BOOLEAN DEFAULT TRUE,
     training_last_record INTEGER DEFAULT 0
 );
 
 
 INSERT INTO public.devmgmt (id, update1)
-SELECT 1, false
+SELECT 1, true
 WHERE NOT EXISTS (SELECT 1 FROM public.devmgmt);
 
 

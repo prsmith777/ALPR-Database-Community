@@ -15,31 +15,46 @@ writable by UID/GID `1000`, as shown in the README quick start. These paths are
 bind-mounted and intentionally do not come from the repository or image.
 On startup, Compose waits for PostgreSQL's first-time schema initialization,
 then applies `migrations.sql` in one transaction before it starts the app.
+A newly initialized database is marked as not needing the legacy base64 image
+migration and proceeds directly to the dashboard after first sign-in.
 
-## PostgreSQL 17 upgrades
+## Import an existing ALPR database
 
-The bundled database image is PostgreSQL 17.10. A PostgreSQL 13 data directory
-must not be started with the PostgreSQL 17 image. Upgrade by taking a verified
-logical dump from PostgreSQL 13 and restoring it into a fresh PostgreSQL 17 volume.
-Keep the PostgreSQL 13 volume unchanged until the restored database and
-application have both passed validation.
-The rollback plan depends on retaining the PostgreSQL 13 volume until that
-validation is complete.
+The bundled database image is PostgreSQL 17.10. The guarded import helper
+accepts validated PostgreSQL 13 and PostgreSQL 17 sources and always restores
+into PostgreSQL 17. A PostgreSQL 13 data directory must never be started with
+the PostgreSQL 17 image. The helper uses a logical dump instead of copying a
+database volume between PostgreSQL versions.
+
+The supported original-application baseline is
+[**ALPR Database v0.1.9**](https://github.com/algertc/ALPR-Database/releases/tag/v0.1.9),
+tag `v0.1.9`, commit
+`aeb72baf6f0435c8d42ed07422f1b2f3a703e6ac`. Users of an earlier original
+ALPR release must first update its database to the v0.1.9 schema. Do not use a
+moving `main` checkout or assume the old `latest` container tag identifies a
+release. The import preflight independently checks the v0.1.9 table, column,
+and primary-key signature. It also accepts an existing Community v0.1.20 or
+newer database carrying the Community baseline migration marker. An unknown or
+partially updated schema is rejected before a dump is created.
+
+Keep the complete source installation unchanged until the imported database,
+application, and image storage have all passed validation. Rollback depends on
+retaining that source and the verified logical dump.
 
 The repository includes a guarded migration helper:
 
 ```text
-npm run migrate:postgres -- preflight
-npm run migrate:postgres -- dump
-npm run migrate:postgres -- restore
-npm run migrate:postgres -- validate
-npm run migrate:postgres -- rollback-check
+npm run migrate:database -- preflight
+npm run migrate:database -- dump
+npm run migrate:database -- restore
+npm run migrate:database -- validate
+npm run migrate:database -- rollback-check
 ```
 
 Install the PostgreSQL 17 versions of `pg_dump`, `pg_restore`, and `psql`, or
-set `ALPR_PG_BIN_DIR` to their directory. A PostgreSQL 17 client can dump a
-PostgreSQL 13 server. Do not use a PostgreSQL 13 `pg_dump` client for this
-workflow.
+set `ALPR_PG_BIN_DIR` to their directory. A PostgreSQL 17 client can dump the
+supported PostgreSQL 13 and PostgreSQL 17 sources. Do not use a PostgreSQL 13
+`pg_dump` client for this workflow.
 
 Set the following in a private shell session or secret manager. Do not save
 passwords in the repository:
@@ -73,34 +88,81 @@ The bundled `docker-compose-dbonly.yml` initializes `schema.sql`, so it is not
 an empty restore target for this helper. Use a separately managed fresh
 PostgreSQL 17 instance or an isolated raw PostgreSQL container for the target.
 
-Stop plate ingestion, the application, and every other PostgreSQL 13 writer
-before creating the dump; keep them stopped through database validation. After
-doing so, set:
+Stop plate ingestion, the source application, and every other source-database
+writer before creating the dump; keep them stopped through database and
+storage validation. After doing so, set:
 
 ```text
-ALPR_MIGRATION_SOURCE_QUIESCED=PG13_SOURCE_QUIESCED
+ALPR_MIGRATION_SOURCE_QUIESCED=ALPR_SOURCE_QUIESCED
 ```
 
-`preflight` refuses a target with user relations and refuses a source and target
-that identify the same database. `dump` records a SHA-256 digest and exact
-public-table row counts in a companion manifest. `restore` verifies that
-manifest, refuses a non-empty target, restores without owner or ACL changes,
-and then applies the current `migrations.sql`. It also requires this deliberate
-acknowledgement:
+`preflight` refuses a target with user relations, refuses a source and target
+that identify the same database, and reports the detected application profile
+and schema fingerprint. `dump` records that profile, the schema fingerprint, a
+SHA-256 digest, and exact public-table row counts in a companion manifest.
+`restore` proves the stopped source still has the same application profile,
+schema, table inventory, and row counts; refuses a non-empty target; restores
+without owner or ACL changes; and then applies the current `migrations.sql`.
+The same migration transaction recalculates `plates.occurrence_count` from the
+restored reads, including creating a missing aggregate row or resetting a stale
+count to zero. Validation independently proves those derived counts agree.
+Restore also requires this deliberate acknowledgement:
 
 ```text
-ALPR_MIGRATION_ACKNOWLEDGE=PG13_TO_PG17_EMPTY_TARGET
+ALPR_MIGRATION_ACKNOWLEDGE=ALPR_TO_PG17_EMPTY_TARGET
 ```
 
-`validate` rechecks the dump digest and compares every PostgreSQL 13 public
-table count with the live source, manifest, and PostgreSQL 17 target. This
-database check is necessary but not sufficient. Before cutover, also verify
+The logical restore and the current migrations each run transactionally. If
+either phase fails, do not try to repair or reuse that target. Remove only the
+disposable target database or volume, create another empty PostgreSQL 17
+target, correct the reported cause, and rerun `restore`. The source and the
+verified dump remain unchanged.
+
+The restore includes the source database's `devmgmt` migration marker. An
+installation with unfinished base64 image conversion therefore still opens the
+guided migration page; an installation that previously completed it proceeds
+to the dashboard. If a very old source has no marker table, `migrations.sql`
+creates it as incomplete so the user must verify the migration rather than
+silently skipping it.
+
+### Image storage and private configuration
+
+The logical dump includes database records, users, tags, notification rules,
+and image path references. It does not include files from the source
+installation's `storage/` directory. Copy that directory separately while the
+source application remains stopped. The target storage directory must preserve
+the same relative paths (`images/`, `thumbnails/`, and `derived/`) and be
+writable by UID/GID `1000` before the target application starts.
+
+On Linux, `rsync` provides a resumable transfer. Run the first command to copy
+the files, then the checksum dry run; the second command must produce no file
+differences before cutover:
+
+```bash
+rsync --archive --human-readable --partial --info=progress2 \
+  /path/to/source/storage/ /path/to/target/storage/
+rsync --archive --checksum --dry-run --itemize-changes \
+  /path/to/source/storage/ /path/to/target/storage/
+```
+
+Do not blindly copy `auth/`, `config/`, or `.env`. They can contain session
+keys, API keys, database credentials, and integration secrets. Start with new
+target credentials and re-enter integrations through Settings. If preserving a
+configuration file is necessary, review it privately and copy it only after
+the database and storage import have passed validation.
+
+`restore` verifies exact source row counts immediately after the transactional
+restore and before applying current migrations. `validate` then rechecks the
+dump digest, proves the stopped source is unchanged, rejects any post-migration
+source-table row loss, and reports rows legitimately added by current schema
+seeds. These database checks are necessary but not sufficient. Before cutover,
+also verify
 database readiness, the application health endpoint, sign-in, plate ingestion,
-search, roles, audit history, and image persistence across an application and
-database restart.
+search, roles, audit history, storage reconciliation, and image persistence
+across an application and database restart.
 
 If acceptance fails, run `rollback-check`, stop the PostgreSQL 17 target, and
-return to the unchanged PostgreSQL 13 volume and its matching application
+return to the unchanged source database, storage, and matching application
 release. The helper intentionally never switches or deletes volumes; the
 operator must perform the environment-specific cutover only after validation.
 
