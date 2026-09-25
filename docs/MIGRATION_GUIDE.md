@@ -36,6 +36,21 @@ pinned v0.1.9 baseline. Unknown and partially updated schemas fail preflight.
 - encrypted free space for the private dump and workflow-state files;
 - the source and target image-storage locations, when images exist.
 
+For the recommended separate Ubuntu 24.04 x86-64 target, first download the
+verified release bootstrap and choose **Prepare migration from an existing ALPR
+installation**. It installs Git, Docker Engine, Compose, Buildx, private Node.js
+24, PostgreSQL 17 clients, `rsync`, and OpenSSH, then prepares a separate exact
+Community release checkout. It does not change or stop the source and does not
+create the target database. See [Automated Community bootstrap](BOOTSTRAP.md)
+and [Host compatibility](COMPATIBILITY.md).
+
+Migrating in place is not required and is less forgiving. Run
+`bash alpr-community-bootstrap.sh --check migration` first. If an older Ubuntu
+release or another distribution fails automatic compatibility, either install
+the equivalent dependencies manually and rerun the check, or move to a new
+supported Ubuntu 24.04 VM. Never let the bootstrap remove or replace the old
+ALPR system.
+
 Do not initialize the target with `schema.sql`. Do not point the Community
 application at it before restore and validation finish.
 
@@ -100,7 +115,7 @@ export ALPR_MIGRATION_SOURCE_PASSWORD ALPR_MIGRATION_TARGET_PASSWORD
 Run:
 
 ```text
-npm run migrate:guided -- start
+./alpr-community migrate start
 ```
 
 The assistant creates the private redacted state file, verifies PostgreSQL 17
@@ -111,7 +126,7 @@ stops before creating the dump.
 Inspect the checkpoint at any time:
 
 ```text
-npm run migrate:guided -- status
+./alpr-community migrate status
 ```
 
 Passwords and acknowledgement values are never written to the state file.
@@ -131,7 +146,7 @@ ALPR_MIGRATION_SOURCE_QUIESCED=ALPR_SOURCE_QUIESCED
 Resume:
 
 ```text
-npm run migrate:guided -- resume
+./alpr-community migrate resume
 ```
 
 The assistant creates the logical dump and its format-3 manifest, then proves
@@ -150,7 +165,7 @@ ALPR_MIGRATION_ACKNOWLEDGE=ALPR_TO_PG17_EMPTY_TARGET
 Resume:
 
 ```text
-npm run migrate:guided -- resume
+./alpr-community migrate resume
 ```
 
 The assistant rechecks the stopped source and dump, restores transactionally,
@@ -212,7 +227,7 @@ ALPR_MIGRATION_ACCEPTANCE=ALPR_MIGRATION_ACCEPTED
 Then run:
 
 ```text
-npm run migrate:guided -- accept
+./alpr-community migrate accept
 ```
 
 This records acceptance in the private state file. It still does not switch
@@ -224,7 +239,7 @@ cutover separately using the deployment method for the target host.
 Before cutover and throughout the rollback window, run:
 
 ```text
-npm run migrate:guided -- rollback-check
+./alpr-community migrate rollback-check
 ```
 
 The check proves the retained source still matches the dump manifest and that
@@ -238,11 +253,11 @@ backup-retention policy.
 ## Commands at a glance
 
 ```text
-npm run migrate:guided -- start
-npm run migrate:guided -- resume
-npm run migrate:guided -- status
-npm run migrate:guided -- accept
-npm run migrate:guided -- rollback-check
+./alpr-community migrate start
+./alpr-community migrate resume
+./alpr-community migrate status
+./alpr-community migrate accept
+./alpr-community migrate rollback-check
 ```
 
 The lower-level `npm run migrate:database -- <command>` interface remains

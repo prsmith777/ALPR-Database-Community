@@ -2,6 +2,22 @@
 
 ## Unreleased
 
+## 0.1.30 — 2026-09-25
+
+- Added one verified Ubuntu 24.04 x86-64 bootstrap with new-install,
+  migration-preparation, and read-only compatibility-check modes.
+- Automated Git, Docker Engine, Compose, Buildx, private Node.js 24, and
+  migration-only PostgreSQL 17/SSH/rsync prerequisite setup without replacing
+  an existing ALPR or Docker installation.
+- Added real OpenVINO CPU inference gates for every fresh-install and update
+  image, covering the bundled detection, attribute, and ReID models.
+- Moved image builds to isolated temporary BuildKit builders that remove their
+  own cache without broad Docker pruning or sacrificing the versioned rollback
+  image.
+- Added exact-tag release assets and checksums for the bootstrap, plus host,
+  capacity, distribution, VM, Windows, ARM, and migration compatibility paths.
+- Updated the embedded Community user guide to version 2.1.
+
 ## 0.1.29 — 2026-09-24
 
 - Added **Settings → Software Updates** for checking and installing exact

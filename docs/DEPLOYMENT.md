@@ -1,13 +1,14 @@
 # Community deployment
 
 The Community edition is intended for self-hosted x86-64 Linux systems and
-Linux virtual machines with Docker Engine, Docker Compose, Git, and Node.js 24.
-From exact stable release v0.1.27 onward, run `./alpr-community install` for a
+Linux virtual machines. On Ubuntu Server 24.04, the verified release bootstrap
+installs Git, Docker Engine, Compose, Buildx, and private Node.js 24, then runs
+`./alpr-community install` for a
 new empty installation. The guided installer verifies the canonical tagged
 source, generates the database password, collects the administrator password
 without echoing it, builds a commit-qualified image, and proves both health and
 an empty database before completion. Follow the complete
-[fresh-install guide](INSTALL.md).
+[bootstrap guide](BOOTSTRAP.md) and [fresh-install guide](INSTALL.md).
 
 The Docker build context explicitly excludes `.env` files, so host credentials
 are not copied into image layers. Keep `.env.example` as the public template;
@@ -43,6 +44,12 @@ generation, uses commit-qualified images, and never copies the image-storage
 library or invokes broad Docker pruning. Follow the complete
 [Community update guide](UPDATES.md) before the first update.
 
+Each new image is built with a dedicated temporary BuildKit builder whose cache
+is removed after the build. The versioned runtime image remains available for
+the updater's one-generation rollback policy. OpenVINO, ReID, and their pinned
+models are bundled in that image and verified with real CPU inference; they are
+not separate host installations.
+
 The first updater release intentionally refuses external-database deployments,
 Compose overrides, native Windows Docker, and appliance-managed container
 stacks until their platform-specific service and recovery behavior is
@@ -74,11 +81,11 @@ retaining that source and the verified logical dump.
 For an operator-guided migration, use the resumable assistant:
 
 ```text
-npm run migrate:guided -- start
-npm run migrate:guided -- resume
-npm run migrate:guided -- status
-npm run migrate:guided -- accept
-npm run migrate:guided -- rollback-check
+./alpr-community migrate start
+./alpr-community migrate resume
+./alpr-community migrate status
+./alpr-community migrate accept
+./alpr-community migrate rollback-check
 ```
 
 The assistant stores redacted state outside the repository, never stores

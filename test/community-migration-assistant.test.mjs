@@ -396,7 +396,7 @@ test("the package and public runbooks expose the guided workflow and its safety 
     "node scripts/community-migration-assistant.mjs"
   );
   assert.match(readme, /docs\/MIGRATION_GUIDE\.md/);
-  assert.match(deployment, /npm run migrate:guided -- start/);
+  assert.match(deployment, /\.\/alpr-community migrate start/);
   assert.match(guide, /never switches traffic/i);
   assert.match(guide, /Passwords.*never written/i);
   assert.match(guide, /ALPR_MIGRATION_STORAGE_VERIFIED=ALPR_STORAGE_VERIFIED/);

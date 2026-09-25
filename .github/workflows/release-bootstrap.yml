@@ -1,0 +1,41 @@
+name: Attach bootstrap to release
+
+on:
+  release:
+    types:
+      - published
+
+permissions:
+  contents: write
+
+jobs:
+  bootstrap:
+    name: Publish verified bootstrap asset
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Check out the published release
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.release.tag_name }}
+          persist-credentials: false
+
+      - name: Validate and package bootstrap
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash -n bootstrap.sh
+          install -m 0755 bootstrap.sh alpr-community-bootstrap.sh
+          sha256sum alpr-community-bootstrap.sh > alpr-community-bootstrap.sh.sha256
+
+      - name: Attach bootstrap and checksum
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+        run: >-
+          gh release upload "$RELEASE_TAG"
+          alpr-community-bootstrap.sh
+          alpr-community-bootstrap.sh.sha256
+          --repo "$GITHUB_REPOSITORY"
+          --clobber

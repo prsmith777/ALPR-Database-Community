@@ -23,24 +23,24 @@ test("release information resolves a commit-pinned deployment image", () => {
     ALPR_RELEASE_CHANNEL: "staging",
   });
 
-  assert.equal(release.version, "0.1.29");
-  assert.equal(release.manualVersion, "2.0");
-  assert.equal(release.manualUpdatedAt, "September 24, 2026");
+  assert.equal(release.version, "0.1.30");
+  assert.equal(release.manualVersion, "2.1");
+  assert.equal(release.manualUpdatedAt, "September 25, 2026");
   assert.equal(release.gitSha, "8cd2fa8");
   assert.equal(release.channel, "staging");
   assert.equal(release.source, "commit-pinned image");
   assert.equal(release.readOnly, true);
   assert.equal(
     release.notes.title,
-    "Browser-managed Community updates"
+    "Automated Community host bootstrap"
   );
-  assert.equal(release.notes.publishedAt, "2026-09-24");
+  assert.equal(release.notes.publishedAt, "2026-09-25");
   assert.ok(release.notes.items.length >= 4);
   const notes = release.notes.items.join(" ");
-  assert.match(notes, /Settings.*Software Updates/i);
-  assert.match(notes, /restricted host agent/i);
-  assert.match(notes, /manual acceptance/i);
-  assert.match(notes, /one-generation retention/i);
+  assert.match(notes, /Ubuntu 24\.04 x86-64 bootstrap/i);
+  assert.match(notes, /compatibility checks/i);
+  assert.match(notes, /OpenVINO.*ReID/i);
+  assert.match(notes, /BuildKit/i);
 });
 
 test("an explicit valid SHA overrides the image tag", () => {

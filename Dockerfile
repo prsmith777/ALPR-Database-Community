@@ -37,6 +37,12 @@ COPY --from=builder --chown=node:node /app/.next/static ./.next/static
 COPY --from=builder --chown=node:node /app/public ./public
 COPY --from=builder --chown=node:node /app/models/visual-search ./models/visual-search
 
+# Execute all pinned models against the final standalone runtime. Keeping this
+# gate in the Dockerfile also protects an update launched by an older updater.
+COPY --from=builder /app/scripts/openvino-runtime-probe.cjs /app/openvino-runtime-probe.cjs
+RUN node /app/openvino-runtime-probe.cjs \
+    && rm -f /app/openvino-runtime-probe.cjs
+
 RUN mkdir -p /app/auth /app/config /app/logs /app/storage /app/update-control \
     && chown -R node:node /app/auth /app/config /app/logs /app/storage /app/update-control
 
