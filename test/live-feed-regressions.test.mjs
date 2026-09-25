@@ -25,7 +25,7 @@ test("Live Feed date ranges isolate draft selection and keep timestamp predicate
   assert.doesNotMatch(database, /pr\.timestamp::date BETWEEN/);
 });
 
-test("Live Feed pauses polling while a date or mobile-filter interaction is active", async () => {
+test("Live Feed pauses its event stream while a date or mobile-filter interaction is active", async () => {
   const [table, dateFilter, wrapper] = await Promise.all([
     source("components/PlateTable.jsx"),
     source("components/LiveFeedDateRangeFilter.jsx"),
@@ -36,7 +36,11 @@ test("Live Feed pauses polling while a date or mobile-filter interaction is acti
   assert.match(table, /onFilterInteractionChange\(isSearchOptionsOpen \|\| isFilterSheetOpen\)/);
   assert.match(table, /onOpenChange=\{handleFilterSheetOpenChange\}/);
   assert.doesNotMatch(table, /onInteractionChange=\{onFilterInteractionChange\}/);
-  assert.match(wrapper, /if \(isFilterInteractionActive\) return undefined/);
+  assert.match(wrapper, /if \(!isLiveModeActive \|\| isViewerOpen \|\| isFilterInteractionActive\) return undefined/);
+  assert.match(wrapper, /new EventSource\("\/api\/sse"\)/);
+  assert.match(wrapper, /fetch\(`\/api\/live-feed\/changes\?\$\{query\}`/);
+  assert.doesNotMatch(wrapper, /LIVE_REFRESH_INTERVAL_MS/);
+  assert.doesNotMatch(wrapper, /requestLiveRefresh\("live_poll"\)/);
   assert.match(wrapper, /onFilterInteractionChange=\{setIsFilterInteractionActive\}/);
   assert.doesNotMatch(
     wrapper,
@@ -54,9 +58,18 @@ test("Live Feed does not eagerly preload every full capture", async () => {
   ]);
 
   assert.doesNotMatch(table, /prefetchedImages|new Image\(\)/);
-  assert.match(table, /priority=\{plateIndex < 3\}/);
+  assert.match(table, /priority=\{plateIndex === 0\}/);
+  assert.match(table, /priority=\{false\}/);
   assert.match(image, /priority = false/);
   assert.match(image, /priority=\{priority\}/);
+});
+
+test("Live Feed images are private, immutable per unique path, and conditionally cached", async () => {
+  const route = await source("app/images/[...path]/route.js");
+  assert.match(route, /Cache-Control", "private, max-age=86400, immutable"/);
+  assert.match(route, /headers\.set\("ETag", etag\)/);
+  assert.match(route, /request\.headers\.get\("if-none-match"\) === etag/);
+  assert.doesNotMatch(route, /public, max-age=60/);
 });
 
 test("Live Feed plate links close the viewer without starting a competing refresh", async () => {

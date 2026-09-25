@@ -2427,7 +2427,7 @@ export default function PlateTable({
                         <PlateImage
                           plate={plate}
                           onClick={(e) => handleImageClick(e, plate)}
-                          priority={plateIndex < 3}
+                          priority={plateIndex === 0}
                           className=""
                         />
                       </TableCell>
@@ -2712,7 +2712,7 @@ export default function PlateTable({
                         <PlateImage
                           plate={plate}
                           onClick={(e) => handleImageClick(e, plate)}
-                          priority={plateIndex < 3}
+                          priority={false}
                         />
                       </div>
 

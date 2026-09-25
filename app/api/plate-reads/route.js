@@ -38,7 +38,7 @@ import {
 import { createIntegrationRouteHandler } from "@/lib/request-auth.mjs";
 import { overviewReadQueueState } from "@/lib/vehicle-overview-association.mjs";
 import { createComponentLogger } from "@/logging/logger";
-import { revalidatePath } from "next/cache";
+import { publishPlateReadChanges } from "@/lib/sse";
 
 const plateIngressLogger = createComponentLogger("plate-read-ingress");
 const plateIngressRecorder = createIntegrationIngressRecorder({
@@ -700,6 +700,13 @@ async function processPlateRead(data, _request, context = {}) {
 
     await dbClient.query("COMMIT");
     transactionOpen = false;
+    publishPlateReadChanges(
+      [
+        ...processedPlates.map(({ id }) => id),
+        ...duplicateTargetReadIds,
+      ],
+      processedPlates.length > 0 ? "ingested" : "duplicate_reconciled"
+    );
     for (const effect of pendingEffects) {
       await recordReadPipelineEvents(
         () => buildAcceptedReadPipelineEvents({
@@ -759,26 +766,6 @@ async function processPlateRead(data, _request, context = {}) {
           requestId: context.requestId,
           processedCount: processedPlates.length,
           errorCode: "ACCEPTED_READ_EFFECT_FAILED",
-        });
-      }
-    }
-
-    // if (processedPlates.length > 0) {
-    //   console.log("New plate(s) processed, notifying clients");
-
-    //   // Add revalidation here as well for good measure
-    //   await revalidatePlatesPage();
-    // }
-    if (processedPlates.length > 0 || duplicateReconciliations.length > 0) {
-      try {
-        revalidatePath("/live_feed");
-        // Ensure revalidation completes
-        await new Promise((resolve) => setTimeout(resolve, 100));
-      } catch {
-        plateIngressLogger.warn("plate_feed_revalidation_failed", {
-          requestId: context.requestId,
-          processedCount: processedPlates.length,
-          errorCode: "PLATE_FEED_REVALIDATION_FAILED",
         });
       }
     }

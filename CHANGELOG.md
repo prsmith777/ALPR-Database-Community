@@ -8,6 +8,14 @@
   omitting authoritative-only v2 views and asset joins from the generated SQL.
 - Preserved the authoritative ReID projection when v2 is primary and added
   regression coverage for every supported ReID authority mode.
+- Replaced five-second full-page Live Feed polling with authenticated
+  server-sent change events and bounded changed-row hydration.
+- Coalesced concurrent browser-session checks, cached update state briefly,
+  and removed update checks from image and other subresource requests.
+- Added private immutable image caching with conditional requests, removed the
+  artificial ingestion delay, and published completed visual-processing rows.
+- Added Server-Timing measurements for middleware, changed-row queries, and
+  image delivery plus focused performance regression coverage.
 
 ## 0.1.31 — 2026-09-25
 

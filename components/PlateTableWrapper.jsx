@@ -31,7 +31,6 @@ import {
   validatePlateRecord,
 } from "@/app/actions";
 
-const LIVE_REFRESH_INTERVAL_MS = 5_000;
 const LIVE_REFRESH_TIMEOUT_MS = 15_000;
 
 export default function PlateTableWrapper({
@@ -71,6 +70,10 @@ export default function PlateTableWrapper({
   // State to control if live updates are active (toggled by user)
   const [isLiveModeActive, setIsLiveModeActive] = useState(true);
   const eventSourceRef = useRef(null); // Ref to hold the EventSource instance
+  const liveDataRef = useRef(data);
+  const pendingLiveReadIdsRef = useRef(new Map());
+  const liveDeltaInFlightRef = useRef(false);
+  const flushLiveChangesRef = useRef(null);
   const refreshTimingRef = useRef(null);
   const refreshAfterViewerCloseRef = useRef(false);
   const viewerWasOpenRef = useRef(false);
@@ -100,7 +103,7 @@ export default function PlateTableWrapper({
 
   // Derived state to check if any filters are active
   const hasActiveFilters = useCallback(() => {
-    const current = new URLSearchParams(params);
+    const current = new URLSearchParams(paramsKey);
     // Exclude 'page' and 'pageSize' from being considered "filters" for live mode
     return Array.from(current.keys()).some(
       (key) =>
@@ -110,13 +113,14 @@ export default function PlateTableWrapper({
         current.get(key) !== "all" &&
         current.get(key) !== null
     );
-  }, [params]);
+  }, [paramsKey]);
 
   // Effect to sync server-provided data with liveData when router.refresh() happens
   // This ensures that when liveMode is off (and filters are applied), or when
   // router.refresh() is explicitly called for mutations, the `liveData` state
   // gets the fresh dataset from the server.
   useEffect(() => {
+    liveDataRef.current = data;
     setLiveData(data);
     setLiveTotal(total);
     setServerDataRevision((current) => current + 1);
@@ -142,22 +146,115 @@ export default function PlateTableWrapper({
     setOptimisticQueryString(paramsKey);
   }, [paramsKey]);
 
-  // The background visual-intelligence worker can update direction after the
-  // plate row first appears. Refresh while live updates are enabled so Pending
-  // becomes an assigned direction (or a genuine Unknown) without user action.
-  useEffect(() => {
-    if (!isLiveModeActive || isViewerOpen) return undefined;
-    if (isFilterInteractionActive) return undefined;
-    const timer = window.setInterval(
-      () => {
-        if (document.visibilityState === "visible") {
-          requestLiveRefresh("live_poll");
-        }
-      },
-      LIVE_REFRESH_INTERVAL_MS
+  const mergeLiveRows = useCallback((rows, reasonsByReadId) => {
+    if (!Array.isArray(rows) || rows.length === 0) return;
+    const existingIds = new Set(liveDataRef.current.map((row) => Number(row.id)));
+    const insertableRows = rows.filter((row) =>
+      existingIds.has(Number(row.id))
+      || reasonsByReadId.get(Number(row.id)) === "ingested"
     );
-    return () => window.clearInterval(timer);
+    const insertedCount = insertableRows.filter((row) =>
+      !existingIds.has(Number(row.id))
+    ).length;
+    if (insertableRows.length === 0) return;
+    if (insertedCount > 0) {
+      setLiveTotal((current) => current + insertedCount);
+    }
+    setLiveData((current) => {
+      const byId = new Map(current.map((row) => [Number(row.id), row]));
+      insertableRows.forEach((row) => byId.set(Number(row.id), row));
+      const next = [...byId.values()]
+        .sort((left, right) =>
+          new Date(right.timestamp).getTime() - new Date(left.timestamp).getTime()
+          || Number(right.id) - Number(left.id)
+        )
+        .slice(0, Number.parseInt(
+          new URLSearchParams(paramsKey).get("pageSize") || String(preferredPageSize),
+          10
+        ));
+      liveDataRef.current = next;
+      return next;
+    });
+    setServerDataRevision((current) => current + 1);
+  }, [paramsKey, preferredPageSize]);
+
+  const flushLiveChanges = useCallback(async () => {
+    if (liveDeltaInFlightRef.current) return;
+    const pendingChanges = [...pendingLiveReadIdsRef.current.entries()].slice(0, 25);
+    if (pendingChanges.length === 0) return;
+    pendingChanges.forEach(([readId]) => pendingLiveReadIdsRef.current.delete(readId));
+    const readIds = pendingChanges.map(([readId]) => readId);
+    const reasonsByReadId = new Map(pendingChanges);
+
+    const current = new URLSearchParams(paramsKey);
+    if (hasActiveFilters() || Number.parseInt(current.get("page") || "1", 10) !== 1) {
+      pendingLiveReadIdsRef.current.clear();
+      requestLiveRefresh("live_event");
+      return;
+    }
+
+    liveDeltaInFlightRef.current = true;
+    const startedAt = performance.now();
+    try {
+      const query = new URLSearchParams();
+      readIds.slice(0, 25).forEach((readId) => query.append("readId", String(readId)));
+      const response = await fetch(`/api/live-feed/changes?${query}`, {
+        cache: "no-store",
+        credentials: "same-origin",
+      });
+      if (!response.ok) throw new Error(`Live Feed delta failed with ${response.status}`);
+      const result = await response.json();
+      mergeLiveRows(result.data, reasonsByReadId);
+      recordLiveFeedPerformance({
+        metric: "feed_delta",
+        operation: "sse_change",
+        durationMs: elapsedMilliseconds(startedAt, performance.now()),
+        rowCount: result.data?.length || 0,
+      });
+    } catch {
+      requestLiveRefresh("live_event_fallback");
+    } finally {
+      liveDeltaInFlightRef.current = false;
+      if (pendingLiveReadIdsRef.current.size > 0) {
+        window.setTimeout(() => void flushLiveChangesRef.current?.(), 0);
+      }
+    }
+  }, [hasActiveFilters, mergeLiveRows, paramsKey, requestLiveRefresh]);
+  flushLiveChangesRef.current = flushLiveChanges;
+
+  useEffect(() => {
+    if (!isLiveModeActive || isViewerOpen || isFilterInteractionActive) return undefined;
+
+    const eventSource = new EventSource("/api/sse");
+    eventSourceRef.current = eventSource;
+    const handleChanges = (event) => {
+      try {
+        const message = JSON.parse(event.data);
+        (message.readIds || []).forEach((readId) => {
+          const value = Number.parseInt(String(readId), 10);
+          if (Number.isSafeInteger(value) && value > 0) {
+            pendingLiveReadIdsRef.current.set(value, message.reason || "changed");
+          }
+        });
+        if (document.visibilityState === "visible") void flushLiveChanges();
+      } catch {
+        requestLiveRefresh("live_event_parse_fallback");
+      }
+    };
+    const handleVisibility = () => {
+      if (document.visibilityState === "visible") void flushLiveChanges();
+    };
+    eventSource.addEventListener("plate-reads-changed", handleChanges);
+    document.addEventListener("visibilitychange", handleVisibility);
+
+    return () => {
+      document.removeEventListener("visibilitychange", handleVisibility);
+      eventSource.removeEventListener("plate-reads-changed", handleChanges);
+      eventSource.close();
+      if (eventSourceRef.current === eventSource) eventSourceRef.current = null;
+    };
   }, [
+    flushLiveChanges,
     isFilterInteractionActive,
     isLiveModeActive,
     isViewerOpen,
@@ -205,100 +302,6 @@ export default function PlateTableWrapper({
       return changed ? next : current;
     });
   }, [data]);
-
-  // Effect to manage SSE connection and data merging
-  // useEffect(() => {
-  //   if (isLiveModeActive && !hasActiveFilters()) {
-  //     // Connect only if live mode is active and no filters are applied
-  //     if (!eventSourceRef.current) {
-  //       eventSourceRef.current = new EventSource("/api/plate-reads");
-  //       console.log("SSE: Attempting to connect...");
-
-  //       eventSourceRef.current.onopen = () => {
-  //         console.log("SSE: Connection established.");
-  //       };
-
-  //       // Event listener for new plate reads (SSE delivers the actual data)
-  //       eventSourceRef.current.addEventListener("new-plate-read", (event) => {
-  //         console.log("SSE: Received new plate read event:", event.data);
-  //         try {
-  //           const newPlateReads = JSON.parse(event.data); // This is an array of new plate objects
-
-  //           setLiveData((prevData) => {
-  //             // Ensure we are on the first page to receive live updates
-  //             const currentPage = parseInt(params.get("page") || "1");
-  //             if (currentPage !== 1) {
-  //               // If not on the first page, just signal that there's new data.
-  //               // A full refresh would be needed to see it, but we won't force it.
-  //               console.log(
-  //                 "SSE: New data arrived but not on first page, not updating live data directly."
-  //               );
-  //               return prevData;
-  //             }
-
-  //             const pageSize = parseInt(params.get("pageSize") || "25");
-
-  //             // Merge new records, ensuring uniqueness and order
-  //             const combinedData = [...newPlateReads, ...prevData];
-  //             const uniqueData = Array.from(
-  //               new Map(combinedData.map((item) => [item.id, item])).values()
-  //             );
-
-  //             // Sort by timestamp descending to keep newest at top
-  //             uniqueData.sort(
-  //               (a, b) => new Date(b.timestamp) - new Date(a.timestamp)
-  //             );
-
-  //             // Trim to page size
-  //             return uniqueData.slice(0, pageSize);
-  //           });
-
-  //           setLiveTotal((prevTotal) => prevTotal + newPlateReads.length); // Increment total count
-  //           // router.refresh(); // No need to trigger router.refresh() here, SSE updates liveData directly.
-  //         } catch (e) {
-  //           console.error(
-  //             "SSE: Error parsing 'new-plate-read' event:",
-  //             e,
-  //             event.data
-  //           );
-  //         }
-  //       });
-
-  //       eventSourceRef.current.addEventListener("heartbeat", (event) => {
-  //         // console.log("SSE: Heartbeat received:", event.data);
-  //       });
-
-  //       eventSourceRef.current.onerror = (error) => {
-  //         console.error("SSE: EventSource error:", error);
-  //         eventSourceRef.current.close();
-  //         eventSourceRef.current = null;
-  //         // Implement reconnect logic with exponential backoff if desired
-  //       };
-  //     }
-  //   } else {
-  //     // Disconnect SSE if live mode is off or filters are applied
-  //     if (eventSourceRef.current) {
-  //       eventSourceRef.current.close();
-  //       eventSourceRef.current = null;
-  //       console.log("SSE: Connection closed.");
-  //     }
-  //     // When live mode is off or filters are active, ensure we are displaying the server-provided data.
-  //     // This is important because the 'data' prop from page.jsx would be the filtered/sorted result.
-  //     if (liveData !== data || liveTotal !== total) {
-  //       setLiveData(data);
-  //       setLiveTotal(total);
-  //     }
-  //   }
-
-  //   // Cleanup on component unmount
-  //   return () => {
-  //     if (eventSourceRef.current) {
-  //       eventSourceRef.current.close();
-  //       eventSourceRef.current = null;
-  //       console.log("SSE: Connection cleaned up on unmount.");
-  //     }
-  //   };
-  // }, [isLiveModeActive, hasActiveFilters, params, data, total]); // Re-run if live mode or params (filters) change
 
   // Helper for updating URL query params
   const createQueryString = useCallback(

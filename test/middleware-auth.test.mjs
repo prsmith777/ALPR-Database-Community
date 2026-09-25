@@ -469,6 +469,8 @@ test("login and update assets plus established public endpoints remain public", 
 
   for (const pathname of [
     "/grid.svg",
+    "/fallback.jpg",
+    "/placeholder.jpg",
     "/1024.png",
     "/splash_screens/iPhone_16_Pro_Max_portrait.png",
     "/manifest.webmanifest",
@@ -483,6 +485,77 @@ test("login and update assets plus established public endpoints remain public", 
   }
 
   assert.equal(verifierCalls, 0);
+});
+
+test("concurrent protected image requests coalesce session verification and skip update checks", async () => {
+  const calls = [];
+  const handler = createMiddlewareHandler(
+    responseAdapters(async (url) => {
+      const pathname = new URL(url).pathname;
+      calls.push(pathname);
+      await new Promise((resolve) => setTimeout(resolve, 5));
+      if (pathname === "/api/verify-session") {
+        return Response.json({ valid: true });
+      }
+      return Response.json({ updateRequired: false });
+    })
+  );
+
+  const responses = await Promise.all([1, 2, 3, 4].map((id) => handler(
+    makeRequest(`/images/thumbnails/read-${id}.jpg`, {
+      sessionId: VALID_SESSION_ID,
+      headers: { "sec-fetch-dest": "image" },
+    })
+  )));
+
+  assert.ok(responses.every((response) => response.type === "next"));
+  assert.deepEqual(calls, ["/api/verify-session"]);
+});
+
+test("document navigations reuse the bounded session and update-status caches", async () => {
+  const calls = [];
+  const handler = createMiddlewareHandler(
+    responseAdapters(async (url) => {
+      const pathname = new URL(url).pathname;
+      calls.push(pathname);
+      return pathname === "/api/verify-session"
+        ? Response.json({ valid: true })
+        : Response.json({ updateRequired: false });
+    })
+  );
+
+  await handler(makeRequest("/dashboard", {
+    sessionId: VALID_SESSION_ID,
+    headers: { "sec-fetch-dest": "document" },
+  }));
+  await handler(makeRequest("/live_feed", {
+    sessionId: VALID_SESSION_ID,
+    headers: { "sec-fetch-dest": "document" },
+  }));
+
+  assert.deepEqual(calls, ["/api/verify-session", "/api/check-update"]);
+});
+
+test("session verification cache expires without caching failed verification", async () => {
+  let now = 100;
+  let calls = 0;
+  let valid = true;
+  const handler = createMiddlewareHandler({
+    ...responseAdapters(async () => {
+      calls += 1;
+      return Response.json({ valid });
+    }),
+    now: () => now,
+    sessionVerificationCacheMs: 10,
+  });
+
+  assert.equal((await handler(makeRequest("/api/logs", { sessionId: VALID_SESSION_ID }))).type, "next");
+  now = 105;
+  assert.equal((await handler(makeRequest("/api/logs", { sessionId: VALID_SESSION_ID }))).type, "next");
+  valid = false;
+  now = 111;
+  assert.equal((await handler(makeRequest("/api/logs", { sessionId: VALID_SESSION_ID }))).status, 401);
+  assert.equal(calls, 2);
 });
 
 test("integration API paths use API-key authentication", async () => {
