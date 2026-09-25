@@ -40,7 +40,7 @@ shown on the GitHub Releases page, rather than deploying moving `main`:
 ```bash
 git clone https://github.com/prsmith777/ALPR-Database-Community.git
 cd ALPR-Database-Community
-git checkout --detach v0.1.28
+git checkout --detach v0.1.29
 ./alpr-community install
 ```
 
@@ -53,7 +53,38 @@ later Community-to-Community updates.
 
 Do not install v0.1.23 as a new deployment merely because it was the first
 release containing the updater. A retained installation already running exact
-v0.1.23 can update directly to v0.1.28 with the guarded workflow below.
+v0.1.23 can update directly to v0.1.29 with the guarded workflow below.
+
+## Browser update page
+
+Release v0.1.29 adds **Settings → Software Updates** for administrators. The
+page can check, install, validate, accept, roll back, and clean up an expired
+rollback generation. It does not run Git, Docker, or a shell inside the web
+container. Instead, it places a versioned, fixed-operation request in the
+private `update-control/` bind mount for a restricted worker running as the
+normal installation owner on the Linux host.
+
+On a systemd-based Linux host, install that worker once:
+
+```bash
+cd /path/to/ALPR-Database-Community
+./alpr-community agent install
+sudo loginctl enable-linger "$USER"
+./alpr-community agent status
+```
+
+The linger setting lets the per-user service start after a reboot without an
+interactive login. On a Linux host without systemd, run
+`./alpr-community agent run` under the host's existing service supervisor.
+The page stays disabled while the agent heartbeat is absent. Requests expire
+after five minutes so an abandoned request cannot unexpectedly run after a
+much later restart.
+
+Every mutating page action remains explicit. Installation requires typing the
+exact target release, acceptance requires all manual-check boxes, rollback
+requires typing `ROLL BACK AND DISCARD NEW WRITES`, and cleanup requires its
+own typed confirmation. The agent accepts no arbitrary command, argument, or
+filesystem path from the browser.
 
 ## Guided menu
 
@@ -83,7 +114,7 @@ The equivalent individual commands are:
 Run `./alpr-community check` to discover the newest stable release and
 `./alpr-community update` to select it through the guided menu. A retained
 exact-v0.1.23 installation can use
-`./alpr-community update --to v0.1.28` to select this release explicitly. The
+`./alpr-community update --to v0.1.29` to select this release explicitly. The
 updater refuses `latest`, branches, prereleases, tags that are not on canonical
 `origin/main`, and a tag whose package version does not match. It fetches
 canonical `main` explicitly, so verification also works when the installation

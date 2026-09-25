@@ -53,6 +53,7 @@ test("navigation and direct management pages enforce role permissions", async ()
     ["app/backfill/page.jsx", "maintenance.manage"],
     ["app/jpeg_migration/layout.jsx", "maintenance.manage"],
     ["app/update/layout.jsx", "maintenance.manage"],
+    ["app/settings/software-updates/page.jsx", "maintenance.manage"],
     ["app/database/tags/layout.jsx", "tag.manage"],
     ["app/help/page.jsx", "plate.read"],
   ]);

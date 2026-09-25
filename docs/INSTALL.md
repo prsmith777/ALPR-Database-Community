@@ -49,7 +49,7 @@ Clone the canonical repository and detach at the exact stable release tag:
 ```bash
 git clone https://github.com/prsmith777/ALPR-Database-Community.git
 cd ALPR-Database-Community
-git checkout --detach v0.1.28
+git checkout --detach v0.1.29
 ./alpr-community install
 ```
 
@@ -72,14 +72,16 @@ Before changing Docker state, the installer refuses:
   noncanonical Git remote, or a tag
   that does not resolve to the same commit on canonical `origin/main`;
 - a preexisting `.env` or completed installer state;
-- preexisting `auth/`, `config/`, or `storage/` directories;
+- preexisting `auth/`, `config/`, `storage/`, or `update-control/` directories;
 - a colliding Compose project, volume, network, or host port;
 - an image whose recorded source revision disagrees with the release; or
 - insufficient disk space.
 
 It then creates a private `.env`, builds a commit-qualified image, assigns the
-runtime directories to container UID/GID `1000`, starts PostgreSQL, applies the
-migrations transactionally, and starts the application. Installation succeeds
+application runtime directories to container UID/GID `1000`, and creates a
+set-group-ID `update-control/` directory shared only with the installing host
+account's primary group. It then starts PostgreSQL, applies the migrations
+transactionally, and starts the application. Installation succeeds
 only after all of these checks pass:
 
 - PostgreSQL is ready;
@@ -103,6 +105,20 @@ http://SERVER_ADDRESS:3000
 Leave the username blank and enter the administrator password chosen during
 installation. The generated database password in `.env` is not an application
 login password. Create a named administrator under Settings after sign-in.
+
+To enable browser-managed updates on a systemd-based Linux host, run this once
+from the installation directory as the same normal account:
+
+```bash
+./alpr-community agent install
+sudo loginctl enable-linger "$USER"
+```
+
+The second command allows the per-user agent to start after a reboot without
+an interactive login. Open **Settings → Software Updates** and confirm the
+agent is shown as ready. Hosts without systemd can run
+`./alpr-community agent run` under their existing service supervisor; the
+terminal updater remains available through `./alpr-community`.
 
 Verify the installation from the host:
 

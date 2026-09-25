@@ -28,7 +28,7 @@ const RECOVERY_ACKNOWLEDGEMENT = "ALPR_RECOVER_FAILED_INSTALL";
 const FORMAT_VERSION = 1;
 const MINIMUM_FREE_BYTES = 8 * 1024 * 1024 * 1024;
 const STATE_FILENAME = ".alpr-community-install-state.json";
-const RUNTIME_DIRECTORIES = Object.freeze(["auth", "config", "storage"]);
+const RUNTIME_DIRECTORIES = Object.freeze(["auth", "config", "storage", "update-control"]);
 const REQUIRED_FILES = Object.freeze([
   ".env.example",
   "Dockerfile",
@@ -321,6 +321,11 @@ async function promptHidden(question, input = process.stdin, output = process.st
 }
 
 async function collectConfiguration(environment, root, options = {}) {
+  const runtimeUid = Number(options.runtimeUid ?? process.getuid?.() ?? 1000);
+  const runtimeGid = Number(options.runtimeGid ?? process.getgid?.() ?? 1000);
+  if (!Number.isInteger(runtimeUid) || runtimeUid < 1 || !Number.isInteger(runtimeGid) || runtimeGid < 1) {
+    throw new Error("the host runtime user and group identifiers must be positive integers");
+  }
   if (options.configuration) {
     const configuration = options.configuration;
     return {
@@ -329,6 +334,8 @@ async function collectConfiguration(environment, root, options = {}) {
       appPort: validatePort(configuration.appPort, "application port"),
       dbPort: validatePort(configuration.dbPort, "database port"),
       projectName: normalizeProjectName(configuration.projectName),
+      runtimeUid,
+      runtimeGid,
     };
   }
 
@@ -363,6 +370,8 @@ async function collectConfiguration(environment, root, options = {}) {
     appPort: validatePort(appPort, "application port"),
     dbPort: validatePort(dbPort, "database port"),
     projectName: normalizeProjectName(value(environment, "ALPR_INSTALL_PROJECT_NAME") || defaultProject),
+    runtimeUid,
+    runtimeGid,
   };
 }
 
@@ -477,6 +486,7 @@ async function writeEnvironment(context, configuration, databasePassword) {
     ALPR_APP_IMAGE: context.image,
     ALPR_RELEASE_SHA: context.release.commit,
     ALPR_RELEASE_CHANNEL: "stable",
+    ALPR_UPDATE_HOST_GID: configuration.runtimeGid,
   });
   const path = join(context.root, ".env");
   await writeFile(path, source, { encoding: "utf8", flag: "wx", mode: 0o600 });
@@ -600,6 +610,8 @@ async function installCommunity(environment = process.env, options = {}) {
     appPort: configuration.appPort,
     dbPort: configuration.dbPort,
     timeZone: configuration.timeZone,
+    runtimeUid: configuration.runtimeUid,
+    runtimeGid: configuration.runtimeGid,
     createdAt: timestamp(options.clock),
     createdDirectories: [],
     createdImage: false,
@@ -633,11 +645,15 @@ async function installCommunity(environment = process.env, options = {}) {
     }
 
     for (const directory of RUNTIME_DIRECTORIES) {
+      const ownership = directory === "update-control"
+        ? `${configuration.runtimeUid}:${configuration.runtimeGid}`
+        : "1000:1000";
       context.runner("docker", [
         "run", "--rm", "--user", "0:0", "--entrypoint", "chown",
         "--volume", `${join(context.root, directory)}:/target`, context.image,
-        "-R", "1000:1000", "/target",
+        "-R", ownership, "/target",
       ], { inherit: true });
+      if (directory === "update-control") await chmod(join(context.root, directory), 0o2770);
     }
 
     const envPath = join(context.root, ".env");
@@ -683,6 +699,7 @@ async function installCommunity(environment = process.env, options = {}) {
     logger.log(`Open http://SERVER_ADDRESS:${configuration.appPort}`);
     logger.log("Leave the username blank and use the administrator password you chose.");
     logger.log("The generated database password is stored only in the private .env file; you do not need to enter it.");
+    logger.log("To enable Settings > Software Updates, run ./alpr-community agent install as this same host account.");
     return state;
   } catch (error) {
     state.status = "failed";

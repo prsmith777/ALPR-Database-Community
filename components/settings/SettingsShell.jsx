@@ -6,6 +6,7 @@ import {
   Antenna,
   Bell,
   CarFront,
+  CloudCog,
   Database,
   Home,
   Lock,
@@ -37,6 +38,7 @@ const navigationSections = [
       { title: "Vehicle Setup", id: "vehicleIntelligence", href: "/settings/vehicle-intelligence", icon: CarFront },
       { title: "Storage & Privacy", id: "privacy", href: "/settings/data-privacy", icon: Shield },
       { title: "Release", id: "release", href: "/settings/release", icon: PackageOpen },
+      { title: "Software Updates", id: "softwareUpdates", href: "/settings/software-updates", icon: CloudCog, permission: "maintenance.manage" },
     ],
   },
   {

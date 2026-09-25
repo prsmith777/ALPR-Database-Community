@@ -40,7 +40,7 @@ Clone your copy of the repository and enter it:
 ```bash
 git clone https://github.com/prsmith777/ALPR-Database-Community.git
 cd ALPR-Database-Community
-git checkout --detach v0.1.28
+git checkout --detach v0.1.29
 ```
 
 Run the guided fresh installer:
@@ -59,12 +59,18 @@ an existing installation. See [Fresh installation](docs/INSTALL.md) for the
 complete prerequisites, non-interactive mode, validation, and recovery steps.
 
 Install a stable release tag rather than deploying moving `main`. Starting
-with v0.1.23, standard Linux systems and Linux virtual machines can use the
-host-side maintenance menu for later exact-tag updates:
+with v0.1.29, administrators can use **Settings → Software Updates** after a
+one-time restricted host-agent setup:
 
 ```bash
-./alpr-community
+./alpr-community agent install
 ```
+
+The terminal maintenance menu remains available through `./alpr-community`.
+Both interfaces use the same exact-tag updater, verified backup, automated
+validation, manual acceptance, rollback, and one-generation retention policy.
+The web container never receives the Docker socket or arbitrary host command
+access.
 
 The guest operating system and Docker environment determine compatibility;
 the physical server or hypervisor does not. This supports ordinary Linux hosts

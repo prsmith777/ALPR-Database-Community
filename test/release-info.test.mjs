@@ -23,8 +23,8 @@ test("release information resolves a commit-pinned deployment image", () => {
     ALPR_RELEASE_CHANNEL: "staging",
   });
 
-  assert.equal(release.version, "0.1.28");
-  assert.equal(release.manualVersion, "1.9");
+  assert.equal(release.version, "0.1.29");
+  assert.equal(release.manualVersion, "2.0");
   assert.equal(release.manualUpdatedAt, "September 24, 2026");
   assert.equal(release.gitSha, "8cd2fa8");
   assert.equal(release.channel, "staging");
@@ -32,15 +32,15 @@ test("release information resolves a commit-pinned deployment image", () => {
   assert.equal(release.readOnly, true);
   assert.equal(
     release.notes.title,
-    "Published installation guidance"
+    "Browser-managed Community updates"
   );
   assert.equal(release.notes.publishedAt, "2026-09-24");
   assert.ok(release.notes.items.length >= 4);
   const notes = release.notes.items.join(" ");
-  assert.match(notes, /guided \.\/alpr-community install/i);
-  assert.match(notes, /v0\.1\.23.*updater baseline/i);
-  assert.match(notes, /published Community release consistently/i);
-  assert.match(notes, /partition-safe rollback/i);
+  assert.match(notes, /Settings.*Software Updates/i);
+  assert.match(notes, /restricted host agent/i);
+  assert.match(notes, /manual acceptance/i);
+  assert.match(notes, /one-generation retention/i);
 });
 
 test("an explicit valid SHA overrides the image tag", () => {
@@ -109,7 +109,7 @@ test("the administrator Release page remains read-only", async () => {
   assert.match(form, /"release"/);
   assert.match(card, /Installed release/);
   assert.match(card, /User manual/);
-  assert.match(card, /Updates remain externally orchestrated/);
+  assert.match(card, /Updates use a restricted host agent/);
   assert.match(card, /\.\/alpr-community/);
   assert.doesNotMatch(card, /onClick=/);
   assert.doesNotMatch(module, /child_process|\bexec\b|\bspawn\b|fetch\s*\(/);

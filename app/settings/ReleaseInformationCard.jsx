@@ -119,14 +119,15 @@ export default function ReleaseInformationCard({ release }) {
 
       <div className="rounded-lg border border-blue-500/30 bg-blue-500/10 p-4 text-sm">
         <p className="font-medium text-blue-700 dark:text-blue-300">
-          Updates remain externally orchestrated
+          Updates use a restricted host agent
         </p>
         <p className="mt-1 text-muted-foreground">
-          This page cannot run Git or Docker, apply migrations, restart services,
-          install an update, or change the host. On a supported Linux Docker Compose
-          installation, run <code className="font-mono">./alpr-community</code> from
-          the installation directory. The external updater performs the documented
-          backup, exact-release installation, verification, and rollback process.
+          Release information remains read only. Administrators can use Settings →
+          Software Updates after installing the restricted host agent, or run
+          <code className="font-mono"> ./alpr-community</code> from the installation
+          directory. The host-side updater performs the documented backup,
+          exact-release installation, verification, and rollback process without
+          exposing the Docker socket to this application.
         </p>
       </div>
     </div>

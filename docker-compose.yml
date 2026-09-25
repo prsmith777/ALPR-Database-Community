@@ -3,6 +3,8 @@ services:
     image: "${ALPR_APP_IMAGE:-alpr-dashboard:local}"
     pull_policy: never
     restart: unless-stopped
+    group_add:
+      - "${ALPR_UPDATE_HOST_GID:-1000}"
     ports:
       - "${APP_PORT:-3000}:3000"
     environment:
@@ -42,6 +44,7 @@ services:
       WEBHOOK_ALLOW_HTTP: "${WEBHOOK_ALLOW_HTTP:-false}"
       WEBHOOK_ALLOW_PRIVATE_NETWORKS: "${WEBHOOK_ALLOW_PRIVATE_NETWORKS:-false}"
       ALPR_LOG_DIR: "/app/logs"
+      ALPR_UPDATE_CONTROL_DIR: "/app/update-control"
       ALPR_LOG_LEVEL: "${ALPR_LOG_LEVEL:-info}"
       ALPR_OPERATIONAL_LOG_FILE_MAX_BYTES: "${ALPR_OPERATIONAL_LOG_FILE_MAX_BYTES:-5242880}"
       ALPR_OPERATIONAL_LOG_MAX_FILES: "${ALPR_OPERATIONAL_LOG_MAX_FILES:-20}"
@@ -57,6 +60,7 @@ services:
       - app-config:/app/config
       - app-logs:/app/logs
       - app-plate_images:/app/storage
+      - ./update-control:/app/update-control
     logging:
       driver: "json-file"
       options:
