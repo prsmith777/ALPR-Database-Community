@@ -40,7 +40,7 @@ Clone your copy of the repository and enter it:
 ```bash
 git clone https://github.com/prsmith777/ALPR-Database-Community.git
 cd ALPR-Database-Community
-git checkout --detach v0.1.27
+git checkout --detach v0.1.28
 ```
 
 Run the guided fresh installer:
