@@ -43,6 +43,7 @@ next-env.d.ts
 # Runtime configuration and authentication
 /config/settings.yaml
 /auth/
+/.alpr-community-install-state.json
 
 # logs
 /logs/

@@ -1,18 +1,24 @@
 # Community deployment
 
-The Community edition is intended for self-hosted x86-64 systems with Docker
-Engine and Docker Compose. Copy `.env.example` to `.env`, set unique
-`ADMIN_PASSWORD` and `DB_PASSWORD` values, build the application image from the
-reviewed source tree, and start the stack with `docker compose up -d`.
+The Community edition is intended for self-hosted x86-64 Linux systems and
+Linux virtual machines with Docker Engine, Docker Compose, Git, and Node.js 24.
+From exact stable release v0.1.24 onward, run `./alpr-community install` for a
+new empty installation. The guided installer verifies the canonical tagged
+source, generates the database password, collects the administrator password
+without echoing it, builds a commit-qualified image, and proves both health and
+an empty database before completion. Follow the complete
+[fresh-install guide](INSTALL.md).
+
 The Docker build context explicitly excludes `.env` files, so host credentials
-are not copied into image layers. Keep `.env.example` as the public template.
+are not copied into image layers. Keep `.env.example` as the public template;
+the installer writes the private `.env` with owner-only permissions.
 
 The Compose files default to UTC and persist authentication state, application
 configuration, logs, uploaded images, and PostgreSQL data. Keep `.env`, the
 runtime data directories, and database backups out of source control.
-Before the first start, create `auth/`, `config/`, and `storage/` and make them
-writable by UID/GID `1000`, as shown in the README quick start. These paths are
-bind-mounted and intentionally do not come from the repository or image.
+The installer creates `auth/`, `config/`, and `storage/`, makes them writable
+by container UID/GID `1000`, and refuses to reuse nonempty paths. These paths
+are bind-mounted and intentionally do not come from the repository or image.
 On startup, Compose waits for PostgreSQL's first-time schema initialization,
 then applies `migrations.sql` in one transaction before it starts the app.
 A newly initialized database is marked as not needing the legacy base64 image

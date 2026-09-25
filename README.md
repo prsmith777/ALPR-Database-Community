@@ -31,6 +31,8 @@ Requirements:
 - x86-64 host
 - Docker Engine
 - Docker Compose
+- Git
+- Node.js 24
 - A working Blue Iris ALPR configuration
 
 Clone your copy of the repository and enter it:
@@ -38,27 +40,23 @@ Clone your copy of the repository and enter it:
 ```bash
 git clone https://github.com/prsmith777/ALPR-Database-Community.git
 cd ALPR-Database-Community
-git checkout --detach v0.1.23
+git checkout --detach v0.1.24
 ```
 
-Create the local environment file and set unique passwords:
+Run the guided fresh installer:
 
 ```bash
-cp .env.example .env
-install -d -m 700 auth config storage
-sudo chown -R 1000:1000 auth config storage
+./alpr-community install
 ```
 
-The production container runs as UID/GID `1000`; the ownership command makes
-the three bind-mounted runtime directories writable without running the app as
-root.
-
-Build the reviewed source and start the stack:
-
-```bash
-docker build --tag alpr-dashboard:local .
-docker compose up -d
-```
+The installer verifies the exact release and canonical repository, checks the
+host, free space, ports, and existing Docker resources, asks you to choose the
+administrator password, and generates the database password automatically. It
+creates new persistent directories, builds a commit-qualified image, starts an
+empty PostgreSQL 17 database, and refuses to finish until the application is
+healthy and the database is proven to contain no test data. It never overwrites
+an existing installation. See [Fresh installation](docs/INSTALL.md) for the
+complete prerequisites, non-interactive mode, validation, and recovery steps.
 
 Install a stable release tag rather than deploying moving `main`. Starting
 with v0.1.23, standard Linux systems and Linux virtual machines can use the
@@ -75,9 +73,10 @@ Unraid, TrueNAS, and others. See [Community updates](docs/UPDATES.md) for the
 safety checks, one-generation rollback policy, platform boundary, and
 non-interactive commands.
 
-Open `http://<host>:3000`. For the first sign-in, leave the username blank and
-use the administrator password from `.env`. Then create a named administrator
-under Settings and configure Blue Iris.
+Open the address printed by the installer. For the first sign-in, leave the
+username blank and use the administrator password you chose. The generated
+database password stays in the private `.env` file and is not a login password.
+Then create a named administrator under Settings and configure Blue Iris.
 
 See [Community deployment](docs/DEPLOYMENT.md) for persistent storage,
 guarded PostgreSQL 13 or 17 database import, image-storage transfer, external

@@ -2,6 +2,23 @@
 
 ## Unreleased
 
+## 0.1.24 — 2026-09-24
+
+- Added `./alpr-community install` for guided fresh installation on Linux
+  x86-64 Docker Compose hosts and Linux virtual machines.
+- Added canonical exact-tag, prerequisite, disk, port, existing-data, Compose
+  resource, and commit-qualified image validation before changing host state.
+- Added a hidden user-chosen administrator password prompt and automatic
+  high-entropy database password generation in an owner-only `.env` file.
+- Added transactional schema migration, public health, exact image revision,
+  empty application data, absent fixture tables, and clean migration-marker
+  completion gates.
+- Added narrow failed-install cleanup and explicit recovery that operate only
+  on recorded resources and refuse a completed installation or modified
+  configuration.
+- Added generic Linux/VM installation and first-login documentation and
+  updated the Community user guide to version 1.5.
+
 ## 0.1.23 — 2026-09-24
 
 - Added a guided host-side updater for standard Linux Docker Compose systems

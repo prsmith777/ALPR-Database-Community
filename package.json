@@ -1,6 +1,6 @@
 {
   "name": "blueiris-alpr-database",
-  "version": "0.1.23",
+  "version": "0.1.24",
   "private": true,
   "engines": {
     "node": ">=24.0.0 <25"
@@ -16,6 +16,7 @@
     "migrate:postgres": "node scripts/postgres-major-migration.mjs",
     "migrate:database": "node scripts/postgres-major-migration.mjs",
     "migrate:guided": "node scripts/community-migration-assistant.mjs",
+    "install:community": "node scripts/community-installer.mjs",
     "update:community": "node scripts/community-updater.mjs",
     "test:community-upgrades": "node scripts/test-community-upgrade-matrix.mjs",
     "test:overview-export:postgres": "node scripts/test-overview-export-postgres.mjs",
