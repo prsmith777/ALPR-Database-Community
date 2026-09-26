@@ -23,7 +23,7 @@ test("release information resolves a commit-pinned deployment image", () => {
     ALPR_RELEASE_CHANNEL: "staging",
   });
 
-  assert.equal(release.version, "0.1.40");
+  assert.equal(release.version, "0.1.41");
   assert.equal(release.manualVersion, "3.6");
   assert.equal(release.manualUpdatedAt, "September 26, 2026");
   assert.equal(release.gitSha, "8cd2fa8");
@@ -32,14 +32,14 @@ test("release information resolves a commit-pinned deployment image", () => {
   assert.equal(release.readOnly, true);
   assert.equal(
     release.notes.title,
-    "Guided software update completion"
+    "Documentation accuracy and maintenance safeguards"
   );
   assert.equal(release.notes.publishedAt, "2026-09-26");
   assert.ok(release.notes.items.length >= 3);
   const notes = release.notes.items.join(" ");
-  assert.match(notes, /Technical system checks/i);
-  assert.match(notes, /acceptance-required message/i);
-  assert.match(notes, /prevents a newer installation/i);
+  assert.match(notes, /reviewed together and synchronized/i);
+  assert.match(notes, /Docker build-cache behavior/i);
+  assert.match(notes, /release checklist/i);
 });
 
 test("an explicit valid SHA overrides the image tag", () => {
