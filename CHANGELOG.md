@@ -2,8 +2,21 @@
 
 ## Unreleased
 
+## 0.1.39 — 2026-09-26
+
+- Introduced bootstrap v6 with a streamlined first-time-user experience while
+  retaining bootstrap v5's fail-closed safety and platform checks.
 - Removed the automatic `less` script viewer from the documented bootstrap
-  command so verified downloads proceed directly to the installer menu.
+  command so verified downloads proceed directly to setup.
+- Made the public quick-start command select a new installation explicitly,
+  while migration instructions select the separate migration path explicitly.
+- Added plain-language bootstrap choices, forgiving menu input, visible setup
+  stages, a pre-change summary, and conventional `y`/`yes` confirmation.
+- Made the fresh installer retry invalid passwords, time zones, and ports,
+  detect the host time zone, summarize the installation before it starts, and
+  print usable detected browser addresses at completion.
+- Updated the installation, bootstrap, migration, update, roadmap, and release
+  guidance for the streamlined first-time-user flow.
 
 ## 0.1.38 — 2026-09-25
 

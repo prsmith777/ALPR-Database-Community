@@ -30,8 +30,9 @@ For the simplest supported path, start with Ubuntu Server 24.04 LTS x86-64,
 internet access, and a normal account with `sudo`. The automatic bootstrap also
 supports selected maintained Ubuntu, Debian, RHEL, Rocky Linux, AlmaLinux,
 CentOS Stream, and Fedora releases listed in
-[Host compatibility](docs/COMPATIBILITY.md). Download and verify the bootstrap
-assets from the latest release, then open its menu:
+[Host compatibility](docs/COMPATIBILITY.md). Copy the complete block below into
+the new Linux system. It verifies the latest release before starting the guided
+new-installation process:
 
 ```bash
 alpr_bootstrap() (
@@ -53,23 +54,29 @@ alpr_bootstrap() (
   (cd "${download_dir}" && sha256sum --check --strict alpr-community-bootstrap.sh.sha256)
   bash "${download_dir}/alpr-community-bootstrap.sh" --release "${release_tag}" "$@"
 )
-alpr_bootstrap
+alpr_bootstrap --new
 unset -f alpr_bootstrap
 ```
 
-Choose **Install a new ALPR Community system**. The bootstrap installs and
-validates Git, Docker Engine, Compose, Buildx, and a private Node.js 24 runtime,
-then checks out the newest exact stable release. The guarded installer checks
-free space, ports, and existing Docker resources, asks you to choose the
-administrator password, and generates the database password automatically. It
-creates new persistent directories, builds a commit-qualified image, starts an
-empty PostgreSQL 17 database, and refuses to finish until the application is
+The bootstrap labels each stage, installs and validates Git, Docker Engine,
+Compose, Buildx, and a private Node.js 24 runtime, then checks out the newest
+exact stable release. The guided installer explains each prompt, retries
+invalid entries, asks you to choose the administrator password, and generates
+the database password automatically. Press Enter to accept displayed defaults.
+It creates new persistent directories, builds a commit-qualified image, starts
+an empty PostgreSQL 17 database, and refuses to finish until the application is
 healthy and the database is proven to contain no test data. It never overwrites
 an existing installation. OpenVINO, ReID, and the visual models are already in
-the image and are verified with real CPU inference during the build. See
+the image and are verified with real CPU inference during the build. The first
+image build and model verification can take several minutes; leave the terminal
+open until it prints **installed successfully** and the browser address. See
 [Automated bootstrap](docs/BOOTSTRAP.md),
 [Host compatibility](docs/COMPATIBILITY.md), and
 [Fresh installation](docs/INSTALL.md) for all paths and recovery steps.
+
+Migrating an existing ALPR system is a separate workflow. Start with the
+[automated migration guide](docs/MIGRATION_GUIDE.md); do not use the new-install
+command above for an existing database.
 
 Install a stable release tag rather than deploying moving `main`. Starting
 with v0.1.29, administrators can use **Settings → Software Updates** after a

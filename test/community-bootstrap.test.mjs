@@ -6,6 +6,7 @@ const root = new URL("../", import.meta.url);
 
 test("bootstrap exposes new-install, migration, and read-only compatibility modes", async () => {
   const source = await readFile(new URL("bootstrap.sh", root), "utf8");
+  assert.match(source, /BOOTSTRAP_VERSION="6"/);
   assert.match(source, /--new/);
   assert.match(source, /--migrate/);
   assert.match(source, /--check \[new\|migration\]/);
@@ -80,6 +81,17 @@ test("bootstrap documentation gates execution on an exact published release chec
     assert.match(source, /--release "\$\{release_tag\}"/);
     assert.doesNotMatch(source, /command -v less|\bless\s+"?\$\{download_dir\}/);
   }
+});
+
+test("bootstrap presents a forgiving first-time-user flow", async () => {
+  const source = await readFile(new URL("bootstrap.sh", root), "utf8");
+  assert.match(source, /New installation\n\s+Choose this for a new, empty ALPR system/);
+  assert.match(source, /while true; do/);
+  assert.match(source, /Please enter a number from 1 through 4/);
+  assert.match(source, /Continue\? \[y\/N\]/);
+  assert.match(source, /y\|yes/);
+  assert.match(source, /Step 1 of 4: Checking this computer/);
+  assert.match(source, /Step 4 of 4: Starting the guided ALPR installer/);
 });
 
 test("launcher honors the bootstrap private-runtime override", async () => {

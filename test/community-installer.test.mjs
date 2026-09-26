@@ -102,6 +102,15 @@ test("fresh-install values are strictly validated and serialized", () => {
   assert.throws(() => internals.validateAdministratorPassword("contains\\backslash"), /backslashes/);
   assert.throws(() => internals.validateTimeZone("Not/A_Time_Zone"), /invalid IANA/);
   assert.throws(() => internals.validatePort(70000, "port"), /1 through 65535/);
+  assert.doesNotThrow(() => internals.validateTimeZone(internals.defaultTimeZone()));
+  assert.deepEqual(internals.discoverServerAddresses({
+    lo: [{ address: "127.0.0.1", family: "IPv4", internal: true }],
+    docker0: [{ address: "203.0.113.1", family: "IPv4", internal: false }],
+    eth0: [
+      { address: "198.51.100.25", family: "IPv4", internal: false },
+      { address: "fe80::1", family: "IPv6", internal: false },
+    ],
+  }), ["198.51.100.25"]);
 });
 
 test("fresh install builds a pinned image, proves an empty database, and stores only redacted state", async () => {
@@ -124,6 +133,7 @@ test("fresh install builds a pinned image, proves an empty database, and stores 
       databaseReadyAttempts: 1,
       healthAttempts: 1,
       healthCheck: async () => ({ status: "ok" }),
+      serverAddresses: ["192.0.2.25"],
     });
     assert.equal(state.status, "installed");
     assert.equal(state.release.tag, "v0.1.24");
@@ -149,6 +159,7 @@ test("fresh install builds a pinned image, proves an empty database, and stores 
       assert.equal((await stat(internals.statePath(root))).mode & 0o777, 0o600);
     }
     assert.match(logger.messages.join("\n"), /installed successfully/);
+    assert.match(logger.messages.join("\n"), /http:\/\/192\.0\.2\.25:3310/);
     assert.match(logger.messages.join("\n"), /username blank/);
     assert.match(logger.messages.join("\n"), /Software Updates/);
   } finally {

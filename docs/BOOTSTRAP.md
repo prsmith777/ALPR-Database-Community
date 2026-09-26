@@ -73,15 +73,15 @@ alpr_bootstrap() (
   (cd "${download_dir}" && sha256sum --check --strict alpr-community-bootstrap.sh.sha256)
   bash "${download_dir}/alpr-community-bootstrap.sh" --release "${release_tag}" "$@"
 )
-alpr_bootstrap
+alpr_bootstrap --new
 unset -f alpr_bootstrap
 ```
 
 The function stops before execution if release discovery, either download, or
 checksum validation fails. It passes the same published release tag into the
 bootstrap, so a newer tag cannot be selected between download and checkout.
-The interactive menu offers all three modes. To choose a mode directly, replace
-the `alpr_bootstrap` invocation near the end of the block with one of:
+The block above starts a new installation directly. For another task, replace
+the `alpr_bootstrap --new` invocation near the end with one of:
 
 ```bash
 alpr_bootstrap --new
@@ -89,6 +89,9 @@ alpr_bootstrap --migrate
 alpr_bootstrap --check new
 alpr_bootstrap --check migration
 ```
+
+Run `alpr_bootstrap` without an option only when you want the explanatory menu.
+Invalid menu choices are shown again instead of terminating the bootstrap.
 
 Use `--release vMAJOR.MINOR.PATCH` to select an exact stable release and
 `--install-dir /absolute/path` to choose the target directory. `--dry-run`

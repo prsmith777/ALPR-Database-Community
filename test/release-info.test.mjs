@@ -23,7 +23,7 @@ test("release information resolves a commit-pinned deployment image", () => {
     ALPR_RELEASE_CHANNEL: "staging",
   });
 
-  assert.equal(release.version, "0.1.38");
+  assert.equal(release.version, "0.1.39");
   assert.equal(release.manualVersion, "3.4");
   assert.equal(release.manualUpdatedAt, "September 25, 2026");
   assert.equal(release.gitSha, "8cd2fa8");
@@ -32,14 +32,14 @@ test("release information resolves a commit-pinned deployment image", () => {
   assert.equal(release.readOnly, true);
   assert.equal(
     release.notes.title,
-    "Bootstrap v5 hardening"
+    "Friendlier first-time setup"
   );
-  assert.equal(release.notes.publishedAt, "2026-09-25");
+  assert.equal(release.notes.publishedAt, "2026-09-26");
   assert.ok(release.notes.items.length >= 3);
   const notes = release.notes.items.join(" ");
-  assert.match(notes, /APT and RPM package preparation/i);
-  assert.match(notes, /fail closed/i);
-  assert.match(notes, /disposable Ubuntu/i);
+  assert.match(notes, /without opening a script viewer/i);
+  assert.match(notes, /fail-closed safety checks/i);
+  assert.match(notes, /detected browser addresses/i);
 });
 
 test("an explicit valid SHA overrides the image tag", () => {

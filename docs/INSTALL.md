@@ -14,10 +14,9 @@ Linux, AlmaLinux, CentOS Stream, and Fedora versions in
 Allocate 4 vCPU, 8 GiB RAM, and 100 GiB disk; the bootstrap enforces minimums
 of 2 CPUs, a 4 GiB allocation with at least 3500 MiB reported usable, and 20
 GiB free before application data. Docker's local data-root filesystem must also
-have at least 10 GiB free. Download,
-checksum, inspect, and run the release bootstrap as described in
-[Automated Community bootstrap](BOOTSTRAP.md), then choose **Install a new
-ALPR Community system**.
+have at least 10 GiB free. Download, checksum, and run the release bootstrap as
+described in [Automated Community bootstrap](BOOTSTRAP.md). Its recommended
+command selects the new-installation path directly.
 
 A Linux virtual machine is supported regardless of whether its physical host
 uses Unraid, Proxmox, VMware, Hyper-V, VirtualBox, or another hypervisor. The
@@ -59,7 +58,7 @@ Clone the canonical repository and detach at the exact stable release tag:
 ```bash
 git clone https://github.com/prsmith777/ALPR-Database-Community.git
 cd ALPR-Database-Community
-git checkout --detach v0.1.38
+git checkout --detach v0.1.39
 ./alpr-community install
 ```
 
@@ -70,10 +69,11 @@ tracked file. Review it, preserve it by moving the entire directory aside, and
 then run the newest verified bootstrap. Current bootstraps do not overwrite,
 reset, or automatically repair that directory.
 
-The installer asks for:
+The installer explains each prompt, retries invalid entries, and asks for:
 
 1. an administrator password containing 12 through 128 characters;
-2. an IANA time zone such as `America/Denver` or the safe `UTC` default;
+2. an IANA time zone such as `America/Denver`, defaulting to the host's detected
+   time zone or `UTC`;
 3. the application port, normally `3000`; and
 4. the loopback-only PostgreSQL port, normally `5432`.
 
@@ -113,13 +113,21 @@ only after all of these checks pass:
 
 No sample or test records are loaded.
 
+The first image build and model verification can take several minutes and may
+print substantial Docker download/build output. Leave the terminal open. The
+process is complete only when it prints `installed successfully`, browser
+addresses, and numbered next steps. If it stops, the final error explains what
+to correct before retrying; an ordinary failure also cleans up only the
+resources created by that attempt.
+
 ## First sign-in
 
-Open the address printed at completion, replacing `SERVER_ADDRESS` with the
-Linux host or VM address when necessary:
+Open one of the detected server addresses printed at completion. If the host
+cannot identify a suitable network address, replace `SERVER_IP` with the Linux
+host or VM address:
 
 ```text
-http://SERVER_ADDRESS:3000
+http://SERVER_IP:3000
 ```
 
 Leave the username blank and enter the administrator password chosen during
