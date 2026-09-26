@@ -15,6 +15,7 @@ import {
   processCommunityUpdateRequest,
 } from "../scripts/community-update-agent.mjs";
 import {
+  availableReleaseLabel,
   shouldReloadForRunningRelease,
   softwareUpdateReloadUrl,
 } from "../lib/software-update-browser.mjs";
@@ -158,6 +159,32 @@ test("an update tab reloads when the recovered server reports a new release", ()
   );
 });
 
+test("available release label preserves the result of a successful update check", () => {
+  assert.equal(availableReleaseLabel(null), "Check required");
+  assert.equal(
+    availableReleaseLabel({ operation: "check", phase: "running", currentTag: "v0.1.35" }),
+    "Check required",
+  );
+  assert.equal(
+    availableReleaseLabel({
+      operation: "check",
+      phase: "succeeded",
+      currentTag: "v0.1.35",
+      targetTag: null,
+    }),
+    "v0.1.35 (current)",
+  );
+  assert.equal(
+    availableReleaseLabel({
+      operation: "check",
+      phase: "succeeded",
+      currentTag: "v0.1.35",
+      targetTag: "v0.1.36",
+    }),
+    "v0.1.36",
+  );
+});
+
 test("Software Updates page is permission-guarded, linked, and keeps Docker off the web container", async () => {
   const [page, panel, statusRoute, shape, shell, actions, compose, dockerfile, launcher, agent] = await Promise.all([
     source("app/settings/software-updates/page.jsx"),
@@ -178,6 +205,12 @@ test("Software Updates page is permission-guarded, linked, and keeps Docker off 
   assert.match(shape, /ROLL BACK AND DISCARD NEW WRITES/);
   assert.match(panel, /Records written after the update snapshot will be discarded/);
   assert.match(panel, /Check for updates/);
+  assert.match(panel, /Latest stable/);
+  assert.match(panel, /Last checked/);
+  assert.match(panel, /Checking for updates does not install or restart anything\./);
+  assert.match(panel, /View \{releaseTag\} release notes/);
+  assert.match(panel, /Open the Community update guide/);
+  assert.match(panel, /one rollback generation is retained/);
   assert.match(panel, /Run validation again/);
   assert.match(panel, /Accept update/);
   assert.match(panel, /The host update agent is offline\. Start it before accepting the update\./);

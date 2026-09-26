@@ -2,6 +2,21 @@
 
 ## Unreleased
 
+## 0.1.36 — 2026-09-25
+
+- Restored the mobile **More** menu and added permission-aware Help access to
+  both the desktop sidebar and mobile menu.
+- Corrected Software Updates so a successful no-update check identifies the
+  installed release as current, records the last check, and links directly to
+  exact release notes and update guidance.
+- Made Docker environment-owned Database and Blue Iris fields visibly
+  read-only and reject forged submissions instead of reporting ignored changes
+  as saved.
+- Replaced misleading `Legacy` prefixes in the active Community Vehicle
+  Intelligence navigation while preserving explicit ReID v1 explanations.
+- Updated the embedded Community user guide to version 3.2 and added regression
+  coverage for navigation, update state, and environment-owned settings.
+
 ## 0.1.35 — 2026-09-25
 
 - Expanded the automatic x86-64 bootstrap from Ubuntu 24.04 to an explicit

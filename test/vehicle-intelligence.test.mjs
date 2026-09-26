@@ -277,7 +277,7 @@ test("vehicle intelligence keeps ReID grouping separate from reviewed plate asso
   assert.match(component, /queue=plates/);
   assert.match(component, /queue=direction/);
   assert.match(component, /queue=setup/);
-  assert.match(await source("lib/vehicle-intelligence-navigation.mjs"), /title: "Legacy Needs Review"/);
+  assert.match(await source("lib/vehicle-intelligence-navigation.mjs"), /title: "Needs Review"/);
   assert.match(component, /Legacy Needs Review \(ReID v1\)/);
   assert.match(component, /Open legacy profile/i);
   assert.match(component, /Confirm legacy vehicle/);
@@ -357,9 +357,9 @@ test("Community vehicle setup exposes one portable camera route", async () => {
 
 test("every vehicle intelligence route shares the complete top navigation", async () => {
   assert.deepEqual(VEHICLE_INTELLIGENCE_NAVIGATION.map(({ title, href }) => ({ title, href })), [
-    { title: "Legacy Visual Search", href: "/visual_search" },
-    { title: "Legacy Profiles", href: "/visual_search/vehicles" },
-    { title: "Legacy Needs Review", href: "/visual_search/vehicles/review" },
+    { title: "Visual Search", href: "/visual_search" },
+    { title: "Profiles", href: "/visual_search/vehicles" },
+    { title: "Needs Review", href: "/visual_search/vehicles/review" },
   ]);
   assert.deepEqual(VEHICLE_INTELLIGENCE_PRIMARY_NAVIGATION.map(({ title, href }) => ({ title, href })), [
     { title: "Vehicle Search", href: "/visual_search" },

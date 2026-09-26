@@ -59,6 +59,26 @@ const DATA_PRIVACY_ROUTES = Object.freeze({
   privacy: "/settings/data-privacy/privacy",
 });
 
+function EnvironmentManagedLabel({ htmlFor, children, managed }) {
+  return (
+    <div className="flex items-center justify-between gap-2">
+      <Label htmlFor={htmlFor} className="text-sm font-medium">
+        {children}
+      </Label>
+      {managed ? <Badge variant="secondary">Managed in .env</Badge> : null}
+    </div>
+  );
+}
+
+function EnvironmentManagedNote({ visible }) {
+  if (!visible) return null;
+  return (
+    <p className="text-xs text-muted-foreground">
+      This value is managed in the host&apos;s private .env file. Change it on the host and restart ALPR.
+    </p>
+  );
+}
+
 export default function SettingsForm({
   initialSettings,
   initialApiKey,
@@ -75,6 +95,8 @@ export default function SettingsForm({
   const [error, setError] = useState(""); // General error for main form
   const [success, setSuccess] = useState(false); // General success for main form
   const activeSection = initialSection || (canManageSettings ? "general" : "security");
+  const databaseManaged = initialSettings?.environmentManaged?.database || {};
+  const blueIrisManaged = initialSettings?.environmentManaged?.blueiris || {};
   const privacyTab = useRouteTab(DATA_PRIVACY_ROUTES, "storage");
   const [showApiKey, setShowApiKey] = useState(false); // This is local state for general form (will be managed by SecuritySettings itself now)
   const [showDialog, setShowDialog] = useState(false); // This is local state for general form (will be managed by SecuritySettings itself now)
@@ -91,6 +113,10 @@ export default function SettingsForm({
 
     // Only include the fields from the current section in the form data
     const newFormData = new FormData();
+    const appendIfPresent = (name) => {
+      const value = formData.get(name);
+      if (value !== null) newFormData.append(name, value);
+    };
 
     switch (activeSection) {
       case "general":
@@ -100,10 +126,7 @@ export default function SettingsForm({
         newFormData.append("timeFormat", Number(formData.get("timeFormat")));
         break;
       case "database":
-        newFormData.append("dbHost", formData.get("dbHost"));
-        newFormData.append("dbName", formData.get("dbName"));
-        newFormData.append("dbUser", formData.get("dbUser"));
-        newFormData.append("dbPassword", formData.get("dbPassword"));
+        ["dbHost", "dbName", "dbUser", "dbPassword"].forEach(appendIfPresent);
         break;
       case "plateMatching":
         newFormData.append("plateMatching", formData.get("plateMatching"));
@@ -156,17 +179,18 @@ export default function SettingsForm({
         }
         break;
       case "blueiris":
-        newFormData.append("bihost", formData.get("bihost"));
-        newFormData.append("biUsername", formData.get("biUsername"));
-        newFormData.append("biPassword", formData.get("biPassword"));
-        newFormData.append(
-          "clearBiPassword",
-          formData.get("clearBiPassword") === "on"
-        );
-        newFormData.append("biTimeoutSeconds", formData.get("biTimeoutSeconds"));
-        newFormData.append("biTimelineExportProfile", formData.get("biTimelineExportProfile"));
-        newFormData.append("biTimelineExportMinWidth", formData.get("biTimelineExportMinWidth"));
-        newFormData.append("biTimelineExportMinHeight", formData.get("biTimelineExportMinHeight"));
+        [
+          "bihost",
+          "biUsername",
+          "biPassword",
+          "biTimeoutSeconds",
+          "biTimelineExportProfile",
+          "biTimelineExportMinWidth",
+          "biTimelineExportMinHeight",
+        ].forEach(appendIfPresent);
+        if (formData.get("clearBiPassword") !== null) {
+          newFormData.append("clearBiPassword", "true");
+        }
         break;
     }
 
@@ -330,65 +354,83 @@ export default function SettingsForm({
         <p className="text-muted-foreground">
           Configure your database connection settings.
         </p>
+        {Object.values(databaseManaged).some(Boolean) ? (
+          <p className="mt-2 max-w-3xl rounded-md border border-amber-500/40 bg-amber-500/10 p-3 text-sm text-amber-900 dark:text-amber-100">
+            Fields marked Managed in .env are read-only here so ALPR never reports an ignored browser change as saved.
+          </p>
+        ) : null}
       </div>
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 max-w-3xl">
         <div className="space-y-2">
-          <Label htmlFor="dbHost" className="text-sm font-medium">
+          <EnvironmentManagedLabel htmlFor="dbHost" managed={databaseManaged.host}>
             Database Host & Port
-          </Label>
+          </EnvironmentManagedLabel>
           <Input
             id="dbHost"
             name="dbHost"
             defaultValue={initialSettings.database.host}
             placeholder="localhost:5432"
             autoComplete="off"
+            disabled={Boolean(databaseManaged.host)}
           />
+          <EnvironmentManagedNote visible={databaseManaged.host} />
         </div>
         <div className="space-y-2">
-          <Label htmlFor="dbName" className="text-sm font-medium">
+          <EnvironmentManagedLabel htmlFor="dbName" managed={databaseManaged.name}>
             Database Name
-          </Label>
+          </EnvironmentManagedLabel>
           <Input
             id="dbName"
             name="dbName"
             defaultValue={initialSettings.database.name}
             placeholder="alpr_db"
             autoComplete="off"
+            disabled={Boolean(databaseManaged.name)}
           />
+          <EnvironmentManagedNote visible={databaseManaged.name} />
         </div>
         <div className="space-y-2">
-          <Label htmlFor="dbUser" className="text-sm font-medium">
+          <EnvironmentManagedLabel htmlFor="dbUser" managed={databaseManaged.user}>
             Database User
-          </Label>
+          </EnvironmentManagedLabel>
           <Input
             id="dbUser"
             name="dbUser"
             defaultValue={initialSettings.database.user}
             placeholder="username"
             autoComplete="off"
+            disabled={Boolean(databaseManaged.user)}
           />
+          <EnvironmentManagedNote visible={databaseManaged.user} />
         </div>
         <div className="space-y-2">
-          <div className="flex items-center justify-between gap-2">
-            <Label htmlFor="dbPassword" className="text-sm font-medium">
-              Database Password
-            </Label>
+          <EnvironmentManagedLabel htmlFor="dbPassword" managed={databaseManaged.password}>
+            Database Password
+          </EnvironmentManagedLabel>
+          {!databaseManaged.password ? (
             <Badge variant="outline">
               {initialSettings.database.passwordConfigured
                 ? "Configured"
                 : "Not configured"}
             </Badge>
-          </div>
-          <PasswordInput
-            id="dbPassword"
-            name="dbPassword"
-            visibilityLabel="database password"
-            placeholder="Enter a replacement password"
-            autoComplete="new-password"
-          />
-          <p className="text-xs text-muted-foreground">
-            Leave blank to keep the configured password. Saved passwords are never sent to the browser.
-          </p>
+          ) : null}
+          {databaseManaged.password ? (
+            <Input id="dbPassword" value="Managed in .env" disabled readOnly />
+          ) : (
+            <PasswordInput
+              id="dbPassword"
+              name="dbPassword"
+              visibilityLabel="database password"
+              placeholder="Enter a replacement password"
+              autoComplete="new-password"
+            />
+          )}
+          <EnvironmentManagedNote visible={databaseManaged.password} />
+          {!databaseManaged.password ? (
+            <p className="text-xs text-muted-foreground">
+              Leave blank to keep the configured password. Saved passwords are never sent to the browser.
+            </p>
+          ) : null}
         </div>
       </div>
     </div>
@@ -770,12 +812,17 @@ export default function SettingsForm({
         <p className="text-muted-foreground">
           Configure integration with Blue Iris camera system.
         </p>
+        {Object.values(blueIrisManaged).some(Boolean) ? (
+          <p className="mt-2 max-w-3xl rounded-md border border-amber-500/40 bg-amber-500/10 p-3 text-sm text-amber-900 dark:text-amber-100">
+            Fields marked Managed in .env are read-only here. Unmarked Blue Iris settings remain editable.
+          </p>
+        ) : null}
       </div>
       <div className="grid gap-4 md:grid-cols-2">
         <div className="space-y-2 md:col-span-2">
-          <Label htmlFor="bihost" className="text-sm font-medium">
+          <EnvironmentManagedLabel htmlFor="bihost" managed={blueIrisManaged.host}>
             Blue Iris Hostname or IP address
-          </Label>
+          </EnvironmentManagedLabel>
           <p className="text-xs text-muted-foreground mb-2">
             Include :port if not port 80
           </p>
@@ -786,19 +833,23 @@ export default function SettingsForm({
             placeholder="192.0.2.68"
             autoComplete="off"
             className="max-w-lg"
+            disabled={Boolean(blueIrisManaged.host)}
           />
+          <EnvironmentManagedNote visible={blueIrisManaged.host} />
         </div>
         <div className="space-y-2">
-          <Label htmlFor="biUsername">Username</Label>
+          <EnvironmentManagedLabel htmlFor="biUsername" managed={blueIrisManaged.username}>Username</EnvironmentManagedLabel>
           <Input
             id="biUsername"
             name="biUsername"
             defaultValue={initialSettings.blueiris.username || ""}
             autoComplete="username"
+            disabled={Boolean(blueIrisManaged.username)}
           />
+          <EnvironmentManagedNote visible={blueIrisManaged.username} />
         </div>
         <div className="space-y-2">
-          <Label htmlFor="biTimeoutSeconds">Request timeout (seconds)</Label>
+          <EnvironmentManagedLabel htmlFor="biTimeoutSeconds" managed={blueIrisManaged.timeoutSeconds}>Request timeout (seconds)</EnvironmentManagedLabel>
           <Input
             id="biTimeoutSeconds"
             name="biTimeoutSeconds"
@@ -806,21 +857,28 @@ export default function SettingsForm({
             min="2"
             max="30"
             defaultValue={initialSettings.blueiris.timeout_seconds || 10}
+            disabled={Boolean(blueIrisManaged.timeoutSeconds)}
           />
+          <EnvironmentManagedNote visible={blueIrisManaged.timeoutSeconds} />
         </div>
         <div className="space-y-2 md:col-span-2">
-          <Label htmlFor="biPassword">Password</Label>
-          <PasswordInput
-            id="biPassword"
-            name="biPassword"
-            autoComplete="new-password"
-            placeholder={
-              initialSettings.blueiris.passwordConfigured
-                ? "Password configured — enter only to replace"
-                : "Blue Iris password"
-            }
-          />
-          {initialSettings.blueiris.passwordConfigured && (
+          <EnvironmentManagedLabel htmlFor="biPassword" managed={blueIrisManaged.password}>Password</EnvironmentManagedLabel>
+          {blueIrisManaged.password ? (
+            <Input id="biPassword" value="Managed in .env" disabled readOnly />
+          ) : (
+            <PasswordInput
+              id="biPassword"
+              name="biPassword"
+              autoComplete="new-password"
+              placeholder={
+                initialSettings.blueiris.passwordConfigured
+                  ? "Password configured — enter only to replace"
+                  : "Blue Iris password"
+              }
+            />
+          )}
+          <EnvironmentManagedNote visible={blueIrisManaged.password} />
+          {initialSettings.blueiris.passwordConfigured && !blueIrisManaged.password && (
             <label className="flex items-center gap-2 text-sm text-muted-foreground">
               <Checkbox id="clearBiPassword" name="clearBiPassword" />
               Clear saved password
@@ -828,7 +886,7 @@ export default function SettingsForm({
           )}
         </div>
         <div className="space-y-2">
-          <Label htmlFor="biTimelineExportProfile">Timeline export profile</Label>
+          <EnvironmentManagedLabel htmlFor="biTimelineExportProfile" managed={blueIrisManaged.timelineExportProfile}>Timeline export profile</EnvironmentManagedLabel>
           <Input
             id="biTimelineExportProfile"
             name="biTimelineExportProfile"
@@ -836,13 +894,18 @@ export default function SettingsForm({
             min="0"
             max="3"
             defaultValue={initialSettings.blueiris.timeline_export_profile ?? 0}
+            disabled={Boolean(blueIrisManaged.timelineExportProfile)}
           />
+          <EnvironmentManagedNote visible={blueIrisManaged.timelineExportProfile} />
           <p className="text-xs text-muted-foreground">
             ALPR requests a direct-copy main-stream export with re-encoding disabled. The profile value is retained for Blue Iris API compatibility; ALPR validates the actual exported resolution before analysis.
           </p>
         </div>
         <div className="space-y-2">
-          <Label>Minimum overview export resolution</Label>
+          <div className="flex items-center justify-between gap-2">
+            <Label>Minimum overview export resolution</Label>
+            {blueIrisManaged.timelineExportMinWidth || blueIrisManaged.timelineExportMinHeight ? <Badge variant="secondary">Managed in .env</Badge> : null}
+          </div>
           <div className="grid grid-cols-2 gap-2">
             <Input
               aria-label="Minimum timeline export width"
@@ -851,6 +914,7 @@ export default function SettingsForm({
               min="1920"
               max="7680"
               defaultValue={initialSettings.blueiris.timeline_export_min_width ?? 1920}
+              disabled={Boolean(blueIrisManaged.timelineExportMinWidth)}
             />
             <Input
               aria-label="Minimum timeline export height"
@@ -859,8 +923,10 @@ export default function SettingsForm({
               min="1080"
               max="4320"
               defaultValue={initialSettings.blueiris.timeline_export_min_height ?? 1080}
+              disabled={Boolean(blueIrisManaged.timelineExportMinHeight)}
             />
           </div>
+          <EnvironmentManagedNote visible={blueIrisManaged.timelineExportMinWidth || blueIrisManaged.timelineExportMinHeight} />
           <p className="text-xs text-muted-foreground">
             ALPR verifies the finished file with FFprobe. Exports below this size fail closed instead of saving a low-resolution Vehicle View.
           </p>

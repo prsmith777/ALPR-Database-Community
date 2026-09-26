@@ -6,6 +6,7 @@ import {
   BellPlus,
   BookMarked,
   Cctv,
+  CircleHelp,
   Database,
   LayoutDashboard,
   LogOut,
@@ -54,9 +55,10 @@ export function Sidebar() {
 
   const navItems = allNavItems.filter((item) => canAccess(item.permission));
   const visibleMobileNavItems = mobileNavItems.filter((item) =>
-    canAccess(item.permission)
+    !item.permission || canAccess(item.permission)
   );
   const canViewAudit = canAccess("system.view_audit");
+  const canViewHelp = canAccess("plate.read");
 
   const navigateTo = (href) => {
     if (href === "#more") {
@@ -131,6 +133,29 @@ export function Sidebar() {
               </TooltipTrigger>
               <TooltipContent side="right" className="border-0 bg-muted">
                 System Logs
+              </TooltipContent>
+            </Tooltip>
+            )}
+
+            {canViewHelp && (
+            <Tooltip delayDuration={0}>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="ghost"
+                  onClick={() => router.push("/help")}
+                  aria-label="Help and user guide"
+                  className={cn(
+                    "h-10 w-10 p-0 hover:bg-transparent [&:not(:disabled)]:hover:bg-transparent",
+                    isPathActive("/help")
+                      ? "text-blue-500"
+                      : "hover:text-blue-500"
+                  )}
+                >
+                  <CircleHelp className="h-5 w-5" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent side="right" className="border-0 bg-muted">
+                Help and user guide
               </TooltipContent>
             </Tooltip>
             )}
@@ -245,6 +270,22 @@ export function Sidebar() {
             >
               <TerminalSquare className="mr-3 h-5 w-5" />
               System Logs
+            </Button>
+            )}
+
+            {canViewHelp && (
+            <Button
+              variant="ghost"
+              className={cn(
+                "h-12 w-full justify-start px-4 text-left",
+                isPathActive("/help")
+                  ? "bg-muted text-blue-500"
+                  : "text-foreground"
+              )}
+              onClick={() => navigateTo("/help")}
+            >
+              <CircleHelp className="mr-3 h-5 w-5" />
+              Help and user guide
             </Button>
             )}
 
