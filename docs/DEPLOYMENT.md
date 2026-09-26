@@ -64,13 +64,16 @@ generation, uses commit-qualified images, and never copies the image-storage
 library or invokes broad Docker pruning. Follow the complete
 [Community update guide](UPDATES.md) before the first update.
 
-Each new image is built with a dedicated temporary BuildKit builder whose cache
-is removed after the build. The versioned runtime image remains available for
-the updater's one-generation rollback policy. OpenVINO, ReID, and their pinned
-models are bundled in that image and verified with real CPU inference; they are
-not separate host installations.
+Each new image is built with a dedicated temporary BuildKit builder that is
+removed after the build. Docker may still retain unused engine-side build cache
+when the final image is loaded. The updater does not broadly prune a possibly
+shared Docker host; follow the dedicated-host guidance in
+[Community updates](UPDATES.md#docker-build-cache). The versioned runtime image
+remains available for the updater's one-generation rollback policy. OpenVINO,
+ReID, and their pinned models are bundled in that image and verified with real
+CPU inference; they are not separate host installations.
 
-The first updater release intentionally refuses external-database deployments,
+The current updater intentionally refuses external-database deployments,
 Compose overrides, native Windows Docker, and appliance-managed container
 stacks until their platform-specific service and recovery behavior is
 implemented and tested.

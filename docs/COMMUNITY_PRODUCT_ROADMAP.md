@@ -101,7 +101,10 @@ credentials and enables them. They do not require extra ALPR host packages.
   explicit real-use acceptance, exact rollback, and a one-generation rollback
   policy. The browser workflow keeps the required next action prominent and
   blocks a newer installation until the current release is accepted or rolled
-  back.
+  back;
+- isolated temporary image builders plus documented inspection and dedicated-
+  host cleanup for Docker Engine build cache that can remain after an image is
+  loaded.
 
 The Linux guest and Docker environment determine compatibility, not the
 hypervisor. Supported Linux VMs on Unraid, Proxmox, VMware, Hyper-V,
@@ -128,17 +131,20 @@ downloaded into a new user's database or image library.
 
 1. Keep the in-app manual synchronized with every visible Settings route and
    expand task-specific troubleshooting as real Community feedback arrives.
-2. Continue performance and reliability regression coverage for ingestion,
+2. Add narrowly scoped, clearly reported ALPR build-cache maintenance when it
+   can be implemented without pruning unrelated projects on a shared Docker
+   daemon.
+3. Continue performance and reliability regression coverage for ingestion,
    live views, image processing, notifications, updates, migration, and
    rollback.
-3. Maintain the explicit Linux package matrix as upstream Docker and
+4. Maintain the explicit Linux package matrix as upstream Docker and
    PostgreSQL repositories add or retire distribution releases. Unsupported
    hosts will continue to receive read-only compatibility results and manual
    prerequisite guidance.
-4. Consider a native Windows or PowerShell deployment path only when its
+5. Consider a native Windows or PowerShell deployment path only when its
    service management, path validation, backup, update, and rollback behavior
    can meet the same release gates.
-5. Consider advanced visual-search or ReID administration only after it is
+6. Consider advanced visual-search or ReID administration only after it is
    portable, documented, default-off, privacy-reviewed, and recoverable.
 
 ARM support is deferred and has no committed release. New roadmap work must not

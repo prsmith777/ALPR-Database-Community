@@ -23,8 +23,9 @@ choose one of these paths:
 
 1. Create a supported Ubuntu 24.04 LTS x86-64 destination VM and rerun the
    bootstrap. This remains the lowest-complexity choice.
-2. On another x86-64 Linux distribution, manually install Docker Engine,
-   Compose v2, Buildx, Git, and Node.js 24. Migration hosts also need
+2. On another x86-64 Linux distribution, manually install Docker Engine, the
+   `docker compose` CLI plugin (version 2 or newer), Buildx, Git, and Node.js
+   24. Migration hosts also need
    PostgreSQL 17 clients, `rsync`, and OpenSSH. Rerun the check before ALPR.
 3. Upgrade the guest operating system and dependencies using that
    distribution's documented process, then rerun the check. Back up the host

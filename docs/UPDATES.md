@@ -14,7 +14,7 @@ Proxmox, VMware, Hyper-V, VirtualBox, Unraid, TrueNAS, or another hypervisor.
 The updater evaluates the Linux guest and its Docker Compose installation; it
 does not depend on or control the underlying VM host.
 
-Windows Docker installations are not supported by this first updater release.
+Windows Docker installations are not supported by the current updater.
 A PowerShell launcher and Windows-specific path validation are planned. Do not
 run the Linux updater through WSL against a Windows Docker installation.
 
@@ -31,7 +31,7 @@ run the Linux updater through WSL against a Windows Docker installation.
 - enough free space for one compressed PostgreSQL dump plus 512 MiB of
   headroom.
 
-The first release does not update external-database deployments, Compose
+The current updater does not update external-database deployments, Compose
 override files, Kubernetes installations, Docker Desktop on Windows, Synology
 Container Manager, or QNAP Container Station. Those platforms need dedicated
 adapters because their service control, paths, and recovery behavior differ.
@@ -151,7 +151,7 @@ The guarded workflow:
 7. verifies and records the dump SHA-256 digest;
 8. checks out the exact target tag and verifies its commit did not move;
 9. builds a commit-qualified local image in an isolated temporary BuildKit
-   builder, removes its cache, and runs real OpenVINO CPU inference with all
+   builder, removes that builder, and runs real OpenVINO CPU inference with all
    bundled detection, attribute, and ReID models instead of using `latest`;
 10. applies `migrations.sql` through the transactional Compose migration
     service;
@@ -163,6 +163,34 @@ The updater does not copy, archive, delete, or otherwise mutate `storage/`.
 That directory can be much larger than the database and should be protected by
 the operator's normal host or NAS backup. The updater only records its file
 count and total bytes to detect unexpected loss during an update.
+
+## Docker build cache
+
+Removing the temporary BuildKit builder does not guarantee that every Docker
+Engine and Buildx combination removes cache associated with loading the final
+image. Repeated local builds can therefore increase the **Build Cache** value
+reported by:
+
+```bash
+docker system df
+```
+
+Build cache is not the PostgreSQL database, image library, current application
+image, or retained rollback image. On a VM or Docker host dedicated to ALPR,
+after confirming that no install, migration, update, or other Docker build is
+running, unused build cache can be removed with:
+
+```bash
+docker builder prune --all --force
+```
+
+Run `docker system df` and `df -h /` again afterward. The next image build may
+take longer because dependencies must be downloaded or rebuilt. On a shared
+Docker host, do not run this command without coordinating with the owners of
+the other projects: it removes all unused build cache on that Docker daemon.
+It does not replace the updater's rollback cleanup, and operators must not use
+`docker system prune`, `docker image prune`, or `docker volume prune` as an
+ALPR update step.
 
 ## Complete real-use acceptance
 
