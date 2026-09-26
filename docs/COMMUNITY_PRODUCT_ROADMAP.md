@@ -97,8 +97,11 @@ credentials and enables them. They do not require extra ALPR host packages.
   target without deleting the source;
 - exact-tag updates on standard Linux hosts and Linux VMs, available through
   both `./alpr-community` and an optional restricted browser-to-host service;
-- verified database/configuration backups, automated validation, manual
-  acceptance, exact rollback, and a one-generation rollback policy.
+- verified database/configuration backups, guided Technical system checks,
+  explicit real-use acceptance, exact rollback, and a one-generation rollback
+  policy. The browser workflow keeps the required next action prominent and
+  blocks a newer installation until the current release is accepted or rolled
+  back.
 
 The Linux guest and Docker environment determine compatibility, not the
 hypervisor. Supported Linux VMs on Unraid, Proxmox, VMware, Hyper-V,

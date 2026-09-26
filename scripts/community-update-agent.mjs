@@ -66,14 +66,21 @@ function safeErrorMessage(error) {
 
 function stateSummary(operation, result, recordedState = null) {
   if (operation === "check") {
+    const unfinishedUpdate = Boolean(
+      recordedState
+      && !["accepted", "rolled-back"].includes(recordedState.status)
+    );
     return {
       currentTag: result?.current?.tag || null,
       targetTag: result?.target?.tag || null,
+      activeUpdateTag: recordedState?.target?.tag || null,
       updaterStatus: recordedState?.status || (result?.target ? "update-available" : "current"),
       rollbackEligibleUntil: recordedState?.acceptance?.cleanupEligibleAt || null,
       rollbackPresent: Boolean(recordedState?.backup?.directory && !recordedState?.backup?.cleanedAt),
-      message: result?.target
-        ? `Update ${result.target.tag} is available.`
+      message: unfinishedUpdate
+        ? `${recordedState.target?.tag || "The current update"} is unfinished. Complete or roll back that update before installing another release.`
+        : result?.target
+          ? `Update ${result.target.tag} is available.`
         : `${result?.current?.tag || "The installed release"} is current.`,
     };
   }
@@ -81,13 +88,14 @@ function stateSummary(operation, result, recordedState = null) {
   return {
     currentTag: state.current?.tag || null,
     targetTag: state.target?.tag || null,
+    activeUpdateTag: state.target?.tag || null,
     updaterStatus: state.status || null,
     rollbackEligibleUntil: state.acceptance?.cleanupEligibleAt || null,
     rollbackPresent: Boolean(state.backup?.directory && !state.backup?.cleanedAt),
     message: operation === "update"
-      ? `${state.target?.tag || "The update"} passed automated validation. Complete the listed manual checks before accepting it.`
+      ? `${state.target?.tag || "The update"} passed Technical system checks. Complete the listed real-use checks, then accept it.`
       : operation === "validate"
-        ? "Automated update validation completed successfully."
+        ? "Technical system checks completed successfully. Complete the listed real-use checks, then accept the update."
         : operation === "accept"
           ? `${state.target?.tag || "The update"} was accepted.`
           : operation === "rollback"
