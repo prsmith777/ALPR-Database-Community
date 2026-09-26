@@ -60,6 +60,15 @@ test("bootstrap refuses unsafe replacement and package-removal behavior", async 
   assert.match(source, /not as root/);
 });
 
+test("bootstrap materializes fresh clones and narrowly recovers the v3 no-checkout residue", async () => {
+  const source = await readFile(new URL("bootstrap.sh", root), "utf8");
+  assert.doesNotMatch(source, /git clone[^\n]*--no-checkout/);
+  assert.match(source, /is_unmaterialized_bootstrap_checkout/);
+  assert.match(source, /! -name \.git/);
+  assert.match(source, /ls-files --stage/);
+  assert.match(source, /Recovering an incomplete bootstrap checkout/);
+});
+
 test("published releases attach the bootstrap and checksum from the exact tag", async () => {
   const workflow = await readFile(new URL(".github/workflows/release-bootstrap.yml", root), "utf8");
   assert.match(workflow, /release:\s*\n\s*types:\s*\n\s*- published/);

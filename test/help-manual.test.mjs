@@ -18,7 +18,7 @@ async function source(path) {
 }
 
 test("the user guide is structured, searchable, and role-aware", () => {
-  assert.equal(HELP_MANUAL.manualVersion, "3.2");
+  assert.equal(HELP_MANUAL.manualVersion, "3.3");
   assert.ok(HELP_MANUAL.sections.length >= 24);
 
   const ids = HELP_MANUAL.sections.map((section) => section.id);

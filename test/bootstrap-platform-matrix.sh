@@ -62,4 +62,30 @@ assert_unsupported centos 9 "" "CentOS Linux 9"
 assert_unsupported fedora 42 "" "Fedora Linux 42"
 assert_unsupported opensuse-leap 16.0 "" "openSUSE Leap 16.0"
 
+fixture_root="$(mktemp -d)"
+trap 'rm -rf -- "${fixture_root}"' EXIT
+git -C "${fixture_root}" init --quiet source
+git -C "${fixture_root}/source" config user.name "Community bootstrap test"
+git -C "${fixture_root}/source" config user.email "bootstrap-test@example.invalid"
+printf 'tracked\n' >"${fixture_root}/source/tracked.txt"
+git -C "${fixture_root}/source" add tracked.txt
+git -C "${fixture_root}/source" commit --quiet -m fixture
+
+git clone --quiet --no-checkout "${fixture_root}/source" "${fixture_root}/incomplete"
+[[ ! -e "${fixture_root}/incomplete/tracked.txt" ]]
+is_unmaterialized_bootstrap_checkout "${fixture_root}/incomplete"
+
+git -C "${fixture_root}/incomplete" checkout --quiet --detach HEAD
+[[ -f "${fixture_root}/incomplete/tracked.txt" ]]
+if is_unmaterialized_bootstrap_checkout "${fixture_root}/incomplete"; then
+  printf 'A materialized checkout was incorrectly classified as recoverable.\n' >&2
+  exit 1
+fi
+
+printf 'changed\n' >"${fixture_root}/incomplete/tracked.txt"
+if is_unmaterialized_bootstrap_checkout "${fixture_root}/incomplete"; then
+  printf 'A dirty checkout was incorrectly classified as recoverable.\n' >&2
+  exit 1
+fi
+
 printf 'Bootstrap platform matrix passed.\n'

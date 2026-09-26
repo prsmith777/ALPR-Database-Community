@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+## 0.1.37 — 2026-09-25
+
+- Fixed the automated bootstrap so a fresh clone materializes its working tree
+  before the clean-checkout gate.
+- Added narrow automatic recovery for the exact unmaterialized canonical clone
+  left by the v0.1.36 bootstrap failure. Recovery still refuses `.env`, files
+  outside `.git`, indexed paths, modified files, and noncanonical origins.
+- Updated the fresh-install, bootstrap, update, release, and embedded Help
+  guidance; the Community user guide is now version 3.3.
+
 ## 0.1.36 — 2026-09-25
 
 - Restored the mobile **More** menu and added permission-aware Help access to

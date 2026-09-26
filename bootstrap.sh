@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
-readonly BOOTSTRAP_VERSION="3"
+readonly BOOTSTRAP_VERSION="4"
 readonly CANONICAL_REPOSITORY="https://github.com/prsmith777/ALPR-Database-Community.git"
 readonly CANONICAL_REPOSITORY_ID="github.com/prsmith777/ALPR-Database-Community"
 readonly PINNED_NODE_VERSION="24.21.0"
@@ -579,8 +579,17 @@ latest_release() {
     | tail -n 1
 }
 
+is_unmaterialized_bootstrap_checkout() {
+  local directory="$1"
+  [[ -d "${directory}/.git" ]] || return 1
+  [[ ! -e "${directory}/.env" ]] || return 1
+  [[ -z "$(find "${directory}" -mindepth 1 -maxdepth 1 ! -name .git -print -quit)" ]] || return 1
+  git -C "${directory}" rev-parse --verify HEAD >/dev/null 2>&1 || return 1
+  [[ -z "$(git -C "${directory}" ls-files --stage)" ]] || return 1
+}
+
 prepare_checkout() {
-  local target_tag origin package_version
+  local target_tag origin package_version checkout_status
   if [[ -n "${REQUESTED_RELEASE}" ]]; then
     target_tag="${REQUESTED_RELEASE}"
   elif [[ "${DRY_RUN}" == true ]] && ! command -v git >/dev/null 2>&1; then
@@ -598,14 +607,20 @@ prepare_checkout() {
       || fatal "Installation destination is not empty: ${INSTALL_DIRECTORY}"
   fi
   if [[ ! -d "${INSTALL_DIRECTORY}/.git" ]]; then
-    run git clone --filter=blob:none --no-checkout "${CANONICAL_REPOSITORY}" "${INSTALL_DIRECTORY}"
+    run git clone --filter=blob:none "${CANONICAL_REPOSITORY}" "${INSTALL_DIRECTORY}"
   fi
   [[ "${DRY_RUN}" == false ]] || { info "Would verify and check out ${target_tag} in ${INSTALL_DIRECTORY}"; return 0; }
 
   origin="$(normalize_repository "$(git -C "${INSTALL_DIRECTORY}" remote get-url origin)")"
   [[ "${origin}" == "${CANONICAL_REPOSITORY_ID}" ]] || fatal "Existing checkout does not use the canonical Community repository"
-  [[ -z "$(git -C "${INSTALL_DIRECTORY}" status --porcelain --untracked-files=normal)" ]] \
-    || fatal "Existing Community checkout is not clean"
+  checkout_status="$(git -C "${INSTALL_DIRECTORY}" status --porcelain --untracked-files=normal)"
+  if [[ -n "${checkout_status}" ]]; then
+    if is_unmaterialized_bootstrap_checkout "${INSTALL_DIRECTORY}"; then
+      warning "Recovering an incomplete bootstrap checkout that stopped before its first file checkout"
+    else
+      fatal "Existing Community checkout is not clean"
+    fi
+  fi
   [[ ! -e "${INSTALL_DIRECTORY}/.env" ]] || fatal "An installed Community target already exists at ${INSTALL_DIRECTORY}"
 
   git -C "${INSTALL_DIRECTORY}" fetch --force origin \

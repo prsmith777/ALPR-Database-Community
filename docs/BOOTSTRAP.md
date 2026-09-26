@@ -74,6 +74,19 @@ Use `--release vMAJOR.MINOR.PATCH` to select an exact stable release and
 `--install-dir /absolute/path` to choose the target directory. `--dry-run`
 prints package and repository changes without applying them.
 
+### Retry after the v0.1.36 early-checkout failure
+
+Bootstrap v3 in release v0.1.36 could stop immediately after a successful
+fresh clone with `Existing Community checkout is not clean`. It created the
+Git metadata but deliberately had not checked out any files. Bootstrap v4 and
+later recognize and repair only that narrow residue: the canonical checkout
+must contain nothing except `.git`, must have no `.env`, and its Git index must
+contain no paths. Download and verify the latest bootstrap again, then rerun
+the same installation command. Do not delete the directory first.
+
+Any checkout containing files, runtime state, staged changes, a different
+origin, or other modifications still fails closed and requires manual review.
+
 ## What it installs
 
 For both install paths, the bootstrap installs or validates:
