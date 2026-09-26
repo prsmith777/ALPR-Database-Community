@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Removed the automatic `less` script viewer from the documented bootstrap
+  command so verified downloads proceed directly to the installer menu.
+
 ## 0.1.38 — 2026-09-25
 
 - Hardened bootstrap v5 against RPM `curl-minimal` conflicts and duplicate APT

@@ -51,7 +51,6 @@ alpr_bootstrap() (
   curl -fLsS --retry 3 "${asset_base}/alpr-community-bootstrap.sh" -o "${download_dir}/alpr-community-bootstrap.sh"
   curl -fLsS --retry 3 "${asset_base}/alpr-community-bootstrap.sh.sha256" -o "${download_dir}/alpr-community-bootstrap.sh.sha256"
   (cd "${download_dir}" && sha256sum --check --strict alpr-community-bootstrap.sh.sha256)
-  if command -v less >/dev/null; then less "${download_dir}/alpr-community-bootstrap.sh"; fi
   bash "${download_dir}/alpr-community-bootstrap.sh" --release "${release_tag}" "$@"
 )
 alpr_bootstrap

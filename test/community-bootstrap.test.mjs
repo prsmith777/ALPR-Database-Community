@@ -78,6 +78,7 @@ test("bootstrap documentation gates execution on an exact published release chec
     assert.match(source, /releases\/download\/\$\{release_tag\}/);
     assert.match(source, /sha256sum --check --strict/);
     assert.match(source, /--release "\$\{release_tag\}"/);
+    assert.doesNotMatch(source, /command -v less|\bless\s+"?\$\{download_dir\}/);
   }
 });
 
