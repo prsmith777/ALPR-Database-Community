@@ -61,3 +61,8 @@ yarn build
 The sanitation check must pass. Do not add real runtime data, private
 deployment details, credentials, database dumps, or user imagery to tests,
 fixtures, documentation, or commit history.
+
+Maintainers preparing a public release must also complete the
+[release documentation checklist](docs/RELEASING.md). It distinguishes files
+that change for every release from manuals and roadmap sections that change
+only when their documented behavior or product status changes.

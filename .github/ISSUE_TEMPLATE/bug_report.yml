@@ -56,7 +56,7 @@ body:
     attributes:
       label: Environment details
       description: Linux distribution/version, browser, and hypervisor or server platform. Do not include hostnames or private addresses.
-      placeholder: Debian 13 VM on Proxmox; Chrome 128
+      placeholder: Debian 13 VM on Proxmox; current Chrome stable
 
   - type: textarea
     id: problem

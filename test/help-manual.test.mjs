@@ -18,7 +18,7 @@ async function source(path) {
 }
 
 test("the user guide is structured, searchable, and role-aware", () => {
-  assert.equal(HELP_MANUAL.manualVersion, "3.5");
+  assert.equal(HELP_MANUAL.manualVersion, "3.6");
   assert.ok(HELP_MANUAL.sections.length >= 24);
 
   const ids = HELP_MANUAL.sections.map((section) => section.id);
@@ -214,6 +214,9 @@ test("public installation instructions stay synchronized with the Linux bootstra
     roadmap,
     issueForm,
     packageSource,
+    changelog,
+    releasing,
+    contributing,
   ] = await Promise.all([
     source("README.md"),
     source("docs/BOOTSTRAP.md"),
@@ -225,6 +228,9 @@ test("public installation instructions stay synchronized with the Linux bootstra
     source("docs/COMMUNITY_PRODUCT_ROADMAP.md"),
     source(".github/ISSUE_TEMPLATE/bug_report.yml"),
     source("package.json"),
+    source("CHANGELOG.md"),
+    source("docs/RELEASING.md"),
+    source("CONTRIBUTING.md"),
   ]);
 
   const distributionNames = [
@@ -274,6 +280,7 @@ test("public installation instructions stay synchronized with the Linux bootstra
   assert.match(issueForm, /Supported CentOS Stream or Fedora x86-64 release/i);
 
   const releaseVersion = JSON.parse(packageSource).version;
+  const releaseTag = `v${releaseVersion}`;
   for (const [label, text] of [
     ["fresh-install guide", install],
     ["update guide", updates],
@@ -281,6 +288,17 @@ test("public installation instructions stay synchronized with the Linux bootstra
   ]) {
     assert.match(text, new RegExp(`v${releaseVersion.replaceAll(".", "\\.")}`), `${label} has a stale release example`);
   }
+  assert.ok(install.includes(`git checkout --detach ${releaseTag}`));
+  assert.ok(updates.includes(`git checkout --detach ${releaseTag}`));
+  assert.ok(updates.includes(`./alpr-community update --to ${releaseTag}`));
+  assert.ok(issueForm.includes(`placeholder: ${releaseTag}`));
+  assert.match(changelog, new RegExp(`^## ${releaseVersion.replaceAll(".", "\\.")} —`, "m"));
+  assert.match(releasing, /Required for every release/);
+  assert.match(releasing, /GitHub-facing review/);
+  assert.match(contributing, /docs\/RELEASING\.md/);
+  assert.doesNotMatch(`${readme}\n${releasing}`, /alprdatabase\.org/i);
+  assert.match(`${bootstrap}\n${install}\n${deployment}\n${updates}`, /docker builder prune --all --force/);
+  assert.match(`${deployment}\n${updates}`, /shared Docker host/i);
 });
 
 test("dashboard places Help immediately after Roadmap", async () => {

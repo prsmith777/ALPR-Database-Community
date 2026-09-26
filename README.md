@@ -160,7 +160,10 @@ stable builds from [GitHub Releases](https://github.com/prsmith777/ALPR-Database
 rather than deploying moving `main`. See the
 [Community product roadmap](docs/COMMUNITY_PRODUCT_ROADMAP.md) for the current
 release boundary and later work, and the [changelog](CHANGELOG.md) for shipped
-changes.
+changes. Maintainers should use the
+[release documentation checklist](docs/RELEASING.md) so the versioned manual,
+roadmap, install and migration guidance, GitHub forms, and release assets stay
+synchronized.
 
 ## Support and feedback
 

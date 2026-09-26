@@ -2,9 +2,11 @@
 
 ## Supported version
 
-Security fixes are applied to the latest release on the `main` branch. Update
-to the newest published image or release before reporting an issue that may
-already have been corrected.
+Security fixes are applied to `main` and published in the newest stable release
+tag. Community images are built locally and are not distributed as a moving
+`latest` image. Check **Settings → Software Updates** or GitHub Releases and
+update to the newest stable tag before reporting an issue that may already have
+been corrected.
 
 ## Reporting a vulnerability
 

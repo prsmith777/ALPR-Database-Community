@@ -117,7 +117,8 @@ For both install paths, the bootstrap installs or validates:
 - Git;
 - Docker Engine from Docker's signed repository for the detected Debian,
   Ubuntu, RHEL-compatible, CentOS, or Fedora family;
-- Docker Compose v2 and Docker Buildx;
+- the Docker Compose CLI plugin (`docker compose`, version 2 or newer) and
+  Docker Buildx;
 - CA certificates, `curl`, GnuPG, and archive utilities; and
 - a checksum-verified Node.js 24 runtime private to the ALPR account.
 
@@ -140,9 +141,13 @@ noncanonical checkout, and any target that already contains an ALPR
 installation. It never removes Docker packages, containers, volumes, images,
 or an existing ALPR directory.
 
-Image builds use a dedicated temporary BuildKit builder. Its cache is removed
-after each success or failure while the final versioned image remains. The
-installer and updater never invoke a broad Docker prune.
+Image builds use a dedicated temporary BuildKit builder, and the builder is
+removed after each success or failure while the final versioned image remains.
+Depending on the Docker Engine and Buildx versions, loading that final image can
+still leave unused engine-side build cache. The installer and updater never
+invoke a broad Docker prune because a shared Docker host may use that cache for
+unrelated projects. See [Community updates](UPDATES.md#docker-build-cache) for
+inspection and dedicated-host cleanup guidance.
 
 The bootstrap reuses a complete working Docker installation. If Docker is
 partial, vendor-packaged, or conflicts with Docker CE, it stops instead of

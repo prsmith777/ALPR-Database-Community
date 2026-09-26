@@ -26,15 +26,17 @@ supported by this installer; use a supported x86-64 Linux VM. See
 [Host compatibility](COMPATIBILITY.md) for the exact automatic matrix, manual
 Linux path, and failed-check recovery.
 
-The bootstrap installs Git, Docker Engine, Compose v2, Buildx, and a private
-checksum-verified Node.js 24 runtime. OpenVINO and ReID do not need host
-installation; they are bundled and inference-tested in the application image.
+The bootstrap installs Git, Docker Engine, the `docker compose` CLI plugin
+(version 2 or newer), Buildx, and a private checksum-verified Node.js 24
+runtime. OpenVINO and ReID do not need host installation; they are bundled and
+inference-tested in the application image.
 
 ## Manual fallback
 
 If you deliberately manage dependencies yourself, install Git, Docker Engine,
-the Compose v2 and Buildx plugins, and Node.js 24 from your distribution or
-their official upstream sources. The normal account must be able to use Docker.
+the `docker compose` CLI plugin (version 2 or newer), Buildx, and Node.js 24
+from your distribution or their official upstream sources. The normal account
+must be able to use Docker.
 
 Verify the host before downloading ALPR:
 
@@ -95,7 +97,7 @@ Before changing Docker state, the installer refuses:
 - insufficient disk space.
 
 It then creates a private `.env`, builds a commit-qualified image in an
-isolated temporary BuildKit builder, removes that builder and its cache, assigns the
+isolated temporary BuildKit builder, removes that builder, assigns the
 application runtime directories to container UID/GID `1000`, and creates a
 set-group-ID `update-control/` directory shared only with the installing host
 account's primary group. It then starts PostgreSQL, applies the migrations
@@ -112,6 +114,12 @@ only after all of these checks pass:
 - the clean-install image-migration marker is complete.
 
 No sample or test records are loaded.
+
+Docker may retain unused engine-side build cache after the final image is
+loaded even though the temporary builder was removed. This cache is not ALPR
+data and is not the rollback image. Review the dedicated-host cleanup guidance
+in [Community updates](UPDATES.md#docker-build-cache) rather than deleting
+images, containers, or volumes.
 
 The first image build and model verification can take several minutes and may
 print substantial Docker download/build output. Leave the terminal open. The

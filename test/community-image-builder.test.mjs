@@ -5,7 +5,7 @@ import { buildRuntimeImage } from "../scripts/community-image-builder.mjs";
 
 const release = Object.freeze({ version: "0.1.30", commit: "3".repeat(40) });
 
-test("runtime builds use and remove an isolated temporary BuildKit cache", () => {
+test("runtime builds use and remove an isolated temporary BuildKit builder", () => {
   const commands = [];
   buildRuntimeImage((command, args) => {
     commands.push([command, ...args]);
@@ -24,7 +24,7 @@ test("runtime builds use and remove an isolated temporary BuildKit cache", () =>
   assert.equal(remove, `docker buildx rm --force ${builder}`);
 });
 
-test("temporary BuildKit cache is removed after a failed build", () => {
+test("temporary BuildKit builder is removed after a failed build", () => {
   const commands = [];
   assert.throws(() => buildRuntimeImage((command, args) => {
     commands.push([command, ...args]);
@@ -34,7 +34,7 @@ test("temporary BuildKit cache is removed after a failed build", () => {
   assert.ok(commands.at(-1).join(" ").includes("buildx rm --force"));
 });
 
-test("a built image is removed if its isolated cache cannot be deleted", () => {
+test("a built image is removed if its temporary builder cannot be deleted", () => {
   const commands = [];
   assert.throws(() => buildRuntimeImage((command, args) => {
     commands.push([command, ...args]);

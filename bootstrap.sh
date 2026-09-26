@@ -376,7 +376,7 @@ dependency_report() {
   resolve_node
   if [[ -n "${NODE_BINARY}" ]]; then success "Node.js: $("${NODE_BINARY}" --version)"; else warning "Node.js 24 is missing"; failures=$((failures + 1)); fi
   if command -v docker >/dev/null 2>&1; then success "Docker CLI: $(docker --version)"; else warning "Docker Engine is missing"; failures=$((failures + 1)); fi
-  if command -v docker >/dev/null 2>&1 && docker compose version >/dev/null 2>&1; then success "Docker Compose: $(docker compose version)"; else warning "Docker Compose v2 is missing"; failures=$((failures + 1)); fi
+  if command -v docker >/dev/null 2>&1 && docker compose version >/dev/null 2>&1; then success "Docker Compose: $(docker compose version)"; else warning "The Docker Compose CLI plugin is missing"; failures=$((failures + 1)); fi
   if command -v docker >/dev/null 2>&1 && docker buildx version >/dev/null 2>&1; then success "Docker Buildx: $(docker buildx version)"; else warning "Docker Buildx is missing"; failures=$((failures + 1)); fi
   if command -v docker >/dev/null 2>&1 && docker info >/dev/null 2>&1; then
     success "Docker daemon is available to ${INSTALL_USER}"
@@ -605,7 +605,7 @@ install_docker() {
       run sudo systemctl enable --now docker
       return 0
     fi
-    fatal "Docker is present but Compose v2 or Buildx is unavailable; repair the existing installation before rerunning the bootstrap"
+    fatal "Docker is present but the Compose CLI plugin or Buildx is unavailable; repair the existing installation before rerunning the bootstrap"
   fi
   local conflicts
   conflicts="$(docker_package_conflict)"
