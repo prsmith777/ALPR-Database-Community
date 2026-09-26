@@ -77,9 +77,10 @@ credentials and enables them. They do not require extra ALPR host packages.
 ### Installation, migration, and updates
 
 - Docker Compose deployment on x86-64 Linux with PostgreSQL 17;
-- a verified Ubuntu Server 24.04 x86-64 bootstrap for new installations and
-  migration targets, including Git, Docker Engine, Compose, Buildx, private
-  Node.js 24, and migration-only PostgreSQL 17 client utilities;
+- verified APT and RPM bootstrap adapters for selected maintained Ubuntu,
+  Debian, RHEL, Rocky Linux, AlmaLinux, CentOS Stream, and Fedora x86-64
+  releases, including Git, Docker Engine, Compose, Buildx, private Node.js 24,
+  and migration-only PostgreSQL 17 client utilities;
 - guided fresh installation with collision checks, generated database
   credentials, a user-selected administrator password, empty-database proof,
   persistent storage, and narrow failed-install recovery;
@@ -95,8 +96,8 @@ credentials and enables them. They do not require extra ALPR host packages.
   acceptance, exact rollback, and a one-generation rollback policy.
 
 The Linux guest and Docker environment determine compatibility, not the
-hypervisor. Ubuntu VMs on Unraid, Proxmox, VMware, Hyper-V, VirtualBox,
-TrueNAS, and similar servers use the same supported path.
+hypervisor. Supported Linux VMs on Unraid, Proxmox, VMware, Hyper-V,
+VirtualBox, TrueNAS, and similar servers use the same path.
 
 ## Intentionally not shipped
 
@@ -122,9 +123,10 @@ downloaded into a new user's database or image library.
 2. Continue performance and reliability regression coverage for ingestion,
    live views, image processing, notifications, updates, migration, and
    rollback.
-3. Consider separately tested package adapters for additional x86-64 Linux
-   distributions. Unsupported hosts will continue to receive read-only
-   compatibility results and manual prerequisite guidance.
+3. Maintain the explicit Linux package matrix as upstream Docker and
+   PostgreSQL repositories add or retire distribution releases. Unsupported
+   hosts will continue to receive read-only compatibility results and manual
+   prerequisite guidance.
 4. Consider a native Windows or PowerShell deployment path only when its
    service management, path validation, backup, update, and rollback behavior
    can meet the same release gates.

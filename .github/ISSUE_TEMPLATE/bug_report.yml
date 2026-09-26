@@ -39,7 +39,10 @@ body:
       label: Host environment
       description: Choose the closest match. Add distribution and hypervisor details below if relevant.
       options:
-        - Ubuntu Server 24.04 LTS x86-64
+        - Supported Ubuntu x86-64 release
+        - Supported Debian x86-64 release
+        - Supported RHEL, Rocky Linux, or AlmaLinux x86-64 release
+        - Supported CentOS Stream or Fedora x86-64 release
         - Other Linux x86-64
         - Linux virtual machine
         - Unraid-hosted Linux virtual machine
@@ -53,7 +56,7 @@ body:
     attributes:
       label: Environment details
       description: Linux distribution/version, browser, and hypervisor or server platform. Do not include hostnames or private addresses.
-      placeholder: Ubuntu Server 24.04 LTS VM on Proxmox; Chrome 128
+      placeholder: Debian 13 VM on Proxmox; Chrome 128
 
   - type: textarea
     id: problem

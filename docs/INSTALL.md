@@ -7,7 +7,10 @@ unchanged until migration acceptance is complete.
 
 ## Recommended automated path
 
-Use Ubuntu Server 24.04 LTS x86-64 with a normal account that has `sudo`.
+Ubuntu Server 24.04 LTS x86-64 is the simplest recommended target. The same
+automatic path supports the additional maintained Ubuntu, Debian, RHEL, Rocky
+Linux, AlmaLinux, CentOS Stream, and Fedora versions in
+[Host compatibility](COMPATIBILITY.md). Use a normal account with `sudo`.
 Allocate 4 vCPU, 8 GiB RAM, and 100 GiB disk; the bootstrap enforces minimums
 of 2 CPUs, 4 GiB RAM, and 20 GiB free before application data. Download,
 checksum, inspect, and run the release bootstrap as described in
@@ -18,9 +21,9 @@ A Linux virtual machine is supported regardless of whether its physical host
 uses Unraid, Proxmox, VMware, Hyper-V, VirtualBox, or another hypervisor. The
 guest operating system, Docker Engine, and Compose determine compatibility.
 Native Windows Docker and appliance-managed NAS container interfaces are not
-supported by this first installer; use an Ubuntu 24.04 Linux VM. See
-[Host compatibility](COMPATIBILITY.md) for other Linux distributions, older
-Ubuntu systems, and failed-check recovery.
+supported by this installer; use a supported x86-64 Linux VM. See
+[Host compatibility](COMPATIBILITY.md) for the exact automatic matrix, manual
+Linux path, and failed-check recovery.
 
 The bootstrap installs Git, Docker Engine, Compose v2, Buildx, and a private
 checksum-verified Node.js 24 runtime. OpenVINO and ReID do not need host

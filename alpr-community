@@ -21,8 +21,13 @@ if [[ "$("${node_binary}" --version 2>/dev/null || true)" != v24.* ]]; then
   exit 1
 fi
 
-if [[ -z "${ALPR_PG_BIN_DIR:-}" && -x /usr/lib/postgresql/17/bin/psql ]]; then
-  export ALPR_PG_BIN_DIR=/usr/lib/postgresql/17/bin
+if [[ -z "${ALPR_PG_BIN_DIR:-}" ]]; then
+  for postgres_bin_dir in /usr/lib/postgresql/17/bin /usr/pgsql-17/bin; do
+    if [[ -x "${postgres_bin_dir}/psql" ]]; then
+      export ALPR_PG_BIN_DIR="${postgres_bin_dir}"
+      break
+    fi
+  done
 fi
 
 if [[ "${1:-}" == "install" ]]; then

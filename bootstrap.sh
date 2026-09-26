@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
-readonly BOOTSTRAP_VERSION="2"
+readonly BOOTSTRAP_VERSION="3"
 readonly CANONICAL_REPOSITORY="https://github.com/prsmith777/ALPR-Database-Community.git"
 readonly CANONICAL_REPOSITORY_ID="github.com/prsmith777/ALPR-Database-Community"
 readonly PINNED_NODE_VERSION="24.21.0"
@@ -26,6 +26,14 @@ ASSUME_YES=false
 DRY_RUN=false
 TEMPORARY_DIRECTORY=""
 NODE_BINARY=""
+OS_ID=""
+OS_VERSION_ID=""
+OS_CODENAME=""
+OS_MAJOR_VERSION=""
+PACKAGE_FAMILY=""
+DOCKER_REPOSITORY_DISTRIBUTION=""
+PGDG_REPOSITORY_FAMILY=""
+SUPPORTED_PLATFORM_LABEL=""
 
 info() { printf '\033[1;34m[INFO]\033[0m %s\n' "$*"; }
 success() { printf '\033[1;32m[OK]\033[0m %s\n' "$*"; }
@@ -49,7 +57,10 @@ Options:
   --dry-run            Show intended package/repository changes without applying them
   --help                Show this help
 
-The automatic package installer initially supports Ubuntu 24.04 LTS x86-64.
+Automatic package installation supports selected maintained Ubuntu, Debian,
+RHEL, Rocky Linux, AlmaLinux, CentOS Stream, and Fedora x86-64 releases.
+Run --check first on an existing host and see docs/COMPATIBILITY.md for the
+exact version matrix.
 Compatibility checks are read-only. The bootstrap never overwrites an existing
 ALPR installation or removes Docker packages, containers, volumes, or images.
 EOF
@@ -137,10 +148,87 @@ load_os_release() {
   OS_ID="${ID:-unknown}"
   OS_VERSION_ID="${VERSION_ID:-unknown}"
   OS_CODENAME="${VERSION_CODENAME:-}"
+  OS_MAJOR_VERSION="${OS_VERSION_ID%%.*}"
 }
 
 automatic_packages_supported() {
-  [[ "${OS_ID}" == "ubuntu" && "${OS_VERSION_ID}" == "24.04" && "${OS_CODENAME}" == "noble" ]]
+  PACKAGE_FAMILY=""
+  DOCKER_REPOSITORY_DISTRIBUTION=""
+  PGDG_REPOSITORY_FAMILY=""
+  SUPPORTED_PLATFORM_LABEL=""
+
+  case "${OS_ID}" in
+    ubuntu)
+      case "${OS_VERSION_ID}:${OS_CODENAME}" in
+        22.04:jammy|24.04:noble|26.04:resolute)
+          PACKAGE_FAMILY="apt"
+          DOCKER_REPOSITORY_DISTRIBUTION="ubuntu"
+          PGDG_REPOSITORY_FAMILY="apt"
+          SUPPORTED_PLATFORM_LABEL="Ubuntu ${OS_VERSION_ID} (${OS_CODENAME})"
+          ;;
+        *) return 1 ;;
+      esac
+      ;;
+    debian)
+      case "${OS_VERSION_ID}:${OS_CODENAME}" in
+        12:bookworm|13:trixie)
+          PACKAGE_FAMILY="apt"
+          DOCKER_REPOSITORY_DISTRIBUTION="debian"
+          PGDG_REPOSITORY_FAMILY="apt"
+          SUPPORTED_PLATFORM_LABEL="Debian ${OS_VERSION_ID} (${OS_CODENAME})"
+          ;;
+        *) return 1 ;;
+      esac
+      ;;
+    rhel|rocky|almalinux)
+      case "${OS_MAJOR_VERSION}" in
+        8|9|10)
+          PACKAGE_FAMILY="rpm"
+          DOCKER_REPOSITORY_DISTRIBUTION="rhel"
+          PGDG_REPOSITORY_FAMILY="el"
+          SUPPORTED_PLATFORM_LABEL="${PRETTY_NAME:-${OS_ID} ${OS_VERSION_ID}}"
+          ;;
+        *) return 1 ;;
+      esac
+      ;;
+    centos)
+      case "${OS_MAJOR_VERSION}" in
+        9|10)
+          [[ "${PRETTY_NAME:-}" == *Stream* ]] || return 1
+          PACKAGE_FAMILY="rpm"
+          DOCKER_REPOSITORY_DISTRIBUTION="centos"
+          PGDG_REPOSITORY_FAMILY="el"
+          SUPPORTED_PLATFORM_LABEL="${PRETTY_NAME}"
+          ;;
+        *) return 1 ;;
+      esac
+      ;;
+    fedora)
+      case "${OS_MAJOR_VERSION}" in
+        43|44)
+          PACKAGE_FAMILY="rpm"
+          DOCKER_REPOSITORY_DISTRIBUTION="fedora"
+          PGDG_REPOSITORY_FAMILY="fedora"
+          SUPPORTED_PLATFORM_LABEL="Fedora Linux ${OS_MAJOR_VERSION}"
+          ;;
+        *) return 1 ;;
+      esac
+      ;;
+    *) return 1 ;;
+  esac
+}
+
+supported_platform_summary() {
+  cat <<'EOF'
+Ubuntu 22.04, 24.04, or 26.04; Debian 12 or 13; RHEL, Rocky Linux, or
+AlmaLinux 8, 9, or 10; CentOS Stream 9 or 10; or Fedora 43 or 44 (x86-64).
+EOF
+}
+
+platform_advisories() {
+  if [[ "${OS_ID}" == "fedora" ]]; then
+    warning "Fedora has a short support cycle and is not recommended by PostgreSQL for server deployments; keep the host on a currently supported Fedora release"
+  fi
 }
 
 available_parent() {
@@ -195,11 +283,29 @@ resolve_node() {
   fi
 }
 
+postgres_client_path() {
+  local program="$1" candidate
+  for candidate in \
+    "/usr/lib/postgresql/17/bin/${program}" \
+    "/usr/pgsql-17/bin/${program}"; do
+    if [[ -x "${candidate}" ]]; then
+      printf '%s\n' "${candidate}"
+      return 0
+    fi
+  done
+  candidate="$(command -v "${program}" 2>/dev/null || true)"
+  if [[ -n "${candidate}" ]]; then
+    printf '%s\n' "${candidate}"
+    return 0
+  fi
+  return 1
+}
+
 postgres_clients_ready() {
-  local command
-  for command in psql pg_dump pg_restore; do
-    command -v "${command}" >/dev/null 2>&1 || return 1
-    "${command}" --version 2>/dev/null | grep -Eq ' 17\.' || return 1
+  local program candidate
+  for program in psql pg_dump pg_restore; do
+    candidate="$(postgres_client_path "${program}")" || return 1
+    "${candidate}" --version 2>/dev/null | grep -Eq ' 17\.' || return 1
   done
 }
 
@@ -214,7 +320,7 @@ dependency_report() {
   if command -v docker >/dev/null 2>&1 && docker info >/dev/null 2>&1; then success "Docker daemon is available to ${INSTALL_USER}"; else warning "The current account cannot use the Docker daemon"; failures=$((failures + 1)); fi
   if command -v sudo >/dev/null 2>&1; then success "sudo is available"; else warning "sudo is missing"; failures=$((failures + 1)); fi
   if [[ "${profile}" == "migration" ]]; then
-    if postgres_clients_ready; then success "PostgreSQL 17 client utilities are ready"; else warning "PostgreSQL 17 psql, pg_dump, or pg_restore is missing"; failures=$((failures + 1)); fi
+    if postgres_clients_ready; then success "PostgreSQL 17 client utilities are ready at $(dirname -- "$(postgres_client_path psql)")"; else warning "PostgreSQL 17 psql, pg_dump, or pg_restore is missing"; failures=$((failures + 1)); fi
     if command -v rsync >/dev/null 2>&1; then success "rsync is ready for image storage"; else warning "rsync is missing"; failures=$((failures + 1)); fi
   fi
   return "${failures}"
@@ -227,6 +333,7 @@ check_network() {
     https://github.com/ \
     https://download.docker.com/ \
     https://nodejs.org/ \
+    https://download.postgresql.org/ \
     https://registry.yarnpkg.com/ \
     https://storage.openvinotoolkit.org/; do
     curl --fail --silent --show-error --location --max-time 20 --output /dev/null "${url}" \
@@ -251,8 +358,16 @@ ensure_temporary_directory() {
 }
 
 install_base_packages() {
-  run sudo apt-get update
-  run sudo apt-get install -y ca-certificates curl git gnupg xz-utils
+  case "${PACKAGE_FAMILY}" in
+    apt)
+      run sudo apt-get update
+      run sudo apt-get install -y ca-certificates curl git gnupg xz-utils
+      ;;
+    rpm)
+      run sudo dnf -y install ca-certificates curl git gnupg2 tar xz dnf-plugins-core
+      ;;
+    *) fatal "No package adapter is selected for this host" ;;
+  esac
 }
 
 install_private_node() {
@@ -281,11 +396,64 @@ install_private_node() {
 
 docker_package_conflict() {
   local package
-  for package in docker.io docker-compose docker-compose-v2 podman-docker containerd runc; do
-    if dpkg-query -W -f='${Status}' "${package}" 2>/dev/null | grep -q 'install ok installed'; then
-      printf '%s\n' "${package}"
-    fi
-  done
+  if [[ "${PACKAGE_FAMILY}" == "apt" ]]; then
+    for package in docker.io docker-compose docker-compose-v2 podman-docker containerd runc; do
+      if dpkg-query -W -f='${Status}' "${package}" 2>/dev/null | grep -q 'install ok installed'; then
+        printf '%s\n' "${package}"
+      fi
+    done
+  else
+    for package in docker docker-client docker-client-latest docker-common docker-latest \
+      docker-latest-logrotate docker-logrotate docker-engine podman podman-docker containerd runc; do
+      if rpm -q "${package}" >/dev/null 2>&1; then
+        printf '%s\n' "${package}"
+      fi
+    done
+  fi
+}
+
+docker_ce_installed() {
+  if [[ "${PACKAGE_FAMILY}" == "apt" ]]; then
+    dpkg-query -W -f='${Status}' docker-ce 2>/dev/null | grep -q 'install ok installed'
+  else
+    rpm -q docker-ce >/dev/null 2>&1
+  fi
+}
+
+install_docker_plugins() {
+  if [[ "${PACKAGE_FAMILY}" == "apt" ]]; then
+    run sudo apt-get install -y docker-buildx-plugin docker-compose-plugin
+  else
+    run sudo dnf -y install docker-buildx-plugin docker-compose-plugin
+  fi
+}
+
+configure_apt_docker_repository() {
+  ensure_temporary_directory
+  curl --fail --silent --show-error --location \
+    "https://download.docker.com/linux/${DOCKER_REPOSITORY_DISTRIBUTION}/gpg" \
+    --output "${TEMPORARY_DIRECTORY}/docker.asc"
+  sudo install -m 0755 -d /etc/apt/keyrings
+  sudo install -m 0644 "${TEMPORARY_DIRECTORY}/docker.asc" /etc/apt/keyrings/docker.asc
+  cat >"${TEMPORARY_DIRECTORY}/docker.sources" <<EOF
+Types: deb
+URIs: https://download.docker.com/linux/${DOCKER_REPOSITORY_DISTRIBUTION}
+Suites: ${OS_CODENAME}
+Components: stable
+Architectures: amd64
+Signed-By: /etc/apt/keyrings/docker.asc
+EOF
+  sudo install -m 0644 "${TEMPORARY_DIRECTORY}/docker.sources" /etc/apt/sources.list.d/docker.sources
+  sudo apt-get update
+}
+
+configure_rpm_docker_repository() {
+  local repository="https://download.docker.com/linux/${DOCKER_REPOSITORY_DISTRIBUTION}/docker-ce.repo"
+  if [[ "${DOCKER_REPOSITORY_DISTRIBUTION}" == "fedora" ]]; then
+    sudo dnf config-manager addrepo --from-repofile "${repository}"
+  else
+    sudo dnf config-manager --add-repo "${repository}"
+  fi
 }
 
 install_docker() {
@@ -297,9 +465,9 @@ install_docker() {
     return 0
   fi
   if command -v docker >/dev/null 2>&1; then
-    if dpkg-query -W -f='${Status}' docker-ce 2>/dev/null | grep -q 'install ok installed'; then
+    if docker_ce_installed; then
       info "Completing the existing Docker CE installation with Compose and Buildx"
-      run sudo apt-get install -y docker-buildx-plugin docker-compose-plugin
+      install_docker_plugins
       run sudo systemctl enable --now docker
       return 0
     fi
@@ -309,28 +477,18 @@ install_docker() {
   conflicts="$(docker_package_conflict)"
   [[ -z "${conflicts}" ]] || fatal "Conflicting container packages are installed (${conflicts//$'\n'/, }). Review and remove them manually before installing Docker CE"
 
-  ensure_temporary_directory
-  info "Installing Docker Engine and Compose from Docker's Ubuntu repository"
+  info "Installing Docker Engine and Compose from Docker's ${DOCKER_REPOSITORY_DISTRIBUTION} repository"
   if [[ "${DRY_RUN}" == true ]]; then
-    info "Would configure Docker's signed Noble repository and install Docker CE, Buildx, and Compose"
+    info "Would configure Docker's signed ${DOCKER_REPOSITORY_DISTRIBUTION} repository and install Docker CE, Buildx, and Compose"
     return 0
   fi
-  curl --fail --silent --show-error --location \
-    https://download.docker.com/linux/ubuntu/gpg \
-    --output "${TEMPORARY_DIRECTORY}/docker.asc"
-  sudo install -m 0755 -d /etc/apt/keyrings
-  sudo install -m 0644 "${TEMPORARY_DIRECTORY}/docker.asc" /etc/apt/keyrings/docker.asc
-  cat >"${TEMPORARY_DIRECTORY}/docker.sources" <<'EOF'
-Types: deb
-URIs: https://download.docker.com/linux/ubuntu
-Suites: noble
-Components: stable
-Architectures: amd64
-Signed-By: /etc/apt/keyrings/docker.asc
-EOF
-  sudo install -m 0644 "${TEMPORARY_DIRECTORY}/docker.sources" /etc/apt/sources.list.d/docker.sources
-  sudo apt-get update
-  sudo apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+  if [[ "${PACKAGE_FAMILY}" == "apt" ]]; then
+    configure_apt_docker_repository
+    sudo apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+  else
+    configure_rpm_docker_repository
+    sudo dnf -y install docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+  fi
   sudo systemctl enable --now docker
 }
 
@@ -356,26 +514,48 @@ refresh_docker_membership() {
 }
 
 install_migration_tools() {
-  run sudo apt-get install -y rsync openssh-client
+  if [[ "${PACKAGE_FAMILY}" == "apt" ]]; then
+    run sudo apt-get install -y rsync openssh-client
+  else
+    run sudo dnf -y install rsync openssh-clients
+  fi
   postgres_clients_ready && return 0
   ensure_temporary_directory
-  info "Installing PostgreSQL 17 client utilities from the PostgreSQL Apt repository"
+  info "Installing PostgreSQL 17 client utilities from the PostgreSQL project repository"
   if [[ "${DRY_RUN}" == true ]]; then
-    info "Would configure the signed Noble PGDG repository and install postgresql-client-17"
+    if [[ "${PACKAGE_FAMILY}" == "apt" ]]; then
+      info "Would configure the signed ${OS_CODENAME}-pgdg repository and install postgresql-client-17"
+    else
+      info "Would configure the signed PostgreSQL ${PGDG_REPOSITORY_FAMILY} repository and install postgresql17"
+    fi
     return 0
   fi
-  curl --fail --silent --show-error --location \
-    https://www.postgresql.org/media/keys/ACCC4CF8.asc \
-    --output "${TEMPORARY_DIRECTORY}/postgresql.asc"
-  sudo install -m 0755 -d /usr/share/postgresql-common/pgdg
-  sudo install -m 0644 "${TEMPORARY_DIRECTORY}/postgresql.asc" \
-    /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc
-  printf '%s\n' \
-    'deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc] https://apt.postgresql.org/pub/repos/apt noble-pgdg main' \
-    >"${TEMPORARY_DIRECTORY}/pgdg.list"
-  sudo install -m 0644 "${TEMPORARY_DIRECTORY}/pgdg.list" /etc/apt/sources.list.d/pgdg.list
-  sudo apt-get update
-  sudo apt-get install -y postgresql-client-17
+  if [[ "${PACKAGE_FAMILY}" == "apt" ]]; then
+    curl --fail --silent --show-error --location \
+      https://www.postgresql.org/media/keys/ACCC4CF8.asc \
+      --output "${TEMPORARY_DIRECTORY}/postgresql.asc"
+    sudo install -m 0755 -d /usr/share/postgresql-common/pgdg
+    sudo install -m 0644 "${TEMPORARY_DIRECTORY}/postgresql.asc" \
+      /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc
+    printf '%s\n' \
+      "deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc] https://apt.postgresql.org/pub/repos/apt ${OS_CODENAME}-pgdg main" \
+      >"${TEMPORARY_DIRECTORY}/pgdg.list"
+    sudo install -m 0644 "${TEMPORARY_DIRECTORY}/pgdg.list" /etc/apt/sources.list.d/pgdg.list
+    sudo apt-get update
+    sudo apt-get install -y postgresql-client-17
+  else
+    local repository_package
+    if [[ "${PGDG_REPOSITORY_FAMILY}" == "fedora" ]]; then
+      repository_package="https://download.postgresql.org/pub/repos/yum/reporpms/F-${OS_MAJOR_VERSION}-x86_64/pgdg-fedora-repo-latest.noarch.rpm"
+    else
+      repository_package="https://download.postgresql.org/pub/repos/yum/reporpms/EL-${OS_MAJOR_VERSION}-x86_64/pgdg-redhat-repo-latest.noarch.rpm"
+    fi
+    sudo dnf -y install "${repository_package}"
+    if [[ "${PGDG_REPOSITORY_FAMILY}" == "el" && ( "${OS_MAJOR_VERSION}" == "8" || "${OS_MAJOR_VERSION}" == "9" ) ]]; then
+      sudo dnf -qy module disable postgresql
+    fi
+    sudo dnf -y install postgresql17
+  fi
   postgres_clients_ready || fatal "PostgreSQL 17 client utilities did not validate"
 }
 
@@ -444,7 +624,8 @@ run_compatibility_check() {
   local profile="$1"
   load_os_release
   if automatic_packages_supported; then
-    success "Automatic package installation is supported on Ubuntu 24.04 LTS"
+    success "Automatic package installation is supported on ${SUPPORTED_PLATFORM_LABEL}"
+    platform_advisories
   else
     warning "Automatic package installation is not available for ${PRETTY_NAME:-${OS_ID} ${OS_VERSION_ID}}"
   fi
@@ -461,7 +642,9 @@ run_compatibility_check() {
 install_prerequisites() {
   load_os_release
   automatic_packages_supported \
-    || fatal "Automatic installation currently supports Ubuntu 24.04 LTS only. Run --check for details or use a supported Ubuntu 24.04 destination VM"
+    || fatal "Automatic installation is unavailable for ${PRETTY_NAME:-${OS_ID} ${OS_VERSION_ID}}. Supported releases: $(supported_platform_summary) Run --check for the manual compatibility path"
+  success "Selected ${PACKAGE_FAMILY} package adapter for ${SUPPORTED_PLATFORM_LABEL}"
+  platform_advisories
   check_resources
   confirm_changes
   install_base_packages
@@ -524,4 +707,6 @@ EOF
   fi
 }
 
-main "$@"
+if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
+  main "$@"
+fi

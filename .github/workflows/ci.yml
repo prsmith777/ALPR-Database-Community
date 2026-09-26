@@ -47,7 +47,9 @@ jobs:
           cache: yarn
 
       - name: Validate bootstrap shell syntax
-        run: bash -n bootstrap.sh
+        run: |
+          bash -n bootstrap.sh
+          bash test/bootstrap-platform-matrix.sh
 
       - name: Install PostgreSQL integration-test dependencies
         run: yarn install --frozen-lockfile --ignore-scripts --network-timeout 100000

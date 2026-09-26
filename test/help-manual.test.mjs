@@ -18,7 +18,7 @@ async function source(path) {
 }
 
 test("the user guide is structured, searchable, and role-aware", () => {
-  assert.equal(HELP_MANUAL.manualVersion, "3.0");
+  assert.equal(HELP_MANUAL.manualVersion, "3.1");
   assert.ok(HELP_MANUAL.sections.length >= 24);
 
   const ids = HELP_MANUAL.sections.map((section) => section.id);
@@ -110,7 +110,8 @@ test("the guide covers required workflows and clearly labels planned features", 
     "guarded logical database migration",
     "run ./alpr-community",
     "guided fresh install",
-    "verified release bootstrap on ubuntu server 24.04",
+    "verified release bootstrap on a listed x86-64 ubuntu, debian",
+    "centos stream 9 and 10",
     "openvino, reid",
     "migration-preparation mode",
     "migrate wizard",

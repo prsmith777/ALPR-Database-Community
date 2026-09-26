@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+- Expanded the automatic x86-64 bootstrap from Ubuntu 24.04 to an explicit
+  maintained-release matrix covering Ubuntu, Debian, RHEL, Rocky Linux,
+  AlmaLinux, CentOS Stream, and Fedora with separate APT and RPM adapters.
+- Added distribution-specific Docker repositories, PostgreSQL 17 migration
+  clients, RPM PostgreSQL path discovery, fail-closed conflict checks, and
+  synchronized installation, compatibility, roadmap, and in-app guidance.
+- Updated the embedded Community user guide to version 3.1.
+
 ## 0.1.34 — 2026-09-25
 
 - Fixed the Software Updates page so an open tab polls through a stable,

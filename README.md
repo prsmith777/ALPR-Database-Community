@@ -27,11 +27,18 @@ and prototype TPMS screens are intentionally not included.
 ## Quick start
 
 For the simplest supported path, start with Ubuntu Server 24.04 LTS x86-64,
-internet access, and a normal account with `sudo`. Download and verify the
-bootstrap assets from the latest release, then open its menu:
+internet access, and a normal account with `sudo`. The automatic bootstrap also
+supports selected maintained Ubuntu, Debian, RHEL, Rocky Linux, AlmaLinux,
+CentOS Stream, and Fedora releases listed in
+[Host compatibility](docs/COMPATIBILITY.md). Download and verify the bootstrap
+assets from the latest release, then open its menu:
 
 ```bash
-command -v curl >/dev/null || { sudo apt-get update && sudo apt-get install -y curl; }
+command -v curl >/dev/null || {
+  if command -v apt-get >/dev/null; then sudo apt-get update && sudo apt-get install -y curl;
+  elif command -v dnf >/dev/null; then sudo dnf -y install curl;
+  else echo "Install curl with this distribution's package manager first." >&2; exit 1; fi
+}
 curl -fL https://github.com/prsmith777/ALPR-Database-Community/releases/latest/download/alpr-community-bootstrap.sh \
   -o alpr-community-bootstrap.sh
 curl -fL https://github.com/prsmith777/ALPR-Database-Community/releases/latest/download/alpr-community-bootstrap.sh.sha256 \

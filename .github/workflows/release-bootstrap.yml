@@ -26,6 +26,7 @@ jobs:
         run: |
           set -euo pipefail
           bash -n bootstrap.sh
+          bash test/bootstrap-platform-matrix.sh
           install -m 0755 bootstrap.sh alpr-community-bootstrap.sh
           sha256sum alpr-community-bootstrap.sh > alpr-community-bootstrap.sh.sha256
 
