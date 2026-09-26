@@ -354,7 +354,7 @@ test("public update tooling has no Docker socket mount or broad prune command", 
   assert.doesNotMatch(script, /docker["', ]+system["', ]+prune|system prune|-a.*prune/i);
   assert.match(script, /runner\("docker", \["image", "rm", image\]/);
   assert.match(script, /\+refs\/heads\/main:refs\/remotes\/origin\/main/);
-  assert.match(`${readme}\n${guide}`, /standard Linux/i);
+  assert.match(`${readme}\n${guide}`, /standard(?: x86-64)? Linux/i);
   assert.match(guide, /does not copy.*storage/i);
   assert.match(guide, /Windows/i);
   assert.equal(JSON.parse(packageSource).scripts["update:community"], "node scripts/community-updater.mjs");
