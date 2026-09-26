@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.1.35 — 2026-09-25
+
 - Expanded the automatic x86-64 bootstrap from Ubuntu 24.04 to an explicit
   maintained-release matrix covering Ubuntu, Debian, RHEL, Rocky Linux,
   AlmaLinux, CentOS Stream, and Fedora with separate APT and RPM adapters.
