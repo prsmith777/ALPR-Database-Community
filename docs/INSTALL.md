@@ -57,9 +57,15 @@ Clone the canonical repository and detach at the exact stable release tag:
 ```bash
 git clone https://github.com/prsmith777/ALPR-Database-Community.git
 cd ALPR-Database-Community
-git checkout --detach v0.1.36
+git checkout --detach v0.1.37
 ./alpr-community install
 ```
+
+If the v0.1.36 bootstrap stopped immediately after cloning with
+`Existing Community checkout is not clean`, do not remove the checkout.
+Download and verify the newest release bootstrap and run it again. Bootstrap
+v4 can resume only the exact unmaterialized canonical clone left by that bug;
+it continues to refuse every ordinary dirty or installed checkout.
 
 The installer asks for:
 
