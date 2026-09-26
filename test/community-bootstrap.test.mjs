@@ -16,7 +16,7 @@ test("bootstrap exposes new-install, migration, and read-only compatibility mode
   ]) assert.ok(source.includes(platform), `missing automatic platform contract: ${platform}`);
   assert.match(source, /x86_64/);
   assert.match(source, /MINIMUM_CPU_COUNT=2/);
-  assert.match(source, /MINIMUM_MEMORY_KIB=\$\(\(4 \* 1024 \* 1024\)\)/);
+  assert.match(source, /MINIMUM_MEMORY_KIB=\$\(\(3500 \* 1024\)\)/);
   assert.match(source, /MINIMUM_FREE_KIB=\$\(\(20 \* 1024 \* 1024\)\)/);
 });
 
@@ -60,13 +60,30 @@ test("bootstrap refuses unsafe replacement and package-removal behavior", async 
   assert.match(source, /not as root/);
 });
 
-test("bootstrap materializes fresh clones and narrowly recovers the v3 no-checkout residue", async () => {
+test("bootstrap materializes fresh clones and refuses ambiguous v3 no-checkout residue", async () => {
   const source = await readFile(new URL("bootstrap.sh", root), "utf8");
   assert.doesNotMatch(source, /git clone[^\n]*--no-checkout/);
   assert.match(source, /is_unmaterialized_bootstrap_checkout/);
   assert.match(source, /! -name \.git/);
   assert.match(source, /ls-files --stage/);
-  assert.match(source, /Recovering an incomplete bootstrap checkout/);
+  assert.match(source, /ambiguous empty-index checkout/);
+  assert.doesNotMatch(source, /Recovering an incomplete bootstrap checkout/);
+});
+
+test("bootstrap documentation gates execution on an exact published release checksum", async () => {
+  for (const file of ["README.md", "docs/BOOTSTRAP.md"]) {
+    const source = await readFile(new URL(file, root), "utf8");
+    assert.match(source, /set -Eeuo pipefail/);
+    assert.match(source, /releases\/latest/);
+    assert.match(source, /releases\/download\/\$\{release_tag\}/);
+    assert.match(source, /sha256sum --check --strict/);
+    assert.match(source, /--release "\$\{release_tag\}"/);
+  }
+});
+
+test("launcher honors the bootstrap private-runtime override", async () => {
+  const source = await readFile(new URL("alpr-community", root), "utf8");
+  assert.match(source, /ALPR_BOOTSTRAP_RUNTIME_ROOT/);
 });
 
 test("published releases attach the bootstrap and checksum from the exact tag", async () => {

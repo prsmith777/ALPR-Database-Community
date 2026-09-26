@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# shellcheck disable=SC1091,SC2034
 set -Eeuo pipefail
 
 repository_root="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd -P)"
@@ -72,8 +73,19 @@ git -C "${fixture_root}/source" add tracked.txt
 git -C "${fixture_root}/source" commit --quiet -m fixture
 
 git clone --quiet --no-checkout "${fixture_root}/source" "${fixture_root}/incomplete"
+git -C "${fixture_root}/incomplete" remote set-url origin \
+  https://github.com/prsmith777/ALPR-Database-Community.git
 [[ ! -e "${fixture_root}/incomplete/tracked.txt" ]]
 is_unmaterialized_bootstrap_checkout "${fixture_root}/incomplete"
+set +e
+incomplete_message="$({
+  INSTALL_DIRECTORY="${fixture_root}/incomplete"
+  validate_install_destination 2>&1
+})"
+incomplete_status=$?
+set -e
+[[ "${incomplete_status}" == 1 ]]
+[[ "${incomplete_message}" == *'ambiguous empty-index checkout'* ]]
 
 git -C "${fixture_root}/incomplete" checkout --quiet --detach HEAD
 [[ -f "${fixture_root}/incomplete/tracked.txt" ]]

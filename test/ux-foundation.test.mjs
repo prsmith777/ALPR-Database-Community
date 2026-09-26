@@ -94,8 +94,9 @@ test("dashboard, manifests, README, and system logs identify the Community editi
   assert.match(readme, /ALPR Database Community/);
   assert.match(
     readme,
-    /releases\/latest\/download\/alpr-community-bootstrap\.sh/
+    /asset_base="https:\/\/github\.com\/prsmith777\/ALPR-Database-Community\/releases\/download\/\$\{release_tag\}"/
   );
+  assert.match(readme, /\$\{asset_base\}\/alpr-community-bootstrap\.sh/);
   for (const currentIdentity of [layout, manifest, publicManifest, readme]) {
     assert.equal(currentIdentity.includes("algertc"), false);
   }

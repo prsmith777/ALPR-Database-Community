@@ -34,17 +34,28 @@ CentOS Stream, and Fedora releases listed in
 assets from the latest release, then open its menu:
 
 ```bash
-command -v curl >/dev/null || {
-  if command -v apt-get >/dev/null; then sudo apt-get update && sudo apt-get install -y curl;
-  elif command -v dnf >/dev/null; then sudo dnf -y install curl;
-  else echo "Install curl with this distribution's package manager first." >&2; exit 1; fi
-}
-curl -fL https://github.com/prsmith777/ALPR-Database-Community/releases/latest/download/alpr-community-bootstrap.sh \
-  -o alpr-community-bootstrap.sh
-curl -fL https://github.com/prsmith777/ALPR-Database-Community/releases/latest/download/alpr-community-bootstrap.sh.sha256 \
-  -o alpr-community-bootstrap.sh.sha256
-sha256sum --check alpr-community-bootstrap.sh.sha256
-bash alpr-community-bootstrap.sh
+alpr_bootstrap() (
+  set -Eeuo pipefail
+  command -v curl >/dev/null || {
+    if command -v apt-get >/dev/null; then sudo apt-get update && sudo apt-get install -y curl
+    elif command -v dnf >/dev/null; then sudo dnf -y install curl
+    else echo "Install curl with this distribution's package manager first." >&2; exit 1; fi
+  }
+  release_url="$(curl -fLsS -o /dev/null -w '%{url_effective}' \
+    https://github.com/prsmith777/ALPR-Database-Community/releases/latest)"
+  release_tag="${release_url##*/}"
+  [[ "${release_tag}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]
+  download_dir="$(mktemp -d)"
+  trap 'rm -rf -- "${download_dir}"' EXIT
+  asset_base="https://github.com/prsmith777/ALPR-Database-Community/releases/download/${release_tag}"
+  curl -fLsS --retry 3 "${asset_base}/alpr-community-bootstrap.sh" -o "${download_dir}/alpr-community-bootstrap.sh"
+  curl -fLsS --retry 3 "${asset_base}/alpr-community-bootstrap.sh.sha256" -o "${download_dir}/alpr-community-bootstrap.sh.sha256"
+  (cd "${download_dir}" && sha256sum --check --strict alpr-community-bootstrap.sh.sha256)
+  if command -v less >/dev/null; then less "${download_dir}/alpr-community-bootstrap.sh"; fi
+  bash "${download_dir}/alpr-community-bootstrap.sh" --release "${release_tag}" "$@"
+)
+alpr_bootstrap
+unset -f alpr_bootstrap
 ```
 
 Choose **Install a new ALPR Community system**. The bootstrap installs and

@@ -77,10 +77,14 @@ credentials and enables them. They do not require extra ALPR host packages.
 ### Installation, migration, and updates
 
 - Docker Compose deployment on x86-64 Linux with PostgreSQL 17;
-- verified APT and RPM bootstrap adapters for selected maintained Ubuntu,
+- fail-closed APT and RPM bootstrap adapters for selected maintained Ubuntu,
   Debian, RHEL, Rocky Linux, AlmaLinux, CentOS Stream, and Fedora x86-64
   releases, including Git, Docker Engine, Compose, Buildx, private Node.js 24,
   and migration-only PostgreSQL 17 client utilities;
+- executable control-flow coverage plus real disposable-container base-package
+  tests for Ubuntu 24.04, Debian 12, Rocky Linux 9, and AlmaLinux 9; other
+  listed releases have adapter-routing coverage but are not represented as
+  complete clean-host installations;
 - guided fresh installation with collision checks, generated database
   credentials, a user-selected administrator password, empty-database proof,
   persistent storage, and narrow failed-install recovery;

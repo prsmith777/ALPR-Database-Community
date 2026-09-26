@@ -2,7 +2,8 @@
 set -euo pipefail
 
 installation_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
-private_node="${XDG_DATA_HOME:-${HOME}/.local/share}/alpr-community/runtime/node-current/bin/node"
+private_runtime_root="${ALPR_BOOTSTRAP_RUNTIME_ROOT:-${XDG_DATA_HOME:-${HOME}/.local/share}/alpr-community/runtime}"
+private_node="${private_runtime_root}/node-current/bin/node"
 node_binary="${ALPR_NODE_BINARY:-}"
 
 if [[ -z "${node_binary}" ]] && command -v node >/dev/null 2>&1 \

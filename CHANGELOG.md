@@ -2,6 +2,24 @@
 
 ## Unreleased
 
+## 0.1.38 — 2026-09-25
+
+- Hardened bootstrap v5 against RPM `curl-minimal` conflicts and duplicate APT
+  repository definitions, with bounded retries for exact artifact downloads.
+- Made release discovery use GitHub's published stable release, preserved the
+  selected mode and destination across Docker group refresh, and rejected
+  invalid environment-supplied release tags.
+- Corrected usable-memory checks, migration dependency checks, custom Node
+  runtime handoff, interrupted-install guidance, and pre-mutation destination
+  validation.
+- Replaced ambiguous automatic v3 checkout recovery with fail-closed review,
+  and made the documented checksum/download sequence prevent execution after a
+  failed verification.
+- Added executable bootstrap control-flow tests and real disposable-container
+  package tests for Ubuntu 24.04, Debian 12, Rocky Linux 9, and AlmaLinux 9.
+- Updated installation, compatibility, release, roadmap, and embedded Help
+  guidance; the Community user guide is now version 3.4.
+
 ## 0.1.37 — 2026-09-25
 
 - Fixed the automated bootstrap so a fresh clone materializes its working tree

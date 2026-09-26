@@ -1,20 +1,22 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
-readonly BOOTSTRAP_VERSION="4"
+readonly BOOTSTRAP_VERSION="5"
 readonly CANONICAL_REPOSITORY="https://github.com/prsmith777/ALPR-Database-Community.git"
 readonly CANONICAL_REPOSITORY_ID="github.com/prsmith777/ALPR-Database-Community"
 readonly PINNED_NODE_VERSION="24.21.0"
 readonly MINIMUM_CPU_COUNT=2
-readonly MINIMUM_MEMORY_KIB=$((4 * 1024 * 1024))
+readonly MINIMUM_MEMORY_KIB=$((3500 * 1024))
 readonly RECOMMENDED_CPU_COUNT=4
-readonly RECOMMENDED_MEMORY_KIB=$((8 * 1024 * 1024))
+readonly RECOMMENDED_MEMORY_KIB=$((7500 * 1024))
 readonly MINIMUM_FREE_KIB=$((20 * 1024 * 1024))
+readonly MINIMUM_DOCKER_FREE_KIB=$((10 * 1024 * 1024))
 
-readonly SELF_PATH="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)/$(basename -- "${BASH_SOURCE[0]}")"
-readonly ORIGINAL_ARGUMENTS=("$@")
+SELF_PATH="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)/$(basename -- "${BASH_SOURCE[0]}")"
+readonly SELF_PATH
 readonly INSTALL_USER="${SUDO_USER:-${USER:-$(id -un)}}"
-readonly INSTALL_HOME="$(getent passwd "${INSTALL_USER}" | cut -d: -f6)"
+INSTALL_HOME="$(getent passwd "${INSTALL_USER}" | cut -d: -f6)"
+readonly INSTALL_HOME
 readonly RUNTIME_ROOT="${ALPR_BOOTSTRAP_RUNTIME_ROOT:-${XDG_DATA_HOME:-${INSTALL_HOME}/.local/share}/alpr-community/runtime}"
 readonly PRIVATE_NODE_LINK="${RUNTIME_ROOT}/node-current"
 
@@ -52,7 +54,7 @@ Usage:
 
 Options:
   --install-dir PATH   Destination checkout (defaults below the current user's home)
-  --release TAG        Exact stable vMAJOR.MINOR.PATCH tag (default: newest stable tag)
+  --release TAG        Exact stable vMAJOR.MINOR.PATCH tag (default: latest published stable release)
   --yes                Accept the bootstrap package-installation confirmation
   --dry-run            Show intended package/repository changes without applying them
   --help                Show this help
@@ -81,6 +83,13 @@ run() {
     return 0
   fi
   "$@"
+}
+
+download_file() {
+  local url="$1" output="$2"
+  curl --fail --silent --show-error --location \
+    --retry 3 --retry-all-errors --connect-timeout 15 --max-time 300 \
+    "${url}" --output "${output}"
 }
 
 parse_arguments() {
@@ -243,19 +252,20 @@ available_parent() {
 }
 
 check_resources() {
-  local cpu_count memory_kib free_kib target_parent filesystem
+  local cpu_count memory_kib memory_gib free_kib target_parent filesystem
   cpu_count="$(getconf _NPROCESSORS_ONLN 2>/dev/null || nproc 2>/dev/null || printf '0')"
   memory_kib="$(awk '/^MemTotal:/ { print $2 }' /proc/meminfo)"
   target_parent="$(available_parent "${INSTALL_DIRECTORY}")"
   free_kib="$(df -Pk "${target_parent}" | awk 'NR == 2 { print $4 }')"
   filesystem="$(stat -f -c '%T' "${target_parent}" 2>/dev/null || printf 'unknown')"
+  memory_gib="$(awk -v memory_kib="${memory_kib}" 'BEGIN { printf "%.1f", memory_kib / 1024 / 1024 }')"
 
   info "Platform: ${PRETTY_NAME:-${OS_ID} ${OS_VERSION_ID}} x86-64"
-  info "Resources: ${cpu_count} logical CPUs, $((memory_kib / 1024 / 1024)) GiB RAM, $((free_kib / 1024 / 1024)) GiB free"
+  info "Resources: ${cpu_count} logical CPUs, ${memory_gib} GiB usable RAM, $((free_kib / 1024 / 1024)) GiB free"
   info "Destination filesystem: ${filesystem} (${target_parent})"
 
   ((cpu_count >= MINIMUM_CPU_COUNT)) || fatal "At least ${MINIMUM_CPU_COUNT} logical CPUs are required"
-  ((memory_kib >= MINIMUM_MEMORY_KIB)) || fatal "At least 4 GiB RAM is required"
+  ((memory_kib >= MINIMUM_MEMORY_KIB)) || fatal "A host allocated at least 4 GiB RAM is required (Linux must report at least 3500 MiB usable)"
   ((free_kib >= MINIMUM_FREE_KIB)) || fatal "At least 20 GiB free space is required before application data"
   if ((cpu_count < RECOMMENDED_CPU_COUNT || memory_kib < RECOMMENDED_MEMORY_KIB)); then
     warning "4 vCPU and 8 GiB RAM are recommended for routine use and ReID processing"
@@ -309,6 +319,42 @@ postgres_clients_ready() {
   done
 }
 
+docker_environment_ready() {
+  local server_summary os_type architecture docker_root endpoint context root_parent free_kib
+  server_summary="$(docker info --format '{{.OSType}}|{{.Architecture}}|{{.DockerRootDir}}' 2>/dev/null)" \
+    || { warning "Docker server details could not be read"; return 1; }
+  IFS='|' read -r os_type architecture docker_root <<<"${server_summary}"
+  [[ "${os_type}" == linux ]] \
+    || { warning "Docker must use a Linux daemon; reported ${os_type:-unknown}"; return 1; }
+  case "${architecture}" in
+    x86_64|amd64) ;;
+    *) warning "Docker must use an x86-64 daemon; reported ${architecture:-unknown}"; return 1 ;;
+  esac
+  if [[ -n "${DOCKER_HOST:-}" ]]; then
+    endpoint="${DOCKER_HOST}"
+  else
+    context="$(docker context show 2>/dev/null)" \
+      || { warning "The active Docker context could not be identified"; return 1; }
+    endpoint="$(docker context inspect "${context}" \
+      --format '{{.Endpoints.docker.Host}}' 2>/dev/null)" \
+      || { warning "The active Docker endpoint could not be inspected"; return 1; }
+  fi
+  case "${endpoint}" in
+    unix:///*) ;;
+    *) warning "Docker uses a nonlocal endpoint (${endpoint:-unknown}); local bind mounts require a local Unix-socket daemon"; return 1 ;;
+  esac
+  [[ -n "${docker_root}" ]] \
+    || { warning "Docker did not report its data-root directory"; return 1; }
+  root_parent="$(available_parent "${docker_root}")"
+  free_kib="$(df -Pk "${root_parent}" | awk 'NR == 2 { print $4 }')"
+  [[ "${free_kib}" =~ ^[0-9]+$ ]] \
+    || { warning "Docker data-root free space could not be measured at ${root_parent}"; return 1; }
+  info "Docker environment: local Linux ${architecture} daemon, $((free_kib / 1024 / 1024)) GiB free at ${root_parent}"
+  ((free_kib >= MINIMUM_DOCKER_FREE_KIB)) \
+    || { warning "Docker's data-root needs at least 10 GiB free for the application image and build cache"; return 1; }
+  return 0
+}
+
 dependency_report() {
   local profile="$1" failures=0
   if command -v git >/dev/null 2>&1; then success "Git: $(git --version)"; else warning "Git is missing"; failures=$((failures + 1)); fi
@@ -317,11 +363,19 @@ dependency_report() {
   if command -v docker >/dev/null 2>&1; then success "Docker CLI: $(docker --version)"; else warning "Docker Engine is missing"; failures=$((failures + 1)); fi
   if command -v docker >/dev/null 2>&1 && docker compose version >/dev/null 2>&1; then success "Docker Compose: $(docker compose version)"; else warning "Docker Compose v2 is missing"; failures=$((failures + 1)); fi
   if command -v docker >/dev/null 2>&1 && docker buildx version >/dev/null 2>&1; then success "Docker Buildx: $(docker buildx version)"; else warning "Docker Buildx is missing"; failures=$((failures + 1)); fi
-  if command -v docker >/dev/null 2>&1 && docker info >/dev/null 2>&1; then success "Docker daemon is available to ${INSTALL_USER}"; else warning "The current account cannot use the Docker daemon"; failures=$((failures + 1)); fi
+  if command -v docker >/dev/null 2>&1 && docker info >/dev/null 2>&1; then
+    success "Docker daemon is available to ${INSTALL_USER}"
+    docker_environment_ready || failures=$((failures + 1))
+  else
+    warning "The current account cannot use the Docker daemon"
+    failures=$((failures + 1))
+  fi
   if command -v sudo >/dev/null 2>&1; then success "sudo is available"; else warning "sudo is missing"; failures=$((failures + 1)); fi
+  if command -v curl >/dev/null 2>&1; then success "curl is available"; else warning "curl is missing"; failures=$((failures + 1)); fi
   if [[ "${profile}" == "migration" ]]; then
     if postgres_clients_ready; then success "PostgreSQL 17 client utilities are ready at $(dirname -- "$(postgres_client_path psql)")"; else warning "PostgreSQL 17 psql, pg_dump, or pg_restore is missing"; failures=$((failures + 1)); fi
     if command -v rsync >/dev/null 2>&1; then success "rsync is ready for image storage"; else warning "rsync is missing"; failures=$((failures + 1)); fi
+    if command -v ssh >/dev/null 2>&1; then success "OpenSSH client is ready for remote migration sources"; else warning "OpenSSH client is missing"; failures=$((failures + 1)); fi
   fi
   return "${failures}"
 }
@@ -360,11 +414,23 @@ ensure_temporary_directory() {
 install_base_packages() {
   case "${PACKAGE_FAMILY}" in
     apt)
-      run sudo apt-get update
+      if ! run sudo apt-get update; then
+        local existing_sources
+        existing_sources="$({
+          apt_source_files_containing download.docker.com
+          apt_source_files_containing apt.postgresql.org
+        })"
+        if [[ -n "${existing_sources}" ]]; then
+          fatal "APT cannot refresh while existing Docker or PostgreSQL source definitions are present. Reconcile these files before retrying: ${existing_sources//$'\n'/, }"
+        fi
+        fatal "APT package indexes could not be refreshed"
+      fi
       run sudo apt-get install -y ca-certificates curl git gnupg xz-utils
       ;;
     rpm)
-      run sudo dnf -y install ca-certificates curl git gnupg2 tar xz dnf-plugins-core
+      local -a packages=(ca-certificates git gnupg2 tar xz dnf-plugins-core)
+      command -v curl >/dev/null 2>&1 || packages+=(curl)
+      run sudo dnf -y install "${packages[@]}"
       ;;
     *) fatal "No package adapter is selected for this host" ;;
   esac
@@ -382,8 +448,8 @@ install_private_node() {
     NODE_BINARY="${PRIVATE_NODE_LINK}/bin/node"
     return 0
   fi
-  curl --fail --silent --show-error --location "${base}/${archive}" --output "${TEMPORARY_DIRECTORY}/${archive}"
-  curl --fail --silent --show-error --location "${base}/SHASUMS256.txt" --output "${TEMPORARY_DIRECTORY}/SHASUMS256.txt"
+  download_file "${base}/${archive}" "${TEMPORARY_DIRECTORY}/${archive}"
+  download_file "${base}/SHASUMS256.txt" "${TEMPORARY_DIRECTORY}/SHASUMS256.txt"
   (cd "${TEMPORARY_DIRECTORY}" && grep -E "  ${archive}$" SHASUMS256.txt | sha256sum --check --strict -)
   mkdir -p "${RUNTIME_ROOT}"
   rm -rf -- "${RUNTIME_ROOT}/node-v${PINNED_NODE_VERSION}-linux-x64"
@@ -428,11 +494,44 @@ install_docker_plugins() {
   fi
 }
 
+apt_source_files_containing() {
+  local needle="$1" file
+  if [[ -r /etc/apt/sources.list ]] && grep -qF -- "${needle}" /etc/apt/sources.list; then
+    printf '%s\n' /etc/apt/sources.list
+  fi
+  if [[ -d /etc/apt/sources.list.d ]]; then
+    while IFS= read -r -d '' file; do
+      if grep -qF -- "${needle}" "${file}"; then printf '%s\n' "${file}"; fi
+    done < <(find /etc/apt/sources.list.d -maxdepth 1 -type f \
+      \( -name '*.list' -o -name '*.sources' \) -print0)
+  fi
+  return 0
+}
+
+reuse_existing_apt_repository() {
+  local label="$1" needle="$2" package="$3" existing candidate
+  existing="$(apt_source_files_containing "${needle}")"
+  [[ -n "${existing}" ]] || return 1
+  info "Reusing existing ${label} APT repository definition(s):"
+  printf '%s\n' "${existing}"
+  if ! sudo apt-get update; then
+    fatal "Existing ${label} APT repository configuration is not usable; reconcile the listed source files before retrying"
+  fi
+  candidate="$(apt-cache policy "${package}" | awk '/Candidate:/ { print $2; exit }')"
+  [[ -n "${candidate}" && "${candidate}" != "(none)" ]] \
+    || fatal "Existing ${label} APT repository does not provide ${package} for this host"
+  success "Existing ${label} APT repository is usable"
+}
+
 configure_apt_docker_repository() {
+  if reuse_existing_apt_repository "Docker" \
+    "download.docker.com/linux/${DOCKER_REPOSITORY_DISTRIBUTION}" docker-ce; then
+    return 0
+  fi
   ensure_temporary_directory
-  curl --fail --silent --show-error --location \
+  download_file \
     "https://download.docker.com/linux/${DOCKER_REPOSITORY_DISTRIBUTION}/gpg" \
-    --output "${TEMPORARY_DIRECTORY}/docker.asc"
+    "${TEMPORARY_DIRECTORY}/docker.asc"
   sudo install -m 0755 -d /etc/apt/keyrings
   sudo install -m 0644 "${TEMPORARY_DIRECTORY}/docker.asc" /etc/apt/keyrings/docker.asc
   cat >"${TEMPORARY_DIRECTORY}/docker.sources" <<EOF
@@ -497,18 +596,25 @@ refresh_docker_membership() {
     warning "A new login session may be required before Docker group access becomes active"
     return 0
   fi
-  getent group docker >/dev/null 2>&1 || fatal "Docker installation did not create the docker group"
+  if docker info >/dev/null 2>&1; then return 0; fi
+  getent group docker >/dev/null 2>&1 || fatal "Docker is installed but unavailable to ${INSTALL_USER}, and no docker group exists"
   if ! id -nG "${INSTALL_USER}" | tr ' ' '\n' | grep -Fxq docker; then
     run sudo usermod -aG docker "${INSTALL_USER}"
   fi
-  if docker info >/dev/null 2>&1; then return 0; fi
   if [[ "${ALPR_BOOTSTRAP_GROUP_REFRESHED:-}" != "1" ]]; then
+    local -a resume_arguments
+    case "${MODE}" in
+      new) resume_arguments=(--new) ;;
+      migration) resume_arguments=(--migrate) ;;
+      *) fatal "Cannot refresh Docker access for unresolved bootstrap mode: ${MODE}" ;;
+    esac
+    resume_arguments+=(--install-dir "${INSTALL_DIRECTORY}" --yes)
+    [[ -z "${REQUESTED_RELEASE}" ]] || resume_arguments+=(--release "${REQUESTED_RELEASE}")
     info "Refreshing group membership for ${INSTALL_USER}"
     exec sudo -u "${INSTALL_USER}" -H env \
       ALPR_BOOTSTRAP_GROUP_REFRESHED=1 \
       ALPR_BOOTSTRAP_RUNTIME_ROOT="${RUNTIME_ROOT}" \
-      ALPR_BOOTSTRAP_RELEASE="${REQUESTED_RELEASE}" \
-      bash "${SELF_PATH}" "${ORIGINAL_ARGUMENTS[@]}"
+      bash "${SELF_PATH}" "${resume_arguments[@]}"
   fi
   fatal "Docker is installed but ${INSTALL_USER} cannot access the daemon. Sign out and back in, then rerun the bootstrap"
 }
@@ -531,17 +637,19 @@ install_migration_tools() {
     return 0
   fi
   if [[ "${PACKAGE_FAMILY}" == "apt" ]]; then
-    curl --fail --silent --show-error --location \
-      https://www.postgresql.org/media/keys/ACCC4CF8.asc \
-      --output "${TEMPORARY_DIRECTORY}/postgresql.asc"
-    sudo install -m 0755 -d /usr/share/postgresql-common/pgdg
-    sudo install -m 0644 "${TEMPORARY_DIRECTORY}/postgresql.asc" \
-      /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc
-    printf '%s\n' \
-      "deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc] https://apt.postgresql.org/pub/repos/apt ${OS_CODENAME}-pgdg main" \
-      >"${TEMPORARY_DIRECTORY}/pgdg.list"
-    sudo install -m 0644 "${TEMPORARY_DIRECTORY}/pgdg.list" /etc/apt/sources.list.d/pgdg.list
-    sudo apt-get update
+    if ! reuse_existing_apt_repository "PostgreSQL" \
+      "apt.postgresql.org/pub/repos/apt" postgresql-client-17; then
+      download_file https://www.postgresql.org/media/keys/ACCC4CF8.asc \
+        "${TEMPORARY_DIRECTORY}/postgresql.asc"
+      sudo install -m 0755 -d /usr/share/postgresql-common/pgdg
+      sudo install -m 0644 "${TEMPORARY_DIRECTORY}/postgresql.asc" \
+        /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc
+      printf '%s\n' \
+        "deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc] https://apt.postgresql.org/pub/repos/apt ${OS_CODENAME}-pgdg main" \
+        >"${TEMPORARY_DIRECTORY}/pgdg.list"
+      sudo install -m 0644 "${TEMPORARY_DIRECTORY}/pgdg.list" /etc/apt/sources.list.d/pgdg.list
+      sudo apt-get update
+    fi
     sudo apt-get install -y postgresql-client-17
   else
     local repository_package
@@ -572,11 +680,26 @@ normalize_repository() {
 }
 
 latest_release() {
-  git ls-remote --tags --refs "${CANONICAL_REPOSITORY}" 'refs/tags/v*' \
-    | awk '{ sub("refs/tags/", "", $2); print $2 }' \
-    | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' \
-    | sort -V \
-    | tail -n 1
+  local effective_url tag
+  effective_url="$(curl --fail --silent --show-error --location \
+    --retry 3 --retry-all-errors --connect-timeout 15 --max-time 60 \
+    --output /dev/null --write-out '%{url_effective}' \
+    "${CANONICAL_REPOSITORY%.git}/releases/latest")"
+  tag="${effective_url##*/}"
+  [[ "${tag}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || return 1
+  printf '%s\n' "${tag}"
+}
+
+pin_published_release() {
+  local discovered
+  [[ -z "${REQUESTED_RELEASE}" ]] || return 0
+  if ! discovered="$(latest_release)"; then
+    fatal "Unable to discover the latest published stable Community release"
+  fi
+  [[ "${discovered}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] \
+    || fatal "Published Community release does not use an exact stable version tag"
+  REQUESTED_RELEASE="${discovered}"
+  success "Pinned published Community release ${REQUESTED_RELEASE}"
 }
 
 is_unmaterialized_bootstrap_checkout() {
@@ -588,6 +711,35 @@ is_unmaterialized_bootstrap_checkout() {
   [[ -z "$(git -C "${directory}" ls-files --stage)" ]] || return 1
 }
 
+validate_install_destination() {
+  local origin checkout_status
+  if [[ -e "${INSTALL_DIRECTORY}" && ! -d "${INSTALL_DIRECTORY}" ]]; then
+    fatal "Installation destination exists and is not a directory: ${INSTALL_DIRECTORY}"
+  fi
+  if [[ -d "${INSTALL_DIRECTORY}" && ! -d "${INSTALL_DIRECTORY}/.git" ]]; then
+    [[ -z "$(find "${INSTALL_DIRECTORY}" -mindepth 1 -maxdepth 1 -print -quit)" ]] \
+      || fatal "Installation destination is not empty: ${INSTALL_DIRECTORY}"
+    return 0
+  fi
+  [[ -d "${INSTALL_DIRECTORY}/.git" ]] || return 0
+  [[ ! -e "${INSTALL_DIRECTORY}/.env" ]] \
+    || fatal "An installed Community target already exists at ${INSTALL_DIRECTORY}"
+  command -v git >/dev/null 2>&1 || {
+    warning "Existing Git metadata will be validated after Git is installed"
+    return 0
+  }
+  origin="$(normalize_repository "$(git -C "${INSTALL_DIRECTORY}" remote get-url origin)")"
+  [[ "${origin}" == "${CANONICAL_REPOSITORY_ID}" ]] \
+    || fatal "Existing checkout does not use the canonical Community repository"
+  checkout_status="$(git -C "${INSTALL_DIRECTORY}" status --porcelain --untracked-files=normal)"
+  if [[ -n "${checkout_status}" ]]; then
+    if is_unmaterialized_bootstrap_checkout "${INSTALL_DIRECTORY}"; then
+      fatal "The destination has an ambiguous empty-index checkout left by bootstrap v3 or by staged deletions. Review it, move the entire directory aside, and rerun; bootstrap will not overwrite it automatically"
+    fi
+    fatal "Existing Community checkout is not clean"
+  fi
+}
+
 prepare_checkout() {
   local target_tag origin package_version checkout_status
   if [[ -n "${REQUESTED_RELEASE}" ]]; then
@@ -595,17 +747,13 @@ prepare_checkout() {
   elif [[ "${DRY_RUN}" == true ]] && ! command -v git >/dev/null 2>&1; then
     target_tag="the newest stable vMAJOR.MINOR.PATCH tag"
   else
-    target_tag="$(latest_release)"
+    if ! target_tag="$(latest_release)"; then
+      fatal "Unable to discover the latest published stable Community release"
+    fi
     [[ "${target_tag}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || fatal "Unable to discover an exact stable Community release"
   fi
 
-  if [[ -e "${INSTALL_DIRECTORY}" && ! -d "${INSTALL_DIRECTORY}" ]]; then
-    fatal "Installation destination exists and is not a directory: ${INSTALL_DIRECTORY}"
-  fi
-  if [[ -d "${INSTALL_DIRECTORY}" && ! -d "${INSTALL_DIRECTORY}/.git" ]]; then
-    [[ -z "$(find "${INSTALL_DIRECTORY}" -mindepth 1 -maxdepth 1 -print -quit)" ]] \
-      || fatal "Installation destination is not empty: ${INSTALL_DIRECTORY}"
-  fi
+  validate_install_destination
   if [[ ! -d "${INSTALL_DIRECTORY}/.git" ]]; then
     run git clone --filter=blob:none "${CANONICAL_REPOSITORY}" "${INSTALL_DIRECTORY}"
   fi
@@ -614,13 +762,7 @@ prepare_checkout() {
   origin="$(normalize_repository "$(git -C "${INSTALL_DIRECTORY}" remote get-url origin)")"
   [[ "${origin}" == "${CANONICAL_REPOSITORY_ID}" ]] || fatal "Existing checkout does not use the canonical Community repository"
   checkout_status="$(git -C "${INSTALL_DIRECTORY}" status --porcelain --untracked-files=normal)"
-  if [[ -n "${checkout_status}" ]]; then
-    if is_unmaterialized_bootstrap_checkout "${INSTALL_DIRECTORY}"; then
-      warning "Recovering an incomplete bootstrap checkout that stopped before its first file checkout"
-    else
-      fatal "Existing Community checkout is not clean"
-    fi
-  fi
+  [[ -z "${checkout_status}" ]] || fatal "Existing Community checkout is not clean"
   [[ ! -e "${INSTALL_DIRECTORY}/.env" ]] || fatal "An installed Community target already exists at ${INSTALL_DIRECTORY}"
 
   git -C "${INSTALL_DIRECTORY}" fetch --force origin \
@@ -665,8 +807,10 @@ install_prerequisites() {
   install_base_packages
   check_network
   install_private_node
+  if [[ "${DRY_RUN}" == false ]]; then pin_published_release; fi
   install_docker
   refresh_docker_membership
+  docker_environment_ready || fatal "Docker is available but does not meet the local Linux daemon requirements"
   if [[ "${MODE}" == "migration" ]]; then install_migration_tools; fi
   if [[ "${DRY_RUN}" == false ]]; then
     dependency_report "${MODE}" || fatal "Installed prerequisites did not pass validation"
@@ -675,6 +819,8 @@ install_prerequisites() {
 
 main() {
   parse_arguments "$@"
+  [[ -z "${REQUESTED_RELEASE}" || "${REQUESTED_RELEASE}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] \
+    || fatal "ALPR_BOOTSTRAP_RELEASE and --release require an exact stable vMAJOR.MINOR.PATCH tag"
   [[ "$(id -u)" -ne 0 ]] || fatal "Run the bootstrap as the normal account that will own ALPR, not as root"
   [[ -n "${INSTALL_HOME}" && -d "${INSTALL_HOME}" ]] || fatal "Unable to resolve the home directory for ${INSTALL_USER}"
   [[ "${RUNTIME_ROOT}" == /* ]] || fatal "The private Node.js runtime path must be absolute"
@@ -694,6 +840,7 @@ main() {
     return 0
   fi
 
+  validate_install_destination
   install_prerequisites
   prepare_checkout
   [[ "${DRY_RUN}" == false ]] || return 0
@@ -708,10 +855,12 @@ Migration preparation is complete.
 
 Community target checkout: ${INSTALL_DIRECTORY}
 
-The source installation has not been changed. Continue with:
+No source ALPR database, storage, container, or service was changed. This target
+host may have received the prerequisite packages and repository configuration
+described above. Continue with:
 
   cd "${INSTALL_DIRECTORY}"
-  ./alpr-community migrate wizard
+  ALPR_NODE_BINARY="${NODE_BINARY}" ./alpr-community migrate wizard
 
 The migration wizard creates and validates its own empty PostgreSQL 17 target.
 It will ask for the source database, image-storage location, and a new Community
