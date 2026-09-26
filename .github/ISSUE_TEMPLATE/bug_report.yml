@@ -16,7 +16,7 @@ body:
     attributes:
       label: ALPR Community version
       description: Find this under Settings → Software Updates or in the release used to install or update the system.
-      placeholder: v0.1.34
+      placeholder: v0.1.35
     validations:
       required: true
 

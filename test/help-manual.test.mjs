@@ -198,6 +198,91 @@ test("Community releases include public deployment and roadmap guidance", async 
   assert.doesNotMatch(`${readme}\n${runbook}\n${roadmap}`, /personal-deployment\.md/);
 });
 
+test("public installation instructions stay synchronized with the Linux bootstrap matrix", async () => {
+  const patternFor = (value) => new RegExp(
+    value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&").replaceAll(" ", "\\s+"),
+    "i"
+  );
+  const [
+    readme,
+    bootstrap,
+    compatibility,
+    install,
+    migration,
+    deployment,
+    updates,
+    roadmap,
+    issueForm,
+    packageSource,
+  ] = await Promise.all([
+    source("README.md"),
+    source("docs/BOOTSTRAP.md"),
+    source("docs/COMPATIBILITY.md"),
+    source("docs/INSTALL.md"),
+    source("docs/MIGRATION_GUIDE.md"),
+    source("docs/DEPLOYMENT.md"),
+    source("docs/UPDATES.md"),
+    source("docs/COMMUNITY_PRODUCT_ROADMAP.md"),
+    source(".github/ISSUE_TEMPLATE/bug_report.yml"),
+    source("package.json"),
+  ]);
+
+  const distributionNames = [
+    "Ubuntu",
+    "Debian",
+    "RHEL",
+    "Rocky Linux",
+    "AlmaLinux",
+    "CentOS Stream",
+    "Fedora",
+  ];
+  for (const [label, text] of [
+    ["README", readme],
+    ["fresh-install guide", install],
+    ["deployment guide", deployment],
+    ["update guide", updates],
+    ["roadmap", roadmap],
+  ]) {
+    for (const distribution of distributionNames) {
+      assert.match(text, patternFor(distribution), `${label} is missing ${distribution}`);
+    }
+  }
+
+  for (const exactRelease of [
+    "Ubuntu 22.04",
+    "24.04",
+    "26.04",
+    "Debian 12",
+    "13",
+    "CentOS Stream 9",
+    "Stream 10",
+    "Fedora 43",
+    "44",
+  ]) {
+    assert.match(
+      `${bootstrap}\n${compatibility}`,
+      patternFor(exactRelease),
+      `the exact host matrix is missing ${exactRelease}`
+    );
+  }
+
+  assert.match(migration, /Host compatibility/i);
+  assert.match(migration, /Prepare migration from an existing ALPR installation/i);
+  assert.match(issueForm, /Supported Ubuntu x86-64 release/i);
+  assert.match(issueForm, /Supported Debian x86-64 release/i);
+  assert.match(issueForm, /Supported RHEL, Rocky Linux, or AlmaLinux x86-64 release/i);
+  assert.match(issueForm, /Supported CentOS Stream or Fedora x86-64 release/i);
+
+  const releaseVersion = JSON.parse(packageSource).version;
+  for (const [label, text] of [
+    ["fresh-install guide", install],
+    ["update guide", updates],
+    ["bug-report form", issueForm],
+  ]) {
+    assert.match(text, new RegExp(`v${releaseVersion.replaceAll(".", "\\.")}`), `${label} has a stale release example`);
+  }
+});
+
 test("dashboard places Help immediately after Roadmap", async () => {
   const dashboard = await source("app/dashboard/DashboardMetrics.jsx");
   const roadmap = dashboard.indexOf('label="Community product roadmap"');

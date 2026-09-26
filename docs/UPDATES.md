@@ -1,9 +1,12 @@
 # Updating ALPR Database Community
 
-The Community host updater is for standard Linux systems that run the bundled
-Docker Compose stack. Ubuntu, Debian, Fedora, other Docker-capable Linux
-distributions, and Unraid are examples. Unraid is not required. The updater
-runs on the host and the application container never receives the Docker
+The Community host updater is for standard x86-64 Linux systems that run the
+bundled Docker Compose stack. The automatic bootstrap supports the maintained
+Ubuntu, Debian, RHEL, Rocky Linux, AlmaLinux, CentOS Stream, and Fedora
+releases listed in [Host compatibility](COMPATIBILITY.md). Other Docker-capable
+x86-64 Linux distributions can use the documented manual prerequisite path.
+Unraid is only one possible host and is not required. The updater runs on the
+Linux host or guest, and the application container never receives the Docker
 socket or unrestricted host access.
 
 Linux virtual machines are supported regardless of whether the VM runs on
@@ -41,7 +44,7 @@ shown on the GitHub Releases page, rather than deploying moving `main`:
 ```bash
 git clone https://github.com/prsmith777/ALPR-Database-Community.git
 cd ALPR-Database-Community
-git checkout --detach v0.1.34
+git checkout --detach v0.1.35
 ./alpr-community install
 ```
 
@@ -116,7 +119,7 @@ The equivalent individual commands are:
 Run `./alpr-community check` to discover the newest stable release and
 `./alpr-community update` to select it through the guided menu. A retained
 exact-v0.1.23 installation can use
-`./alpr-community update --to v0.1.34` to select this release explicitly. The
+`./alpr-community update --to v0.1.35` to select this release explicitly. The
 updater refuses `latest`, branches, prereleases, tags that are not on canonical
 `origin/main`, and a tag whose package version does not match. It fetches
 canonical `main` explicitly, so verification also works when the installation
