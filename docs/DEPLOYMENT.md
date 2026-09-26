@@ -1,9 +1,10 @@
 # Community deployment
 
 The Community edition is intended for self-hosted x86-64 Linux systems and
-Linux virtual machines. On Ubuntu Server 24.04, the verified release bootstrap
-installs Git, Docker Engine, Compose, Buildx, and private Node.js 24, then runs
-`./alpr-community install` for a
+Linux virtual machines. The verified release bootstrap supports an explicit
+matrix of maintained Ubuntu, Debian, RHEL, Rocky Linux, AlmaLinux, CentOS
+Stream, and Fedora releases. It installs Git, Docker Engine, Compose, Buildx,
+and private Node.js 24, then runs `./alpr-community install` for a
 new empty installation. The guided installer verifies the canonical tagged
 source, generates the database password, collects the administrator password
 without echoing it, builds a commit-qualified image, and proves both health and
@@ -78,7 +79,8 @@ Keep the complete source installation unchanged until the imported database,
 application, and image storage have all passed validation. Rollback depends on
 retaining that source and the verified logical dump.
 
-On a separate supported Linux target, use the automated resumable wizard:
+On a separate Linux target from the supported automatic matrix, use the
+automated resumable wizard:
 
 ```text
 ./alpr-community migrate wizard

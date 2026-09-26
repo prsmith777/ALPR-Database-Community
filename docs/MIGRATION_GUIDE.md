@@ -23,11 +23,13 @@ v0.1.21, and v0.1.22 sources on PostgreSQL 13 and 17.
 
 ## Recommended target
 
-Use a separate Ubuntu Server 24.04 x86-64 host or VM. On a new target, download
-and verify the release bootstrap as described in [Automated Community
-bootstrap](BOOTSTRAP.md), then choose **Prepare migration from an existing ALPR
-installation**. It installs Git, Docker Engine, Compose, Buildx, private Node.js
-24, PostgreSQL 17 clients, `rsync`, and OpenSSH and checks out an exact stable
+Use a separate host or VM from the automatic x86-64 Linux matrix in
+[Host compatibility](COMPATIBILITY.md); Ubuntu Server 24.04 LTS remains the
+simplest recommended target. Download and verify the release bootstrap as
+described in [Automated Community bootstrap](BOOTSTRAP.md), then choose
+**Prepare migration from an existing ALPR installation**. It selects the APT
+or RPM adapter, installs Git, Docker Engine, Compose, Buildx, private Node.js
+24, PostgreSQL 17 clients, `rsync`, and OpenSSH, and checks out an exact stable
 release.
 
 The target needs access to the source PostgreSQL endpoint. If the old database
