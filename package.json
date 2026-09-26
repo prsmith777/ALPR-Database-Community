@@ -67,7 +67,7 @@
     "input-otp": "^1.4.1",
     "iron-session": "^8.0.4",
     "jimp": "1.6.1",
-    "jose": "^5.9.6",
+    "jose": "^6.2.12",
     "js-yaml": "4.3.2",
     "lodash": "4.18.1",
     "lottie-react": "^2.4.1",
