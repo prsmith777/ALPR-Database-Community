@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
-readonly BOOTSTRAP_VERSION="5"
+readonly BOOTSTRAP_VERSION="6"
 readonly CANONICAL_REPOSITORY="https://github.com/prsmith777/ALPR-Database-Community.git"
 readonly CANONICAL_REPOSITORY_ID="github.com/prsmith777/ALPR-Database-Community"
 readonly PINNED_NODE_VERSION="24.21.0"
@@ -41,6 +41,7 @@ info() { printf '\033[1;34m[INFO]\033[0m %s\n' "$*"; }
 success() { printf '\033[1;32m[OK]\033[0m %s\n' "$*"; }
 warning() { printf '\033[1;33m[WARN]\033[0m %s\n' "$*"; }
 fatal() { printf '\033[1;31m[ERROR]\033[0m %s\n' "$*" >&2; exit 1; }
+stage() { printf '\n\033[1m%s\033[0m\n' "$*"; }
 
 usage() {
   cat <<'EOF'
@@ -124,27 +125,41 @@ parse_arguments() {
 }
 
 interactive_menu() {
-  cat <<'EOF'
+  local selection profile_selection
+  while true; do
+    cat <<'EOF'
 
 ALPR Database Community Setup
 
-  1. Install a new ALPR Community system
-  2. Prepare migration from an existing ALPR installation
-  3. Check system requirements
+  1. New installation
+     Choose this for a new, empty ALPR system.
+
+  2. Migrate an existing ALPR system
+     Choose this only when moving an existing database and image library.
+
+  3. Check this computer without changing it
+
   4. Exit
 EOF
-  read -r -p "Select an option [1-4]: " selection
-  case "${selection}" in
-    1) MODE="new" ;;
-    2) MODE="migration" ;;
-    3)
-      MODE="check"
-      read -r -p "Check for a new installation or migration? [new/migration]: " CHECK_PROFILE
-      [[ "${CHECK_PROFILE}" == "new" || "${CHECK_PROFILE}" == "migration" ]] || fatal "Enter new or migration"
-      ;;
-    4) exit 0 ;;
-    *) fatal "Select a number from 1 through 4" ;;
-  esac
+    read -r -p "Enter 1, 2, 3, or 4: " selection || fatal "No menu selection was received"
+    case "${selection}" in
+      1) MODE="new"; return 0 ;;
+      2) MODE="migration"; return 0 ;;
+      3)
+        while true; do
+          printf '\nCheck requirements for:\n  1. A new installation\n  2. A migration target\n'
+          read -r -p "Enter 1 or 2: " profile_selection || fatal "No requirement-check selection was received"
+          case "${profile_selection}" in
+            1) MODE="check"; CHECK_PROFILE="new"; return 0 ;;
+            2) MODE="check"; CHECK_PROFILE="migration"; return 0 ;;
+            *) warning "Please enter 1 or 2." ;;
+          esac
+        done
+        ;;
+      4) exit 0 ;;
+      *) warning "Please enter a number from 1 through 4." ;;
+    esac
+  done
 }
 
 load_os_release() {
@@ -398,10 +413,30 @@ check_network() {
 
 confirm_changes() {
   [[ "${ASSUME_YES}" == true ]] && return 0
-  printf '\nThe bootstrap may install operating-system packages and configure Docker.\n'
-  printf 'It will not remove existing Docker packages or overwrite an ALPR installation.\n\n'
-  read -r -p "Continue? Type yes: " answer
-  [[ "${answer}" == "yes" ]] || fatal "Bootstrap cancelled"
+  local answer mode_label release_label
+  if [[ "${MODE}" == "new" ]]; then
+    mode_label="New, empty ALPR Community installation"
+  else
+    mode_label="Separate target for migrating an existing ALPR system"
+  fi
+  release_label="${REQUESTED_RELEASE:-latest published stable release}"
+  cat <<EOF
+
+Ready to prepare this computer
+
+  Setup:   ${mode_label}
+  Release: ${release_label}
+  Folder:  ${INSTALL_DIRECTORY}
+
+The bootstrap may install required operating-system packages and configure
+Docker. It will not remove existing Docker packages, overwrite an ALPR
+installation, or change a migration source system.
+EOF
+  read -r -p "Continue? [y/N]: " answer || fatal "No confirmation was received"
+  case "${answer,,}" in
+    y|yes) ;;
+    *) fatal "Bootstrap cancelled; no ALPR installation was created" ;;
+  esac
 }
 
 ensure_temporary_directory() {
@@ -836,19 +871,26 @@ main() {
 
   info "ALPR Community bootstrap v${BOOTSTRAP_VERSION}"
   if [[ "${MODE}" == "check" ]]; then
+    stage "Checking this computer (no changes will be made)"
     run_compatibility_check "${CHECK_PROFILE}"
     return 0
   fi
 
+  stage "Step 1 of 4: Checking this computer"
   validate_install_destination
+
+  stage "Step 2 of 4: Installing and validating prerequisites"
   install_prerequisites
+
+  stage "Step 3 of 4: Preparing the verified Community release"
   prepare_checkout
   [[ "${DRY_RUN}" == false ]] || return 0
 
   if [[ "${MODE}" == "new" ]]; then
-    info "Starting the guarded fresh installer"
+    stage "Step 4 of 4: Starting the guided ALPR installer"
     (cd "${INSTALL_DIRECTORY}" && ALPR_NODE_BINARY="${NODE_BINARY}" ./alpr-community install)
   else
+    stage "Bootstrap preparation finished"
     cat <<EOF
 
 Migration preparation is complete.

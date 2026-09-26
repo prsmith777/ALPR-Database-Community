@@ -102,6 +102,7 @@ function testOptions(context, operations = {}) {
     runner,
     migrationRunner,
     logger: memoryLogger(),
+    serverAddresses: ["192.0.2.40"],
     clock: fixedClock(),
     prepareTarget: async (state, installerContext, configuration, databasePassword) => {
       assert.equal(installerContext.release.tag, "v0.1.31");
@@ -225,6 +226,7 @@ test("wizard prepares once, stops for source quiescence, then resumes every auto
     );
     assert.deepEqual(options.migrationCommands, ["preflight", "dump", "restore", "validate"]);
     assert.equal(ready.steps.application.result.outboundNetwork, "isolated");
+    assert.match(options.logger.messages.join("\n"), /http:\/\/192\.0\.2\.40:3100/);
 
     const saved = await readFile(context.statePath, "utf8");
     assert.doesNotMatch(saved, /source-password-sentinel|administrator-password-sentinel/);

@@ -1,6 +1,6 @@
 # Community product roadmap
 
-Last reviewed: September 25, 2026
+Last reviewed: September 26, 2026
 
 This roadmap distinguishes capabilities that are available now from work that
 may be considered later. It is not a promise of dates. GitHub Releases and the
@@ -86,8 +86,9 @@ credentials and enables them. They do not require extra ALPR host packages.
   listed releases have adapter-routing coverage but are not represented as
   complete clean-host installations;
 - guided fresh installation with collision checks, generated database
-  credentials, a user-selected administrator password, empty-database proof,
-  persistent storage, and narrow failed-install recovery;
+  credentials, a user-selected administrator password, forgiving plain-language
+  prompts, detected browser addresses, empty-database proof, persistent storage,
+  and narrow failed-install recovery;
 - bundled OpenVINO, ReID code, and pinned models with real CPU inference checks
   on each final image;
 - an automated resumable migration wizard that creates a separate PostgreSQL

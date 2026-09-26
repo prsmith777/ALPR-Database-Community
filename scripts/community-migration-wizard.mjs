@@ -730,7 +730,13 @@ async function advance(environment = process.env, options = {}) {
     reason: "Sign in, inspect totals/search/tags/history, and open representative images before acceptance.",
   };
   await saveState(statePath, state, options.clock);
-  logger.log(`Automated migration checks passed. Open http://SERVER_ADDRESS:${state.configuration.appPort}`);
+  const serverAddresses = options.serverAddresses || installer.discoverServerAddresses();
+  logger.log("Automated migration checks passed. Open the review target in a browser:");
+  if (serverAddresses.length > 0) {
+    for (const address of serverAddresses) logger.log(`  http://${address}:${state.configuration.appPort}`);
+  } else {
+    logger.log(`  http://SERVER_IP:${state.configuration.appPort}`);
+  }
   logger.log("The validation target has no outbound network access, so integrations cannot send while you review it.");
   logger.log(`After browser review: ALPR_MIGRATION_ACCEPTANCE=${ACCEPTANCE_ACKNOWLEDGEMENT} ./alpr-community migrate wizard accept`);
   return state;

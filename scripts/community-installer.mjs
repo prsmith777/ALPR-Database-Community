@@ -19,6 +19,7 @@ import { spawnSync } from "node:child_process";
 import { Writable } from "node:stream";
 import { fileURLToPath } from "node:url";
 import { createServer } from "node:net";
+import { networkInterfaces } from "node:os";
 
 import { buildRuntimeImage } from "./community-image-builder.mjs";
 
@@ -329,6 +330,38 @@ async function promptHidden(question, input = process.stdin, output = process.st
   }
 }
 
+async function promptValidated(question, defaultValue, validator, input = process.stdin, output = process.stdout) {
+  while (true) {
+    const answer = await promptText(question, defaultValue, input, output);
+    try {
+      return validator(answer);
+    } catch (error) {
+      output.write(`Please try again: ${error.message}.\n`);
+    }
+  }
+}
+
+function defaultTimeZone() {
+  try {
+    return validateTimeZone(Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC");
+  } catch {
+    return "UTC";
+  }
+}
+
+function discoverServerAddresses(interfaces = networkInterfaces()) {
+  const addresses = [];
+  for (const [name, entries] of Object.entries(interfaces || {})) {
+    if (/^(?:lo|docker\d*|br-|veth|virbr)/i.test(name)) continue;
+    for (const entry of entries || []) {
+      if (entry.internal || !["IPv4", 4].includes(entry.family)) continue;
+      if (!entry.address || entry.address.startsWith("169.254.")) continue;
+      addresses.push(entry.address);
+    }
+  }
+  return [...new Set(addresses)];
+}
+
 async function collectConfiguration(environment, root, options = {}) {
   const runtimeUid = Number(options.runtimeUid ?? process.getuid?.() ?? 1000);
   const runtimeGid = Number(options.runtimeGid ?? process.getgid?.() ?? 1000);
@@ -349,15 +382,27 @@ async function collectConfiguration(environment, root, options = {}) {
   }
 
   const interactive = options.interactive ?? Boolean((options.input || process.stdin).isTTY && (options.output || process.stdout).isTTY);
+  const input = options.input || process.stdin;
+  const output = options.output || process.stdout;
   let administratorPassword = environment.ALPR_INSTALL_ADMIN_PASSWORD;
   if (!administratorPassword && interactive) {
-    administratorPassword = await promptHidden(
-      "Choose an administrator password (12-128 characters)",
-      options.input,
-      options.output
-    );
-    const confirmation = await promptHidden("Confirm administrator password", options.input, options.output);
-    if (administratorPassword !== confirmation) throw new Error("administrator password confirmation did not match");
+    output.write("\nALPR Community setup\n");
+    output.write("Press Enter to accept a value shown in brackets. Password input is hidden.\n\n");
+    while (!administratorPassword) {
+      const candidate = await promptHidden("Choose an administrator password (12-128 characters)", input, output);
+      try {
+        validateAdministratorPassword(candidate);
+      } catch (error) {
+        output.write(`Please try again: ${error.message}.\n`);
+        continue;
+      }
+      const confirmation = await promptHidden("Enter that password again", input, output);
+      if (candidate !== confirmation) {
+        output.write("The passwords did not match. Please try again.\n");
+        continue;
+      }
+      administratorPassword = candidate;
+    }
   }
   if (!administratorPassword) {
     throw new Error("set ALPR_INSTALL_ADMIN_PASSWORD for a non-interactive installation");
@@ -367,14 +412,29 @@ async function collectConfiguration(environment, root, options = {}) {
   const defaultAppPort = String(options.defaultAppPort || "3000");
   const defaultDbPort = String(options.defaultDbPort || "5432");
   const timeZone = value(environment, "ALPR_INSTALL_TIMEZONE") || (interactive
-    ? await promptText("IANA time zone", "UTC", options.input, options.output)
+    ? await promptValidated("Time zone", defaultTimeZone(), validateTimeZone, input, output)
     : "UTC");
   const appPort = value(environment, "ALPR_INSTALL_APP_PORT") || (interactive
-    ? await promptText("Application port", defaultAppPort, options.input, options.output)
+    ? await promptValidated("Web application port", defaultAppPort, (answer) => validatePort(answer, "web application port"), input, output)
     : defaultAppPort);
-  const dbPort = value(environment, "ALPR_INSTALL_DB_PORT") || (interactive
-    ? await promptText("Local PostgreSQL port", defaultDbPort, options.input, options.output)
-    : defaultDbPort);
+  let dbPort = value(environment, "ALPR_INSTALL_DB_PORT");
+  if (!dbPort && interactive) {
+    while (!dbPort) {
+      const candidate = await promptValidated(
+        "Internal PostgreSQL port",
+        defaultDbPort,
+        (answer) => validatePort(answer, "PostgreSQL port"),
+        input,
+        output
+      );
+      if (Number(candidate) === Number(appPort)) {
+        output.write("The PostgreSQL port must be different from the web application port. Please try again.\n");
+      } else {
+        dbPort = candidate;
+      }
+    }
+  }
+  if (!dbPort) dbPort = defaultDbPort;
   return {
     administratorPassword: validateAdministratorPassword(administratorPassword),
     timeZone: validateTimeZone(timeZone),
@@ -395,13 +455,19 @@ async function confirmInstallation(environment, release, configuration, options 
     }
     return;
   }
+  const output = options.output || process.stdout;
+  output.write(`\nReady to install\n\n`);
+  output.write(`  Release:       ${release.tag}\n`);
+  output.write(`  Web port:      ${configuration.appPort}\n`);
+  output.write(`  Time zone:     ${configuration.timeZone}\n`);
+  output.write(`  Database:      New and empty (no sample data)\n\n`);
   const answer = await promptText(
-    `Install empty ALPR Community ${release.tag} on port ${configuration.appPort}? Type yes to continue`,
-    "no",
+    "Start the installation now? [y/N]",
+    undefined,
     options.input,
     options.output
   );
-  if (answer.toLowerCase() !== "yes") throw new Error("installation cancelled");
+  if (!["y", "yes"].includes(answer.toLowerCase())) throw new Error("installation cancelled; no ALPR installation was created");
 }
 
 async function preflight(environment = process.env, options = {}) {
@@ -703,10 +769,22 @@ async function installCommunity(environment = process.env, options = {}) {
     state.validation = { health: health?.status || "unknown", freshDatabase: true };
     await saveState(context.root, state, options.clock);
     logger.log(`ALPR Community ${context.release.tag} installed successfully.`);
-    logger.log(`Open http://SERVER_ADDRESS:${configuration.appPort}`);
-    logger.log("Leave the username blank and use the administrator password you chose.");
+    const serverAddresses = options.serverAddresses || discoverServerAddresses();
+    logger.log("");
+    logger.log("Next steps");
+    logger.log("1. Open ALPR in a browser:");
+    if (serverAddresses.length > 0) {
+      for (const address of serverAddresses) logger.log(`  http://${address}:${configuration.appPort}`);
+    } else {
+      logger.log(`  http://SERVER_IP:${configuration.appPort}`);
+    }
+    logger.log("2. Leave the username blank and use the administrator password you chose.");
     logger.log("The generated database password is stored only in the private .env file; you do not need to enter it.");
-    logger.log("To enable Settings > Software Updates, run ./alpr-community agent install as this same host account.");
+    logger.log("3. Create a named administrator from Settings after signing in.");
+    logger.log("4. To enable Settings > Software Updates on a systemd host, run:");
+    logger.log(`   cd ${JSON.stringify(context.root)}`);
+    logger.log("   ./alpr-community agent install");
+    logger.log('   sudo loginctl enable-linger "$USER"');
     return state;
   } catch (error) {
     state.status = "failed";
@@ -792,7 +870,9 @@ export const communityInstallerInternals = Object.freeze({
   collectConfiguration,
   compose,
   defaultHealthCheck,
+  defaultTimeZone,
   defaultRunner,
+  discoverServerAddresses,
   exactRelease,
   exists,
   imageForRelease,
