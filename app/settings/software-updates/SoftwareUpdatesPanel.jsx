@@ -19,6 +19,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input";
 import { confirmationForCommunityUpdate } from "@/lib/community-update-shape.mjs";
 import {
+  availableReleaseLabel,
   shouldReloadForRunningRelease,
   softwareUpdateReloadUrl,
 } from "@/lib/software-update-browser.mjs";
@@ -30,6 +31,9 @@ const MANUAL_CHECKS = Object.freeze([
   "Plate and vehicle images display.",
   "ALPR remained healthy after a restart.",
 ]);
+
+const COMMUNITY_RELEASE_BASE_URL = "https://github.com/prsmith777/ALPR-Database-Community/releases/tag/";
+const COMMUNITY_UPDATE_GUIDE_URL = "https://github.com/prsmith777/ALPR-Database-Community/blob/main/docs/UPDATES.md";
 
 const ROLLBACK_STATES = new Set([
   "applying",
@@ -140,6 +144,11 @@ export default function SoftwareUpdatesPanel({ initialSnapshot, release }) {
 
   const state = snapshot.state;
   const target = state?.targetTag || null;
+  const available = availableReleaseLabel(state);
+  const releaseTag = target || state?.currentTag || `v${release.version}`;
+  const lastCheckedAt = state?.operation === "check" && state?.completedAt
+    ? state.completedAt
+    : null;
   const disabled = pending || snapshot.busy || !snapshot.agent.online;
   const updateAvailable = state?.operation === "check" && state?.phase === "succeeded" && Boolean(target);
   const canAccept = state?.updaterStatus === "ready-for-acceptance";
@@ -168,10 +177,18 @@ export default function SoftwareUpdatesPanel({ initialSnapshot, release }) {
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
-          <div className="grid gap-3 sm:grid-cols-3">
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
             <div className="rounded-md border p-3"><p className="text-xs text-muted-foreground">Installed</p><p className="mt-1 font-mono font-semibold">v{release.version}</p></div>
-            <div className="rounded-md border p-3"><p className="text-xs text-muted-foreground">Available</p><p className="mt-1 font-mono font-semibold">{target || "Check required"}</p></div>
+            <div className="rounded-md border p-3"><p className="text-xs text-muted-foreground">Latest stable</p><p className="mt-1 font-mono font-semibold">{available}</p></div>
+            <div className="rounded-md border p-3"><p className="text-xs text-muted-foreground">Last checked</p><p className="mt-1 text-sm font-medium">{formatDate(lastCheckedAt)}</p></div>
             <div className="rounded-md border p-3"><p className="text-xs text-muted-foreground">Agent last seen</p><p className="mt-1 text-sm font-medium">{formatDate(snapshot.agent.lastSeenAt)}</p></div>
+          </div>
+          <div className="rounded-md border bg-muted/30 p-4 text-sm text-muted-foreground">
+            <p>Updates run only when an administrator starts them. Checking for updates does not install or restart anything.</p>
+            <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1">
+              <a className="font-medium text-primary underline-offset-4 hover:underline" href={`${COMMUNITY_RELEASE_BASE_URL}${releaseTag}`} target="_blank" rel="noreferrer">View {releaseTag} release notes</a>
+              <a className="font-medium text-primary underline-offset-4 hover:underline" href={COMMUNITY_UPDATE_GUIDE_URL} target="_blank" rel="noreferrer">Open the Community update guide</a>
+            </div>
           </div>
           {!snapshot.agent.online ? (
             <div className="rounded-md border border-amber-500/40 bg-amber-500/10 p-4 text-sm">
@@ -213,7 +230,7 @@ export default function SoftwareUpdatesPanel({ initialSnapshot, release }) {
 
       {updateAvailable ? (
         <Card>
-          <CardHeader><CardTitle>Install {target}</CardTitle><CardDescription>A verified database/configuration backup is created before the exact tagged image is built and installed.</CardDescription></CardHeader>
+          <CardHeader><CardTitle>Install {target}</CardTitle><CardDescription>A verified database/configuration backup is created before the exact tagged image is built, installed, restarted, and validated. After acceptance, one rollback generation is retained for the configured retention period.</CardDescription></CardHeader>
           <CardContent>
             <ConfirmationAction title="Install available update" description="ALPR will be briefly unavailable while the host backs up, migrates, restarts, and validates it." operation="update" target={target} buttonLabel={`Install ${target}`} disabled={disabled} onSubmit={submit} />
           </CardContent>

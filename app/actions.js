@@ -125,6 +125,7 @@ import { redirect } from "next/navigation";
 import crypto from "crypto";
 import { getConfig, saveConfig } from "@/lib/settings";
 import {
+  environmentManagedSettings,
   resolveStoredSecretUpdate,
   sanitizeSettingsForClient,
 } from "@/lib/settings-client.mjs";
@@ -1534,7 +1535,7 @@ export async function logoutAction() {
 export async function getSettings() {
   await requirePermission("system.manage_settings");
   const config = await getConfig();
-  return sanitizeSettingsForClient(config);
+  return sanitizeSettingsForClient(config, process.env);
 }
 
 function storageMaintenanceFailure(error, fallback) {
@@ -2684,6 +2685,27 @@ export async function updateSettings(formData) {
   await requirePermission("system.manage_settings");
   try {
     const currentConfig = await getConfig();
+    const environmentManaged = environmentManagedSettings(process.env);
+
+    const managedFormFields = [
+      ["dbHost", environmentManaged.database.host],
+      ["dbName", environmentManaged.database.name],
+      ["dbUser", environmentManaged.database.user],
+      ["dbPassword", environmentManaged.database.password],
+      ["bihost", environmentManaged.blueiris.host],
+      ["biUsername", environmentManaged.blueiris.username],
+      ["biPassword", environmentManaged.blueiris.password],
+      ["clearBiPassword", environmentManaged.blueiris.password],
+      ["biTimeoutSeconds", environmentManaged.blueiris.timeoutSeconds],
+      ["biTimelineExportProfile", environmentManaged.blueiris.timelineExportProfile],
+      ["biTimelineExportMinWidth", environmentManaged.blueiris.timelineExportMinWidth],
+      ["biTimelineExportMinHeight", environmentManaged.blueiris.timelineExportMinHeight],
+    ];
+    if (managedFormFields.some(([field, managed]) => managed && formData.get(field) !== null)) {
+      throw new Error(
+        "One or more submitted settings are managed in .env. Change them on the host and restart ALPR."
+      );
+    }
 
     const newConfig = { ...currentConfig };
 

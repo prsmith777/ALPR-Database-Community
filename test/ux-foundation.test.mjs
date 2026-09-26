@@ -46,7 +46,18 @@ test("the mobile navigation sheet has an accessible dialog title", async () => {
 
   assert.match(sidebar, /import \{ Sheet, SheetContent, SheetTitle \}/);
   assert.match(sidebar, /<SheetTitle className="text-lg font-semibold">Menu<\/SheetTitle>/);
+  assert.match(sidebar, /!item\.permission \|\| canAccess\(item\.permission\)/);
+  assert.match(sidebar, /label: "More", href: "#more"/);
   assert.equal(sidebar.includes('<h2 className="text-lg font-semibold">Menu</h2>'), false);
+});
+
+test("Help is reachable from desktop navigation and the mobile More sheet", async () => {
+  const sidebar = await source("components/Sidebar.jsx");
+
+  assert.match(sidebar, /const canViewHelp = canAccess\("plate\.read"\)/);
+  assert.equal((sidebar.match(/Help and user guide/g) || []).length >= 3, true);
+  assert.equal((sidebar.match(/navigateTo\("\/help"\)/g) || []).length, 1);
+  assert.equal((sidebar.match(/router\.push\("\/help"\)/g) || []).length, 1);
 });
 
 test("dashboard, manifests, README, and system logs identify the Community edition", async () => {

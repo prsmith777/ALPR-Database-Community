@@ -72,7 +72,7 @@ test("Pushover settings render replacement-only password fields and never bind s
   assert.doesNotMatch(form, /initialSettings\.blueiris\.password(?!Configured)/);
   assert.match(form, /<PasswordInput[\s\S]*name="biPassword"/);
   assert.match(form, /clearBiPassword/);
-  assert.match(actions, /return sanitizeSettingsForClient\(config\)/);
+  assert.match(actions, /return sanitizeSettingsForClient\(config, process\.env\)/);
   assert.match(actions, /resolveStoredSecretUpdate/);
   assert.doesNotMatch(
     actions,

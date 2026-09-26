@@ -21,6 +21,22 @@ runtime data directories, and database backups out of source control.
 The installer creates `auth/`, `config/`, `storage/`, and `update-control/`.
 Application data paths are writable by container UID/GID `1000`; the restricted
 update-control path is shared with the installing host account's primary group.
+
+## Settings managed by the host environment
+
+Settings shows the effective runtime configuration. A field labeled **Managed
+in .env** is read-only in the browser because Docker supplies a higher-priority
+environment value. Change it in the private `.env` file on the host and restart
+ALPR with `docker compose up -d`; never put the value in Git or a support report.
+
+The standard bundled-database deployment always manages `DB_PASSWORD` this
+way. The external-database Compose file also manages `DB_HOST`, `DB_NAME`, and
+`DB_USER`. Blue Iris fields are environment-managed whenever the matching
+`BLUEIRIS_*` value is supplied; the standard Compose defaults manage the
+timeout, export profile, and minimum export dimensions. Unmarked fields remain
+editable in Settings. The server rejects direct browser submissions for a
+field that the environment owns rather than claiming an ignored change was
+saved.
 The installer refuses to reuse nonempty paths. These paths
 are bind-mounted and intentionally do not come from the repository or image.
 On startup, Compose waits for PostgreSQL's first-time schema initialization,
