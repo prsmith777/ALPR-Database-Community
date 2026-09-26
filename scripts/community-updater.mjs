@@ -713,7 +713,7 @@ async function validateUpdate(environment = process.env, options = {}) {
     delete state.lastFailure;
     await saveState(backupRoot, state, clock);
     (options.logger || console).log(
-      `Update ${state.target.tag} passed automated validation. Verify sign-in, search, ingestion, and images, then run accept.`
+      `Update ${state.target.tag} passed Technical system checks. Verify sign-in, search, ingestion, images, and restart health, then run accept.`
     );
     return state;
   } catch (error) {
@@ -730,7 +730,7 @@ async function acceptUpdate(environment = process.env, options = {}) {
   const state = await readState(backupRoot);
   if (!state) throw new Error("no updater state exists for this installation");
   if (state.status !== "ready-for-acceptance") {
-    throw new Error("automated validation must pass before update acceptance");
+    throw new Error("Technical system checks must pass before update acceptance");
   }
   if (!options.confirmed && value(environment, "ALPR_UPDATE_ACCEPTANCE") !== ACCEPT_ACKNOWLEDGEMENT) {
     throw new Error(`acceptance requires ALPR_UPDATE_ACCEPTANCE=${ACCEPT_ACKNOWLEDGEMENT}`);
@@ -1025,7 +1025,7 @@ async function runMenu(environment, options = {}) {
   const terminal = createInterface({ input: options.input || process.stdin, output: options.output || process.stdout });
   try {
     while (true) {
-      console.log(`\nALPR Community Maintenance\n\n1. Check for updates\n2. Install available update\n3. Validate installation\n4. Accept update\n5. Roll back previous update\n6. Remove expired rollback files\n7. Show updater status\n8. Exit`);
+      console.log(`\nALPR Community Maintenance\n\n1. Check for updates\n2. Install available update\n3. Run Technical system checks again\n4. Accept update\n5. Roll back previous update\n6. Remove expired rollback files\n7. Show updater status\n8. Exit`);
       const selection = (await terminal.question("\nChoose an option: ")).trim();
       if (selection === "8") return;
       try {
@@ -1061,7 +1061,7 @@ async function runMenu(environment, options = {}) {
 
 function printHelp(logger = console) {
   logger.log("Fresh installation: ./alpr-community install (use install --help for details)\n");
-  logger.log(`Usage: ./alpr-community [command] [options]\n\nCommands:\n  menu                 Open the guided maintenance menu (default).\n  check [--to TAG]     Fetch and inspect stable release tags without changing services.\n  update [--to TAG]    Back up, install, migrate, restart, and validate an exact release.\n  validate             Repeat automated post-update validation.\n  accept               Accept after the documented manual checks.\n  rollback             Restore the pre-update database, configuration, release, and image.\n  cleanup [--force]    Remove only state-owned rollback artifacts after retention.\n  status               Show redacted updater state and artifact paths.\n\nStandard Linux Docker Compose installations, including Linux virtual machines\nand Unraid, are supported in this release. The update path refuses dirty or\nuntagged checkouts, unknown remotes, external databases, Compose overrides,\nmoving image tags, and missing backups.\n\nNon-interactive safety acknowledgements:\n  ALPR_UPDATE_ACKNOWLEDGE=${INSTALL_ACKNOWLEDGEMENT}\n  ALPR_UPDATE_ACCEPTANCE=${ACCEPT_ACKNOWLEDGEMENT}\n  ALPR_UPDATE_ROLLBACK=${ROLLBACK_ACKNOWLEDGEMENT}\n  ALPR_UPDATE_CLEANUP=${CLEANUP_ACKNOWLEDGEMENT}\n\nOptional configuration:\n  ALPR_UPDATER_BACKUP_DIR=/absolute/path/outside/the/repository\n  ALPR_UPDATER_RETENTION_DAYS=${DEFAULT_RETENTION_DAYS}`);
+  logger.log(`Usage: ./alpr-community [command] [options]\n\nCommands:\n  menu                 Open the guided maintenance menu (default).\n  check [--to TAG]     Fetch and inspect stable release tags without changing services.\n  update [--to TAG]    Back up, install, migrate, restart, and run Technical system checks.\n  validate             Repeat post-update Technical system checks.\n  accept               Accept after the documented real-use checks.\n  rollback             Restore the pre-update database, configuration, release, and image.\n  cleanup [--force]    Remove only state-owned rollback artifacts after retention.\n  status               Show redacted updater state and artifact paths.\n\nStandard Linux Docker Compose installations, including Linux virtual machines\nand Unraid, are supported in this release. The update path refuses dirty or\nuntagged checkouts, unknown remotes, external databases, Compose overrides,\nmoving image tags, and missing backups.\n\nNon-interactive safety acknowledgements:\n  ALPR_UPDATE_ACKNOWLEDGE=${INSTALL_ACKNOWLEDGEMENT}\n  ALPR_UPDATE_ACCEPTANCE=${ACCEPT_ACKNOWLEDGEMENT}\n  ALPR_UPDATE_ROLLBACK=${ROLLBACK_ACKNOWLEDGEMENT}\n  ALPR_UPDATE_CLEANUP=${CLEANUP_ACKNOWLEDGEMENT}\n\nOptional configuration:\n  ALPR_UPDATER_BACKUP_DIR=/absolute/path/outside/the/repository\n  ALPR_UPDATER_RETENTION_DAYS=${DEFAULT_RETENTION_DAYS}`);
 }
 
 export async function runUpdaterCommand(argumentsList = process.argv.slice(2), environment = process.env, options = {}) {
