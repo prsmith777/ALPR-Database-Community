@@ -267,7 +267,7 @@ test("public installation instructions stay synchronized with the Linux bootstra
   }
 
   assert.match(migration, /Host compatibility/i);
-  assert.match(migration, /Prepare migration from an existing ALPR installation/i);
+  assert.match(migration, /alpr_bootstrap --migrate/i);
   assert.match(issueForm, /Supported Ubuntu x86-64 release/i);
   assert.match(issueForm, /Supported Debian x86-64 release/i);
   assert.match(issueForm, /Supported RHEL, Rocky Linux, or AlmaLinux x86-64 release/i);
