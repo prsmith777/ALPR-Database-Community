@@ -63,8 +63,9 @@ below.
 ## Browser update page
 
 Release v0.1.29 adds **Settings → Software Updates** for administrators. The
-page can check, install, validate, accept, roll back, and clean up an expired
-rollback generation. It does not run Git, Docker, or a shell inside the web
+page guides administrators through **Check → Install → Technical system checks
+→ Accept**, and also provides guarded rollback and expired-backup cleanup. It
+does not run Git, Docker, or a shell inside the web
 container. Instead, it places a versioned, fixed-operation request in the
 private `update-control/` bind mount for a restricted worker running as the
 normal installation owner on the Linux host.
@@ -86,10 +87,20 @@ after five minutes so an abandoned request cannot unexpectedly run after a
 much later restart.
 
 Every mutating page action remains explicit. Installation requires typing the
-exact target release, acceptance requires all manual-check boxes, rollback
+exact target release, acceptance requires all five real-use checkboxes, rollback
 requires typing `ROLL BACK AND DISCARD NEW WRITES`, and cleanup requires its
 own typed confirmation. The agent accepts no arbitrary command, argument, or
 filesystem path from the browser.
+
+Installation automatically runs **Technical system checks** for database
+readiness, the exact running image, application health, non-decreasing row
+counts, and storage inventory. Passing those checks does not accept the
+release. The page then displays **Update installed — acceptance required** at
+the top. Test the five real-use items and select **Accept update** to finish.
+The page blocks checking for or installing another release while an update is
+unfinished, so a newer release is never offered as an installable action over
+an unaccepted one. **Run Technical system checks again** is a troubleshooting
+action, not a normal extra step.
 
 ## Guided menu
 
@@ -99,8 +110,9 @@ From the installation directory, open the maintenance menu:
 ./alpr-community
 ```
 
-The menu can check for a newer stable release, install it, repeat validation,
-accept it, roll it back, or remove an expired rollback generation. A check is
+The menu can check for a newer stable release, install it, repeat Technical
+system checks, accept it, roll it back, or remove an expired rollback
+generation. A check is
 read-only except for fetching Git tags. Installation always shows the exact
 source and target tags before it asks for confirmation.
 
@@ -143,7 +155,7 @@ The guarded workflow:
    bundled detection, attribute, and ReID models instead of using `latest`;
 10. applies `migrations.sql` through the transactional Compose migration
     service;
-11. starts the app and validates database readiness, the exact running image,
+11. starts the app and runs Technical system checks for database readiness, the exact running image,
     `/api/health-check`, non-decreasing table counts, and storage inventory;
 12. stops for manual acceptance.
 
@@ -152,9 +164,9 @@ That directory can be much larger than the database and should be protected by
 the operator's normal host or NAS backup. The updater only records its file
 count and total bytes to detect unexpected loss during an update.
 
-## Complete manual acceptance
+## Complete real-use acceptance
 
-Automated checks cannot prove the complete user workflow. Before accepting,
+Technical system checks cannot prove the complete user workflow. Before accepting,
 sign in and verify:
 
 - Dashboard and Recognition Feed load;
@@ -164,7 +176,9 @@ sign in and verify:
 - roles and integrations needed by the installation still work;
 - the application and database survive one controlled restart.
 
-Then select **Accept update** in the menu. The updater retains the immediately
+Then select **Accept update** on the page or in the menu. This is a separate
+step from Technical system checks: it closes the current update and permits a
+later release to be installed. The updater retains the immediately
 previous database/configuration backup and image for 14 days by default.
 Set `ALPR_UPDATER_RETENTION_DAYS` to an integer from 1 through 90 to choose a
 different window.

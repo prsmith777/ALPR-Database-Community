@@ -54,7 +54,10 @@ Unraid is one supported Linux example, not a requirement.
 
 From v0.1.29, run `./alpr-community agent install` once on a systemd-based
 Linux host, then use **Settings → Software Updates** to check, install,
-validate, accept, roll back, or clean up an update. The terminal menu at
+run Technical system checks, accept, roll back, or clean up an update. The
+page treats Technical system checks and real-use acceptance as separate steps;
+the administrator must select **Accept update** before another release can be
+installed. The terminal menu at
 `./alpr-community` remains supported. The restricted agent keeps Docker host
 access outside the application container, creates one private rollback
 generation, uses commit-qualified images, and never copies the image-storage

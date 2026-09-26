@@ -17,6 +17,7 @@ import {
 import {
   availableReleaseLabel,
   shouldReloadForRunningRelease,
+  softwareUpdateWorkflow,
   softwareUpdateReloadUrl,
 } from "../lib/software-update-browser.mjs";
 
@@ -83,7 +84,7 @@ test("restricted host agent processes a check and preserves rollback availabilit
       runUpdaterCommand: async (argumentsList) => {
         calls.push(argumentsList);
         if (argumentsList[0] === "status") {
-          return { status: "accepted", backup: { directory: "/private/backup" }, acceptance: { cleanupEligibleAt: "2026-10-08T18:00:00.000Z" } };
+          return { status: "accepted", target: { tag: "v0.1.28" }, backup: { directory: "/private/backup" }, acceptance: { cleanupEligibleAt: "2026-10-08T18:00:00.000Z" } };
         }
         return { current: { tag: "v0.1.28" }, target: { tag: "v0.1.29" } };
       },
@@ -91,12 +92,14 @@ test("restricted host agent processes a check and preserves rollback availabilit
     assert.deepEqual(calls, [["check"], ["status"]]);
     assert.equal(completed.phase, "succeeded");
     assert.equal(completed.targetTag, "v0.1.29");
+    assert.equal(completed.activeUpdateTag, "v0.1.28");
     assert.equal(completed.updaterStatus, "accepted");
     assert.equal(completed.rollbackEligibleUntil, "2026-10-08T18:00:00.000Z");
     assert.equal(completed.rollbackPresent, true);
     const snapshot = await readCommunityUpdateControlSnapshot({ directory });
     assert.equal(snapshot.busy, false);
     assert.equal(snapshot.state.targetTag, "v0.1.29");
+    assert.equal(snapshot.state.activeUpdateTag, "v0.1.28");
     await assert.rejects(readFile(join(directory, "request-active.json"), "utf8"), { code: "ENOENT" });
   } finally {
     await rm(directory, { recursive: true, force: true });
@@ -149,6 +152,31 @@ test("failed validation preserves the guarded rollback state for the page", asyn
   }
 });
 
+test("a check reports an unfinished prior update instead of advertising the newer install", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "alpr-update-agent-prior-"));
+  try {
+    await submitCommunityUpdateRequest({ operation: "check" }, { directory, requireAgentOnline: false });
+    const completed = await processCommunityUpdateRequest({
+      directory,
+      logger: { log() {}, error() {} },
+      runUpdaterCommand: async ([command]) => command === "status"
+        ? {
+            status: "ready-for-acceptance",
+            target: { tag: "v0.1.38" },
+            backup: { directory: "/private/backup" },
+          }
+        : { current: { tag: "v0.1.38" }, target: { tag: "v0.1.39" } },
+    });
+    assert.equal(completed.activeUpdateTag, "v0.1.38");
+    assert.equal(completed.targetTag, "v0.1.39");
+    assert.equal(completed.updaterStatus, "ready-for-acceptance");
+    assert.match(completed.message, /v0\.1\.38 is unfinished/);
+    assert.doesNotMatch(completed.message, /v0\.1\.39 is available/);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
 test("an update tab reloads when the recovered server reports a new release", () => {
   assert.equal(shouldReloadForRunningRelease("0.1.33", "0.1.34"), true);
   assert.equal(shouldReloadForRunningRelease("0.1.34", "0.1.34"), false);
@@ -185,6 +213,62 @@ test("available release label preserves the result of a successful update check"
   );
 });
 
+test("the browser workflow blocks a newer install until the prior release is accepted", () => {
+  assert.deepEqual(softwareUpdateWorkflow(null), {
+    acceptedNow: false,
+    canCheck: true,
+    canInstall: false,
+    complete: false,
+    currentStep: 1,
+    pendingAcceptance: false,
+    technicalChecksAvailable: false,
+    technicalChecksFailed: false,
+    unfinishedUpdate: false,
+    updateAvailable: false,
+  });
+
+  const available = softwareUpdateWorkflow({
+    operation: "check",
+    phase: "succeeded",
+    targetTag: "v0.1.39",
+    updaterStatus: "accepted",
+  });
+  assert.equal(available.currentStep, 2);
+  assert.equal(available.canInstall, true);
+  assert.equal(available.canCheck, true);
+
+  const unfinished = softwareUpdateWorkflow({
+    operation: "check",
+    phase: "succeeded",
+    targetTag: "v0.1.39",
+    activeUpdateTag: "v0.1.38",
+    updaterStatus: "ready-for-acceptance",
+  });
+  assert.equal(unfinished.currentStep, 4);
+  assert.equal(unfinished.pendingAcceptance, true);
+  assert.equal(unfinished.unfinishedUpdate, true);
+  assert.equal(unfinished.canInstall, false);
+  assert.equal(unfinished.canCheck, false);
+
+  const failedChecks = softwareUpdateWorkflow({
+    operation: "validate",
+    phase: "failed",
+    updaterStatus: "validation-failed",
+  });
+  assert.equal(failedChecks.currentStep, 3);
+  assert.equal(failedChecks.technicalChecksAvailable, true);
+  assert.equal(failedChecks.technicalChecksFailed, true);
+
+  const accepted = softwareUpdateWorkflow({
+    operation: "accept",
+    phase: "succeeded",
+    updaterStatus: "accepted",
+  });
+  assert.equal(accepted.currentStep, 4);
+  assert.equal(accepted.complete, true);
+  assert.equal(accepted.canCheck, true);
+});
+
 test("Software Updates page is permission-guarded, linked, and keeps Docker off the web container", async () => {
   const [page, panel, statusRoute, shape, shell, actions, compose, dockerfile, launcher, agent] = await Promise.all([
     source("app/settings/software-updates/page.jsx"),
@@ -211,13 +295,18 @@ test("Software Updates page is permission-guarded, linked, and keeps Docker off 
   assert.match(panel, /View \{releaseTag\} release notes/);
   assert.match(panel, /Open the Community update guide/);
   assert.match(panel, /one rollback generation is retained/);
-  assert.match(panel, /Run validation again/);
+  assert.match(panel, /Update installed — acceptance required/);
+  assert.match(panel, /Technical system checks/);
+  assert.match(panel, /Run Technical system checks again/);
+  assert.match(panel, /Finish the current update first/);
+  assert.match(panel, /Finish the current update before checking for another release/);
   assert.match(panel, /Accept update/);
   assert.match(panel, /The host update agent is offline\. Start it before accepting the update\./);
   assert.match(panel, /Select all five checks before accepting the update\./);
   assert.match(panel, /fetch\("\/api\/software-updates\/status"/);
   assert.doesNotMatch(panel, /getSoftwareUpdateStatus/);
   assert.match(panel, /window\.location\.replace/);
+  assert.match(panel, /softwareUpdateWorkflow/);
   assert.match(statusRoute, /denyUnlessRoutePermission\("maintenance\.manage"\)/);
   assert.match(statusRoute, /Cache-Control": "no-store"/);
   assert.match(statusRoute, /getReleaseInfo\(\)/);

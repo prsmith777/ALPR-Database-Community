@@ -15,7 +15,7 @@ export default async function SoftwareUpdatesPage() {
     <SettingsShell
       activeId="softwareUpdates"
       title="Software Updates"
-      description="Check, install, validate, accept, or roll back exact ALPR Community releases."
+      description="Follow the guided check, install, Technical system checks, and acceptance workflow for exact ALPR Community releases."
     >
       <SoftwareUpdatesPanel initialSnapshot={snapshot} release={getReleaseInfo()} />
     </SettingsShell>

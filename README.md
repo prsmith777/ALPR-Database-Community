@@ -87,8 +87,11 @@ one-time restricted host-agent setup:
 ```
 
 The terminal maintenance menu remains available through `./alpr-community`.
-Both interfaces use the same exact-tag updater, verified backup, automated
-validation, manual acceptance, rollback, and one-generation retention policy.
+Both interfaces use the same exact-tag updater, verified backup, Technical
+system checks, separate real-use acceptance, rollback, and one-generation
+retention policy. After installation and Technical system checks finish, the
+administrator must complete the five checks shown on the page and select
+**Accept update** before another release can be installed.
 The web container never receives the Docker socket or arbitrary host command
 access.
 
