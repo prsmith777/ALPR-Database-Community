@@ -1,9 +1,12 @@
 # Updating ALPR Database Community
 
-The Community host updater is for standard Linux systems that run the bundled
-Docker Compose stack. Ubuntu, Debian, Fedora, other Docker-capable Linux
-distributions, and Unraid are examples. Unraid is not required. The updater
-runs on the host and the application container never receives the Docker
+The Community host updater is for standard x86-64 Linux systems that run the
+bundled Docker Compose stack. The automatic bootstrap supports the maintained
+Ubuntu, Debian, RHEL, Rocky Linux, AlmaLinux, CentOS Stream, and Fedora
+releases listed in [Host compatibility](COMPATIBILITY.md). Other Docker-capable
+x86-64 Linux distributions can use the documented manual prerequisite path.
+Unraid is only one possible host and is not required. The updater runs on the
+Linux host or guest, and the application container never receives the Docker
 socket or unrestricted host access.
 
 Linux virtual machines are supported regardless of whether the VM runs on
