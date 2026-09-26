@@ -39,6 +39,14 @@ release reaches end of life or its upstream Docker or PostgreSQL repository no
 longer supplies the required packages, move to a maintained release; the
 bootstrap does not perform operating-system upgrades.
 
+The release test suite runs the real base-package adapter in disposable Ubuntu
+24.04, Debian 12, Rocky Linux 9, and AlmaLinux 9 containers. It also tests every
+listed OS/version routing decision. Container tests do not reproduce systemd,
+an enforcing SELinux host, a first-login Docker group transition, or a complete
+Docker image build. Ubuntu 24.04 remains the recommended and most thoroughly
+exercised installation target; other listed adapters must still fail closed
+when their upstream repositories or host security policy are incompatible.
+
 ## Runtime components versus host tools
 
 The host runs Git, Node.js 24, Docker Engine, Compose, and Buildx. PostgreSQL 17
@@ -50,8 +58,12 @@ Settings, but no additional ALPR host packages.
 
 ## Capacity guidance
 
-The enforced bootstrap floor is 2 logical CPUs, 4 GiB RAM, and 20 GiB free
-before application data. For normal use, allocate at least 4 vCPU, 8 GiB RAM,
-and 100 GiB disk. Image retention, database growth, and backup policy determine
-long-term storage needs. Heavy visual search or large image libraries may need
-more CPU, RAM, and disk.
+The enforced bootstrap floor is 2 logical CPUs, a 4 GiB memory allocation with
+at least 3500 MiB reported usable, 20 GiB free at the checkout, and 10 GiB free
+on Docker's data-root filesystem. Docker must be a local Linux x86-64 daemon
+accessed through a Unix socket; remote contexts cannot serve the required local
+bind mounts. For
+normal use, allocate at least 4 vCPU, 8 GiB RAM, and 100 GiB disk. Image
+retention, database growth, and backup policy determine long-term storage
+needs. Heavy visual search or large image libraries may need more CPU, RAM, and
+disk.

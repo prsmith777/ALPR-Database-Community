@@ -12,7 +12,9 @@ automatic path supports the additional maintained Ubuntu, Debian, RHEL, Rocky
 Linux, AlmaLinux, CentOS Stream, and Fedora versions in
 [Host compatibility](COMPATIBILITY.md). Use a normal account with `sudo`.
 Allocate 4 vCPU, 8 GiB RAM, and 100 GiB disk; the bootstrap enforces minimums
-of 2 CPUs, 4 GiB RAM, and 20 GiB free before application data. Download,
+of 2 CPUs, a 4 GiB allocation with at least 3500 MiB reported usable, and 20
+GiB free before application data. Docker's local data-root filesystem must also
+have at least 10 GiB free. Download,
 checksum, inspect, and run the release bootstrap as described in
 [Automated Community bootstrap](BOOTSTRAP.md), then choose **Install a new
 ALPR Community system**.
@@ -57,15 +59,16 @@ Clone the canonical repository and detach at the exact stable release tag:
 ```bash
 git clone https://github.com/prsmith777/ALPR-Database-Community.git
 cd ALPR-Database-Community
-git checkout --detach v0.1.37
+git checkout --detach v0.1.38
 ./alpr-community install
 ```
 
 If the v0.1.36 bootstrap stopped immediately after cloning with
-`Existing Community checkout is not clean`, do not remove the checkout.
-Download and verify the newest release bootstrap and run it again. Bootstrap
-v4 can resume only the exact unmaterialized canonical clone left by that bug;
-it continues to refuse every ordinary dirty or installed checkout.
+`Existing Community checkout is not clean`, the incomplete state is ambiguous:
+Git cannot prove that it differs from deliberately staged deletion of every
+tracked file. Review it, preserve it by moving the entire directory aside, and
+then run the newest verified bootstrap. Current bootstraps do not overwrite,
+reset, or automatically repair that directory.
 
 The installer asks for:
 

@@ -421,12 +421,12 @@ async function preflight(environment = process.env, options = {}) {
   if (await exists(join(root, "docker-compose.override.yml"))) {
     throw new Error("docker-compose.override.yml is not supported by the fresh installer");
   }
-  if (await exists(join(root, ".env"))) throw new Error(".env already exists; this is not a fresh installation directory");
   if (await exists(statePath(root))) {
     const existingState = await readState(root);
     if (existingState?.status === "installed") throw new Error("this release directory is already installed");
     throw new Error("an interrupted installation exists; run ./alpr-community install --recover");
   }
+  if (await exists(join(root, ".env"))) throw new Error(".env already exists; this is not a fresh installation directory");
   const release = exactRelease(runner, root, options.releaseIdentity);
   const image = imageForRelease(release);
   runner("git", ["--version"], { quiet: true });
