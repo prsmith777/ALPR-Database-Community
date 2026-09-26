@@ -2,6 +2,25 @@
 
 ## Unreleased
 
+## 0.1.41 — 2026-09-26
+
+- Completed a repository-wide accuracy review of the embedded manual,
+  roadmap, installation, migration, deployment, update, security,
+  contribution, issue-reporting, and release guidance.
+- Corrected Docker build-cache documentation: temporary builders are removed,
+  but Docker can retain unused engine-side cache after loading a locally built
+  image. Added bounded inspection and dedicated-host cleanup instructions
+  without recommending broad Docker pruning.
+- Clarified that supported installations require the `docker compose` CLI
+  plugin, version 2 or newer, so current Compose releases are represented
+  accurately.
+- Added a maintainer release-documentation checklist and automated checks that
+  keep package versions, changelog entries, exact-tag examples, issue forms,
+  manual coverage, and public links synchronized.
+- Updated the Community repository homepage to the current Community README,
+  retained the official Blue Iris vendor-manual reference, and advanced the
+  embedded Community user guide to version 3.6.
+
 ## 0.1.40 — 2026-09-26
 
 - Reworked **Settings → Software Updates** into a guided **Check → Install →
