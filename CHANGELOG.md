@@ -2,6 +2,22 @@
 
 ## Unreleased
 
+## 0.1.40 — 2026-09-26
+
+- Reworked **Settings → Software Updates** into a guided **Check → Install →
+  Technical system checks → Accept** workflow with a visible progress guide.
+- Added a prominent **Update installed — acceptance required** message that
+  explains the five real-use checks and final **Accept update** action.
+- Prevented update checks and newer installations while the current release is
+  unfinished, avoiding a late backend rejection after an installation phrase
+  has already been entered.
+- Preserved the active update release separately from a newly discovered tag
+  so acceptance and release-note messages identify the correct version.
+- Renamed the normal post-install verification step to **Technical system
+  checks**, moved repeat checks into troubleshooting, and synchronized the
+  updater CLI, embedded user guide, update guide, deployment guide, and roadmap.
+- Updated the embedded Community user guide to version 3.5.
+
 ## 0.1.39 — 2026-09-26
 
 - Introduced bootstrap v6 with a streamlined first-time-user experience while
