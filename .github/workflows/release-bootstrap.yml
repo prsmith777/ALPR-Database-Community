@@ -26,10 +26,12 @@ jobs:
         run: |
           set -euo pipefail
           bash -n bootstrap.sh
+          bash -n community-maintenance.sh
           bash test/bootstrap-platform-matrix.sh
           bash test/bootstrap-control-flow.sh
           install -m 0755 bootstrap.sh alpr-community-bootstrap.sh
           sha256sum alpr-community-bootstrap.sh > alpr-community-bootstrap.sh.sha256
+          sha256sum community-maintenance.sh > community-maintenance.sh.sha256
 
       - name: Attach bootstrap and checksum
         env:
@@ -39,5 +41,7 @@ jobs:
           gh release upload "$RELEASE_TAG"
           alpr-community-bootstrap.sh
           alpr-community-bootstrap.sh.sha256
+          community-maintenance.sh
+          community-maintenance.sh.sha256
           --repo "$GITHUB_REPOSITORY"
           --clobber

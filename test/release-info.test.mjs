@@ -23,8 +23,8 @@ test("release information resolves a commit-pinned deployment image", () => {
     ALPR_RELEASE_CHANNEL: "staging",
   });
 
-  assert.equal(release.version, "0.1.43");
-  assert.equal(release.manualVersion, "3.8");
+  assert.equal(release.version, "0.1.44");
+  assert.equal(release.manualVersion, "3.9");
   assert.equal(release.manualUpdatedAt, "September 27, 2026");
   assert.equal(release.gitSha, "8cd2fa8");
   assert.equal(release.channel, "staging");
@@ -32,7 +32,7 @@ test("release information resolves a commit-pinned deployment image", () => {
   assert.equal(release.readOnly, true);
   assert.equal(
     release.notes.title,
-    "Native ReID V2 for Community"
+    "Native ReID update recovery"
   );
   assert.equal(release.notes.publishedAt, "2026-09-27");
   assert.ok(release.notes.items.length >= 3);

@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+## 0.1.44 — Native ReID update recovery (2026-09-27)
+
+- Fix the host updater falsely treating intentionally retired identity tables as lost user data during the native ReID upgrade.
+- Record stopped-source schema and exact eligible direction-retirement counts; require target schema/control attestation and an unchanged backup checksum. Preserve normal loss checks for original data, Blue Iris observations, bound examples, and images.
+- Execute host-agent commands and installed-release validation in fresh processes instead of retaining old updater imports across checkout.
+- Supply a checksum-verified, exact-tag maintenance launcher for hosts on v0.1.43 or earlier. Failed v0.1.43 updates must first be rolled back; the launcher does not bypass validation, accept a release, or delete recovery data.
+- Add real PostgreSQL dump/migration/transactional-rollback/retry regression coverage and fresh-process/maintenance-control tests. Git, image, and application lifecycle boundaries in that database test are simulated.
+- Update manual 3.9, release notes, README, update/recovery and installation guides, release checklist, and roadmap.
+
 ## 0.1.43 — Native ReID V2 (2026-09-27)
 
 - Make ReID V2 the only Community identity pipeline; fresh installs initialize it directly.

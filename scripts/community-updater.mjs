@@ -27,6 +27,8 @@ import { createInterface } from "node:readline/promises";
 import { fileURLToPath } from "node:url";
 
 import { buildRuntimeImage } from "./community-image-builder.mjs";
+import { compareMinimumCounts, captureNativeUpgradeSnapshot, nativeIdentityInstalled, compareSavedNativeUpgradeCounts } from "./native-reid-upgrade-policy.mjs";
+import { runFreshUpdater } from "./community-updater-process.mjs";
 
 const scriptPath = fileURLToPath(import.meta.url);
 const repositoryRoot = resolve(dirname(scriptPath), "..");
@@ -332,7 +334,7 @@ function databaseTableCounts(runner, root) {
   const tables = tableOutput.split(/\r?\n/).map((name) => name.trim()).filter(Boolean);
   return Object.fromEntries(tables.map((table) => {
     const count = psql(runner, root, `SELECT count(*) FROM public.${quoteIdentifier(table)};`);
-    if (!/^\d+$/.test(count)) throw new Error(`invalid row count returned for ${table}`);
+    if (!/^\d+$/.test(count) || !Number.isSafeInteger(Number(count))) throw new Error(`invalid row count returned for ${table}`);
     return [table, Number(count)];
   }));
 }
@@ -537,6 +539,9 @@ async function makeBackup(environment, context, target, options = {}) {
   compose(runner, root, ["stop", "app"], { inherit: true });
   try {
     const counts = databaseTableCounts(runner, root);
+    const identityUpgrade = compareVersionTags(target.tag, "v0.1.43") >= 0
+      ? await captureNativeUpgradeSnapshot((sql) => psql(runner, root, sql), counts)
+      : null;
     const storage = await storageInventory(join(root, "storage"));
     const ownership = {};
     await copyFile(join(root, ".env"), envPath);
@@ -561,7 +566,7 @@ async function makeBackup(environment, context, target, options = {}) {
     ], { stdoutPath: dumpPath });
     await chmod(dumpPath, 0o600);
     const dumpSha256 = await sha256File(dumpPath);
-    state.backup = { ...state.backup, databaseBytes, counts, storage, ownership, dumpSha256 };
+    state.backup = { ...state.backup, databaseBytes, counts, storage, ownership, dumpSha256, identityUpgrade };
     state.status = "backed-up";
     await saveState(backupRoot, state, clock);
     return { state, backupRoot };
@@ -693,11 +698,19 @@ async function validateUpdate(environment = process.env, options = {}) {
       options.healthAttempts
     );
     const counts = databaseTableCounts(runner, root);
-    const losses = Object.entries(state.backup.counts).filter(([table, before]) =>
-      !(table in counts) || counts[table] < before
-    );
+    let losses = compareMinimumCounts(state.backup.counts, counts);
+    let retiredDerivedRows = [];
+    if (compareVersionTags(state.target.tag, "v0.1.43") >= 0) {
+      if (await sha256File(state.backup.dumpPath) !== state.backup.dumpSha256) {
+        throw new Error("Pre-update backup checksum no longer matches; validation refused");
+      }
+      ({ losses, retiredDerivedRows } = compareSavedNativeUpgradeCounts(
+        state.backup.counts, counts, state.backup.identityUpgrade,
+        await nativeIdentityInstalled((sql) => psql(runner, root, sql), counts)
+      ));
+    }
     if (losses.length > 0) {
-      throw new Error(`post-update row counts decreased: ${losses.map(([table]) => table).join(", ")}`);
+      throw new Error(`post-update row counts decreased: ${losses.map(({ table }) => table).join(", ")}`);
     }
     const storage = await storageInventory(join(root, "storage"));
     if (storage.files < state.backup.storage.files || storage.bytes < state.backup.storage.bytes) {
@@ -708,6 +721,7 @@ async function validateUpdate(environment = process.env, options = {}) {
       health: { status: health?.status || "unknown" },
       counts,
       storage,
+      retiredDerivedRows,
     };
     state.status = "ready-for-acceptance";
     delete state.lastFailure;
@@ -988,7 +1002,11 @@ async function installUpdate(environment = process.env, options = {}) {
   const target = inspectRelease(runner, root, targetTag);
   const { state, backupRoot } = await makeBackup(environment, context, target, { ...options, runner });
   await applyRelease(environment, backupRoot, state, { ...options, root, runner });
-  return validateUpdate(environment, { ...options, root, runner });
+  // Git checkout cannot replace modules already loaded into this process.
+  // Validate with the installed target's code, while keeping the same backup.
+  return (options.validateInstalledRelease || runFreshUpdater)(
+    ["validate"], environment, { root, confirmed: false }
+  );
 }
 
 async function showStatus(environment = process.env, options = {}) {

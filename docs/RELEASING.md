@@ -17,9 +17,10 @@ pull request verifies that the complete published surface is synchronized.
    Docker-image gates before merging.
 7. Create the GitHub release from the exact merge commit on `main`, then verify
    that it is the latest non-draft, non-prerelease release and that the release
-   workflow attached both `alpr-community-bootstrap.sh` and its checksum.
-8. Download the two bootstrap assets and independently verify the SHA-256
-   checksum.
+   workflow attached `alpr-community-bootstrap.sh`, `community-maintenance.sh`,
+   and a separate SHA-256 checksum for each.
+8. Download both scripts and their checksum assets and independently verify
+   the SHA-256 checksums.
 
 Automated tests compare the package version with the changelog, install guide,
 update guide, and bug-report form. They supplement this review; they do not
@@ -35,6 +36,9 @@ prove that prose is complete or operationally correct.
   terms.
 - Update the relevant README, bootstrap, compatibility, installation,
   migration, deployment, update, security, or contributing guidance.
+- Test the host updater as well as the import validator when migrations remove
+  derived tables. Cover stopped-source evidence, protected-data loss refusal,
+  verified backup, transactional rollback, retry, and long-lived agent imports.
 - Add recovery and troubleshooting instructions for a failure that users can
   encounter in a supported workflow.
 - Verify commands, paths, ports, acknowledgement phrases, minimum resources,

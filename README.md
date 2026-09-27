@@ -92,6 +92,10 @@ one-time restricted host-agent setup:
 ./alpr-community agent install
 ```
 
+**Upgrading from v0.1.43 or earlier:** use the [one-time native-update recovery
+launcher](docs/UPDATES.md#one-time-upgrade-from-v0143-or-earlier). Do not retry the
+native transition through an already-loaded older updater.
+
 The terminal maintenance menu remains available through `./alpr-community`.
 Both interfaces use the same exact-tag updater, verified backup, Technical
 system checks, separate real-use acceptance, rollback, and one-generation

@@ -44,7 +44,7 @@ shown on the GitHub Releases page, rather than deploying moving `main`:
 ```bash
 git clone https://github.com/prsmith777/ALPR-Database-Community.git
 cd ALPR-Database-Community
-git checkout --detach v0.1.43
+git checkout --detach v0.1.44
 ./alpr-community install
 ```
 
@@ -57,8 +57,63 @@ later Community-to-Community updates.
 
 Do not install v0.1.23 as a new deployment merely because it was the first
 release containing the updater. A retained installation already running exact
-v0.1.23 can update directly to the newest stable tag with the guarded workflow
-below.
+v0.1.23 must use the one-time maintenance launcher below to reach v0.1.44.
+
+## One-time upgrade from v0.1.43 or earlier
+
+**Do not use the older browser agent or terminal updater to cross into native
+ReID.** Those versions keep old updater code loaded during installation and
+incorrectly reject the derived tables intentionally retired by v0.1.43. Use the
+verified v0.1.44 maintenance launcher below once. Fresh v0.1.44 installations
+and subsequent updates use the normal browser or terminal workflow.
+
+If v0.1.43 already failed with **post-update row counts decreased**, do not accept
+it, delete its backup, or edit recorded counts. On **Settings → Software Updates**,
+use **Rollback** and type `ROLL BACK AND DISCARD NEW WRITES`. This restores the
+previous application and its pre-update database; newer database writes are
+discarded. Preserve anything needed before approving rollback. Wait for rollback
+success and confirm the prior release works. If rollback fails, stop and retain
+the backup for support.
+
+Then SSH into the Linux installation host as its normal installation owner (not
+root), change into the existing checkout, and run:
+
+```bash
+cd /path/to/ALPR-Database-Community
+alpr_native_update() (
+  set -Eeuo pipefail
+  download_dir="$(mktemp -d /tmp/alpr-maintenance-download.XXXXXX)"
+  trap 'rm -rf -- "$download_dir"' EXIT
+  asset_base="https://github.com/prsmith777/ALPR-Database-Community/releases/download/v0.1.44"
+  curl -fLsS --retry 3 "$asset_base/community-maintenance.sh" -o "$download_dir/community-maintenance.sh"
+  curl -fLsS --retry 3 "$asset_base/community-maintenance.sh.sha256" -o "$download_dir/community-maintenance.sh.sha256"
+  (cd "$download_dir" && sha256sum --check --strict community-maintenance.sh.sha256)
+  bash "$download_dir/community-maintenance.sh"
+)
+alpr_native_update
+unset -f alpr_native_update
+```
+
+The launcher verifies the canonical repository and exact released tag, loads the
+fixed tools outside your checkout, and asks for **INSTALL v0.1.44**. It uses the
+same guarded backup/install workflow and does not reset or reinstall your system.
+It temporarily stops only this installation's matching per-user systemd update
+agent, then restarts it with the installed code. Keep the terminal open and do
+not operate the browser update controls meanwhile. If using a foreground or
+non-systemd agent, stop that agent yourself first and restart it afterward.
+
+When the launcher reports Technical system checks passed, refresh Software
+Updates, complete the five real-use checks, and select **Accept update**.
+Acceptance is not automatic. Neither is rollback or backup cleanup. The launcher
+records the outcome in the browser's update state so it does not leave a stale
+rollback result. Keep the backup if any step fails and share the error with
+support; do not bypass checks.
+
+The new validator records exact stopped-source retirement counts before backup.
+Only explicitly retired derived tables and crop-unbound derived direction data
+may decrease during the native transition; Blue Iris direction observations,
+crop-bound examples, original records, and image storage remain protected.
+Later native-to-native updates receive no historical retirement allowance.
 
 ## Browser update page
 
@@ -93,8 +148,9 @@ own typed confirmation. The agent accepts no arbitrary command, argument, or
 filesystem path from the browser.
 
 Installation automatically runs **Technical system checks** for database
-readiness, the exact running image, application health, non-decreasing row
-counts, and storage inventory. Passing those checks does not accept the
+readiness, the exact running image, application health, protected row counts
+(with the narrowly recorded native retirement allowance), and storage inventory.
+Passing those checks does not accept the
 release. The page then displays **Update installed — acceptance required** at
 the top. Test the five real-use items and select **Accept update** to finish.
 The page blocks checking for or installing another release while an update is
@@ -129,9 +185,9 @@ The equivalent individual commands are:
 ```
 
 Run `./alpr-community check` to discover the newest stable release and
-`./alpr-community update` to select it through the guided menu. A retained
-exact-v0.1.23 installation can use
-`./alpr-community update --to v0.1.43` to select this release explicitly. The
+`./alpr-community update` to select it through the guided menu after the
+one-time transition. The `--to` option accepts an exact newer stable tag;
+older installations must use the maintenance launcher above instead. The
 updater refuses `latest`, branches, prereleases, tags that are not on canonical
 `origin/main`, and a tag whose package version does not match. It fetches
 canonical `main` explicitly, so verification also works when the installation
@@ -156,7 +212,7 @@ The guarded workflow:
 10. applies `migrations.sql` through the transactional Compose migration
     service;
 11. starts the app and runs Technical system checks for database readiness, the exact running image,
-    `/api/health-check`, non-decreasing table counts, and storage inventory;
+    `/api/health-check`, protected table counts, and storage inventory;
 12. stops for manual acceptance.
 
 The updater does not copy, archive, delete, or otherwise mutate `storage/`.
@@ -261,7 +317,8 @@ command error text.
 
 ## Non-interactive use
 
-Version 0.1.43 uses only native ReID V2. The normal updater stops the application,
+Version 0.1.43 introduced native ReID V2; v0.1.44 fixes its update validation.
+Use the one-time launcher above when leaving an older host. The updater stops the application,
 verifies its backup, and applies the database upgrade before restart. It retires
 obsolete derived identity indexes, not original plate reads or image files.
 Eligible whole-vehicle images are processed in the background; Vehicle Setup

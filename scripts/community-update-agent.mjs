@@ -23,7 +23,7 @@ import {
   communityUpdateControlInternals,
   validateCommunityUpdateRequest,
 } from "../lib/community-update-control.mjs";
-import { runUpdaterCommand } from "./community-updater.mjs";
+import { runFreshUpdater } from "./community-updater-process.mjs";
 
 const scriptPath = fileURLToPath(import.meta.url);
 const repositoryRoot = resolve(dirname(scriptPath), "..");
@@ -158,7 +158,7 @@ export async function processCommunityUpdateRequest(options = {}) {
     });
     const argumentsList = [request.operation];
     if (request.target) argumentsList.push("--to", request.target);
-    const result = await (options.runUpdaterCommand || runUpdaterCommand)(
+    const result = await (options.runUpdaterCommand || runFreshUpdater)(
       argumentsList,
       options.environment || process.env,
       {
@@ -168,7 +168,7 @@ export async function processCommunityUpdateRequest(options = {}) {
       }
     );
     const recordedState = request.operation === "check"
-      ? await (options.runUpdaterCommand || runUpdaterCommand)(
+      ? await (options.runUpdaterCommand || runFreshUpdater)(
           ["status"],
           options.environment || process.env,
           {
@@ -194,7 +194,7 @@ export async function processCommunityUpdateRequest(options = {}) {
     let recordedSummary = {};
     if (request) {
       try {
-        const recordedState = await (options.runUpdaterCommand || runUpdaterCommand)(
+        const recordedState = await (options.runUpdaterCommand || runFreshUpdater)(
           ["status"],
           options.environment || process.env,
           {
@@ -229,8 +229,9 @@ export async function processCommunityUpdateRequest(options = {}) {
   }
 }
 
-async function acquireAgentLock(directory) {
-  const lockPath = join(directory, "agent.lock");
+export async function acquireAgentLock(directory, lockName = "agent.lock") {
+  if (!["agent.lock", "maintenance.lock"].includes(lockName)) throw new Error("Unsupported agent lock");
+  const lockPath = join(directory, lockName);
   try {
     const handle = await open(lockPath, "wx", 0o600);
     await handle.writeFile(`${process.pid}\n`, "utf8");
@@ -239,6 +240,9 @@ async function acquireAgentLock(directory) {
   } catch (error) {
     if (error?.code !== "EEXIST") throw error;
     const existingPid = Number((await readFile(lockPath, "utf8").catch(() => "")).trim());
+    if (!Number.isInteger(existingPid) || existingPid <= 1) {
+      throw new Error("Update lock has no valid owner; inspect the stopped service before retrying");
+    }
     if (Number.isInteger(existingPid) && existingPid > 1) {
       try {
         process.kill(existingPid, 0);
@@ -248,7 +252,7 @@ async function acquireAgentLock(directory) {
       }
     }
     await unlink(lockPath);
-    return acquireAgentLock(directory);
+    return acquireAgentLock(directory, lockName);
   }
 }
 
