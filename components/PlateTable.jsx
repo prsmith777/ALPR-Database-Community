@@ -102,7 +102,6 @@ import MultiSelectFilter from "@/components/MultiSelectFilter";
 import LiveFeedDateRangeFilter from "@/components/LiveFeedDateRangeFilter";
 import {
   retryBlueIrisVehicleFrameForRead,
-  reviewVehicleClusterSuggestion,
 } from "@/app/actions";
 import ImageViewer from "./ImageViewer";
 import { useAccess } from "@/components/auth/AccessProvider";
@@ -444,7 +443,6 @@ export default function PlateTable({
   const [pendingUnconfirmedNavigation, setPendingUnconfirmedNavigation] = useState(null);
   const [confirmNextOperation, setConfirmNextOperation] = useState(null);
   const [navigationWatchdogTick, setNavigationWatchdogTick] = useState(0);
-  const [pendingVehicleReview, setPendingVehicleReview] = useState("");
   const [pendingDirectionReview, setPendingDirectionReview] = useState("");
   const [pendingVehicleImageRetry, setPendingVehicleImageRetry] = useState(false);
   const [vehicleImageRetryError, setVehicleImageRetryError] = useState("");
@@ -553,29 +551,6 @@ export default function PlateTable({
       input.setSelectionRange(nextSelectionStart, nextSelectionEnd);
     });
   }, []);
-
-  const handleVehicleReview = async (decision) => {
-    if (
-      !selectedImage?.id ||
-      pendingVehicleReview ||
-      activeConfirmNextOperationRef.current ||
-      pendingUnconfirmedNavigation
-    ) return;
-    setPendingVehicleReview(decision);
-    try {
-      const result = await reviewVehicleClusterSuggestion({ readId: selectedImage.id, decision });
-      if (!result.success) return;
-      setSelectedImage((previous) => previous ? {
-        ...previous,
-        vehicleClusterId: Number(result.data.cluster_id),
-        vehicleClusterStatus: result.data.assignment_status,
-        vehicleClusterSimilarity: result.data.similarity === null ? null : Number(result.data.similarity),
-      } : previous);
-      router.refresh();
-    } finally {
-      setPendingVehicleReview("");
-    }
-  };
 
   const handleDirectionReview = async (orientation) => {
     if (
@@ -731,15 +706,9 @@ export default function PlateTable({
         || plate.vehicle_body_type_confidence === undefined
         ? null
         : Number(plate.vehicle_body_type_confidence),
-      vehicleClusterId: plate.vehicle_cluster_id ? Number(plate.vehicle_cluster_id) : null,
-      vehicleClusterStatus: plate.vehicle_cluster_status || null,
-      vehicleClusterSimilarity: plate.vehicle_cluster_similarity === null || plate.vehicle_cluster_similarity === undefined
-        ? null
-        : Number(plate.vehicle_cluster_similarity),
-      vehicleIdentityMode: plate.vehicle_identity_mode || "v1_primary",
       vehicleProfileId: plate.vehicle_profile_id ? Number(plate.vehicle_profile_id) : null,
       vehicleProfileAssignmentBasis: plate.vehicle_profile_assignment_basis || null,
-      vehicleFindSimilarAvailable: plate.vehicle_find_similar_available !== false,
+      vehicleFindSimilarAvailable: plate.vehicle_find_similar_available === true,
       id: plate.id,
       validated: plate.validated,
       bi_path: bi_url,
@@ -982,18 +951,11 @@ export default function PlateTable({
         || currentPlate?.vehicle_body_type_confidence === undefined
         ? null
         : Number(currentPlate.vehicle_body_type_confidence);
-      const currentVehicleClusterId = currentPlate?.vehicle_cluster_id ? Number(currentPlate.vehicle_cluster_id) : null;
-      const currentVehicleClusterStatus = currentPlate?.vehicle_cluster_status || null;
-      const currentVehicleClusterSimilarity = currentPlate?.vehicle_cluster_similarity === null
-        || currentPlate?.vehicle_cluster_similarity === undefined
-        ? null
-        : Number(currentPlate.vehicle_cluster_similarity);
-      const currentVehicleIdentityMode = currentPlate?.vehicle_identity_mode || "v1_primary";
       const currentVehicleProfileId = currentPlate?.vehicle_profile_id
         ? Number(currentPlate.vehicle_profile_id)
         : null;
       const currentVehicleProfileAssignmentBasis = currentPlate?.vehicle_profile_assignment_basis || null;
-      const currentVehicleFindSimilarAvailable = currentPlate?.vehicle_find_similar_available !== false;
+      const currentVehicleFindSimilarAvailable = currentPlate?.vehicle_find_similar_available === true;
       const currentVehicleImageUrl = currentPlate?.vehicle_image_path
         ? `/images/${currentPlate.vehicle_image_path}`
         : null;
@@ -1032,10 +994,6 @@ export default function PlateTable({
           currentVehicleColorConfidence !== selectedImage.vehicleColorConfidence ||
           currentVehicleBodyType !== selectedImage.vehicleBodyType ||
           currentVehicleBodyTypeConfidence !== selectedImage.vehicleBodyTypeConfidence ||
-          currentVehicleClusterId !== selectedImage.vehicleClusterId ||
-          currentVehicleClusterStatus !== selectedImage.vehicleClusterStatus ||
-          currentVehicleClusterSimilarity !== selectedImage.vehicleClusterSimilarity ||
-          currentVehicleIdentityMode !== selectedImage.vehicleIdentityMode ||
           currentVehicleProfileId !== selectedImage.vehicleProfileId ||
           currentVehicleProfileAssignmentBasis !== selectedImage.vehicleProfileAssignmentBasis ||
           currentVehicleFindSimilarAvailable !== selectedImage.vehicleFindSimilarAvailable ||
@@ -1078,10 +1036,6 @@ export default function PlateTable({
           vehicleColorConfidence: currentVehicleColorConfidence,
           vehicleBodyType: currentVehicleBodyType,
           vehicleBodyTypeConfidence: currentVehicleBodyTypeConfidence,
-          vehicleClusterId: currentVehicleClusterId,
-          vehicleClusterStatus: currentVehicleClusterStatus,
-          vehicleClusterSimilarity: currentVehicleClusterSimilarity,
-          vehicleIdentityMode: currentVehicleIdentityMode,
           vehicleProfileId: currentVehicleProfileId,
           vehicleProfileAssignmentBasis: currentVehicleProfileAssignmentBasis,
           vehicleFindSimilarAvailable: currentVehicleFindSimilarAvailable,
@@ -3053,22 +3007,16 @@ export default function PlateTable({
                 </div>
                 <div>
                   <div className="text-xs uppercase text-muted-foreground">Vehicle</div>
-                  {selectedImage.vehicleClusterId ? (
+                  {selectedImage.vehicleProfileId ? (
                     <Link
-                      href={selectedImage.vehicleIdentityMode === "v2_primary"
-                        ? `/visual_search/profiles/${selectedImage.vehicleClusterId}`
-                        : `/visual_search/vehicles/${selectedImage.vehicleClusterId}`}
+                      href={`/visual_search/profiles/${selectedImage.vehicleProfileId}`}
                       className="text-blue-500 hover:underline"
                     >
-                      {selectedImage.vehicleIdentityMode === "v2_primary"
-                        ? `Vehicle #${selectedImage.vehicleClusterId}`
-                        : `Legacy Vehicle #${selectedImage.vehicleClusterId}`}
+                      {`Vehicle #${selectedImage.vehicleProfileId}`}
                     </Link>
                   ) : (
                     <div className="text-muted-foreground">
-                      {selectedImage.vehicleIdentityMode === "v2_primary"
-                        ? "Unassigned in ReID"
-                        : "Unassigned in legacy ReID v1"}
+                      Unassigned in ReID
                     </div>
                   )}
                 </div>
@@ -3271,34 +3219,28 @@ export default function PlateTable({
               <div className="grid w-full gap-3">
                   <div className={POPUP_ACTION_GRID_CLASS}>
                     <PopupActionSlot>
-                      {canRead && selectedImage && (selectedImage.vehicleIdentityMode !== "v2_primary" || selectedImage.vehicleFindSimilarAvailable) ? <Button
+                      {canRead && selectedImage && selectedImage.vehicleFindSimilarAvailable ? <Button
                         asChild
                         variant="outline"
                         size="sm"
                         className={POPUP_ACTION_BUTTON_CLASS}
-                        aria-label={selectedImage.vehicleIdentityMode === "v2_primary"
-                          ? "Find similar vehicle"
-                          : "Find similar using legacy ReID v1"}
-                        title={selectedImage.vehicleIdentityMode === "v2_primary"
-                          ? "Find similar from the exact canonical Vehicle View"
-                          : "Find similar using legacy ReID v1 plate-image search"}
+                        aria-label="Find similar vehicle"
+                        title="Find similar from the exact canonical Vehicle View"
                       >
                         <Link href={`/visual_search?readId=${selectedImage.id}`}>
                           <ScanSearch className={POPUP_ACTION_ICON_CLASS} />
                           <span className={POPUP_ACTION_LABEL_CLASS}>
-                            {selectedImage.vehicleIdentityMode === "v2_primary"
-                              ? "Find similar vehicle"
-                              : "Find similar (legacy v1)"}
+                            Find similar vehicle
                           </span>
                         </Link>
-                      </Button> : canRead && selectedImage?.vehicleIdentityMode === "v2_primary" && selectedImage.vehicleProfileId ? (
+                      </Button> : canRead && selectedImage && selectedImage.vehicleProfileId ? (
                         <Button asChild variant="outline" size="sm" className={POPUP_ACTION_BUTTON_CLASS}>
                           <Link href={`/visual_search/profiles/${selectedImage.vehicleProfileId}`}>
                             <CarFront className={POPUP_ACTION_ICON_CLASS} />
                             <span className={POPUP_ACTION_LABEL_CLASS}>Open Vehicle Profile</span>
                           </Link>
                         </Button>
-                      ) : canRead && selectedImage?.vehicleIdentityMode === "v2_primary" ? (
+                      ) : canRead && selectedImage ? (
                         <Button
                           type="button"
                           variant="outline"
@@ -3311,34 +3253,6 @@ export default function PlateTable({
                           <span className={POPUP_ACTION_LABEL_CLASS}>Find similar unavailable</span>
                         </Button>
                       ) : null}
-                    </PopupActionSlot>
-                    <PopupActionSlot>
-                      {canReview && selectedImage?.vehicleIdentityMode !== "v2_primary" && selectedImage?.vehicleClusterStatus === "suggested" && <Button
-                        variant="outline"
-                        size="sm"
-                        className={POPUP_ACTION_BUTTON_CLASS}
-                        disabled={Boolean(pendingVehicleReview) || confirmNextBusy}
-                        onClick={() => handleVehicleReview("confirm")}
-                        aria-label="Confirm suggested legacy vehicle match"
-                        title="Confirm suggested legacy ReID v1 vehicle match"
-                      >
-                        <CircleCheck className={POPUP_ACTION_ICON_CLASS} />
-                        <span className={POPUP_ACTION_LABEL_CLASS}>Confirm legacy vehicle</span>
-                      </Button>}
-                    </PopupActionSlot>
-                    <PopupActionSlot>
-                      {canReview && selectedImage?.vehicleIdentityMode !== "v2_primary" && selectedImage?.vehicleClusterStatus === "suggested" && <Button
-                        variant="outline"
-                        size="sm"
-                        className={POPUP_ACTION_BUTTON_CLASS}
-                        disabled={Boolean(pendingVehicleReview) || confirmNextBusy}
-                        onClick={() => handleVehicleReview("separate")}
-                        aria-label="Mark as a different legacy vehicle"
-                        title="Mark as a different legacy ReID v1 vehicle"
-                      >
-                        <Split className={POPUP_ACTION_ICON_CLASS} />
-                        <span className={POPUP_ACTION_LABEL_CLASS}>Different legacy vehicle</span>
-                      </Button>}
                     </PopupActionSlot>
                     <PopupActionSlot>
                       {canReview && <Button

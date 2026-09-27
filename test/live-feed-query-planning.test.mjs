@@ -4,64 +4,43 @@ import { hydratePlateReadVehicleIdentity, PRIMARY_PLATE_READ_IDENTITY_SQL } from
 import { withReadOnlySnapshot } from "../lib/read-only-snapshot.mjs";
 import { createQueryTiming } from "../lib/query-timing.mjs";
 
-function identityClient(mode, identities = []) {
+function identityClient(identities = []) {
   const calls = [];
   return { calls, async query(sql, params) {
     calls.push({ sql, params });
-    return { rows: calls.length === 1 ? (mode === undefined ? [] : [{ mode }]) : identities };
+    return { rows: identities };
   } };
 }
 
-for (const mode of ["v1_primary", "v1_rollback", "v2_shadow"]) {
-  test(mode + " preserves legacy identities without querying authoritative evidence", async () => {
-    const client = identityClient(mode, [{ read_id: "20", cluster_id: "7", assignment_status: "assigned", similarity: 0.9 }]);
-    const rows = [{ id: 21, marker: "first" }, { id: 20, marker: "second" }];
-    const result = await hydratePlateReadVehicleIdentity(client, rows);
-    assert.deepEqual(result.map(row => row.id), [21, 20]);
-    assert.equal(result[0].marker, "first");
-    assert.equal(result[0].vehicle_cluster_id, null);
-    assert.equal(result[1].vehicle_cluster_id, "7");
-    assert.equal(result[1].vehicle_cluster_status, "assigned");
-    assert.equal(result[1].vehicle_cluster_similarity, 0.9);
-    assert.ok(result.every(row => row.vehicle_identity_mode === mode && row.vehicle_profile_id === null && row.vehicle_find_similar_available));
-    assert.equal(client.calls.length, 2);
-    assert.match(client.calls[1].sql, /vehicle_cluster_assignments WHERE read_id = ANY\(\$1::bigint\[\]\)/);
-    assert.deepEqual(client.calls[1].params, [[21, 20]]);
-    assert.doesNotMatch(client.calls[1].sql, /vehicle_reid_v2|vehicle_asset_embeddings/);
-    assert.deepEqual(rows, [{ id: 21, marker: "first" }, { id: 20, marker: "second" }]);
-  });
-}
-
-test("primary identities preserve row order and never fall back to legacy assignments", async () => {
-  const client = identityClient("v2_primary", [
+test("canonical identities preserve row order with one bounded query", async () => {
+  const client = identityClient([
     { read_id: "20", canonical_profile_id: "8", assignment_basis: "exact_effective_plate", searchable: false },
     { read_id: "21", canonical_profile_id: null, assignment_basis: null, searchable: true },
   ]);
-  const result = await hydratePlateReadVehicleIdentity(client, [{ id: 21 }, { id: "20" }, { id: 22 }]);
+  const rows = [{ id: 21, marker: "first" }, { id: "20" }, { id: 22 }];
+  const result = await hydratePlateReadVehicleIdentity(client, rows);
   assert.deepEqual(result.map(row => row.id), [21, "20", 22]);
-  assert.equal(result[0].vehicle_cluster_id, null);
+  assert.equal(result[0].marker, "first");
   assert.equal(result[0].vehicle_find_similar_available, true);
-  assert.equal(result[1].vehicle_cluster_id, "8");
-  assert.equal(result[1].vehicle_cluster_status, "authoritative");
+  assert.equal(result[1].vehicle_profile_id, "8");
   assert.equal(result[1].vehicle_profile_assignment_basis, "exact_effective_plate");
   assert.equal(result[1].vehicle_find_similar_available, false);
   assert.equal(result[2].vehicle_profile_id, null);
   assert.equal(result[2].vehicle_find_similar_available, false);
-  assert.ok(result.every(row => row.vehicle_cluster_similarity === null));
-  assert.equal(client.calls[1].sql, PRIMARY_PLATE_READ_IDENTITY_SQL);
-  assert.deepEqual(client.calls[1].params, [[21, "20", 22]]);
+  assert.equal(client.calls.length, 1);
+  assert.equal(client.calls[0].sql, PRIMARY_PLATE_READ_IDENTITY_SQL);
+  assert.deepEqual(client.calls[0].params, [[21, "20", 22]]);
+  assert.deepEqual(rows, [{ id: 21, marker: "first" }, { id: "20" }, { id: 22 }]);
 });
 
-test("missing or invalid authority fails closed instead of silently selecting legacy data", async () => {
-  for (const mode of [undefined, null, "", "unexpected"]) {
-    const client = identityClient(mode);
-    await assert.rejects(hydratePlateReadVehicleIdentity(client, [{ id: 1 }]), /authority mode unavailable/);
-    assert.equal(client.calls.length, 1);
-  }
+test("identity query failure is not reported as successful unassigned data", async () => {
+  await assert.rejects(hydratePlateReadVehicleIdentity({
+    query() { throw new Error("database unavailable"); },
+  }, [{ id: 1 }]), /database unavailable/);
 });
 
 test("empty pages require no identity queries", async () => {
-  const client = identityClient("v2_primary");
+  const client = identityClient();
   const rows = [];
   assert.equal(await hydratePlateReadVehicleIdentity(client, rows), rows);
   assert.equal(client.calls.length, 0);

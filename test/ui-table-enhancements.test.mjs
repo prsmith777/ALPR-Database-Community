@@ -99,7 +99,7 @@ test("live feed image review advances visibly and starts focused on the plate", 
   assert.match(plateTable, /selectedImage\?\.id === activePlate\.id/);
   assert.match(plateTable, /<DialogFooter className="self-end lg:col-start-1 lg:row-start-2">[\s\S]*?className="grid w-full gap-3"/);
   assert.equal([...plateTable.matchAll(/<div className=\{POPUP_ACTION_GRID_CLASS\}>/g)].length, 2);
-  assert.equal([...plateTable.matchAll(/<PopupActionSlot(?:\s[^>]*)?>/g)].length, 14);
+  assert.equal([...plateTable.matchAll(/<PopupActionSlot(?:\s[^>]*)?>/g)].length, 12);
   assert.match(plateTable, /Show next read \(Right Arrow\)/);
   assert.match(plateTable, /\[role="slider"\]/);
   assert.match(plateTable, /lg:grid-cols-\[minmax\(0,1fr\)_11rem\].*lg:grid-rows-\[minmax\(0,1fr\)_auto\].*lg:overflow-hidden/);

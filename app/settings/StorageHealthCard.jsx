@@ -126,7 +126,7 @@ export default function StorageHealthCard({ snapshot, view = "all" }) {
           <CardDescription className="mt-2">
             {view === "monitoring"
               ? "Scheduled dry-run evidence and bounded storage reconciliation. This view cannot delete or modify data."
-              : "Capacity, database, capture, and visual-index measurements. This view cannot delete or modify data."}
+              : "Capacity, database, capture, and vehicle-analysis measurements. This view cannot delete or modify data."}
           </CardDescription>
         </div>
         <Button

@@ -8,11 +8,7 @@ import pg from "pg";
 
 import { VehicleReidV2AuthorityRepository } from "../lib/vehicle-reid-v2-authority-repository.mjs";
 import { VehicleReidV2AuthorityService } from "../lib/vehicle-reid-v2-authority-service.mjs";
-import { VehicleReidV2ConversionRepository } from "../lib/vehicle-reid-v2-conversion-repository.mjs";
-import { VehicleReidV2ConversionService } from "../lib/vehicle-reid-v2-conversion-service.mjs";
 import { VehicleReidV2LiveRepository, VehicleReidV2LiveService } from "../lib/vehicle-reid-v2-live.mjs";
-import { VehicleReidV2ShadowRepository } from "../lib/vehicle-reid-v2-shadow-repository.mjs";
-import { VehicleReidV2ShadowService } from "../lib/vehicle-reid-v2-shadow.mjs";
 import { hydratePlateReadVehicleIdentity, PRIMARY_PLATE_READ_IDENTITY_SQL } from "../lib/plate-read-vehicle-identity.mjs";
 
 const OPT_IN = "COMMUNITY_FEED_POSTGRES_TEST_OPT_IN";
@@ -91,7 +87,6 @@ async function guard() {
        (SELECT COUNT(*)::integer FROM public.vehicle_image_assets) AS assets,
        (SELECT COUNT(*)::integer FROM public.vehicle_image_derivatives) AS derivatives,
        (SELECT COUNT(*)::integer FROM public.vehicle_asset_embeddings) AS embeddings,
-       (SELECT COUNT(*)::integer FROM public.vehicle_reid_v2_conversion_runs) AS conversions,
        (SELECT COUNT(*)::integer FROM public.vehicle_reid_v2_profiles) AS profiles,
        (SELECT COUNT(*)::integer FROM public.vehicle_reid_v2_profile_members) AS members,
        (SELECT COUNT(*)::integer FROM public.vehicle_reid_v2_read_assignments) AS assignments,
@@ -102,11 +97,10 @@ async function guard() {
     assets: 0,
     derivatives: 0,
     embeddings: 0,
-    conversions: 0,
     profiles: 0,
     members: 0,
     assignments: 0,
-    mode: "v2_shadow",
+    mode: "v2_primary",
   });
   const lock = await lockClient.query(
     "SELECT pg_try_advisory_lock(hashtextextended($1, 0)) AS locked",
@@ -310,15 +304,6 @@ function fixtureActor() {
   };
 }
 
-function newConversionService({ repository = null } = {}) {
-  const shadowService = new VehicleReidV2ShadowService({
-    repository: new VehicleReidV2ShadowRepository({ pool }),
-  });
-  return new VehicleReidV2ConversionService({
-    repository: repository || new VehicleReidV2ConversionRepository({ pool }),
-    shadowService,
-  });
-}
 
 function newAuthorityService() {
   return new VehicleReidV2AuthorityService({
@@ -333,36 +318,7 @@ function newLiveService() {
   });
 }
 
-async function processCommittedPreview(runId, { firstLimit = 1 } = {}) {
-  const actor = fixtureActor();
-  let overview = await newConversionService().getOverview();
-  let calls = 0;
-  while (overview.latestRun.status === "previewing") {
-    const result = await newConversionService().processBatch({
-      runId,
-      limit: calls === 0 ? firstLimit : 250,
-      actor,
-    });
-    assert.ok(result.operation.processed >= 0 && result.operation.processed <= 250);
-    overview = result.overview;
-    calls += 1;
-    assert.ok(calls < 20, "bounded preview should converge across committed batches");
-  }
-  assert.equal(overview.latestRun.status, "ready");
-  assert.match(overview.latestRun.previewFingerprint, /^[0-9a-f]{64}$/);
-  return overview;
-}
 
-async function verifyCommittedPreview(runId, previewFingerprint) {
-  const verified = await newConversionService().verifyCurrent({
-    runId,
-    previewFingerprint,
-    actor: fixtureActor(),
-  });
-  assert.equal(verified.operation.current, true);
-  assert.equal(verified.overview.latestRun.lastRevalidationStatus, "current");
-  return verified;
-}
 
 async function drainLiveReads(service, readIds, label) {
   const expected = [...new Set(readIds.map(Number))].sort((left, right) => left - right);
@@ -425,59 +381,20 @@ async function revisePairReview(reviewId, label) {
 
 async function testIdentityLifecycle() {
   const actor = fixtureActor();
-  const started = await newConversionService().startPreview({ actor, batchSize: 5 });
-  const conversion = { runId: started.operation.runId };
-  const ready = await processCommittedPreview(conversion.runId, { firstLimit: 250 });
-  await verifyCommittedPreview(conversion.runId, ready.latestRun.previewFingerprint);
-
   const authority = newAuthorityService();
-  const accepted = await authority.acceptPreview({
-    runId: conversion.runId,
-    previewFingerprint: ready.latestRun.previewFingerprint,
-    actor,
-  });
-  assert.deepEqual(accepted.operation, {
-    accepted: true,
-    stale: false,
-    runId: conversion.runId,
-  });
-  const materialized = await authority.materializeAcceptedPreview({
-    runId: conversion.runId,
-    previewFingerprint: ready.latestRun.previewFingerprint,
-    actor,
-  });
-  assert.equal(materialized.operation.completed, true);
-  assert.equal(materialized.operation.stale, undefined);
-  assert.equal(materialized.overview.control.mode, "v2_shadow");
-  assert.equal(materialized.overview.counts.profiles, materialized.operation.profiles);
-  assert.equal(materialized.overview.counts.members, materialized.operation.members);
-  assert.equal(materialized.overview.counts.assignments, materialized.operation.assignments);
-  assert.equal(materialized.overview.counts.plateAnchors, materialized.operation.plateAnchors);
-
-  const cutover = await authority.transitionMode({
-    mode: "v2_primary",
-    runId: conversion.runId,
-    reason: "Committed Stage 2 integration cutover",
-    actor,
-  });
-  assert.equal(cutover.overview.control.mode, "v2_primary");
-  assert.equal(cutover.overview.control.transitionRunId, conversion.runId);
-
   const live = newLiveService();
+  assert.equal((await authority.getControl()).mode, "v2_primary");
+  await drainLiveReads(live, fixture.readIds, "native identity initialization");
   const replacementTarget = await pool.query(
     `SELECT assignments.read_id, assignments.asset_id
      FROM public.vehicle_reid_v2_current_read_assignments assignments
-     WHERE assignments.origin_conversion_run_id = $1
-       AND assignments.assignment_basis IN ('canonical_image','shared_asset','human_same')
-     ORDER BY assignments.read_id LIMIT 1`,
-    [conversion.runId]
+     WHERE assignments.assignment_basis IN ('canonical_image','shared_asset','human_same')
+     ORDER BY assignments.read_id LIMIT 1`
   );
   assert.equal(replacementTarget.rowCount, 1);
   const replacedReadId = Number(replacementTarget.rows[0].read_id);
   const feedBeforeReplacement = await hydratePlateReadVehicleIdentity(pool, [{ id: replacedReadId }]);
-  assert.equal(feedBeforeReplacement[0].vehicle_identity_mode, "v2_primary");
   assert.ok(feedBeforeReplacement[0].vehicle_profile_id);
-  assert.equal(feedBeforeReplacement[0].vehicle_cluster_status, "authoritative");
   await assertFeedIdentityEquivalent("initial current assignments");
   await pool.query(
     `UPDATE public.vehicle_image_asset_reads
@@ -493,7 +410,6 @@ async function testIdentityLifecycle() {
   assert.equal(staleAfterLinkChange.rows[0].count, 0);
   const staleFeed = await hydratePlateReadVehicleIdentity(pool, [{ id: replacedReadId }]);
   assert.equal(staleFeed[0].vehicle_profile_id, null, "feed must not revive an active but stale assignment");
-  assert.equal(staleFeed[0].vehicle_cluster_id, null, "primary feed must not fall back to legacy identity");
   await assertFeedIdentityEquivalent("stale source-link contract");
   await drainLiveReads(live, [replacedReadId], "source-link replacement");
   const replacementHistory = await pool.query(
@@ -750,7 +666,6 @@ async function testApplicationFeed(mode) {
   const total = Number((await pool.query("SELECT COUNT(*) FROM plate_reads")).rows[0].count);
   assert.equal(all.pagination.total, total);
   assert.equal(all.data.length, Math.min(total, 100));
-  assert.ok(all.data.every(row => row.vehicle_identity_mode === mode));
   const fields = ["timestamp", "plate_number", "confidence", "occurrence_count", "tags", "camera_name", "direction"];
   for (const field of fields) {
     for (const direction of ["asc", "desc"]) {
@@ -809,7 +724,7 @@ try {
   await createAssetWithCrop("initial-b", "TST1002");
   await addSharedRead(first);
   await loadApplicationDatabase();
-  await testApplicationFeed("v2_shadow");
+  await testApplicationFeed("v2_primary");
   await testIdentityLifecycle();
   await testApplicationFeed("v2_primary");
   await testSetBasedFeedWorkAndOffPageConflicts();

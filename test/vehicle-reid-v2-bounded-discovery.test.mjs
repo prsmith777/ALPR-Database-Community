@@ -118,7 +118,7 @@ function discoveryHarness({
   };
 }
 
-test("bounded discovery migration persists independent cursors and seeds without rewind", async () => {
+test("bounded discovery migration persists independent cursors and initializes natively without rewind", async () => {
   const [migration, live] = await Promise.all([
     source("migrations.sql"),
     source("lib/vehicle-reid-v2-live.mjs"),
@@ -127,7 +127,7 @@ test("bounded discovery migration persists independent cursors and seeds without
     migration.indexOf("CREATE TABLE IF NOT EXISTS public.vehicle_reid_v2_live_discovery_state")
   );
   const table = bounded.slice(0, bounded.indexOf(");") + 2);
-  assert.match(bounded, /2026081703_vehicle_reid_v2_bounded_live_discovery/);
+  assert.match(bounded, /2026092701_native_reid/);
   assert.match(table, /forward_cursor_read_id INTEGER NOT NULL/);
   assert.match(table, /revisit_cursor_read_id INTEGER NOT NULL/);
   assert.match(table, /revisit_upper_read_id INTEGER NOT NULL/);
@@ -136,9 +136,7 @@ test("bounded discovery migration persists independent cursors and seeds without
   assert.match(table, /last_scanned_at TIMESTAMPTZ/);
   assert.match(table, /revision BIGINT NOT NULL/);
   assert.doesNotMatch(table, /forward_cursor_read_id[\s\S]*REFERENCES public\.plate_reads/);
-  assert.match(bounded, /JOIN public\.vehicle_reid_v2_conversion_runs runs[\s\S]*runs\.id = control\.transition_run_id/);
-  assert.match(bounded, /runs\.status = 'completed'[\s\S]*runs\.phase = 'complete'/);
-  assert.match(bounded, /forward_cursor_read_id = GREATEST/);
+  assert.match(bounded, /INSERT INTO public\.vehicle_reid_v2_live_discovery_state\(singleton\)\s+VALUES \(TRUE\)/);
   assert.match(bounded, /NEW\.forward_cursor_read_id < OLD\.forward_cursor_read_id/);
   assert.match(bounded, /NEW\.revision <> OLD\.revision \+ 1/);
   assert.match(bounded, /last_scanned_at = COALESCE/);

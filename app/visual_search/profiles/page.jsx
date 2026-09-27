@@ -1,6 +1,4 @@
-import { redirect } from "next/navigation";
-
-import { getVehicleReidAuthorityMode, getVehicleReidProfiles } from "@/app/actions";
+import { getVehicleReidProfiles } from "@/app/actions";
 import VehicleReidProfiles from "@/components/VehicleReidProfiles";
 import DashboardLayout from "@/components/layout/MainLayout";
 import TitleNavbar from "@/components/layout/TitleNav";
@@ -18,9 +16,6 @@ function positive(value, fallback) {
 export default async function VehicleProfilesPage({ searchParams }) {
   await requirePagePermission("plate.read");
   const parameters = await searchParams;
-  const modeResult = await getVehicleReidAuthorityMode();
-  const mode = modeResult?.success ? modeResult.data.control?.mode : "v1_primary";
-  if (mode !== "v2_primary") redirect("/visual_search/vehicles");
   const search = String(parameters?.search || "").trim().slice(0, 80);
   const result = await getVehicleReidProfiles({
     page: positive(parameters?.page, 1),
@@ -29,7 +24,7 @@ export default async function VehicleProfilesPage({ searchParams }) {
   });
   return (
     <DashboardLayout>
-      <TitleNavbar title="Vehicle Intelligence" navigation={vehicleIntelligenceNavigationForMode(mode)}>
+      <TitleNavbar title="Vehicle Intelligence" navigation={vehicleIntelligenceNavigationForMode()}>
         <VehicleReidProfiles result={result} search={search} />
       </TitleNavbar>
     </DashboardLayout>
