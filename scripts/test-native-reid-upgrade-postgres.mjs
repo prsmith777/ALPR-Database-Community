@@ -23,9 +23,9 @@ try {
     VALUES ('upgrade_fixture', 'Upgrade fixture', 'non-authenticating-test-value') RETURNING id`);
   await pool.query("INSERT INTO public.tags(name, color) VALUES ('Upgrade fixture tag', '#123456')");
   const read = await pool.query(`INSERT INTO public.plate_reads
-    (plate_number, image_path, vehicle_image_path, camera_name, timestamp, notes)
+    (plate_number, image_path, vehicle_image_path, camera_name, timestamp)
     VALUES ('TSTUP01', 'images/upgrade-plate.jpg', 'images/upgrade-vehicle.jpg',
-      'Synthetic upgrade camera', CURRENT_TIMESTAMP, 'Preserve this note') RETURNING *`);
+      'Synthetic upgrade camera', CURRENT_TIMESTAMP) RETURNING *`);
   const readId = read.rows[0].id;
   await pool.query(`INSERT INTO public.capture_assets
     (read_id, asset_type, algorithm_version, status, source_image_path, error_code)

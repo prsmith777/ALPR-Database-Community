@@ -89,7 +89,9 @@ jobs:
           bash test/bootstrap-control-flow.sh
 
       - name: Install PostgreSQL integration-test dependencies
-        run: yarn install --frozen-lockfile --ignore-scripts --network-timeout 100000
+        run: |
+          yarn install --frozen-lockfile --ignore-scripts --network-timeout 100000
+          node scripts/install-openvino-runtime.mjs
 
       - name: Exercise load, no-op, guarded clear, and refusal paths
         shell: bash

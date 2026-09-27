@@ -151,9 +151,11 @@ async function createAssetWithCrop(name, plate, {
   overviewContext = "street",
   timestampOffset = "0 seconds",
   embeddingValues = [],
+  cropBytes = null,
+  skipEmbedding = false,
 } = {}) {
   const assetSha = hash(`asset:${name}`);
-  const derivativeSha = hash(`crop:${name}`);
+  const derivativeSha = cropBytes ? crypto.createHash("sha256").update(cropBytes).digest("hex") : hash(`crop:${name}`);
   const embeddingSha = hash(`embedding:${name}`);
   const storedAssetPath = assetPath(assetSha);
   const asset = await pool.query(
@@ -205,7 +207,7 @@ async function createAssetWithCrop(name, plate, {
   for (let index = 0; index < Math.min(embeddingValues.length, 512); index += 1) {
     embeddingBytes.writeFloatLE(Number(embeddingValues[index]), index * 4);
   }
-  const embedding = await pool.query(
+  const embedding = skipEmbedding ? { rows: [{ id: null }] } : await pool.query(
     `INSERT INTO public.vehicle_asset_embeddings (
        derivative_id, model_name, algorithm_version, source_sha256,
        embedding_sha256, embedding_dimensions, embedding
@@ -217,7 +219,7 @@ async function createAssetWithCrop(name, plate, {
     [derivativeId, derivativeSha, embeddingSha, embeddingBytes]
   );
   const embeddingId = Number(embedding.rows[0].id);
-  fixture.embeddingIds.push(embeddingId);
+  if (embeddingId) fixture.embeddingIds.push(embeddingId);
   return {
     name,
     plate,
@@ -704,6 +706,57 @@ async function testApplicationFeed(mode) {
   console.log("application_feed_" + mode + "=passed");
 }
 
+async function testAutomaticCropAnalysis() {
+  const [
+    { default: sharp },
+    { VehicleAssetAnalysisRepository, VehicleAssetAnalysisService },
+    { VehicleAssetEmbeddingRepository }, { VehicleAssetEmbeddingService },
+    { VehicleAssetAttributeRepository }, { VehicleAssetAttributeService },
+  ] = await Promise.all([
+    import("sharp"), import("../lib/vehicle-asset-analysis-live.mjs"),
+    import("../lib/vehicle-asset-embedding-repository.mjs"), import("../lib/vehicle-asset-embedding.mjs"),
+    import("../lib/vehicle-asset-attribute-repository.mjs"), import("../lib/vehicle-asset-attribute.mjs"),
+  ]);
+  const bytes = await sharp({ create: { width: 500, height: 300, channels: 3, background: "#ab3020" } }).jpeg().toBuffer();
+  const source = await createAssetWithCrop("automatic-crop", "TSTAUTO", { cropBytes: bytes, skipEmbedding: true });
+  const repository = new VehicleAssetAnalysisRepository(pool);
+  const storage = { async resolveExistingImagePath(path) {
+    assert.equal(path, cropPath(source.derivativeSha)); return path;
+  } };
+  const imageReader = async () => bytes;
+  const service = new VehicleAssetAnalysisService({
+    repository,
+    embeddingService: new VehicleAssetEmbeddingService({
+      repository: new VehicleAssetEmbeddingRepository({ pool }), fileStorage: storage, readFile: imageReader,
+    }),
+    attributeService: new VehicleAssetAttributeService({
+      repository: new VehicleAssetAttributeRepository({ pool }), fileStorage: storage, readFile: imageReader,
+    }),
+    directionService: { async backfillDirectionBatch() {} },
+  });
+  await repository.operate("pause", fixture.actorId);
+  assert.equal((await service.processBatch()).status, "paused");
+  assert.equal((await repository.getStatus()).pending, 0);
+  await repository.operate("resume", fixture.actorId);
+  assert.equal((await service.processBatch()).succeeded, 1, "automatic real CPU analysis must finish without a campaign");
+  assert.equal((await repository.getStatus()).ready, 1);
+  const nativeSource = await repository.source(source.derivativeId);
+  assert.equal(nativeSource.has_embedding, true);
+  assert.equal(nativeSource.has_attributes, true);
+  assert.match(nativeSource.evidence_source_updated_at, /123456/);
+  const attributes = await pool.query("SELECT attribute_key FROM public.vehicle_attribute_observations WHERE read_id = $1", [source.readId]);
+  assert.equal(attributes.rowCount, 2);
+  const next = await service.processBatch();
+  assert.equal(next.processed, 0, "completed immutable evidence is not recomputed");
+  await pool.query(`UPDATE public.vehicle_asset_analysis_jobs
+    SET status = 'processing', attempt_count = 3, claim_token = $1, lease_until = CURRENT_TIMESTAMP - INTERVAL '1 second'`, [crypto.randomUUID()]);
+  await repository.reclaimExpired();
+  assert.equal((await repository.getStatus()).failed, 1, "last-attempt abandoned lease is terminal, not stuck");
+  await repository.operate("retry", fixture.actorId);
+  assert.equal((await service.processBatch()).succeeded, 1, "retry reuses completed embedding and attributes");
+  console.log("native_reid_automatic_cpu_analysis=passed");
+}
+
 async function testConcurrentSnapshot(readId) {
   await withReadOnlySnapshot(pool, async client => {
     const before = await client.query("SELECT review_revision FROM plate_reads WHERE id = $1", [readId]);
@@ -720,6 +773,7 @@ async function testConcurrentSnapshot(readId) {
 try {
   await guard();
   await createActor();
+  await testAutomaticCropAnalysis();
   const first = await createAssetWithCrop("initial-a", "TST1001");
   await createAssetWithCrop("initial-b", "TST1002");
   await addSharedRead(first);
