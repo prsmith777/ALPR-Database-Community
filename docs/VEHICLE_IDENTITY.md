@@ -34,7 +34,9 @@ high similarity score. Changing source images or review evidence can temporarily
 remove an assignment until it is reconsidered.
 
 Profiles show the associated observations. Needs Review lists identity-processing
-exceptions. Pair-review controls are available where permission allows them.
+exceptions. Vehicle Search provides Same vehicle, Different vehicle, and Unsure
+controls for users with plate-review permission. Same may merge exact-current
+profiles; Different or Unsure withdraws a prior merge made from that pair.
 Recognition Feed links to a profile when assigned and enables Find similar only
 when the read has a current eligible search source. Missing identity does not
 mean the plate read has been deleted.
@@ -77,4 +79,3 @@ application, upgrading the prior published Community schema, original-record
 preservation, native initialization, current-evidence identity behavior, and the
 set-based feed performance regression. Test fixtures are not included in the
 runtime image and are not new-user demonstration data.
-

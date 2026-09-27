@@ -80,6 +80,8 @@ export default function VehicleReidV2PairReviewControls({
       } else {
         router.refresh();
       }
+    } catch {
+      setError("Unable to save this pair review. Refresh the page and try again.");
     } finally {
       setSaving(null);
     }

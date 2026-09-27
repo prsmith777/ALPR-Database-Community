@@ -99,6 +99,9 @@ test("analysis leases, exact-source guards, retries and completion are bounded i
   assert.match(calls[2].sql, /attempt_count < 3/);
   assert.match(calls[3].sql, /derivatives.source_sha256 = assets.content_sha256/);
   assert.match(calls[3].sql, /reads.vehicle_image_updated_at IS NOT DISTINCT FROM links.source_updated_at/);
+  assert.match(calls[3].sql, /observations\.provider = \$6 AND observations\.model_version = \$7/);
+  assert.equal(calls[3].params[4], "color");
+  assert.equal(calls[3].params[7], "body_type");
   assert.match(calls[4].sql, /claim_token = \$2::uuid/);
 });
 
@@ -116,4 +119,3 @@ test("processing controls require a known operation and audit in the same transa
   assert.equal(calls.at(-2).sql, "COMMIT");
   assert.equal(calls.at(-1).sql, "release");
 });
-

@@ -1,16 +1,17 @@
 # Changelog
 
+## Unreleased
+
 ## 0.1.43 — Native ReID V2 (2026-09-27)
 
 - Make ReID V2 the only Community identity pipeline; fresh installs initialize it directly.
 - Automatically catalog eligible whole-vehicle images, crop, embed, and extract attributes in bounded background jobs.
+- Enable permission-checked, audited pair decisions directly in Vehicle Search.
 - Add processing status, pause/resume, and bounded failure retries to Vehicle Setup.
 - Bind direction calibration and predictions to exact-current canonical crop evidence.
 - Remove obsolete index, grouping, mode-selection, and conversion code. Upgrades retire derived caches while retaining original reads, images, users, tags, and corrections.
 - Update the manual, installation/update/migration guidance, roadmap, and isolated PostgreSQL regression coverage.
 
-
-## Unreleased
 
 ## 0.1.42 — 2026-09-27
 
