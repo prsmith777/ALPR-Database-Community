@@ -1,6 +1,6 @@
 # Community product roadmap
 
-Last reviewed: September 26, 2026
+Last reviewed: September 27, 2026
 
 This roadmap distinguishes capabilities that are available now from work that
 may be considered later. It is not a promise of dates. GitHub Releases and the
@@ -33,6 +33,13 @@ inherited Git history. Every release gate requires:
 - named users with Administrator, Operator, Viewer, and Auditor roles;
 - configurable fuzzy plate-matching profiles with an interactive profile test;
 - no radar-dependent speed fields in Community.
+
+Version 0.1.42 adds set-based current-evidence validation for Recognition Feed
+on databases already using ReID 2 primary mode, plus a consistent read snapshot
+for pagination and identity metadata. The default Community mode is unchanged;
+this does not introduce an advanced ReID administration UI. Synthetic PostgreSQL
+regression coverage includes stale evidence, merges, off-page conflicts, and
+database work reduction. See [feed performance](REID_FEED_PERFORMANCE.md).
 
 ### Vehicle images and direction
 

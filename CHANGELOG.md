@@ -2,6 +2,23 @@
 
 ## Unreleased
 
+## 0.1.42 — 2026-09-27
+
+- Fixed repeated Recognition Feed identity validation on imported databases
+  already using ReID 2 primary mode. Relevant profile evidence is checked as
+  sets, including members outside the visible page; stale or conflicting
+  evidence still prevents an authoritative identity from being displayed.
+- Split page selection, metadata, and identities into bounded queries within
+  one read-only, repeatable-read snapshot. Filters, sorting, pagination, and
+  legacy identity behavior are preserved. Missing or invalid authority control
+  now reports an error instead of silently falling back to legacy identity.
+- Added slow-query stage timings without plate numbers or query parameters,
+  and synthetic PostgreSQL regression tests for the application query,
+  evidence lifecycle, merges, off-page conflicts, and reduced database work.
+- No database conversion, authority-mode change, or data deletion is required.
+  Updated the user guide to 3.7, roadmap, migration/update troubleshooting,
+  release information, and exact-tag installation examples.
+
 ## 0.1.41 — 2026-09-26
 
 - Completed a repository-wide accuracy review of the embedded manual,

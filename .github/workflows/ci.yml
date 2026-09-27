@@ -171,6 +171,24 @@ jobs:
             DATABASE_URL='postgresql://postgres:fixture-test-password@127.0.0.1:5432/fixture_test' \
             yarn test:vehicle-image-crop:postgres
 
+          # Guarded, synthetic-only database; never points at an installed ALPR.
+          psql_database postgres --command "CREATE DATABASE codex_community_feed_1a2b3c4d;"
+          trap 'psql_database postgres --command "DROP DATABASE IF EXISTS codex_community_feed_1a2b3c4d WITH (FORCE);"' EXIT
+          psql_database codex_community_feed_1a2b3c4d --file /workspace/schema.sql
+          psql_database codex_community_feed_1a2b3c4d --file /workspace/migrations.sql
+          psql_database codex_community_feed_1a2b3c4d --file /workspace/migrations.sql
+          psql_database codex_community_feed_1a2b3c4d --command "
+            CREATE TABLE public.codex_integration_test_guard (scope TEXT PRIMARY KEY, guard_token TEXT NOT NULL);
+            INSERT INTO public.codex_integration_test_guard VALUES ('community-feed:v1', 'ci-disposable-pg17');
+          "
+          COMMUNITY_FEED_POSTGRES_TEST_OPT_IN='true' \
+            COMMUNITY_FEED_POSTGRES_TEST_DATABASE='codex_community_feed_1a2b3c4d' \
+            COMMUNITY_FEED_POSTGRES_TEST_GUARD_TOKEN='ci-disposable-pg17' \
+            DATABASE_URL='postgresql://postgres:fixture-test-password@127.0.0.1:5432/codex_community_feed_1a2b3c4d' \
+            yarn test:community-feed:postgres
+          psql_database postgres --command "DROP DATABASE codex_community_feed_1a2b3c4d WITH (FORCE);"
+          trap - EXIT
+
           fixture status | grep -F 'fixture_state=absent'
           fixture load | grep -F 'fixture_state=loaded'
 

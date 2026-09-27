@@ -20,6 +20,11 @@ operator-specific infrastructure configuration.
 - Configurable application storage monitoring and guarded cleanup
 - PostgreSQL 17 database with persistent Docker volumes
 
+For slow Recognition Feed records after an import, see
+[feed performance and troubleshooting](docs/REID_FEED_PERFORMANCE.md).
+The v0.1.42 repair preserves the installation's existing identity mode and
+requires only a normal update, not another database migration.
+
 Private deployment tooling, host-level Docker or backup maintenance, fixed
 camera workflows, experimental radar traffic correlation, AI-assistant routes,
 and prototype TPMS screens are intentionally not included.
