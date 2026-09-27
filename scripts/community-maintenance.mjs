@@ -1,12 +1,12 @@
 import { spawnSync } from "node:child_process";
-import { access } from "node:fs/promises";
+import { access, mkdir } from "node:fs/promises";
 import { userInfo } from "node:os";
 import { join, resolve } from "node:path";
 import { createInterface } from "node:readline/promises";
 import { fileURLToPath } from "node:url";
 import { runUpdaterCommand } from "./community-updater.mjs";
 import { submitCommunityUpdateRequest } from "../lib/community-update-control.mjs";
-import { processCommunityUpdateRequest } from "./community-update-agent.mjs";
+import { acquireAgentLock, processCommunityUpdateRequest } from "./community-update-agent.mjs";
 
 const SERVICE = "alpr-community-update-agent.service";
 function systemctl(args, { optional = false } = {}) {
@@ -43,15 +43,20 @@ export async function runMaintenance(root, target, options = {}) {
   if (active) {
     const serviceRoot = service(["show", "--property=WorkingDirectory", "--value"]);
     if (resolve(serviceRoot) !== root) throw new Error("The update service belongs to another installation");
-  } else if (await exists(join(directory, "agent.lock"))) {
-    throw new Error("Stop the foreground update agent before using the maintenance launcher");
   }
   log.log("This will back up and update this installation to " + target + ".");
   log.log("It temporarily stops this installation's update service, then restarts it. Do not use the browser update controls meanwhile.");
   const answer = await options.confirm("Type INSTALL " + target + " to continue: ");
   if (answer.trim() !== "INSTALL " + target) return { cancelled: true };
-  if (active) service(["stop"]);
+  await mkdir(directory, { recursive: true, mode: 0o770 });
+  const releaseMaintenanceLock = await acquireAgentLock(directory, "maintenance.lock");
+  let releaseAgentLock;
+  let stoppedService = false;
   try {
+    if (active) { service(["stop"]); stoppedService = true; }
+    // Share the worker lock with the ordinary service. Dead lock files left by
+    // an old process are handled by the same liveness check as a normal restart.
+    releaseAgentLock = await acquireAgentLock(directory);
     // Stop first, then repeat the queue check to catch requests arriving while
     // confirmation was being read. Never overwrite an existing request.
     for (const file of ["request.json", "request-active.json"]) {
@@ -71,7 +76,10 @@ export async function runMaintenance(root, target, options = {}) {
     log.log("Technical system checks passed. Return to Software Updates for real-use checks and Accept update.");
     return result;
   } finally {
-    if (active) service(["start"]);
+    try {
+      if (releaseAgentLock) await releaseAgentLock();
+      if (stoppedService) service(["start"]);
+    } finally { await releaseMaintenanceLock(); }
   }
 }
 

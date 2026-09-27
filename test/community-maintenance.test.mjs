@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -63,8 +64,8 @@ test("maintenance refuses another installation's service and foreground agents",
     options.systemctl = (args) => args[0] === "is-active" ? "active" : join(root, "other");
     await assert.rejects(runMaintenance(root, "v0.1.44", options), /another installation/);
     options.systemctl = () => null;
-    await writeFile(join(root, "agent.lock"), "100");
-    await assert.rejects(runMaintenance(root, "v0.1.44", options), /foreground update agent/);
+    await writeFile(join(root, "agent.lock"), String(process.pid));
+    await assert.rejects(runMaintenance(root, "v0.1.44", options), /already running/);
     assert.deepEqual(operations, []);
   });
 });
@@ -94,5 +95,22 @@ test("failed update is recorded for the UI and service is restarted without acce
     await assert.rejects(runMaintenance(root, "v0.1.44", options), /fixture database check failed/);
     assert.equal(services.at(-1), "start");
     assert.equal(JSON.parse(await readFile(join(root, "state.json"), "utf8")).phase, "failed");
+  });
+});
+
+test("maintenance respects another launcher lock and recovers a dead worker lock", async () => {
+  await fixture(async ({ root, options, operations, services }) => {
+    await writeFile(join(root, "maintenance.lock"), String(process.pid));
+    await assert.rejects(runMaintenance(root, "v0.1.44", options), /already running/);
+    assert.deepEqual(operations, []);
+    assert.ok(!services.includes("stop"));
+    await rm(join(root, "maintenance.lock"));
+    const exited = spawnSync(process.execPath, ["-e", "process.stdout.write(String(process.pid))"], { encoding: "utf8" });
+    assert.equal(exited.status, 0);
+    await writeFile(join(root, "agent.lock"), exited.stdout);
+    await writeFile(join(root, "maintenance.lock"), exited.stdout);
+    assert.equal((await runMaintenance(root, "v0.1.44", options)).phase, "succeeded");
+    await assert.rejects(readFile(join(root, "agent.lock")), { code: "ENOENT" });
+    await assert.rejects(readFile(join(root, "maintenance.lock")), { code: "ENOENT" });
   });
 });
