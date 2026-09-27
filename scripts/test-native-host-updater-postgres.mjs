@@ -107,6 +107,10 @@ export async function exerciseNativeHostUpdater({ pool, database, readId, before
     assert.equal(initial.status, "ready-for-acceptance");
     assert.equal(initial.backup.identityUpgrade.native, false);
     assert.equal(initial.validation.retiredDerivedRows.find(row => row.table === "capture_assets").retired, 1);
+    assert.deepEqual(initial.backup.identityUpgrade.directionRetirements,
+      { vehicle_orientation_labels: "1", vehicle_direction_observations: "1" });
+    assert.deepEqual((await pool.query("SELECT classifier_version FROM public.vehicle_direction_observations")).rows,
+      [{ classifier_version: "blue-iris-zone-crossing-v1" }]);
     assert.ok(commands.some(args => args.includes("pg_dump")), "backup must actually run");
     // The exact bug: empty retired tables are absent, but validation succeeds.
     assert.ok(initial.validation.retiredDerivedRows.some(row => row.retired === 0));

@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import pg from "pg";
+import { captureNativeUpgradeSnapshot } from "./native-reid-upgrade-policy.mjs";
 import { exerciseNativeHostUpdater } from "./test-native-host-updater-postgres.mjs";
 import { postgresMajorMigrationInternals as migrationChecks } from "./postgres-major-migration.mjs";
 
@@ -32,6 +33,16 @@ try {
   await pool.query(`INSERT INTO public.capture_assets
     (read_id, asset_type, algorithm_version, status, source_image_path, error_code)
     VALUES ($1, 'vehicle_crop', 'test-retired-cache', 'failed', 'images/upgrade-plate.jpg', 'TEST_ONLY')`, [readId]);
+  const derivedRead = await pool.query(`INSERT INTO public.plate_reads (plate_number, camera_name, timestamp)
+    VALUES ('TSTUP02', 'Synthetic upgrade camera', CURRENT_TIMESTAMP) RETURNING id`);
+  for (const [id, classifier] of [[readId, "blue-iris-zone-crossing-v1"], [derivedRead.rows[0].id, "retired-derived-classifier"]]) {
+    await pool.query(`INSERT INTO public.vehicle_direction_observations
+      (read_id, camera_key, embedding_model, classifier_version, profile_version, status, orientation)
+      VALUES ($1, 'synthetic', 'fixture', $2, 1, 'unknown', 'unknown')`, [id, classifier]);
+  }
+  await pool.query(`INSERT INTO public.vehicle_orientation_labels
+    (read_id, camera_key, embedding_model, orientation, actor_username, actor_display_name)
+    VALUES ($1, 'synthetic', 'fixture', 'front', 'upgrade_fixture', 'Upgrade fixture')`, [readId]);
   const before = await pool.query("SELECT id, plate_number, observed_plate, image_path, vehicle_image_path, camera_name, timestamp, review_status, review_revision, validated FROM public.plate_reads WHERE id = $1", [readId]);
   async function tableCounts() {
     const tables = await pool.query("SELECT tablename FROM pg_tables WHERE schemaname = 'public'");
@@ -45,6 +56,7 @@ try {
   }
   await exerciseNativeHostUpdater({ pool, database: expected, readId, before });
   const sourceCounts = await tableCounts();
+  const sourceEvidence = await captureNativeUpgradeSnapshot(async sql => String(Object.values((await pool.query(sql)).rows[0])[0]), sourceCounts);
   const migrations = await readFile(new URL("../migrations.sql", import.meta.url), "utf8");
   for (let pass = 0; pass < 2; pass++) {
     await pool.query(migrations);
@@ -54,7 +66,7 @@ try {
     assert.deepEqual(control.rows, [{ mode: "v2_primary", processing_enabled: true }]);
     const targetCounts = await tableCounts();
     const comparison = migrationChecks.compareNativeUpgradeCounts(sourceCounts, targetCounts, {
-      targetNative: true,
+      targetNative: true, directionRetirements: sourceEvidence.directionRetirements,
     });
     assert.deepEqual(comparison.losses, [], "the migration validator must accept precisely the intentional retirements");
     assert.equal(comparison.retiredDerivedRows.find((row) => row.table === "capture_assets").retired, "1");

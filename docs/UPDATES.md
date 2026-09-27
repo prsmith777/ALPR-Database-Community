@@ -148,8 +148,9 @@ own typed confirmation. The agent accepts no arbitrary command, argument, or
 filesystem path from the browser.
 
 Installation automatically runs **Technical system checks** for database
-readiness, the exact running image, application health, protected row counts (with the narrowly recorded native
-retirement allowance), and storage inventory. Passing those checks does not accept the
+readiness, the exact running image, application health, protected row counts
+(with the narrowly recorded native retirement allowance), and storage inventory.
+Passing those checks does not accept the
 release. The page then displays **Update installed — acceptance required** at
 the top. Test the five real-use items and select **Accept update** to finish.
 The page blocks checking for or installing another release while an update is
@@ -184,9 +185,9 @@ The equivalent individual commands are:
 ```
 
 Run `./alpr-community check` to discover the newest stable release and
-`./alpr-community update` to select it through the guided menu. A retained
-exact-v0.1.23 installation can use
-`./alpr-community update --to v0.1.44` to select this release explicitly. The
+`./alpr-community update` to select it through the guided menu after the
+one-time transition. The `--to` option accepts an exact newer stable tag;
+older installations must use the maintenance launcher above instead. The
 updater refuses `latest`, branches, prereleases, tags that are not on canonical
 `origin/main`, and a tag whose package version does not match. It fetches
 canonical `main` explicitly, so verification also works when the installation
