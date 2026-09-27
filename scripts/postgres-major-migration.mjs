@@ -13,6 +13,32 @@ const RESTORE_ACKNOWLEDGEMENT = "ALPR_TO_PG17_EMPTY_TARGET";
 const SOURCE_QUIESCED_ACKNOWLEDGEMENT = "ALPR_SOURCE_QUIESCED";
 const LEGACY_BASELINE_COMMIT = "aeb72baf6f0435c8d42ed07422f1b2f3a703e6ac";
 const COMMUNITY_BASELINE_MIGRATION = "2026082301_vehicle_passage_foundation";
+const NATIVE_REID_MIGRATION = "2026092701_native_reid";
+// Upgrade-only compatibility inventory. These retired derived tables are never
+// read by the application; exact pre-migration restore checks still include them.
+const RETIRED_IDENTITY_TABLES = Object.freeze([
+  "vehicle_reid_v2_conversion_v1_comparisons",
+  "vehicle_reid_v2_conversion_conflicts",
+  "vehicle_reid_v2_conversion_read_dispositions",
+  "vehicle_reid_v2_conversion_projected_members",
+  "vehicle_reid_v2_conversion_projected_profiles",
+  "vehicle_reid_v2_conversion_jobs",
+  "vehicle_reid_v2_conversion_review_evidence",
+  "vehicle_reid_v2_conversion_read_evidence",
+  "vehicle_reid_v2_conversion_crop_evidence",
+  "vehicle_reid_v2_conversion_runs",
+  "vehicle_plate_associations",
+  "vehicle_cluster_assignments",
+  "vehicle_clusters",
+  "vehicle_match_feedback",
+  "capture_assets",
+  "camera_visual_profiles",
+  "vehicle_attribute_observations",
+]);
+const RETIRED_DIRECTION_PREDICATES = Object.freeze({
+  vehicle_orientation_labels: "TRUE",
+  vehicle_direction_observations: "classifier_version <> 'blue-iris-zone-crossing-v1'",
+});
 const SOURCE_PROFILES = Object.freeze({
   LEGACY_V019: Object.freeze({
     id: "original-alpr-v0.1.9",
@@ -431,6 +457,7 @@ async function inspectSourceApplication(endpoint, environment) {
   return {
     profile: classifySourceApplication(signature),
     schemaFingerprint: fingerprintSourceSchema(signature),
+    signature,
   };
 }
 
@@ -698,6 +725,63 @@ function compareMinimumCounts(sourceCounts, targetCounts) {
   return losses;
 }
 
+function compareNativeUpgradeCounts(sourceCounts, targetCounts, {
+  sourceNative = false, targetNative = false, directionRetirements = {},
+} = {}) {
+  const adjustedCounts = { ...sourceCounts };
+  const retiredDerivedRows = [];
+  const unexpectedRetained = [];
+  if (!sourceNative && targetNative) {
+    for (const table of RETIRED_IDENTITY_TABLES) {
+      if (sourceCounts[table] === undefined) continue;
+      if (targetCounts[table] !== undefined) {
+        unexpectedRetained.push({ table, reason: "retired derived table still exists" });
+        continue;
+      }
+      retiredDerivedRows.push({ table, retired: sourceCounts[table], reason: "retired derived table" });
+      delete adjustedCounts[table];
+    }
+    for (const table of Object.keys(RETIRED_DIRECTION_PREDICATES)) {
+      if (sourceCounts[table] === undefined) continue;
+      const retired = String(directionRetirements[table] ?? "0");
+      if (!/^\d+$/.test(retired) || BigInt(retired) > BigInt(sourceCounts[table])) {
+        throw new Error("Invalid stopped-source direction retirement count: " + table);
+      }
+      adjustedCounts[table] = String(BigInt(sourceCounts[table]) - BigInt(retired));
+      if (BigInt(retired) > 0n) {
+        retiredDerivedRows.push({ table, retired, reason: "no canonical crop binding" });
+      }
+    }
+  }
+  return {
+    losses: [...unexpectedRetained, ...compareMinimumCounts(adjustedCounts, targetCounts)],
+    retiredDerivedRows,
+  };
+}
+
+async function nativeUpgradeCountPolicy(source, target, sourceApplication, targetApplication, environment) {
+  const sourceNative = sourceApplication.signature.migrationVersions.includes(NATIVE_REID_MIGRATION);
+  const hasNativeMarker = targetApplication.signature.migrationVersions.includes(NATIVE_REID_MIGRATION);
+  const targetNative = hasNativeMarker && await query(target,
+    "SELECT count(*)::text FROM public.vehicle_reid_control WHERE singleton AND mode = 'v2_primary'",
+    environment) === "1";
+  if (!targetNative) throw new Error("Migrated target lacks the completed native ReID schema and authority control");
+  const directionRetirements = {};
+  if (!sourceNative && targetNative) {
+    for (const [table, predicate] of Object.entries(RETIRED_DIRECTION_PREDICATES)) {
+      if (!sourceApplication.signature.tables.includes(table)) continue;
+      const boundColumn = sourceApplication.signature.columns.some(
+        (column) => column.table === table && column.column === "source_embedding_id"
+      );
+      const unbound = boundColumn ? " AND source_embedding_id IS NULL" : "";
+      directionRetirements[table] = await query(source,
+        `SELECT count(*)::text FROM public.${quoteIdentifier(table)} WHERE ${predicate}${unbound}`,
+        environment);
+    }
+  }
+  return { sourceNative, targetNative, directionRetirements };
+}
+
 function listMigrationAdditions(sourceCounts, targetCounts) {
   const additions = [];
   for (const [table, sourceCount] of Object.entries(sourceCounts)) {
@@ -788,7 +872,12 @@ async function validateMigration(environment) {
       `migrated target is not a supported Community schema: ${targetApplication.profile.id}`
     );
   }
-  const targetLosses = compareMinimumCounts(sourceCounts, targetCounts);
+  const policy = await nativeUpgradeCountPolicy(
+    source, target, sourceApplication, targetApplication, environment
+  );
+  const { losses: targetLosses, retiredDerivedRows } = compareNativeUpgradeCounts(
+    sourceCounts, targetCounts, policy
+  );
   if (targetLosses.length > 0) {
     throw new Error(
       `migrated target lost source rows: ${JSON.stringify(targetLosses)}`
@@ -814,6 +903,7 @@ async function validateMigration(environment) {
     comparedTables: sourceTables.length,
     targetOnlyTables: targetTables.filter((table) => !sourceTables.includes(table)),
     migrationAddedRows,
+    retiredDerivedRows,
   }, null, 2));
 }
 
@@ -845,7 +935,7 @@ Commands:
   preflight       Verify PostgreSQL 17 clients, a supported source, and an empty PostgreSQL 17 target.
   dump            Create a custom-format dump and SHA-256/count manifest outside the repository.
   restore         Restore only into an empty PostgreSQL 17 target, then apply migrations.sql.
-  validate        Compare every source public-table row count with the restored target and dump manifest.
+  validate        Verify the stopped source and target counts, reporting explicitly retired derived indexes.
   rollback-check  Verify the retained source and dump needed for rollback; performs no mutation.
 
 Required endpoint variables use ALPR_MIGRATION_SOURCE_* and ALPR_MIGRATION_TARGET_*:
@@ -900,6 +990,9 @@ export const postgresMajorMigrationInternals = {
   classifySourceApplication,
   compareCounts,
   compareMinimumCounts,
+  compareNativeUpgradeCounts,
+  RETIRED_IDENTITY_TABLES,
+  NATIVE_REID_MIGRATION,
   connectionArguments,
   endpointIdentity,
   fingerprintSourceSchema,

@@ -792,7 +792,7 @@ try {
   const zeroPreview = await repositoryA.previewEntryOverviewBackfillRun({
     ...historyScope,
     startAt: new Date(historyBase.getTime() + 1_500).toISOString(),
-    endAt: new Date(historyBase.getTime() + 3_500).toISOString(),
+    endAt: new Date(historyBase.getTime() + 2_500).toISOString(),
   });
   historyRunIds.push(Number(zeroPreview.id));
   const zeroConfirmed = await repositoryA.confirmEntryOverviewBackfillRun({

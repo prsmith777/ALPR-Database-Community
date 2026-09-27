@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import pg from "pg";
+import { postgresMajorMigrationInternals as migrationChecks } from "./postgres-major-migration.mjs";
 
 // Only CI-created, sentinel-guarded, empty scratch databases may execute this test.
 const expected = process.env.NATIVE_REID_TEST_DATABASE;
@@ -31,6 +32,17 @@ try {
     (read_id, asset_type, algorithm_version, status, source_image_path, error_code)
     VALUES ($1, 'vehicle_crop', 'test-retired-cache', 'failed', 'images/upgrade-plate.jpg', 'TEST_ONLY')`, [readId]);
   const before = await pool.query("SELECT id, plate_number, observed_plate, image_path, vehicle_image_path, camera_name, timestamp, review_status, review_revision, validated FROM public.plate_reads WHERE id = $1", [readId]);
+  async function tableCounts() {
+    const tables = await pool.query("SELECT tablename FROM pg_tables WHERE schemaname = 'public'");
+    const counts = {};
+    for (const { tablename } of tables.rows) {
+      counts[tablename] = (await pool.query(
+        `SELECT count(*)::text AS count FROM public.${migrationChecks.quoteIdentifier(tablename)}`
+      )).rows[0].count;
+    }
+    return counts;
+  }
+  const sourceCounts = await tableCounts();
   const migrations = await readFile(new URL("../migrations.sql", import.meta.url), "utf8");
   for (let pass = 0; pass < 2; pass++) {
     await pool.query(migrations);
@@ -38,6 +50,14 @@ try {
     assert.deepEqual(after.rows, before.rows, "original read and image references must be unchanged");
     const control = await pool.query("SELECT mode, processing_enabled FROM public.vehicle_reid_control WHERE singleton");
     assert.deepEqual(control.rows, [{ mode: "v2_primary", processing_enabled: true }]);
+    const targetCounts = await tableCounts();
+    const comparison = migrationChecks.compareNativeUpgradeCounts(sourceCounts, targetCounts, {
+      targetNative: true,
+    });
+    assert.deepEqual(comparison.losses, [], "the migration validator must accept precisely the intentional retirements");
+    assert.equal(comparison.retiredDerivedRows.find((row) => row.table === "capture_assets").retired, "1");
+    assert.ok(migrationChecks.compareNativeUpgradeCounts(sourceCounts, targetCounts).losses.length > 0,
+      "retirement must fail closed without native schema attestation");
     for (const table of ["capture_assets", "camera_visual_profiles", "vehicle_clusters",
       "vehicle_cluster_assignments", "vehicle_plate_associations", "vehicle_match_feedback",
       "vehicle_reid_v2_conversion_runs"]) {

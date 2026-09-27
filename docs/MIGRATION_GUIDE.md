@@ -84,9 +84,15 @@ The wizard performs these guarded stages:
    and every other database writer.
 5. Creates a PostgreSQL custom-format dump and manifest, proving the source
    schema, public-table inventory, and row counts did not change during it.
-6. Restores transactionally, applies current migrations transactionally,
-   reconciles derived occurrence counts, and compares every source table count
-   with the target.
+6. Restores transactionally and verifies every restored table count against the
+   dump **before** changing the schema. It then applies current migrations
+   transactionally, reconciles occurrence counts, and checks for row loss.
+   Only an explicit inventory of retired derived indexes and incompatible
+   crop-unbound direction calibration/predictions may be removed, and only
+   during an upgrade to the verified native identity schema. The diagnostic
+   result lists these retirements separately; plate reads, users, tags,
+   crop-bound calibration, and Blue Iris direction observations remain protected.
+   Unknown missing tables or unexpected row loss still stop the migration.
 7. Copies local or SSH image storage with resumable `rsync`, then runs a
    checksum dry comparison that must report no differences.
 8. Starts the target on a Docker network marked `internal`, verifies public

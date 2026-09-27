@@ -11,11 +11,9 @@ BEGIN
 END
 $reconciliation_upgrade$;
 
--- A live release runs this file in one transaction while the previous app is
--- still serving traffic. Take the radar-settings lock before any other DDL so
--- the legacy correlation worker cannot acquire radar_settings and then wait on
--- a relation already locked by this migration, which would form a deadlock.
--- Clean installs do not have the table yet and intentionally skip this lock.
+-- Community updates stop the application before applying this transaction.
+-- Retain deterministic lock ordering for maintenance tooling that may also hold
+-- radar_settings. Clean installs do not have the table yet and skip this lock.
 DO $migration_lock$
 BEGIN
     IF to_regclass('public.radar_settings') IS NOT NULL THEN
@@ -1452,55 +1450,6 @@ VALUES (
 )
 ON CONFLICT (version) DO NOTHING;
 
-INSERT INTO public.schema_migrations (version, description)
-VALUES (
-    '2026072207_image_similarity_foundation',
-    'Add inert local derived capture assets for resumable exact and perceptual image search.'
-)
-ON CONFLICT (version) DO NOTHING;
-
-INSERT INTO public.schema_migrations (version, description)
-VALUES (
-    '2026072208_camera_visual_profiles',
-    'Add versioned camera-specific crop setup for derived visual-search assets.'
-)
-ON CONFLICT (version) DO NOTHING;
-
-INSERT INTO public.schema_migrations (version, description)
-VALUES (
-    '2026072301_visual_color_signatures',
-    'Add a backward-compatible compact color signal for explainable multi-signal visual ranking.'
-)
-ON CONFLICT (version) DO NOTHING;
-
-INSERT INTO public.schema_migrations (version, description)
-VALUES (
-    '2026072302_vehicle_focus_ranking',
-    'Version vehicle-focused color signatures for conservative visual ranking and lazy compatibility.'
-)
-ON CONFLICT (version) DO NOTHING;
-
-INSERT INTO public.schema_migrations (version, description)
-VALUES (
-    '2026072303_vehicle_reid_embeddings',
-    'Add plate-independent OpenVINO vehicle ReID embeddings and detector provenance.'
-)
-ON CONFLICT (version) DO NOTHING;
-
-INSERT INTO public.schema_migrations (version, description)
-VALUES (
-    '2026072304_vehicle_detector_fallbacks',
-    'Default unconfigured cameras to full-image detector fallback while preserving explicit profiles.'
-)
-ON CONFLICT (version) DO NOTHING;
-
-INSERT INTO public.schema_migrations (version, description)
-VALUES (
-    '2026072401_vehicle_match_feedback',
-    'Add audited human same/different vehicle labels for local Vehicle ReID calibration.'
-)
-ON CONFLICT (version) DO NOTHING;
-
 -- Notification operations adds an explicit rule clock, optional quiet hours,
 -- and lease-safe scheduled evaluation for camera activity rules. Existing
 -- accepted-read rules retain their behavior and remain unscheduled.
@@ -1796,20 +1745,6 @@ VALUES (
 )
 ON CONFLICT (version) DO NOTHING;
 
-INSERT INTO public.schema_migrations (version, description)
-VALUES (
-    '2026072505_vehicle_attribute_observations',
-    'Add per-read vehicle attribute evidence with confidence and provider/model provenance.'
-)
-ON CONFLICT (version) DO NOTHING;
-
-INSERT INTO public.schema_migrations (version, description)
-VALUES (
-    '2026072506_vehicle_shadow_clusters',
-    'Add reviewable descriptor-only shadow vehicle clusters without plate ownership or mismatch alerts.'
-)
-ON CONFLICT (version) DO NOTHING;
-
 -- Direction classification is emitted after Vehicle ReID completes, so it has
 -- a distinct event type and can be filtered using camera-configured labels.
 ALTER TABLE IF EXISTS public.notification_rules
@@ -1848,13 +1783,6 @@ VALUES (
 )
 ON CONFLICT (version) DO NOTHING;
 
-
-INSERT INTO public.schema_migrations (version, description)
-VALUES (
-    '2026072602_reviewed_vehicle_direction_truth',
-    'Make human-reviewed front/rear labels immediately authoritative and repair older reviewed observations.'
-)
-ON CONFLICT (version) DO NOTHING;
 
 -- Historical direction work is derived from durable capture assets and is
 -- naturally resumable: current observations are skipped, while repeat
@@ -1912,13 +1840,6 @@ INSERT INTO public.schema_migrations (version, description)
 VALUES (
     '2026072701_vehicle_direction_reevaluation_queue',
     'Preserve current directions during re-evaluation and add durable pause/resume controls.'
-)
-ON CONFLICT (version) DO NOTHING;
-
-INSERT INTO public.schema_migrations (version, description)
-VALUES (
-    '2026072702_vehicle_plate_associations',
-    'Add explicitly reviewed effective-plate associations as the safe vehicle-profile baseline.'
 )
 ON CONFLICT (version) DO NOTHING;
 

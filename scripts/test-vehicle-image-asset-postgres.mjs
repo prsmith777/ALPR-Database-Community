@@ -628,7 +628,7 @@ try {
        AND actor_user_id = $1`,
     [campaignActorId]
   );
-  assert.equal(liveAuditState.rows[0].count, 2);
+  assert.equal(liveAuditState.rows[0].count, 3);
   assert.equal(liveAuditState.rows[0].invalid_source, 0);
   assert.equal(liveAuditState.rows[0].invalid_outcome, 0);
 

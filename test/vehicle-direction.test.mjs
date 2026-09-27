@@ -293,6 +293,25 @@ test("historical evaluation discovers and preserves an existing human orientatio
   assert.equal(observations[0].result.orientation, "rear");
 });
 
+test("a replaced crop cannot produce a successful stale direction observation", async () => {
+  const service = new VehicleDirectionService({ repository: {
+    getAsset: async () => ({
+      read_id: 42, camera_name: "Test camera", embedding_id: 19,
+      embedding_model: DIRECTION_EMBEDDING_MODEL, vehicle_embedding: "indexed",
+    }),
+    getDirectionProfile: async () => ({
+      enabled: true, profile_version: 1,
+      front_direction_label: "Entering", rear_direction_label: "Leaving",
+    }),
+    listOrientationSamples: async () => [{ read_id: 42, orientation: "front" }],
+    saveDirectionObservation: async (observation) => {
+      assert.equal(observation.sourceEmbeddingId, 19);
+      return false;
+    },
+  }, fileStorage: {} });
+  assert.equal(await service.refreshDirectionObservation(42), null);
+});
+
 test("mapped Blue Iris direction prevents ReID from replacing or renotifying the read", async () => {
   let assetLoads = 0;
   let reidWrites = 0;
@@ -557,7 +576,7 @@ test("direction schema and Community administrator setup are durable and camera 
   assert.match(migration, /2026072601_vehicle_direction_notifications/i);
   assert.match(migration, /vehicle\.direction_classified/i);
   assert.match(migration, /'direction'/i);
-  assert.match(migration, /2026072602_reviewed_vehicle_direction_truth/i);
+  assert.match(migration, /2026092701_native_reid/i);
   assert.match(migration, /CREATE OR REPLACE VIEW public\.current_vehicle_direction_observations/i);
   assert.match(migration, /2026072603_vehicle_direction_backfill/i);
   assert.match(migration, /vehicle_direction_backfill_failures/i);
