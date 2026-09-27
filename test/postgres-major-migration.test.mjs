@@ -231,8 +231,8 @@ test("row-count comparison reports missing and changed tables", () => {
 test("post-migration validation permits seeds but rejects row loss", () => {
   assert.deepEqual(
     internals.compareMinimumCounts(
-      { plate_reads: "12", camera_visual_profiles: "0" },
-      { plate_reads: "12", camera_visual_profiles: "1" }
+      { plate_reads: "12", users: "0" },
+      { plate_reads: "12", users: "1" }
     ),
     []
   );
@@ -248,12 +248,12 @@ test("post-migration validation permits seeds but rejects row loss", () => {
   );
   assert.deepEqual(
     internals.listMigrationAdditions(
-      { camera_visual_profiles: "0", plates: "12" },
-      { camera_visual_profiles: "1", plates: "12" }
+      { users: "0", plates: "12" },
+      { users: "1", plates: "12" }
     ),
     [
       {
-        table: "camera_visual_profiles",
+        table: "users",
         source: "0",
         target: "1",
         added: "1",

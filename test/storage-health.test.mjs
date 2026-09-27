@@ -60,6 +60,7 @@ test("storage health combines exact database and filesystem facts with a bounded
     ready_count: "7",
     failed_count: "1",
     source_missing_count: "1",
+    pending_count: "1",
     last_indexed_at: "2026-07-24T11:30:00.000Z",
     vehicle_image_asset_count: "4",
     vehicle_image_asset_bytes: "1200",

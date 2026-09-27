@@ -1784,7 +1784,7 @@ VALUES (
 ON CONFLICT (version) DO NOTHING;
 
 
--- Historical direction work is derived from durable capture assets and is
+-- Historical direction work is derived from current canonical crop evidence and is
 -- naturally resumable: current observations are skipped, while repeat
 -- failures are retained for review instead of blocking the remaining corpus.
 CREATE TABLE IF NOT EXISTS public.vehicle_direction_backfill_failures (
