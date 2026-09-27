@@ -678,19 +678,13 @@ function SourceMetadata({ source, profileContextOmitted = false }) {
             <Link
               key={profileId}
               className="text-blue-500 hover:underline"
-              href={source.identityMode === "v2_primary"
-                ? `/visual_search/profiles/${profileId}`
-                : `/visual_search/vehicles/${profileId}`}
+              href={`/visual_search/profiles/${profileId}`}
             >
-              {source.identityMode === "v2_primary"
-                ? `Authoritative profile #${profileId}`
-                : `Current v1 grouping #${profileId}`}
+              {`Vehicle profile #${profileId}`}
             </Link>
           ))
           : <span className="text-muted-foreground">
-            {source.identityMode === "v2_primary"
-              ? "No authoritative profile"
-              : "No current v1 grouping"}
+            No vehicle profile
           </span>}
       </div>
     </div>

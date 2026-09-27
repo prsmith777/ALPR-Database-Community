@@ -381,7 +381,7 @@ test("manual cleanup protects queued overview candidates alongside established r
   assert.deepEqual(outcome, { status: "deleted", reclaimedBytes: 40 });
   assert.match(removed.replaceAll("\\", "/"), /\/storage\/derived\/2026\/vehicle\.jpg$/);
   assert.deepEqual(calls[0].values, [candidate.relative_path]);
-  for (const column of ["image_path", "thumbnail_path", "vehicle_image_path", "source_image_path", "derived_path"]) {
+  for (const column of ["image_path", "thumbnail_path", "vehicle_image_path", "storage_path"]) {
     assert.match(calls[0].sql, new RegExp(column));
   }
   assert.match(calls[0].sql, /vehicle_overview_candidates[\s\S]*frame_path/);
@@ -785,7 +785,7 @@ test("schema and migration preserve the empty auto allowlist and no domain-recor
     readFile(new URL("../migrations.sql", import.meta.url), "utf8"),
     readFile(new URL("../schema.sql", import.meta.url), "utf8"),
     readFile(new URL("../lib/storage-cleanup.mjs", import.meta.url), "utf8"),
-    readFile(new URL("../lib/capture-asset-service.mjs", import.meta.url), "utf8"),
+    readFile(new URL("../lib/vehicle-image-crop-repository.mjs", import.meta.url), "utf8"),
     readFile(new URL("../lib/blue-iris-vehicle-frame.mjs", import.meta.url), "utf8"),
   ]);
   for (const source of [migration, schema]) {
@@ -794,8 +794,8 @@ test("schema and migration preserve the empty auto allowlist and no domain-recor
     assert.match(source, /suppressed_count BIGINT NOT NULL DEFAULT 0/);
   }
   assert.equal(STORAGE_CLEANUP_CONFIRMATION, "DELETE DERIVED ORPHANS");
-  assert.doesNotMatch(cleanup, /DELETE\s+FROM\s+public\.(?:plate_reads|capture_assets)|TRUNCATE/i);
-  assert.match(storageCleanupInternals.REFERENCE_CHECK_SQL, /source_image_path/);
+  assert.doesNotMatch(cleanup, /DELETE\s+FROM\s+public\.(?:plate_reads|vehicle_image_assets)|TRUNCATE/i);
+  assert.match(storageCleanupInternals.REFERENCE_CHECK_SQL, /storage_path/);
   assert.match(migration, /updated_by_user_id BIGINT REFERENCES public\.users\(id\) ON DELETE SET NULL/);
   assert.match(migration, /notification_rule_cutover_events[\s\S]*actor_user_id BIGINT REFERENCES public\.users\(id\) ON DELETE SET NULL/);
   assert.match(migration, /constraint_record\.contype = 'f'[\s\S]*column_record\.attname = 'updated_by_user_id'/);
@@ -803,6 +803,6 @@ test("schema and migration preserve the empty auto allowlist and no domain-recor
   assert.match(migration, /Maintenance webhook delivery error details were redacted/);
   assert.match(cleanup, /maintenance\.storage_cleanup_started/);
   assert.match(cleanup, /maintenance\.storage_cleanup_interrupted/);
-  assert.match(captureWriter, /withDerivedStorageWriterLock\(writeReadyAsset\)/);
+  assert.match(captureWriter, /withStorageCleanupWriterLock\(this\.pool/);
   assert.match(blueIrisWriter, /withDerivedStorageWriterLock\(writeReadyFrame\)/);
 });

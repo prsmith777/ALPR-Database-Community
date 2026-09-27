@@ -662,7 +662,7 @@ test("repository scans only exact current identity links and performs no writes"
   );
   assert.match(
     calls[0].text,
-    /ELSE related\.cluster_ids END AS cluster_ids/
+    /AS cluster_ids/
   );
   assert.equal(vehicleReidV2ShadowRepositoryInternals.MAX_SCAN_SOURCES, 10_000);
 });
@@ -851,15 +851,14 @@ test("shadow review surface keeps assignments unchanged, gates pair labels, and 
   assert.doesNotMatch(`${service}\n${repository}`, /openvino-node/);
 });
 
-test("Vehicle Search supports the legacy v2-shadow mode and fails closed for unknown modes", async () => {
+test("Vehicle Search is primary-only and validates explicit selections", async () => {
   const [page, actions, component, help] = await Promise.all([
     source("app/visual_search/page.jsx"),
     source("app/actions.js"),
     source("components/VehicleReidV2Shadow.jsx"),
     source("lib/help-manual.mjs"),
   ]);
-  assert.match(page, /!modeResult\?\.success \|\| !\["v1_primary", "v2_shadow", "v1_rollback", "v2_primary"\]\.includes\(mode\)/);
-  assert.doesNotMatch(page, /modeResult\?\.success \? modeResult\.data\.control\?\.mode : "v1_primary"/);
+  assert.doesNotMatch(page, /getVehicleReidAuthorityMode/);
   assert.match(page, /parseVehicleReidV2SearchId\(parameters\?\.source\)/);
   assert.match(page, /requestedSource\.present && !requestedSource\.valid/);
   assert.match(page, /parseVehicleReidV2SearchId\(parameters\?\.readId\)/);

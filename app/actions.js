@@ -4605,6 +4605,32 @@ export async function runVehicleEventShadowBatch() {
   }
 }
 
+async function vehicleAnalysisRepository() {
+  const { VehicleAssetAnalysisRepository } = await import("@/lib/vehicle-asset-analysis-live.mjs");
+  return new VehicleAssetAnalysisRepository(await getPool());
+}
+
+export async function getVehicleAnalysisStatus() {
+  await requirePermission("system.manage_settings");
+  try {
+    return { success: true, data: await (await vehicleAnalysisRepository()).getStatus() };
+  } catch (error) {
+    console.error("Vehicle analysis status failed", error);
+    return { success: false, error: "Unable to load vehicle processing status." };
+  }
+}
+
+export async function operateVehicleAnalysis(operation) {
+  const actor = await requirePermission("system.manage_settings");
+  try {
+    const result = await (await vehicleAnalysisRepository()).operate(operation, actor.id);
+    return { success: true, ...result };
+  } catch (error) {
+    console.error("Vehicle analysis control failed", error);
+    return { success: false, error: "Unable to change vehicle processing. Refresh and try again." };
+  }
+}
+
 export async function getVehicleDirectionSetup(cameraName = null, options = {}) {
   await requirePermission("system.manage_settings");
   try {

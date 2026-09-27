@@ -38,7 +38,7 @@ test("withdrawal migration restores interrupted reads and leaves repair history 
   const migrations = await source("migrations.sql");
   const marker = migrations.indexOf("2026081504_withdraw_overview_framing_repair");
   assert.notEqual(marker, -1);
-  const withdrawal = migrations.slice(Math.max(0, marker - 5_000));
+  const withdrawal = migrations.slice(Math.max(0, marker - 5_000), migrations.indexOf("-- Provider-neutral embeddings", marker));
 
   assert.match(migrations, /CREATE TABLE IF NOT EXISTS public\.vehicle_overview_framing_repair_runs/);
   assert.match(migrations, /CREATE TABLE IF NOT EXISTS public\.vehicle_overview_framing_repair_jobs/);

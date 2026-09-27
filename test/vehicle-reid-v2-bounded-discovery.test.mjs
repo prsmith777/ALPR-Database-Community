@@ -139,9 +139,6 @@ test("bounded discovery migration persists independent cursors and initializes n
   assert.match(bounded, /INSERT INTO public\.vehicle_reid_v2_live_discovery_state\(singleton\)\s+VALUES \(TRUE\)/);
   assert.match(bounded, /NEW\.forward_cursor_read_id < OLD\.forward_cursor_read_id/);
   assert.match(bounded, /NEW\.revision <> OLD\.revision \+ 1/);
-  assert.match(bounded, /last_scanned_at = COALESCE/);
-  assert.match(bounded, /OLD\.mode IS DISTINCT FROM NEW\.mode/);
-  assert.match(bounded, /last_scanned_at = EXCLUDED\.last_scanned_at/);
   assert.match(live, /MAX_DISCOVERY_WINDOW_SIZE = 250/);
   assert.match(live, /MAX_FORWARD_WINDOWS_BEFORE_REVISIT = 8/);
   assert.match(live, /forward_windows_since_revisit = \$5/);

@@ -104,10 +104,10 @@ test("live-feed vehicle descriptors use a side rail without reducing image heigh
     table.indexOf('<div className="text-xs uppercase text-muted-foreground">Vehicle</div>'),
     table.indexOf('<div className="relative h-[40vh]')
   );
-  assert.match(vehicleMetadata, /Vehicle #\$\{selectedImage\.vehicleClusterId\}/);
-  assert.match(vehicleMetadata, /Legacy Vehicle #\$\{selectedImage\.vehicleClusterId\}/);
-  assert.match(vehicleMetadata, /\/visual_search\/profiles\/\$\{selectedImage\.vehicleClusterId\}/);
-  assert.match(vehicleMetadata, /\/visual_search\/vehicles\/\$\{selectedImage\.vehicleClusterId\}/);
+  assert.match(vehicleMetadata, /Vehicle #\$\{selectedImage\.vehicleProfileId\}/);
+  assert.match(vehicleMetadata, /Legacy Vehicle #\$\{selectedImage\.vehicleProfileId\}/);
+  assert.match(vehicleMetadata, /\/visual_search\/profiles\/\$\{selectedImage\.vehicleProfileId\}/);
+  assert.match(vehicleMetadata, /\/visual_search\/vehicles\/\$\{selectedImage\.vehicleProfileId\}/);
   assert.doesNotMatch(vehicleMetadata, /vehicleClusterStatus|vehicleClusterSimilarity/);
 });
 

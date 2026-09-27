@@ -558,7 +558,7 @@ test("direction schema and Community administrator setup are durable and camera 
   assert.match(migration, /vehicle\.direction_classified/i);
   assert.match(migration, /'direction'/i);
   assert.match(migration, /2026072602_reviewed_vehicle_direction_truth/i);
-  assert.match(migration, /ON CONFLICT \(read_id\) DO UPDATE SET/i);
+  assert.match(migration, /CREATE OR REPLACE VIEW public\.current_vehicle_direction_observations/i);
   assert.match(migration, /2026072603_vehicle_direction_backfill/i);
   assert.match(migration, /vehicle_direction_backfill_failures/i);
   assert.match(migration, /vehicle_direction_reevaluation_queue/i);

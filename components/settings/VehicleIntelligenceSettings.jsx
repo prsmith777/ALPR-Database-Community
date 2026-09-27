@@ -7,6 +7,7 @@ import {
   getVehicleDirectionSetup,
   saveVehicleDirectionProfile,
 } from "@/app/actions";
+import VehicleProcessingCard from "@/components/settings/VehicleProcessingCard";
 import { SettingsShell } from "@/components/settings/SettingsShell";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -84,6 +85,7 @@ export default function VehicleIntelligenceSettings({ initialData }) {
       description="Configure portable direction behavior for each camera observed by the Community application."
     >
       {message ? <p className="mb-5 rounded-md border p-3 text-sm" role="status">{message}</p> : null}
+      <VehicleProcessingCard />
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
