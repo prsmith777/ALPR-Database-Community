@@ -23,8 +23,8 @@ test("release information resolves a commit-pinned deployment image", () => {
     ALPR_RELEASE_CHANNEL: "staging",
   });
 
-  assert.equal(release.version, "0.1.42");
-  assert.equal(release.manualVersion, "3.7");
+  assert.equal(release.version, "0.1.43");
+  assert.equal(release.manualVersion, "3.8");
   assert.equal(release.manualUpdatedAt, "September 27, 2026");
   assert.equal(release.gitSha, "8cd2fa8");
   assert.equal(release.channel, "staging");
@@ -32,13 +32,13 @@ test("release information resolves a commit-pinned deployment image", () => {
   assert.equal(release.readOnly, true);
   assert.equal(
     release.notes.title,
-    "Recognition Feed identity performance"
+    "Native ReID V2 for Community"
   );
   assert.equal(release.notes.publishedAt, "2026-09-27");
   assert.ok(release.notes.items.length >= 3);
   const notes = release.notes.items.join(" ");
   assert.match(notes, /snapshot/i);
-  assert.match(notes, /default ReID mode/i);
+  assert.match(notes, /native ReID V2/i);
   assert.match(notes, /regression tests/i);
 });
 

@@ -25,10 +25,13 @@ v0.1.21, and v0.1.22 sources on PostgreSQL 13 and 17.
 
 After importing, verify Recognition Feed with and without filters, on more than
 one results page, and in both image views before accepting the target. Community
-v0.1.42 reduces repeated identity checks for databases already using ReID 2
-primary mode without changing that mode or requiring another migration. See
-[Recognition Feed troubleshooting](REID_FEED_PERFORMANCE.md) if records arrive
-slowly; do not change identity modes as a workaround.
+v0.1.43 initializes native ReID V2 automatically on the target; no pre-existing
+identity database or conversion campaign is required. Original reads, tags,
+corrections, and image references are preserved. Obsolete derived indexes are
+retired and eligible whole-vehicle images are reprocessed in the background;
+plate-only captures cannot be used as vehicle identity evidence. See
+[Vehicle identity and upgrades](VEHICLE_IDENTITY.md) and
+[Recognition Feed troubleshooting](REID_FEED_PERFORMANCE.md).
 
 Use a separate host or VM from the automatic x86-64 Linux matrix in
 [Host compatibility](COMPATIBILITY.md); Ubuntu Server 24.04 LTS remains the

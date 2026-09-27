@@ -16,14 +16,15 @@ operator-specific infrastructure configuration.
 - Live recognition feed and CSV/JSON exports
 - MQTT, Pushover, email, and signed webhook notifications
 - Blue Iris playback links and optional image retrieval
-- Basic local visual search and vehicle profiles
+- Native ReID V2 vehicle similarity search, evidence-backed profiles, and automatic image analysis
 - Configurable application storage monitoring and guarded cleanup
 - PostgreSQL 17 database with persistent Docker volumes
 
 For slow Recognition Feed records after an import, see
 [feed performance and troubleshooting](docs/REID_FEED_PERFORMANCE.md).
-The v0.1.42 repair preserves the installation's existing identity mode and
-requires only a normal update, not another database migration.
+Community uses ReID V2 exclusively. Whole-vehicle images are processed in the
+background; no identity-mode selection or conversion campaign is needed.
+See [Vehicle identity and upgrades](docs/VEHICLE_IDENTITY.md).
 
 Private deployment tooling, host-level Docker or backup maintenance, fixed
 camera workflows, experimental radar traffic correlation, AI-assistant routes,

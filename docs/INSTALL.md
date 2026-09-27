@@ -60,7 +60,7 @@ Clone the canonical repository and detach at the exact stable release tag:
 ```bash
 git clone https://github.com/prsmith777/ALPR-Database-Community.git
 cd ALPR-Database-Community
-git checkout --detach v0.1.42
+git checkout --detach v0.1.43
 ./alpr-community install
 ```
 
@@ -213,3 +213,12 @@ strand Docker resources without their recovery record.
 After a successful installation, use the
 [Community update guide](UPDATES.md) for exact-tag updates, acceptance,
 rollback, and bounded cleanup.
+
+## Vehicle identity
+
+Community initializes ReID V2 automatically. Models run inside the application
+image; eligible whole-vehicle images are processed in the background, with
+status and pause/resume controls in Settings > Vehicle Setup. No separate ReID
+host installation or conversion campaign is needed. See
+[Vehicle identity and upgrades](VEHICLE_IDENTITY.md) for image requirements,
+processing progress, and retained data during upgrades.

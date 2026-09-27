@@ -161,3 +161,12 @@ For unsupported distributions and existing systems, use the
 [compatibility paths](COMPATIBILITY.md). Fresh-install details continue in
 [INSTALL.md](INSTALL.md); migrations continue in
 [MIGRATION_GUIDE.md](MIGRATION_GUIDE.md).
+
+## Vehicle identity
+
+Community initializes ReID V2 automatically. Models run inside the application
+image; eligible whole-vehicle images are processed in the background, with
+status and pause/resume controls in Settings > Vehicle Setup. No separate ReID
+host installation or conversion campaign is needed. See
+[Vehicle identity and upgrades](VEHICLE_IDENTITY.md) for image requirements,
+processing progress, and retained data during upgrades.

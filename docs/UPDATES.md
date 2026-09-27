@@ -44,7 +44,7 @@ shown on the GitHub Releases page, rather than deploying moving `main`:
 ```bash
 git clone https://github.com/prsmith777/ALPR-Database-Community.git
 cd ALPR-Database-Community
-git checkout --detach v0.1.42
+git checkout --detach v0.1.43
 ./alpr-community install
 ```
 
@@ -131,7 +131,7 @@ The equivalent individual commands are:
 Run `./alpr-community check` to discover the newest stable release and
 `./alpr-community update` to select it through the guided menu. A retained
 exact-v0.1.23 installation can use
-`./alpr-community update --to v0.1.42` to select this release explicitly. The
+`./alpr-community update --to v0.1.43` to select this release explicitly. The
 updater refuses `latest`, branches, prereleases, tags that are not on canonical
 `origin/main`, and a tag whose package version does not match. It fetches
 canonical `main` explicitly, so verification also works when the installation
@@ -261,11 +261,16 @@ command error text.
 
 ## Non-interactive use
 
-For the v0.1.42 Recognition Feed repair, test navigation with and without
-filters, pagination, sorting, and both image views before accepting the update.
-No new migration or identity-mode change is needed. See
-[Recognition Feed troubleshooting](REID_FEED_PERFORMANCE.md) for the scope,
-privacy-safe timing diagnostics, and remaining-delay reporting guidance.
+Version 0.1.43 uses only native ReID V2. The normal updater stops the application,
+verifies its backup, and applies the database upgrade before restart. It retires
+obsolete derived identity indexes, not original plate reads or image files.
+Eligible whole-vehicle images are processed in the background; Vehicle Setup
+shows processing status. Recheck Vehicle Search, Profiles, feed navigation,
+filters, pagination, and both image views before accepting. See
+[Vehicle identity and upgrades](VEHICLE_IDENTITY.md) and
+[Recognition Feed troubleshooting](REID_FEED_PERFORMANCE.md).
+Do not run an older application against the upgraded database; rollback uses
+the verified database/image recovery bundle and discards newer records.
 
 The menu is recommended. Automation must supply the exact acknowledgement for
 each mutating boundary:

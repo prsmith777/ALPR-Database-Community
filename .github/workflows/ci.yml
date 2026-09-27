@@ -69,6 +69,13 @@ jobs:
         with:
           persist-credentials: false
 
+      - name: Read the previous published schema for the upgrade fixture
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: fd5cfb9d44df8e72c9e70a7f2f331ab340cca00a # v0.1.42
+          path: .ci-prior-community
+          persist-credentials: false
+
       - name: Set up Node.js
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
@@ -125,6 +132,20 @@ jobs:
               --set fixture_clear="$clear" \
               --file /workspace/scripts/staging-fixtures.sql
           }
+
+          psql_database postgres --command "CREATE DATABASE codex_native_reid_1a2b3c4d;"
+          trap 'psql_database postgres --command "DROP DATABASE IF EXISTS codex_native_reid_1a2b3c4d WITH (FORCE);"' EXIT
+          psql_database codex_native_reid_1a2b3c4d --command "
+            CREATE TABLE public.codex_integration_test_guard (scope TEXT PRIMARY KEY, guard_token TEXT NOT NULL);
+            INSERT INTO public.codex_integration_test_guard VALUES ('native-reid-upgrade', 'ci-disposable-pg17');
+          "
+          NATIVE_REID_TEST_OPT_IN=true \
+            NATIVE_REID_TEST_DATABASE=codex_native_reid_1a2b3c4d \
+            NATIVE_REID_TEST_GUARD_TOKEN=ci-disposable-pg17 \
+            DATABASE_URL='postgresql://postgres:fixture-test-password@127.0.0.1:5432/codex_native_reid_1a2b3c4d' \
+            node scripts/test-native-reid-upgrade-postgres.mjs
+          psql_database postgres --command "DROP DATABASE codex_native_reid_1a2b3c4d WITH (FORCE);"
+          trap - EXIT
 
           psql_fixture --file /workspace/schema.sql
           psql_fixture --file /workspace/migrations.sql

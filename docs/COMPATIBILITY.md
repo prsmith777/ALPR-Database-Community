@@ -68,3 +68,12 @@ normal use, allocate at least 4 vCPU, 8 GiB RAM, and 100 GiB disk. Image
 retention, database growth, and backup policy determine long-term storage
 needs. Heavy visual search or large image libraries may need more CPU, RAM, and
 disk.
+
+## Vehicle identity
+
+Community initializes ReID V2 automatically. Models run inside the application
+image; eligible whole-vehicle images are processed in the background, with
+status and pause/resume controls in Settings > Vehicle Setup. No separate ReID
+host installation or conversion campaign is needed. See
+[Vehicle identity and upgrades](VEHICLE_IDENTITY.md) for image requirements,
+processing progress, and retained data during upgrades.
