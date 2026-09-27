@@ -97,6 +97,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          pg_test_failed=0
 
           psql_database() {
             local database="$1"
@@ -145,7 +146,7 @@ jobs:
             NATIVE_REID_TEST_DATABASE=codex_native_reid_1a2b3c4d \
             NATIVE_REID_TEST_GUARD_TOKEN=ci-disposable-pg17 \
             DATABASE_URL='postgresql://postgres:fixture-test-password@127.0.0.1:5432/codex_native_reid_1a2b3c4d' \
-            node scripts/test-native-reid-upgrade-postgres.mjs
+            node scripts/test-native-reid-upgrade-postgres.mjs || pg_test_failed=1
           psql_database postgres --command "DROP DATABASE codex_native_reid_1a2b3c4d WITH (FORCE);"
           trap - EXIT
 
@@ -171,28 +172,28 @@ jobs:
             VEHICLE_IMAGE_ASSET_CLEANUP_POSTGRES_TEST_DATABASE='fixture_test' \
             VEHICLE_IMAGE_ASSET_CLEANUP_POSTGRES_TEST_GUARD_TOKEN='ci-disposable-pg17' \
             DATABASE_URL='postgresql://postgres:fixture-test-password@127.0.0.1:5432/fixture_test' \
-            yarn test:vehicle-image-asset-cleanup:postgres
+            yarn test:vehicle-image-asset-cleanup:postgres || pg_test_failed=1
 
           DATABASE_URL='postgresql://postgres:fixture-test-password@127.0.0.1:5432/fixture_test' \
-            yarn test:overview-export:postgres
+            yarn test:overview-export:postgres || pg_test_failed=1
 
           VEHICLE_IMAGE_ASSET_POSTGRES_TEST_OPT_IN='true' \
             VEHICLE_IMAGE_ASSET_POSTGRES_TEST_DATABASE='fixture_test' \
             VEHICLE_IMAGE_ASSET_POSTGRES_TEST_GUARD_TOKEN='ci-disposable-pg17' \
             DATABASE_URL='postgresql://postgres:fixture-test-password@127.0.0.1:5432/fixture_test' \
-            yarn test:vehicle-image-asset:postgres
+            yarn test:vehicle-image-asset:postgres || pg_test_failed=1
 
           VEHICLE_EVENT_SHADOW_POSTGRES_TEST_OPT_IN='true' \
             VEHICLE_EVENT_SHADOW_POSTGRES_TEST_DATABASE='fixture_test' \
             VEHICLE_EVENT_SHADOW_POSTGRES_TEST_GUARD_TOKEN='ci-disposable-pg17' \
             DATABASE_URL='postgresql://postgres:fixture-test-password@127.0.0.1:5432/fixture_test' \
-            yarn test:vehicle-event-shadow:postgres
+            yarn test:vehicle-event-shadow:postgres || pg_test_failed=1
 
           VEHICLE_IMAGE_CROP_POSTGRES_TEST_OPT_IN='true' \
             VEHICLE_IMAGE_CROP_POSTGRES_TEST_DATABASE='fixture_test' \
             VEHICLE_IMAGE_CROP_POSTGRES_TEST_GUARD_TOKEN='ci-disposable-pg17' \
             DATABASE_URL='postgresql://postgres:fixture-test-password@127.0.0.1:5432/fixture_test' \
-            yarn test:vehicle-image-crop:postgres
+            yarn test:vehicle-image-crop:postgres || pg_test_failed=1
 
           # Guarded, synthetic-only database; never points at an installed ALPR.
           psql_database postgres --command "CREATE DATABASE codex_community_feed_1a2b3c4d;"
@@ -208,7 +209,7 @@ jobs:
             COMMUNITY_FEED_POSTGRES_TEST_DATABASE='codex_community_feed_1a2b3c4d' \
             COMMUNITY_FEED_POSTGRES_TEST_GUARD_TOKEN='ci-disposable-pg17' \
             DATABASE_URL='postgresql://postgres:fixture-test-password@127.0.0.1:5432/codex_community_feed_1a2b3c4d' \
-            yarn test:community-feed:postgres
+            yarn test:community-feed:postgres || pg_test_failed=1
           psql_database postgres --command "DROP DATABASE codex_community_feed_1a2b3c4d WITH (FORCE);"
           trap - EXIT
 
@@ -268,6 +269,7 @@ jobs:
           " | grep -Fx '1'
           psql_fixture --command "DELETE FROM plates WHERE plate_number = 'REAL001';"
           fixture status | grep -F 'fixture_state=clear'
+          test "$pg_test_failed" -eq 0
 
   verify:
     name: Test, typecheck, lint, and build

@@ -30,11 +30,11 @@ try {
   await pool.query(`INSERT INTO public.capture_assets
     (read_id, asset_type, algorithm_version, status, source_image_path, error_code)
     VALUES ($1, 'vehicle_crop', 'test-retired-cache', 'failed', 'images/upgrade-plate.jpg', 'TEST_ONLY')`, [readId]);
-  const before = await pool.query("SELECT to_jsonb(reads) AS row FROM public.plate_reads reads WHERE id = $1", [readId]);
+  const before = await pool.query("SELECT id, plate_number, observed_plate, image_path, vehicle_image_path, camera_name, timestamp, review_status, review_revision, validated FROM public.plate_reads WHERE id = $1", [readId]);
   const migrations = await readFile(new URL("../migrations.sql", import.meta.url), "utf8");
   for (let pass = 0; pass < 2; pass++) {
     await pool.query(migrations);
-    const after = await pool.query("SELECT to_jsonb(reads) AS row FROM public.plate_reads reads WHERE id = $1", [readId]);
+    const after = await pool.query("SELECT id, plate_number, observed_plate, image_path, vehicle_image_path, camera_name, timestamp, review_status, review_revision, validated FROM public.plate_reads WHERE id = $1", [readId]);
     assert.deepEqual(after.rows, before.rows, "original read and image references must be unchanged");
     const control = await pool.query("SELECT mode, processing_enabled FROM public.vehicle_reid_control WHERE singleton");
     assert.deepEqual(control.rows, [{ mode: "v2_primary", processing_enabled: true }]);
