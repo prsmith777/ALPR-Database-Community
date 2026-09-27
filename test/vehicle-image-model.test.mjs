@@ -33,16 +33,6 @@ test("color signatures distinguish vehicle color distributions with an explainab
   assert.match(red, /^[0-9a-f]{40}$/);
   assert.equal(colorSignatureDistance(red, red), 0);
   assert.ok(colorSignatureDistance(red, blue) >= 0.5);
-  const combined = explainSimilarity({
-    sourceSha256: "a",
-    candidateSha256: "b",
-    distance: 8,
-    colorDistance: colorSignatureDistance(red, red),
-  });
-  assert.equal(combined.signalCount, 2);
-  assert.equal(combined.rankingVersion, "vehicle-focus-v2");
-  assert.equal(combined.colorScore, 100);
-  assert.ok(combined.score > combined.structuralScore);
 });
 
 test("vehicle-focused color ignores gray hue and separates body colors from a shared scene", () => {
@@ -105,4 +95,3 @@ test("pinned OpenVINO Vehicle ReID model produces a normalized descriptor", asyn
   const magnitude = Math.sqrt(Array.from(descriptor).reduce((sum, value) => sum + value ** 2, 0));
   assert.ok(Math.abs(magnitude - 1) < 1e-5);
 });
-

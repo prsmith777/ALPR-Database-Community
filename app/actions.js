@@ -4621,9 +4621,9 @@ export async function getVehicleAnalysisStatus() {
 }
 
 export async function operateVehicleAnalysis(operation) {
-  const actor = await requirePermission("system.manage_settings");
+  const principal = await requirePermission("system.manage_settings");
   try {
-    const result = await (await vehicleAnalysisRepository()).operate(operation, actor.id);
+    const result = await (await vehicleAnalysisRepository()).operate(operation, principal.id);
     return { success: true, ...result };
   } catch (error) {
     console.error("Vehicle analysis control failed", error);
@@ -4682,7 +4682,7 @@ export async function reviewVehicleDirection(input = {}) {
       actor: principal,
     });
     revalidatePath("/live_feed");
-    revalidatePath("/visual_search/vehicles");
+    revalidatePath("/visual_search/profiles");
     return { success: true, data };
   } catch (error) {
     return visualSearchFailure(error, "Unable to correct this vehicle direction.");

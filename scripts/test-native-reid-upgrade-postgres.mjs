@@ -17,6 +17,7 @@ try {
   assert.equal(tables.rowCount, 0, "upgrade fixture must start empty");
   const oldRoot = new URL("../.ci-prior-community/", import.meta.url);
   await pool.query(await readFile(new URL("schema.sql", oldRoot), "utf8"));
+  await pool.query("SET search_path TO public");
   await pool.query(await readFile(new URL("migrations.sql", oldRoot), "utf8"));
   const actor = await pool.query(`INSERT INTO public.users(username, display_name, password_hash)
     VALUES ('upgrade_fixture', 'Upgrade fixture', 'non-authenticating-test-value') RETURNING id`);
@@ -55,4 +56,3 @@ try {
   assert.equal((await pool.query("SELECT processing_enabled FROM public.vehicle_reid_control")).rows[0].processing_enabled, false);
   console.log("native_reid_previous_release_upgrade_and_replay=passed");
 } finally { await pool.end(); }
-

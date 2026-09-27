@@ -196,6 +196,7 @@ async function createFixture() {
 }
 
 async function runCampaign(storage) {
+  await new VehicleImageCropLiveRepository(pool).setEnabled({ enabled: false, actorUserId: actorId });
   const repository = new VehicleImageCropRepository({ pool });
   const cropService = new VehicleImageCropService({ repository, fileStorage: storage });
   const campaign = new VehicleImageCropCampaignService({ repository, cropService });

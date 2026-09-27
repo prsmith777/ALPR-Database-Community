@@ -785,7 +785,7 @@ function MatchCard({ data, selected, match, canReview }) {
             <EvidenceBadge label="Plate" state={match.reviewEvidence.plateAgreement} />
             {!data.primaryMode ? (
               <EvidenceBadge
-                label={data.reviewMode ? "Authoritative profile" : "Current v1 grouping"}
+                label={"Vehicle profile"}
                 state={match.reviewEvidence.currentProfileAgreement}
               />
             ) : null}
@@ -954,7 +954,7 @@ export default function VehicleReidV2Shadow({
             Candidate order uses only cosine similarity from {data.modelName}. Plate, color, body type, and saved human labels are displayed afterward for context and never alter the score or order. Shared images are scanned once; display-only Entry fallbacks are excluded.
             {primaryMode
               ? " Exact-current profile agreement is intentionally omitted from this fast comparison view; open Profiles to inspect authoritative membership."
-              : ` ${reviewMode ? "Authoritative profile" : "Current v1 grouping"} agreement remains separate review context.`}
+              : ` ${"Vehicle profile"} agreement remains separate review context.`}
           </p>
         </div>
         {data.stats.truncated ? (

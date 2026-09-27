@@ -737,7 +737,7 @@ test("primary repository uses an asset-gated lean catalog and ID-seeded bounded 
 test("primary repository fails closed when authority mode is not v2 primary", async () => {
   const repository = new VehicleReidV2ShadowRepository({
     executor: {
-      async query() { return { rows: [{ authority_mode: "v1_rollback" }] }; },
+      async query() { return { rows: [{ authority_mode: "unsupported" }] }; },
     },
   });
   await assert.rejects(

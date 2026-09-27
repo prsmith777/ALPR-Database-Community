@@ -716,6 +716,16 @@ try {
   assert.equal(concurrentWinner.rows[0].vehicle_image_source_kind, "overview_pair_share");
   assert.equal(Number(concurrentWinner.rows[0].vehicle_overview_candidate_id), historyCandidateId);
   assert.equal(Number(concurrentWinner.rows[0].vehicle_image_source_read_id), readId);
+  // Without a read-owned color cache, this missing image is inspected by the
+  // preflight worker rather than declared nighttime from unrelated evidence.
+  const nightClaim = await repositoryA.claimNextEntryOverviewBackfillJob();
+  assert.equal(Number(nightClaim.id), nightHistoryReadId);
+  await repositoryA.markEntryOverviewBackfillFailed(nightClaim.entry_history_job_id, {
+    claimToken: nightClaim.vehicle_image_claim_token,
+    errorCode: "ENTRY_HISTORY_MONOCHROME_NIGHT",
+    retryable: false,
+    unavailable: true,
+  });
   const completedMainRun = await repositoryA.getEntryOverviewBackfillRun(preview.id);
   assert.equal(completedMainRun.status, "completed");
 

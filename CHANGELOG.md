@@ -1,6 +1,6 @@
 # Changelog
 
-## [0.1.43] - 2026-09-27
+## 0.1.43 — Native ReID V2 (2026-09-27)
 
 - Make ReID V2 the only Community identity pipeline; fresh installs initialize it directly.
 - Automatically catalog eligible whole-vehicle images, crop, embed, and extract attributes in bounded background jobs.

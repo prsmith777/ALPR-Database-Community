@@ -478,7 +478,7 @@ test("historical direction queries join camera profiles through their declared r
   assert.equal(queries.length, 2);
   for (const query of queries) {
     assert.match(query, /JOIN public\.plate_reads reads ON reads\.id = ca\.read_id/i);
-    assert.match(query, /cvp\.camera_key = LOWER\(BTRIM\(reads\.camera_name\)\)/i);
+    assert.match(query, /profiles\.camera_key = LOWER\(BTRIM\(reads\.camera_name\)\)/i);
     assert.doesNotMatch(query, /BTRIM\(pr\.camera_name\)/i);
   }
 });
@@ -524,7 +524,7 @@ test("historical direction re-evaluation queues machine results and preserves ma
   assert.equal(result.failuresCleared, 1);
   assert.equal(calls.some((call) => call.text.includes("DELETE FROM public.vehicle_direction_observations")), false);
   const queueCall = calls.find((call) => call.text.includes("INSERT INTO public.vehicle_direction_reevaluation_queue"));
-  assert.match(queueCall.text, /LEFT JOIN public\.vehicle_orientation_labels labels/i);
+  assert.match(queueCall.text, /LEFT JOIN public\.current_vehicle_orientation_labels labels/i);
   assert.match(queueCall.text, /labels\.read_id IS NULL/i);
   assert.match(queueCall.text, /observations\.classifier_version IS NOT DISTINCT FROM \$4/i);
   assert.match(queueCall.text, /LOWER\(BTRIM\(reads\.camera_name\)\) = LOWER\(BTRIM\(\$5\)\)/i);

@@ -348,7 +348,7 @@ test("a claimed read is released across rollback and processed after primary re-
   assert.deepEqual(firstClaim.readIds, [job.readId]);
   assert.equal(job.attemptCount, 1);
 
-  mode = "v1_rollback";
+  mode = "unsupported";
   assert.deepEqual(
     await repository.processClaimedRead({ readId: job.readId, claimToken: firstClaim.token }),
     { status: "pending", readId: job.readId, released: true, attemptCount: 0 }
