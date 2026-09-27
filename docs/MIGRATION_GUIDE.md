@@ -23,6 +23,13 @@ v0.1.21, and v0.1.22 sources on PostgreSQL 13 and 17.
 
 ## Recommended target
 
+After importing, verify Recognition Feed with and without filters, on more than
+one results page, and in both image views before accepting the target. Community
+v0.1.42 reduces repeated identity checks for databases already using ReID 2
+primary mode without changing that mode or requiring another migration. See
+[Recognition Feed troubleshooting](REID_FEED_PERFORMANCE.md) if records arrive
+slowly; do not change identity modes as a workaround.
+
 Use a separate host or VM from the automatic x86-64 Linux matrix in
 [Host compatibility](COMPATIBILITY.md); Ubuntu Server 24.04 LTS remains the
 simplest recommended target. Download and verify the release bootstrap as
