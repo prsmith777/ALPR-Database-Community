@@ -23,7 +23,7 @@ import {
   communityUpdateControlInternals,
   validateCommunityUpdateRequest,
 } from "../lib/community-update-control.mjs";
-import { runUpdaterCommand } from "./community-updater.mjs";
+import { runFreshUpdater } from "./community-updater-process.mjs";
 
 const scriptPath = fileURLToPath(import.meta.url);
 const repositoryRoot = resolve(dirname(scriptPath), "..");
@@ -158,7 +158,7 @@ export async function processCommunityUpdateRequest(options = {}) {
     });
     const argumentsList = [request.operation];
     if (request.target) argumentsList.push("--to", request.target);
-    const result = await (options.runUpdaterCommand || runUpdaterCommand)(
+    const result = await (options.runUpdaterCommand || runFreshUpdater)(
       argumentsList,
       options.environment || process.env,
       {
@@ -168,7 +168,7 @@ export async function processCommunityUpdateRequest(options = {}) {
       }
     );
     const recordedState = request.operation === "check"
-      ? await (options.runUpdaterCommand || runUpdaterCommand)(
+      ? await (options.runUpdaterCommand || runFreshUpdater)(
           ["status"],
           options.environment || process.env,
           {
@@ -194,7 +194,7 @@ export async function processCommunityUpdateRequest(options = {}) {
     let recordedSummary = {};
     if (request) {
       try {
-        const recordedState = await (options.runUpdaterCommand || runUpdaterCommand)(
+        const recordedState = await (options.runUpdaterCommand || runFreshUpdater)(
           ["status"],
           options.environment || process.env,
           {

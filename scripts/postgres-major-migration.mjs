@@ -5,6 +5,8 @@ import { access, chmod, mkdir, readFile, stat, writeFile } from "node:fs/promise
 import { dirname, isAbsolute, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { NATIVE_REID_MIGRATION, RETIRED_IDENTITY_TABLES, RETIRED_DIRECTION_PREDICATES, compareMinimumCounts, compareNativeUpgradeCounts } from "./native-reid-upgrade-policy.mjs";
+
 const scriptPath = fileURLToPath(import.meta.url);
 const repositoryRoot = resolve(dirname(scriptPath), "..");
 const TARGET_SERVER_MAJOR = 17;
@@ -13,32 +15,6 @@ const RESTORE_ACKNOWLEDGEMENT = "ALPR_TO_PG17_EMPTY_TARGET";
 const SOURCE_QUIESCED_ACKNOWLEDGEMENT = "ALPR_SOURCE_QUIESCED";
 const LEGACY_BASELINE_COMMIT = "aeb72baf6f0435c8d42ed07422f1b2f3a703e6ac";
 const COMMUNITY_BASELINE_MIGRATION = "2026082301_vehicle_passage_foundation";
-const NATIVE_REID_MIGRATION = "2026092701_native_reid";
-// Upgrade-only compatibility inventory. These retired derived tables are never
-// read by the application; exact pre-migration restore checks still include them.
-const RETIRED_IDENTITY_TABLES = Object.freeze([
-  "vehicle_reid_v2_conversion_v1_comparisons",
-  "vehicle_reid_v2_conversion_conflicts",
-  "vehicle_reid_v2_conversion_read_dispositions",
-  "vehicle_reid_v2_conversion_projected_members",
-  "vehicle_reid_v2_conversion_projected_profiles",
-  "vehicle_reid_v2_conversion_jobs",
-  "vehicle_reid_v2_conversion_review_evidence",
-  "vehicle_reid_v2_conversion_read_evidence",
-  "vehicle_reid_v2_conversion_crop_evidence",
-  "vehicle_reid_v2_conversion_runs",
-  "vehicle_plate_associations",
-  "vehicle_cluster_assignments",
-  "vehicle_clusters",
-  "vehicle_match_feedback",
-  "capture_assets",
-  "camera_visual_profiles",
-  "vehicle_attribute_observations",
-]);
-const RETIRED_DIRECTION_PREDICATES = Object.freeze({
-  vehicle_orientation_labels: "TRUE",
-  vehicle_direction_observations: "classifier_version <> 'blue-iris-zone-crossing-v1'",
-});
 const SOURCE_PROFILES = Object.freeze({
   LEGACY_V019: Object.freeze({
     id: "original-alpr-v0.1.9",
@@ -710,53 +686,6 @@ function compareCounts(sourceCounts, targetCounts) {
     else if (sourceCount !== targetCount) mismatches.push({ table, source: sourceCount, target: targetCount });
   }
   return mismatches;
-}
-
-function compareMinimumCounts(sourceCounts, targetCounts) {
-  const losses = [];
-  for (const [table, sourceCount] of Object.entries(sourceCounts)) {
-    const targetCount = targetCounts[table];
-    if (targetCount === undefined) {
-      losses.push({ table, source: sourceCount, target: "missing" });
-    } else if (BigInt(targetCount) < BigInt(sourceCount)) {
-      losses.push({ table, source: sourceCount, target: targetCount });
-    }
-  }
-  return losses;
-}
-
-function compareNativeUpgradeCounts(sourceCounts, targetCounts, {
-  sourceNative = false, targetNative = false, directionRetirements = {},
-} = {}) {
-  const adjustedCounts = { ...sourceCounts };
-  const retiredDerivedRows = [];
-  const unexpectedRetained = [];
-  if (!sourceNative && targetNative) {
-    for (const table of RETIRED_IDENTITY_TABLES) {
-      if (sourceCounts[table] === undefined) continue;
-      if (targetCounts[table] !== undefined) {
-        unexpectedRetained.push({ table, reason: "retired derived table still exists" });
-        continue;
-      }
-      retiredDerivedRows.push({ table, retired: sourceCounts[table], reason: "retired derived table" });
-      delete adjustedCounts[table];
-    }
-    for (const table of Object.keys(RETIRED_DIRECTION_PREDICATES)) {
-      if (sourceCounts[table] === undefined) continue;
-      const retired = String(directionRetirements[table] ?? "0");
-      if (!/^\d+$/.test(retired) || BigInt(retired) > BigInt(sourceCounts[table])) {
-        throw new Error("Invalid stopped-source direction retirement count: " + table);
-      }
-      adjustedCounts[table] = String(BigInt(sourceCounts[table]) - BigInt(retired));
-      if (BigInt(retired) > 0n) {
-        retiredDerivedRows.push({ table, retired, reason: "no canonical crop binding" });
-      }
-    }
-  }
-  return {
-    losses: [...unexpectedRetained, ...compareMinimumCounts(adjustedCounts, targetCounts)],
-    retiredDerivedRows,
-  };
 }
 
 async function nativeUpgradeCountPolicy(source, target, sourceApplication, targetApplication, environment) {

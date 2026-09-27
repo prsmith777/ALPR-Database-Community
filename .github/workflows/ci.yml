@@ -85,6 +85,8 @@ jobs:
       - name: Validate bootstrap shell syntax
         run: |
           bash -n bootstrap.sh
+          bash -n community-maintenance.sh
+          bash test/community-maintenance-launcher.sh
           bash test/bootstrap-platform-matrix.sh
           bash test/bootstrap-control-flow.sh
 
@@ -143,6 +145,7 @@ jobs:
             INSERT INTO public.codex_integration_test_guard VALUES ('native-reid-upgrade', 'ci-disposable-pg17');
           "
           NATIVE_REID_TEST_OPT_IN=true \
+            NATIVE_REID_TEST_CONTAINER='${{ job.services.postgres.id }}' \
             NATIVE_REID_TEST_DATABASE=codex_native_reid_1a2b3c4d \
             NATIVE_REID_TEST_GUARD_TOKEN=ci-disposable-pg17 \
             DATABASE_URL='postgresql://postgres:fixture-test-password@127.0.0.1:5432/codex_native_reid_1a2b3c4d' \

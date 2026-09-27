@@ -276,6 +276,9 @@ test("the guided engine backs up, applies, validates, accepts, and rolls back wi
         databaseReadyAttempts: 1,
         healthAttempts: 1,
         healthCheck: async () => ({ status: "ok" }),
+        validateInstalledRelease: (args, env, options) => runUpdaterCommand(args, env, {
+          ...options, runner, clock, databaseReadyAttempts: 1, healthCheck: async () => ({ status: "ok" }), logger: memoryLogger(),
+        }),
         logger: memoryLogger(),
       }
     );

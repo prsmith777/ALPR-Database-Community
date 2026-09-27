@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import pg from "pg";
+import { exerciseNativeHostUpdater } from "./test-native-host-updater-postgres.mjs";
 import { postgresMajorMigrationInternals as migrationChecks } from "./postgres-major-migration.mjs";
 
 // Only CI-created, sentinel-guarded, empty scratch databases may execute this test.
@@ -42,6 +43,7 @@ try {
     }
     return counts;
   }
+  await exerciseNativeHostUpdater({ pool, database: expected, readId, before });
   const sourceCounts = await tableCounts();
   const migrations = await readFile(new URL("../migrations.sql", import.meta.url), "utf8");
   for (let pass = 0; pass < 2; pass++) {

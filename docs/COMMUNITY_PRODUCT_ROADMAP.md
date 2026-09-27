@@ -104,6 +104,10 @@ credentials and enables them. They do not require extra ALPR host packages.
   target without deleting the source;
 - exact-tag updates on standard Linux hosts and Linux VMs, available through
   both `./alpr-community` and an optional restricted browser-to-host service;
+- v0.1.44 native-update validation with exact stopped-source retirement evidence,
+  fresh updater processes, and a one-time maintenance launcher for older hosts;
+  PostgreSQL tests exercise real dumps, migrations, transactional rollback, and
+  retry while Git/image/application lifecycle boundaries are simulated;
 - verified database/configuration backups, guided Technical system checks,
   explicit real-use acceptance, exact rollback, and a one-generation rollback
   policy. The browser workflow keeps the required next action prominent and
