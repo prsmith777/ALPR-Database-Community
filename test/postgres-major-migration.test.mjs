@@ -231,8 +231,8 @@ test("row-count comparison reports missing and changed tables", () => {
 test("post-migration validation permits seeds but rejects row loss", () => {
   assert.deepEqual(
     internals.compareMinimumCounts(
-      { plate_reads: "12", camera_visual_profiles: "0" },
-      { plate_reads: "12", camera_visual_profiles: "1" }
+      { plate_reads: "12", users: "0" },
+      { plate_reads: "12", users: "1" }
     ),
     []
   );
@@ -248,18 +248,65 @@ test("post-migration validation permits seeds but rejects row loss", () => {
   );
   assert.deepEqual(
     internals.listMigrationAdditions(
-      { camera_visual_profiles: "0", plates: "12" },
-      { camera_visual_profiles: "1", plates: "12" }
+      { users: "0", plates: "12" },
+      { users: "1", plates: "12" }
     ),
     [
       {
-        table: "camera_visual_profiles",
+        table: "users",
         source: "0",
         target: "1",
         added: "1",
       },
     ]
   );
+});
+
+test("native upgrade reports only the explicitly retired derived inventory", () => {
+  const source = { plate_reads: "12", users: "3", tags: "2", capture_assets: "20" };
+  const target = { plate_reads: "12", users: "3", tags: "2" };
+  const policy = { sourceNative: false, targetNative: true };
+  const result = internals.compareNativeUpgradeCounts(source, target, policy);
+  assert.deepEqual(result.losses, []);
+  assert.deepEqual(result.retiredDerivedRows, [
+    { table: "capture_assets", retired: "20", reason: "retired derived table" },
+  ]);
+  for (const options of [{}, { targetNative: false }, { sourceNative: true, targetNative: true }]) {
+    assert.equal(internals.compareNativeUpgradeCounts(source, target, options).losses.length, 1);
+  }
+  assert.deepEqual(
+    internals.compareNativeUpgradeCounts(source, { ...target, plate_reads: "11" }, policy).losses,
+    [{ table: "plate_reads", source: "12", target: "11" }]
+  );
+  assert.equal(internals.compareNativeUpgradeCounts(
+    { ...source, unknown_derived_cache: "1" }, target, policy
+  ).losses[0].table, "unknown_derived_cache");
+  assert.equal(internals.compareNativeUpgradeCounts(
+    source, { ...target, capture_assets: "0" }, policy
+  ).losses[0].reason, "retired derived table still exists");
+});
+
+test("direction retirement preserves bound examples and Blue Iris observations", () => {
+  const source = { vehicle_orientation_labels: "10", vehicle_direction_observations: "20" };
+  const target = { vehicle_orientation_labels: "4", vehicle_direction_observations: "8" };
+  const policy = {
+    targetNative: true,
+    directionRetirements: { vehicle_orientation_labels: "6", vehicle_direction_observations: "12" },
+  };
+  const result = internals.compareNativeUpgradeCounts(source, target, policy);
+  assert.deepEqual(result.losses, []);
+  assert.equal(result.retiredDerivedRows.length, 2);
+  assert.deepEqual(internals.compareNativeUpgradeCounts(
+    source, { ...target, vehicle_direction_observations: "7" }, policy
+  ).losses, [{ table: "vehicle_direction_observations", source: "8", target: "7" }]);
+  assert.equal(internals.compareNativeUpgradeCounts(source, target, { targetNative: true }).losses.length, 2);
+  for (const invalid of ["-1", "11", "NaN"]) {
+    assert.throws(() => internals.compareNativeUpgradeCounts(source, target, {
+      targetNative: true, directionRetirements: { vehicle_orientation_labels: invalid },
+    }), /Invalid stopped-source/);
+  }
+  // The transactional restore before migrations never uses the retirement policy.
+  assert.equal(internals.compareCounts({ capture_assets: "20" }, {}).length, 1);
 });
 
 test("post-migration reconciliation rebuilds plate occurrence counts", () => {

@@ -593,7 +593,7 @@ test("foundation migration is additive, inert, provider-neutral, and storage-saf
     /reads\.vehicle_image_updated_at IS NOT DISTINCT FROM links\.source_updated_at/
   );
   assert.match(cleanupSource, /vehicle_image_assets[\s\S]*storage_path/);
-  assert.match(cleanupSource, /LOCK TABLE public\.plate_reads, public\.capture_assets, public\.vehicle_image_assets/);
+  assert.match(cleanupSource, /LOCK TABLE public\.plate_reads, public\.vehicle_image_assets/);
   assert.match(reconciliationSource, /vehicle_image_assets[\s\S]*storage_path/);
   assert.match(reconciliationSource, /vehicle-image-assets/);
 });

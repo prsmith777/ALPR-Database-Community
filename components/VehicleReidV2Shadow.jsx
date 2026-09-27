@@ -197,7 +197,7 @@ function queryHref(data, overrides = {}) {
       parameters.set(key, String(value));
     }
   }
-  return `${data?.routeBase || "/visual_search/reid-v2"}?${parameters.toString()}`;
+  return `${data?.routeBase || "/visual_search"}?${parameters.toString()}`;
 }
 
 function coverageAimText(value) {
@@ -215,7 +215,7 @@ function TargetedReviewBanner({ data }) {
           No current unlabeled pair was found for the remaining descriptive gaps. This does not create a threshold or assignment.
         </p>
         <Button asChild className="mt-3" variant="outline" size="sm">
-          <Link href={data.routeBase || "/visual_search/reid-v2"}>Exit targeted review</Link>
+          <Link href={data.routeBase || "/visual_search"}>Exit targeted review</Link>
         </Button>
       </div>
     );
@@ -249,7 +249,7 @@ function TargetedReviewBanner({ data }) {
           </Button>
         ) : null}
         <Button asChild variant="ghost" size="sm">
-          <Link href={data.routeBase || "/visual_search/reid-v2"}>Exit targeted review</Link>
+          <Link href={data.routeBase || "/visual_search"}>Exit targeted review</Link>
         </Button>
       </div>
     </div>
@@ -360,7 +360,7 @@ function ProfileCandidateCard({ data }) {
                   </p>
                   <Link
                     className="inline-flex text-blue-500 hover:underline"
-                    href={`${data.routeBase || "/visual_search/reid-v2"}?source=${profile.representativeDerivativeId}&browse=1`}
+                    href={`${data.routeBase || "/visual_search"}?source=${profile.representativeDerivativeId}&browse=1`}
                   >
                     Inspect representative crop #{profile.representativeDerivativeId}
                   </Link>
@@ -471,7 +471,7 @@ function ProfileSuggestionCard({ data }) {
                   candidateDerivativeId={suggestion.representative.derivativeId}
                   initialReview={null}
                   canReview={data.canReview}
-                  authoritativeIdentity={data.reviewMode}
+                  authoritativeIdentity={data.primaryMode || data.reviewMode}
                 />
               </CardContent>
             </Card>
@@ -500,7 +500,7 @@ function ReviewCampaignBanner({ data }) {
           The frozen inventory is currently exhausted after automatic plate resolution and prior-review diversity exclusions. The campaign will not recycle familiar vehicles to fill the target.
         </p>
         <Button asChild className="mt-3" variant="outline" size="sm">
-          <Link href={`${data.routeBase || "/visual_search/reid-v2"}?browse=1`}>Browse ReID instead</Link>
+          <Link href={`${data.routeBase || "/visual_search"}?browse=1`}>Browse ReID instead</Link>
         </Button>
       </div>
     );
@@ -522,7 +522,7 @@ function ReviewCampaignBanner({ data }) {
       </p>
       <div className="flex flex-wrap gap-2">
         <Button asChild variant="ghost" size="sm">
-          <Link href={`${data.routeBase || "/visual_search/reid-v2"}?browse=1`}>Browse ReID instead</Link>
+          <Link href={`${data.routeBase || "/visual_search"}?browse=1`}>Browse ReID instead</Link>
         </Button>
       </div>
     </div>
@@ -678,19 +678,13 @@ function SourceMetadata({ source, profileContextOmitted = false }) {
             <Link
               key={profileId}
               className="text-blue-500 hover:underline"
-              href={source.identityMode === "v2_primary"
-                ? `/visual_search/profiles/${profileId}`
-                : `/visual_search/vehicles/${profileId}`}
+              href={`/visual_search/profiles/${profileId}`}
             >
-              {source.identityMode === "v2_primary"
-                ? `Authoritative profile #${profileId}`
-                : `Current v1 grouping #${profileId}`}
+              {`Vehicle profile #${profileId}`}
             </Link>
           ))
           : <span className="text-muted-foreground">
-            {source.identityMode === "v2_primary"
-              ? "No authoritative profile"
-              : "No current v1 grouping"}
+            No vehicle profile
           </span>}
       </div>
     </div>
@@ -723,7 +717,7 @@ function SourcePicker({ data }) {
               <div className="relative mb-3 aspect-[16/9] overflow-hidden rounded-md bg-muted">
                 <NextImage
                   src={source.imageUrl}
-                  alt={`Choose ${sourceTitle(source)} as the shadow source`}
+                  alt={`Choose ${sourceTitle(source)} as the comparison source`}
                   fill
                   unoptimized
                   sizes="(max-width: 768px) 50vw, 280px"
@@ -791,7 +785,7 @@ function MatchCard({ data, selected, match, canReview }) {
             <EvidenceBadge label="Plate" state={match.reviewEvidence.plateAgreement} />
             {!data.primaryMode ? (
               <EvidenceBadge
-                label={data.reviewMode ? "Authoritative profile" : "Current v1 grouping"}
+                label={"Vehicle profile"}
                 state={match.reviewEvidence.currentProfileAgreement}
               />
             ) : null}
@@ -804,7 +798,7 @@ function MatchCard({ data, selected, match, canReview }) {
           candidateDerivativeId={match.derivativeId}
           initialReview={match.pairReview}
           canReview={canReview}
-          authoritativeIdentity={data.reviewMode}
+          authoritativeIdentity={data.primaryMode || data.reviewMode}
           campaignId={campaign ? data.reviewCampaign.campaign.id : null}
           nextHref={guided ? queryHref(data, {
             targeted: targeted ? 1 : "",
@@ -867,7 +861,7 @@ function ShadowNeighborhood({ data }) {
         </Card>
         <div className="grid gap-4 xl:grid-cols-2">
           {data.matches.length
-            ? data.matches.map((match) => <MatchCard key={match.derivativeId} data={data} selected={data.selected} match={match} canReview={data.canReview} />)
+            ? data.matches.map((match) => <MatchCard key={`${data.selected.derivativeId}:${match.derivativeId}`} data={data} selected={data.selected} match={match} canReview={data.canReview} />)
             : <div className="rounded-lg border border-dashed p-6 text-sm text-muted-foreground">No other valid current crop embeddings are available for comparison.</div>}
         </div>
       </div>
@@ -892,7 +886,7 @@ function CampaignReviewFlow({ data }) {
             </p>
           </div>
           <Button asChild variant="outline" size="sm">
-            <Link href={`${data.routeBase || "/visual_search/reid-v2"}?browse=1`}>Browse ReID instead</Link>
+            <Link href={`${data.routeBase || "/visual_search"}?browse=1`}>Browse ReID instead</Link>
           </Button>
         </div>
         <div className="rounded-lg border border-blue-500/30 bg-blue-500/5 p-4 text-sm text-muted-foreground">
@@ -907,7 +901,7 @@ function CampaignReviewFlow({ data }) {
 
 export default function VehicleReidV2Shadow({
   result,
-  routeBase = "/visual_search/reid-v2",
+  routeBase = "/visual_search",
   primaryMode = false,
   reviewMode = false,
 }) {
@@ -924,7 +918,7 @@ export default function VehicleReidV2Shadow({
     routeBase,
     primaryMode,
     reviewMode,
-    canReview: primaryMode ? false : result.data.canReview,
+    canReview: result.data.canReview === true,
   };
   if (data.reviewCampaign?.active) {
     return <CampaignReviewFlow data={data} />;
@@ -941,7 +935,7 @@ export default function VehicleReidV2Shadow({
             </div>
             <p className="max-w-4xl text-sm text-muted-foreground">
               Compare each current canonical Overview crop against the local ReID embedding catalog. Similarity ranks possible matches for review and never establishes vehicle identity.
-              {reviewMode
+              {primaryMode || reviewMode
                 ? " An audited Same decision may merge two exact-current authoritative profiles; Different or Unsure keeps them separate. No cosine score creates identity."
                 : !primaryMode
                   ? " This shadow review does not create or change a vehicle profile, assignment, threshold, notification, or external-provider result."
@@ -960,7 +954,7 @@ export default function VehicleReidV2Shadow({
             Candidate order uses only cosine similarity from {data.modelName}. Plate, color, body type, and saved human labels are displayed afterward for context and never alter the score or order. Shared images are scanned once; display-only Entry fallbacks are excluded.
             {primaryMode
               ? " Exact-current profile agreement is intentionally omitted from this fast comparison view; open Profiles to inspect authoritative membership."
-              : ` ${reviewMode ? "Authoritative profile" : "Current v1 grouping"} agreement remains separate review context.`}
+              : ` ${"Vehicle profile"} agreement remains separate review context.`}
           </p>
         </div>
         {data.stats.truncated ? (

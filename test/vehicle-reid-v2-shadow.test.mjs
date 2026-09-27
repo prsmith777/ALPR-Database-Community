@@ -662,7 +662,7 @@ test("repository scans only exact current identity links and performs no writes"
   );
   assert.match(
     calls[0].text,
-    /ELSE related\.cluster_ids END AS cluster_ids/
+    /AS cluster_ids/
   );
   assert.equal(vehicleReidV2ShadowRepositoryInternals.MAX_SCAN_SOURCES, 10_000);
 });
@@ -737,7 +737,7 @@ test("primary repository uses an asset-gated lean catalog and ID-seeded bounded 
 test("primary repository fails closed when authority mode is not v2 primary", async () => {
   const repository = new VehicleReidV2ShadowRepository({
     executor: {
-      async query() { return { rows: [{ authority_mode: "v1_rollback" }] }; },
+      async query() { return { rows: [{ authority_mode: "unsupported" }] }; },
     },
   });
   await assert.rejects(
@@ -816,7 +816,7 @@ test("repository revalidates current crop evidence, updates one pair row, and ap
   assert.equal(JSON.parse(audit.values[2]).previousLabel, null);
 });
 
-test("shadow review surface keeps assignments unchanged, gates pair labels, and is provider-neutral", async () => {
+test("native review surface gates authoritative pair labels and is provider-neutral", async () => {
   const [actions, page, component, controls, navigation, service, repository, migration] = await Promise.all([
     source("app/actions.js"),
     source("app/visual_search/page.jsx"),
@@ -833,14 +833,17 @@ test("shadow review surface keeps assignments unchanged, gates pair labels, and 
   assert.match(page, /requirePagePermission\("plate\.read"\)/);
   assert.match(page, /primaryBrowse:\s*true/);
   assert.doesNotMatch(navigation, /ReID v2 Shadow/);
-  assert.match(component, /Assignment-safe review/);
+  assert.match(component, /canReview: result\.data\.canReview === true/);
+  assert.match(component, /authoritativeIdentity=\{data\.primaryMode \|\| data\.reviewMode\}/);
+  assert.match(component, /data\.selected\.derivativeId\}:\$\{match\.derivativeId/);
   assert.equal((component.match(/\bunoptimized\b/g) || []).length, 3);
   assert.match(component, /Associated LPR evidence — review only/);
   assert.match(component, /Directly linked LPR read/);
   assert.match(component, /Correlated companion LPR read/);
   assert.match(component, /Use Unsure unless the images resolve it/);
   assert.match(component, /never alter the score or order/);
-  assert.match(component, /does not create or change a vehicle profile, assignment, threshold, notification/);
+  assert.match(component, /An audited Same decision may merge two exact-current authoritative profiles/);
+  assert.match(controls, /Unable to save this pair review\. Refresh the page and try again/);
   assert.match(controls, /Same vehicle/);
   assert.match(controls, /Different vehicle/);
   assert.match(controls, /Unsure/);
@@ -851,15 +854,14 @@ test("shadow review surface keeps assignments unchanged, gates pair labels, and 
   assert.doesNotMatch(`${service}\n${repository}`, /openvino-node/);
 });
 
-test("Vehicle Search supports the legacy v2-shadow mode and fails closed for unknown modes", async () => {
+test("Vehicle Search is primary-only and validates explicit selections", async () => {
   const [page, actions, component, help] = await Promise.all([
     source("app/visual_search/page.jsx"),
     source("app/actions.js"),
     source("components/VehicleReidV2Shadow.jsx"),
     source("lib/help-manual.mjs"),
   ]);
-  assert.match(page, /!modeResult\?\.success \|\| !\["v1_primary", "v2_shadow", "v1_rollback", "v2_primary"\]\.includes\(mode\)/);
-  assert.doesNotMatch(page, /modeResult\?\.success \? modeResult\.data\.control\?\.mode : "v1_primary"/);
+  assert.doesNotMatch(page, /getVehicleReidAuthorityMode/);
   assert.match(page, /parseVehicleReidV2SearchId\(parameters\?\.source\)/);
   assert.match(page, /requestedSource\.present && !requestedSource\.valid/);
   assert.match(page, /parseVehicleReidV2SearchId\(parameters\?\.readId\)/);

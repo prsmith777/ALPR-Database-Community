@@ -1,6 +1,6 @@
 # Recognition Feed identity performance
 
-## Scope of the v0.1.42 repair
+## Scope
 
 A database already using `v2_primary` could spend seconds validating the same
 vehicle identity evidence repeatedly while loading a small feed page. This
@@ -8,18 +8,18 @@ could leave the page layout visible before its records arrived, with or without
 filters. The delay grew with profile membership and pair-review evidence,
 not just the number of visible records.
 
-Fresh Community installations retain their default `v2_shadow` mode and legacy
-identity path. This repair does not change the selected mode, run a conversion,
-delete data, add a cache, or expose advanced ReID administration. No manual SQL
-or additional migration is required; follow the normal update process.
+Community v0.1.43 uses native ReID V2 exclusively and retains the set-based
+performance repair introduced in v0.1.42. Follow the normal update process;
+[vehicle identity guidance](VEHICLE_IDENTITY.md) explains automatic processing
+and the retirement of obsolete derived indexes.
 
 ## What changed
 
 The application selects the page first, hydrates only those records, then reads
-their vehicle identities. Count, page, metadata, mode, and identity reads share
+their vehicle identities. Count, page, metadata, and identity reads share
 one short read-only repeatable-read transaction.
 
-For ReID 2 primary mode, materialized SQL sets validate relevant canonical
+For ReID V2, materialized SQL sets validate relevant canonical
 profiles, exact merge evidence, members, plate anchors, and pair reviews once
 per identity query instead of expanding nested views for every assignment.
 All members of the relevant profiles are considered, including members outside
@@ -27,10 +27,9 @@ the page: a current Different or Unsure review must still veto conflicting
 identity evidence. Changed source links, image evidence, plate reviews, and
 merge reviews cannot revive stale historical assignments.
 
-Other supported modes query only the selected reads' legacy assignments.
-Missing or invalid authority control raises an error instead of silently
-presenting legacy identities as current. An identity can be absent while its
-evidence is being revalidated; this does not mean the plate read was deleted.
+An identity can be absent while its evidence is being revalidated; this does
+not mean the plate read was deleted. The application does not select an older
+identity provider when current evidence is unavailable.
 
 ## Verify after updating
 
@@ -48,14 +47,13 @@ stages that ran. Query parameters, plates, image paths, and credentials are not
 included in those timing entries. Other log entries may contain private data;
 review and redact any support material before sharing it.
 
-Do not change authority modes, delete identity history, or rerun migration as a
-performance workaround. If the authority mode is unavailable, preserve the
-database and report the error for diagnosis.
+Do not delete identity history or rerun migration as a performance workaround.
+If identity data is unavailable, preserve the database and report the error.
 
 ## Maintainer regression coverage
 
 `node --test test/live-feed-query-planning.test.mjs` checks identity mapping,
-mode routing, transaction cleanup, and privacy-safe timing behavior.
+single-query hydration, transaction cleanup, and privacy-safe timing behavior.
 
 `yarn test:community-feed:postgres` is a destructive synthetic-fixture harness
 for disposable CI databases only, not a command for users' installations.
@@ -67,9 +65,9 @@ identity. CI drops that exact disposable database on completion or failure.
 
 Coverage includes:
 
-- the actual application feed query in default and primary modes, all supported
+- the actual application feed query with native V2 identity, all supported
   sort fields in both directions, filters, pagination, and empty pages;
-- committed preview/materialization, shared reads, replaced source links and
+- native identity initialization, shared reads, replaced source links and
   plate anchors, exact-plate history without images, merges, splits, and remerges;
 - a 23-read page within two 80-member synthetic profiles and 60 inter-profile
   reviews, compared with the pre-repair Community SQL in the same snapshot;

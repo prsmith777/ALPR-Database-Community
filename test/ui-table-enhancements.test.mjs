@@ -99,7 +99,7 @@ test("live feed image review advances visibly and starts focused on the plate", 
   assert.match(plateTable, /selectedImage\?\.id === activePlate\.id/);
   assert.match(plateTable, /<DialogFooter className="self-end lg:col-start-1 lg:row-start-2">[\s\S]*?className="grid w-full gap-3"/);
   assert.equal([...plateTable.matchAll(/<div className=\{POPUP_ACTION_GRID_CLASS\}>/g)].length, 2);
-  assert.equal([...plateTable.matchAll(/<PopupActionSlot(?:\s[^>]*)?>/g)].length, 14);
+  assert.equal([...plateTable.matchAll(/<PopupActionSlot(?:\s[^>]*)?>/g)].length, 12);
   assert.match(plateTable, /Show next read \(Right Arrow\)/);
   assert.match(plateTable, /\[role="slider"\]/);
   assert.match(plateTable, /lg:grid-cols-\[minmax\(0,1fr\)_11rem\].*lg:grid-rows-\[minmax\(0,1fr\)_auto\].*lg:overflow-hidden/);
@@ -126,9 +126,7 @@ test("live feed image review advances visibly and starts focused on the plate", 
     }
   };
   assertOrdered(firstActionRow, [
-    "Find similar (legacy v1)",
-    "Confirm legacy vehicle",
-    "Different legacy vehicle",
+    "Find similar vehicle",
     "Correct Plate",
     "Review History",
     "Add to Known",
@@ -145,14 +143,12 @@ test("live feed image review advances visibly and starts focused on the plate", 
   ]);
   const firstRowSlots = firstActionRow.split("<PopupActionSlot>").slice(1);
   const secondRowSlots = secondActionRow.split(/<PopupActionSlot(?:\s[^>]*)?>/).slice(1);
-  assert.equal(firstRowSlots.length, 7);
+  assert.equal(firstRowSlots.length, 5);
   assert.equal(secondRowSlots.length, 7);
   assert.doesNotMatch(firstActionRow, /<PopupActionSlot reserve/);
   assert.equal([...secondActionRow.matchAll(/<PopupActionSlot reserve/g)].length, 2);
   const firstRowSlotLabels = [
-    /Find similar \(legacy v1\)/,
-    /Confirm legacy vehicle/,
-    /Different legacy vehicle/,
+    /Find similar vehicle/,
     /Correct Plate/,
     /Review History/,
     /Add to Known/,
@@ -172,9 +168,7 @@ test("live feed image review advances visibly and starts focused on the plate", 
   assert.match(secondRowSlots[1], /Confirm detected plate/);
   assert.match(secondActionRow, /<PopupActionSlot reserve className="col-start-6">[\s\S]*?Blue Iris/);
   assert.match(secondActionRow, /<PopupActionSlot reserve>[\s\S]*?Download/);
-  assert.match(plateTable, /selectedImage\.vehicleIdentityMode === "v2_primary"[\s\S]*?"Find similar vehicle"[\s\S]*?: "Find similar using legacy ReID v1"/);
-  assert.match(plateTable, /selectedImage\.vehicleIdentityMode === "v2_primary"[\s\S]*?\? "Find similar vehicle"[\s\S]*?: "Find similar \(legacy v1\)"/);
-  assert.match(plateTable, /selectedImage\?\.vehicleIdentityMode === "v2_primary" && selectedImage\.vehicleProfileId[\s\S]*?>Open Vehicle Profile</);
+  assert.match(plateTable, /selectedImage\.vehicleProfileId[\s\S]*?>Open Vehicle Profile</);
   assert.match(plateTable, /<span className=\{POPUP_ACTION_LABEL_CLASS\}>Find similar unavailable<\/span>/);
   assert.match(plateTable, /aria-label="Correct detected plate"[\s\S]*?>Correct Plate</);
   assert.match(plateTable, /aria-label="Open review history"[\s\S]*?>Review History</);

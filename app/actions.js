@@ -76,11 +76,7 @@ import {
   updateNotificationRuleBuilderDraft,
 } from "@/lib/notification-rule-builder-runtime.mjs";
 import { parseNotificationRuleDraft } from "@/lib/notification-rule-builder-shape.mjs";
-import { getCaptureAssetService } from "@/lib/capture-asset-runtime.mjs";
-import {
-  getVisualIndexRuntimeStatus,
-  wakeVisualIndexWorker,
-} from "@/lib/visual-index-runtime.mjs";
+import { getVehicleDirectionService } from "@/lib/vehicle-direction-runtime.mjs";
 import {
   getVehicleImageAssetCatalogRuntime,
   getVehicleImageAssetCatalogWorkerStatus,
@@ -107,18 +103,12 @@ import {
   wakeVehicleAssetAttributeWorker,
 } from "@/lib/vehicle-asset-attribute-runtime.mjs";
 import { getVehicleReidV2ShadowService } from "@/lib/vehicle-reid-v2-shadow-runtime.mjs";
-import { getVehicleReidV2ConversionService } from "@/lib/vehicle-reid-v2-conversion-runtime.mjs";
 import { getVehicleReidV2AuthorityService } from "@/lib/vehicle-reid-v2-authority-runtime.mjs";
 import {
   getVehicleReidV2LiveRuntime,
   getVehicleReidV2LiveWorkerStatus,
   wakeVehicleReidV2LiveWorker,
 } from "@/lib/vehicle-reid-v2-live-runtime.mjs";
-import {
-  applyVisualIndexPace,
-  normalizeVisualIndexSettings,
-  visualIndexPace,
-} from "@/lib/visual-index-settings.mjs";
 import { revalidatePath, revalidateTag, unstable_noStore } from "next/cache";
 import { cookies, headers } from "next/headers";
 import { redirect } from "next/navigation";
@@ -1959,7 +1949,7 @@ export async function getVehicleOverviewSetup() {
   try {
     const [runtime, directionSetup] = await Promise.all([
       getBlueIrisVehicleFrameRuntime(),
-      (await getCaptureAssetService()).getDirectionSetup(null, {
+      (await getVehicleDirectionService()).getDirectionSetup(null, {
         includeBackfill: false,
         includeCaptures: false,
         includeBlueIrisTriggerDirection: false,
@@ -2248,7 +2238,7 @@ export async function saveVehicleOverviewPairProfile(input = {}) {
     if (!Number.isInteger(priority) || priority < 0 || priority > 100) {
       throw new Error("Overview priority must be between 0 and 100.");
     }
-    const directionSetup = await (await getCaptureAssetService()).getDirectionSetup(plateCameraName);
+    const directionSetup = await (await getVehicleDirectionService()).getDirectionSetup(plateCameraName);
     const camera = directionSetup.profiles.find((profile) => profile.cameraName === plateCameraName);
     if (!camera || ![camera.frontDirectionLabel, camera.rearDirectionLabel].includes(directionLabel)) {
       throw new Error("Select a configured direction from the chosen plate camera.");
@@ -2421,7 +2411,7 @@ export async function saveVehicleEntryRouteProfile(input = {}) {
     if (!Number.isInteger(priority) || priority < 0 || priority > 100) {
       throw new Error("Route priority must be between 0 and 100.");
     }
-    const directionSetup = await (await getCaptureAssetService()).getDirectionSetup();
+    const directionSetup = await (await getVehicleDirectionService()).getDirectionSetup();
     const profiles = new Map(directionSetup.profiles.map((profile) => [profile.cameraName, profile]));
     const targetProfile = profiles.get(targetCameraName);
     if (!targetProfile || ![targetProfile.frontDirectionLabel, targetProfile.rearDirectionLabel].includes(targetDirectionLabel)) {
@@ -3600,166 +3590,6 @@ function visualSearchFailure(error, fallback) {
   return { success: false, error: fallback };
 }
 
-export async function getVisualSearchBootstrap(input = {}) {
-  const principal = await requirePermission("plate.read");
-  try {
-    const canManageIndex = hasPermission(principal, "maintenance.manage");
-    const [data, config] = await Promise.all([
-      (await getCaptureAssetService()).getBootstrap({
-        includeCameraSetup: canManageIndex && input?.includeCameraSetup === true,
-      }),
-      canManageIndex ? getConfig() : Promise.resolve(null),
-    ]);
-    const visualIndexSettings = canManageIndex
-      ? normalizeVisualIndexSettings(config?.visualIndex)
-      : null;
-    return {
-      success: true,
-      data: {
-        ...data,
-        canManageIndex,
-        canReviewMatches: hasPermission(principal, "plate.review"),
-        ...(visualIndexSettings ? {
-          visualIndex: {
-            settings: visualIndexSettings,
-            pace: visualIndexPace(visualIndexSettings),
-            runtime: getVisualIndexRuntimeStatus(),
-          },
-        } : {}),
-      },
-    };
-  } catch (error) {
-    return visualSearchFailure(error, "Unable to load visual search.");
-  }
-}
-
-export async function getVisualSearchCameraSetup() {
-  await requirePermission("maintenance.manage");
-  try {
-    return {
-      success: true,
-      data: await (await getCaptureAssetService()).getCameraSetup(),
-    };
-  } catch (error) {
-    return visualSearchFailure(error, "Unable to load camera detector setup.");
-  }
-}
-
-export async function indexCaptureAssetsBatch(batchSize = 20) {
-  await requirePermission("maintenance.manage");
-  try {
-    const data = await (await getCaptureAssetService()).indexBatch({ limit: batchSize });
-    revalidatePath("/visual_search");
-    return { success: true, data };
-  } catch (error) {
-    return visualSearchFailure(error, "Unable to index capture images.");
-  }
-}
-
-export async function updateVisualIndexSettings(input = {}) {
-  await requirePermission("maintenance.manage");
-  try {
-    const currentConfig = await getConfig();
-    let visualIndex = normalizeVisualIndexSettings(currentConfig.visualIndex);
-    if (input.pace !== undefined) {
-      visualIndex = applyVisualIndexPace(visualIndex, String(input.pace));
-    }
-    if (input.paused !== undefined) {
-      visualIndex = normalizeVisualIndexSettings({
-        ...visualIndex,
-        paused: input.paused === true,
-      });
-    }
-    const result = await saveConfig({ ...currentConfig, visualIndex });
-    if (!result.success) return result;
-    wakeVisualIndexWorker();
-    revalidatePath("/visual_search");
-    return {
-      success: true,
-      data: {
-        settings: visualIndex,
-        pace: visualIndexPace(visualIndex),
-      },
-    };
-  } catch (error) {
-    return visualSearchFailure(error, "Unable to update automatic indexing.");
-  }
-}
-
-export async function saveCameraVisualProfile(input = {}) {
-  await requirePermission("maintenance.manage");
-  try {
-    const data = await (await getCaptureAssetService()).saveCameraProfile(input);
-    revalidatePath("/visual_search");
-    return { success: true, data };
-  } catch (error) {
-    return visualSearchFailure(error, "Unable to save the camera crop profile.");
-  }
-}
-
-export async function indexCameraCaptureAssetsBatch(cameraName, batchSize = 20) {
-  await requirePermission("maintenance.manage");
-  try {
-    const data = await (await getCaptureAssetService()).indexCameraBatch({
-      cameraName,
-      limit: batchSize,
-    });
-    revalidatePath("/visual_search");
-    return { success: true, data };
-  } catch (error) {
-    return visualSearchFailure(error, "Unable to reindex this camera.");
-  }
-}
-
-export async function findSimilarCaptures(input = {}) {
-  await requirePermission("plate.read");
-  try {
-    const data = await (await getCaptureAssetService()).search({
-      readId: input.readId,
-      cameraNames: Array.isArray(input.cameraNames) ? input.cameraNames : [],
-      startDate: input.startDate || null,
-      endDate: input.endDate || null,
-      limit: input.limit,
-    });
-    return { success: true, data };
-  } catch (error) {
-    return visualSearchFailure(error, "Unable to search capture images.");
-  }
-}
-
-export async function findSimilarUploadedCaptures(input = {}) {
-  await requirePermission("plate.read");
-  try {
-    const data = await (await getCaptureAssetService()).searchUpload({
-      dataUrl: input.dataUrl,
-      fileName: input.fileName,
-      cameraNames: Array.isArray(input.cameraNames) ? input.cameraNames : [],
-      startDate: input.startDate || null,
-      endDate: input.endDate || null,
-      limit: input.limit,
-    });
-    return { success: true, data };
-  } catch (error) {
-    return visualSearchFailure(error, "Unable to search the uploaded image.");
-  }
-}
-
-export async function submitVehicleMatchFeedback(input = {}) {
-  const principal = await requirePermission("plate.review");
-  try {
-    const data = await (await getCaptureAssetService()).recordMatchFeedback({
-      sourceReadId: input.sourceReadId,
-      candidateReadId: input.candidateReadId,
-      label: input.label,
-      actor: principal,
-    });
-    revalidatePath("/visual_search");
-    return { success: true, data };
-  } catch (error) {
-    return visualSearchFailure(error, "Unable to save vehicle match feedback.");
-  }
-}
-
 function canonicalCatalogCount(value) {
   const number = Number(value || 0);
   return Number.isFinite(number) && number >= 0 ? number : 0;
@@ -4561,152 +4391,10 @@ export async function retryVehicleAssetAttributeJob(input = {}) {
   }
 }
 
-function vehicleReidV2ConversionActionFailure(error, fallback) {
-  const code = String(error?.code || "");
-  if (code.startsWith("VEHICLE_REID_V2_CONVERSION_")) {
-    return { success: false, error: String(error.message || fallback) };
-  }
-  console.error(fallback, { code });
-  return { success: false, error: fallback };
-}
-
-export async function getVehicleReidV2ConversionPreviewOverview() {
-  await requirePermission("system.manage_settings");
-  try {
-    const overview = await loadVehicleReidV2OperatorOverview();
-    return { success: true, data: { overview } };
-  } catch (error) {
-    return vehicleReidV2ConversionActionFailure(
-      error,
-      "Unable to load the ReID v2 conversion preview."
-    );
-  }
-}
-
-async function loadVehicleReidV2OperatorOverview({ authorityOverview } = {}) {
-  const [conversion, authority] = await Promise.all([
-    (await getVehicleReidV2ConversionService()).getOverview(),
-    authorityOverview
-      ? Promise.resolve(authorityOverview)
-      : (await getVehicleReidV2AuthorityService()).getOverview(),
-  ]);
-  return {
-    ...conversion,
-    authorityHealth: authority,
-    liveWorker: getVehicleReidV2LiveWorkerStatus(),
-  };
-}
-
-export async function startVehicleReidV2ConversionPreview(input = {}) {
-  const principal = await requirePermission("maintenance.manage");
-  try {
-    const data = await (await getVehicleReidV2ConversionService()).startPreview({
-      actor: principal,
-      batchSize: input.batchSize,
-    });
-    revalidatePath("/settings/vehicle-intelligence/processing");
-    return { success: true, data };
-  } catch (error) {
-    return vehicleReidV2ConversionActionFailure(
-      error,
-      "Unable to start the ReID v2 conversion preview."
-    );
-  }
-}
-
-export async function processVehicleReidV2ConversionPreviewBatch(input = {}) {
-  const principal = await requirePermission("maintenance.manage");
-  try {
-    const data = await (await getVehicleReidV2ConversionService()).processBatch({
-      runId: input.runId,
-      limit: input.limit,
-      actor: principal,
-    });
-    revalidatePath("/settings/vehicle-intelligence/processing");
-    return { success: true, data };
-  } catch (error) {
-    return vehicleReidV2ConversionActionFailure(
-      error,
-      "Unable to process this bounded ReID v2 preview batch."
-    );
-  }
-}
-
-export async function setVehicleReidV2ConversionPreviewPaused(input = {}) {
-  const principal = await requirePermission("maintenance.manage");
-  try {
-    const data = await (await getVehicleReidV2ConversionService()).setPaused({
-      runId: input.runId,
-      paused: input.paused === true,
-      actor: principal,
-    });
-    revalidatePath("/settings/vehicle-intelligence/processing");
-    return { success: true, data };
-  } catch (error) {
-    return vehicleReidV2ConversionActionFailure(
-      error,
-      "Unable to pause or resume the ReID v2 conversion preview."
-    );
-  }
-}
-
-export async function cancelVehicleReidV2ConversionPreview(input = {}) {
-  const principal = await requirePermission("maintenance.manage");
-  try {
-    const data = await (await getVehicleReidV2ConversionService()).cancel({
-      runId: input.runId,
-      actor: principal,
-    });
-    revalidatePath("/settings/vehicle-intelligence/processing");
-    return { success: true, data };
-  } catch (error) {
-    return vehicleReidV2ConversionActionFailure(
-      error,
-      "Unable to cancel the ReID v2 conversion preview."
-    );
-  }
-}
-
-export async function retryVehicleReidV2ConversionPreviewJob(input = {}) {
-  const principal = await requirePermission("maintenance.manage");
-  try {
-    const data = await (await getVehicleReidV2ConversionService()).retryJob({
-      jobId: input.jobId,
-      actor: principal,
-    });
-    revalidatePath("/settings/vehicle-intelligence/processing");
-    return { success: true, data };
-  } catch (error) {
-    return vehicleReidV2ConversionActionFailure(
-      error,
-      "Unable to retry this ReID v2 conversion preview item."
-    );
-  }
-}
-
-export async function verifyVehicleReidV2ConversionPreview(input = {}) {
-  const principal = await requirePermission("maintenance.manage");
-  try {
-    const data = await (await getVehicleReidV2ConversionService()).verifyCurrent({
-      runId: input.runId,
-      previewFingerprint: input.previewFingerprint,
-      actor: principal,
-    });
-    revalidatePath("/settings/vehicle-intelligence/processing");
-    return { success: true, data };
-  } catch (error) {
-    return vehicleReidV2ConversionActionFailure(
-      error,
-      "Unable to verify the ReID v2 conversion preview fingerprint."
-    );
-  }
-}
-
 function vehicleReidV2AuthorityActionFailure(error, fallback) {
   const code = String(error?.code || "");
   if (code.startsWith("VEHICLE_REID_V2_AUTHORITY_")
-    || code.startsWith("VEHICLE_REID_V2_LIVE_")
-    || code.startsWith("VEHICLE_REID_V1_PRODUCER_")) {
+    || code.startsWith("VEHICLE_REID_V2_LIVE_")) {
     return { success: false, error: String(error.message || fallback), code };
   }
   console.error(fallback, { code });
@@ -4769,114 +4457,6 @@ export async function retryVehicleReidLiveException(input = {}) {
     };
   } catch (error) {
     return vehicleReidV2AuthorityActionFailure(error, "Unable to retry this ReID exception.");
-  }
-}
-
-export async function acceptVehicleReidV2ConversionPreview(input = {}) {
-  const principal = await requirePermission("maintenance.manage");
-  try {
-    const authority = await (await getVehicleReidV2AuthorityService()).acceptPreview({
-      runId: input.runId,
-      previewFingerprint: input.previewFingerprint,
-      actor: principal,
-    });
-    revalidatePath("/settings/vehicle-intelligence/processing");
-    return {
-      success: true,
-      data: {
-        operation: authority.operation,
-        overview: await loadVehicleReidV2OperatorOverview({
-          authorityOverview: authority.overview,
-        }),
-      },
-    };
-  } catch (error) {
-    return vehicleReidV2AuthorityActionFailure(error, "Unable to accept this frozen ReID preview.");
-  }
-}
-
-export async function materializeVehicleReidV2ConversionPreview(input = {}) {
-  const principal = await requirePermission("maintenance.manage");
-  try {
-    const authority = await (await getVehicleReidV2AuthorityService()).materializeAcceptedPreview({
-      runId: input.runId,
-      previewFingerprint: input.previewFingerprint,
-      actor: principal,
-    });
-    revalidatePath("/settings/vehicle-intelligence/processing");
-    revalidatePath("/visual_search/profiles");
-    return {
-      success: true,
-      data: {
-        operation: authority.operation,
-        overview: await loadVehicleReidV2OperatorOverview({
-          authorityOverview: authority.overview,
-        }),
-      },
-    };
-  } catch (error) {
-    return vehicleReidV2AuthorityActionFailure(error, "Unable to materialize this accepted ReID preview.");
-  }
-}
-
-export async function transitionVehicleReidAuthorityMode(input = {}) {
-  const principal = await requirePermission("maintenance.manage");
-  try {
-    const authority = await (await getVehicleReidV2AuthorityService()).transitionMode({
-      mode: input.mode,
-      runId: input.runId,
-      reason: input.reason,
-      actor: principal,
-    });
-    revalidatePath("/settings/vehicle-intelligence/processing");
-    revalidatePath("/visual_search");
-    revalidatePath("/visual_search/profiles");
-    revalidatePath("/visual_search/review");
-    revalidatePath("/live_feed");
-    revalidatePath("/database");
-    wakeVehicleReidV2LiveWorker();
-    return {
-      success: true,
-      data: {
-        operation: authority.operation,
-        overview: await loadVehicleReidV2OperatorOverview({
-          authorityOverview: authority.overview,
-        }),
-      },
-    };
-  } catch (error) {
-    return vehicleReidV2AuthorityActionFailure(error, "Unable to change the ReID authority mode.");
-  }
-}
-
-export async function transitionVehicleReidV1Producer(input = {}) {
-  const principal = await requirePermission("maintenance.manage");
-  try {
-    const authority = await (await getVehicleReidV2AuthorityService()).transitionV1Producer({
-      state: input.state,
-      confirmation: input.confirmation,
-      reason: input.reason,
-      actor: principal,
-    });
-    revalidatePath("/settings/vehicle-intelligence/processing");
-    revalidatePath("/visual_search");
-    revalidatePath("/visual_search/vehicles");
-    revalidatePath("/visual_search/review");
-    wakeVisualIndexWorker();
-    return {
-      success: true,
-      data: {
-        operation: authority.operation,
-        overview: await loadVehicleReidV2OperatorOverview({
-          authorityOverview: authority.overview,
-        }),
-      },
-    };
-  } catch (error) {
-    return vehicleReidV2AuthorityActionFailure(
-      error,
-      "Unable to change the retained ReID v1 producer state."
-    );
   }
 }
 
@@ -5025,12 +4605,38 @@ export async function runVehicleEventShadowBatch() {
   }
 }
 
+async function vehicleAnalysisRepository() {
+  const { VehicleAssetAnalysisRepository } = await import("@/lib/vehicle-asset-analysis-live.mjs");
+  return new VehicleAssetAnalysisRepository(await getPool());
+}
+
+export async function getVehicleAnalysisStatus() {
+  await requirePermission("system.manage_settings");
+  try {
+    return { success: true, data: await (await vehicleAnalysisRepository()).getStatus() };
+  } catch (error) {
+    console.error("Vehicle analysis status failed", error);
+    return { success: false, error: "Unable to load vehicle processing status." };
+  }
+}
+
+export async function operateVehicleAnalysis(operation) {
+  const principal = await requirePermission("system.manage_settings");
+  try {
+    const result = await (await vehicleAnalysisRepository()).operate(operation, principal.id);
+    return { success: true, ...result };
+  } catch (error) {
+    console.error("Vehicle analysis control failed", error);
+    return { success: false, error: "Unable to change vehicle processing. Refresh and try again." };
+  }
+}
+
 export async function getVehicleDirectionSetup(cameraName = null, options = {}) {
   await requirePermission("system.manage_settings");
   try {
     return {
       success: true,
-      data: await (await getCaptureAssetService()).getDirectionSetup(cameraName, {
+      data: await (await getVehicleDirectionService()).getDirectionSetup(cameraName, {
         includeBackfill: options?.includeBackfill !== false,
         includeCaptures: options?.includeCaptures !== false,
         includeBlueIrisTriggerDirection: options?.includeBlueIrisTriggerDirection !== false,
@@ -5044,7 +4650,7 @@ export async function getVehicleDirectionSetup(cameraName = null, options = {}) 
 export async function saveVehicleDirectionProfile(input = {}) {
   const principal = await requirePermission("system.manage_settings");
   try {
-    const data = await (await getCaptureAssetService()).saveDirectionProfile(input, principal);
+    const data = await (await getVehicleDirectionService()).saveDirectionProfile(input, principal);
     revalidatePath("/settings/vehicle-intelligence");
     return { success: true, data };
   } catch (error) {
@@ -5055,7 +4661,7 @@ export async function saveVehicleDirectionProfile(input = {}) {
 export async function labelVehicleOrientation(input = {}) {
   const principal = await requirePermission("system.manage_settings");
   try {
-    const data = await (await getCaptureAssetService()).recordOrientationLabel({
+    const data = await (await getVehicleDirectionService()).recordOrientationLabel({
       readId: input.readId,
       orientation: input.orientation,
       actor: principal,
@@ -5070,13 +4676,13 @@ export async function labelVehicleOrientation(input = {}) {
 export async function reviewVehicleDirection(input = {}) {
   const principal = await requirePermission("plate.review");
   try {
-    const data = await (await getCaptureAssetService()).recordOrientationLabel({
+    const data = await (await getVehicleDirectionService()).recordOrientationLabel({
       readId: input.readId,
       orientation: input.orientation,
       actor: principal,
     });
     revalidatePath("/live_feed");
-    revalidatePath("/visual_search/vehicles");
+    revalidatePath("/visual_search/profiles");
     return { success: true, data };
   } catch (error) {
     return visualSearchFailure(error, "Unable to correct this vehicle direction.");
@@ -5086,7 +4692,7 @@ export async function reviewVehicleDirection(input = {}) {
 export async function runVehicleDirectionBackfillBatch(batchSize = 20) {
   await requirePermission("maintenance.manage");
   try {
-    const data = await (await getCaptureAssetService()).backfillDirectionBatch({
+    const data = await (await getVehicleDirectionService()).backfillDirectionBatch({
       limit: batchSize,
     });
     revalidatePath("/settings/vehicle-intelligence");
@@ -5100,7 +4706,7 @@ export async function runVehicleDirectionBackfillBatch(batchSize = 20) {
 export async function previewVehicleDirectionReevaluation(input = {}) {
   await requirePermission("maintenance.manage");
   try {
-    const data = await (await getCaptureAssetService()).previewDirectionReevaluation({
+    const data = await (await getVehicleDirectionService()).previewDirectionReevaluation({
       cameraName: input.cameraName || null,
     });
     return { success: true, data };
@@ -5112,7 +4718,7 @@ export async function previewVehicleDirectionReevaluation(input = {}) {
 export async function queueVehicleDirectionReevaluation(input = {}) {
   const principal = await requirePermission("maintenance.manage");
   try {
-    const service = await getCaptureAssetService();
+    const service = await getVehicleDirectionService();
     const data = await service.queueDirectionReevaluation({
       cameraName: input.cameraName || null,
       actor: principal,
@@ -5131,7 +4737,7 @@ export async function queueVehicleDirectionReevaluation(input = {}) {
 export async function setVehicleDirectionReevaluationPaused(paused) {
   const principal = await requirePermission("maintenance.manage");
   try {
-    const service = await getCaptureAssetService();
+    const service = await getVehicleDirectionService();
     const control = await service.setDirectionReevaluationPaused({
       paused: paused === true,
       actor: principal,
@@ -5144,28 +4750,6 @@ export async function setVehicleDirectionReevaluationPaused(paused) {
   }
 }
 
-export async function getVehicleClusterOverview(options = {}) {
-  const principal = await requirePermission("plate.read");
-  try {
-    const canManageSettings = hasPermission(principal, "system.manage_settings");
-    const scopedOptions = options?.view === "review"
-      && options?.reviewQueue === "setup"
-      && !canManageSettings
-      ? { ...options, reviewQueue: "vehicle" }
-      : options;
-    return {
-      success: true,
-      data: {
-        ...(await (await getCaptureAssetService()).getVehicleClusterOverview(scopedOptions)),
-        canReview: hasPermission(principal, "plate.review"),
-        canAnalyze: hasPermission(principal, "maintenance.manage"),
-        canManageSettings,
-      },
-    };
-  } catch (error) {
-    return visualSearchFailure(error, "Unable to load shadow vehicle clusters.");
-  }
-}
 
 export async function getVehicleReidV2Shadow(input = {}) {
   const principal = await requirePermission("plate.read");
@@ -5244,67 +4828,5 @@ export async function createVehicleReidV2ProfileCandidateSnapshot() {
       error,
       "Unable to create the ReID v2 shadow profile candidate snapshot."
     );
-  }
-}
-
-export async function getVehicleProfile(clusterId) {
-  const principal = await requirePermission("plate.read");
-  try {
-    const profile = await (await getCaptureAssetService()).getVehicleProfile(clusterId);
-    if (!profile) return { success: false, error: "Vehicle profile was not found." };
-    return {
-      success: true,
-      data: {
-        ...profile,
-        canReview: hasPermission(principal, "plate.review"),
-      },
-    };
-  } catch (error) {
-    return visualSearchFailure(error, "Unable to load this vehicle profile.");
-  }
-}
-
-export async function analyzeRecentVehicleClusters(limit = 100) {
-  await requirePermission("maintenance.manage");
-  try {
-    const data = await (await getCaptureAssetService()).clusterRecentUnassigned(limit);
-    revalidatePath("/visual_search/vehicles");
-    return { success: true, data };
-  } catch (error) {
-    return visualSearchFailure(error, "Unable to analyze recent vehicle captures.");
-  }
-}
-
-export async function reviewVehicleClusterSuggestion(input = {}) {
-  const principal = await requirePermission("plate.review");
-  try {
-    const data = await (await getCaptureAssetService()).reviewVehicleCluster({
-      readId: input.readId,
-      decision: input.decision,
-      actor: principal,
-    });
-    revalidatePath("/visual_search/vehicles");
-    revalidatePath("/live_feed");
-    return { success: true, data };
-  } catch (error) {
-    return visualSearchFailure(error, "Unable to review this vehicle suggestion.");
-  }
-}
-
-export async function reviewVehiclePlateAssociation(input = {}) {
-  const principal = await requirePermission("plate.review");
-  try {
-    const data = await (await getCaptureAssetService()).reviewVehiclePlateAssociation({
-      clusterId: input.clusterId,
-      plateNumber: input.plateNumber,
-      decision: input.decision,
-      actor: principal,
-    });
-    revalidatePath("/visual_search/vehicles");
-    revalidatePath(`/visual_search/vehicles/${Number(input.clusterId)}`);
-    revalidatePath("/live_feed");
-    return { success: true, data };
-  } catch (error) {
-    return visualSearchFailure(error, "Unable to review this vehicle plate association.");
   }
 }

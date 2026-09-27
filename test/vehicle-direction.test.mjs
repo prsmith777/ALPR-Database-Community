@@ -7,9 +7,9 @@ import {
   directionFromOrientation,
   normalizeDirectionProfile,
 } from "../lib/vehicle-direction.mjs";
-import { CaptureAssetRepository } from "../lib/capture-asset-repository.mjs";
-import { CaptureAssetService } from "../lib/capture-asset-service.mjs";
-import { VEHICLE_REID_MODEL } from "../lib/vehicle-reid.mjs";
+import { VehicleDirectionRepository } from "../lib/vehicle-direction-repository.mjs";
+import { VehicleDirectionService } from "../lib/vehicle-direction-service.mjs";
+import { DIRECTION_EMBEDDING_MODEL } from "../lib/vehicle-direction.mjs";
 import { BLUE_IRIS_TRIGGER_DIRECTION_ALGORITHM } from "../lib/blue-iris-trigger-direction.mjs";
 
 function vector(x, y) {
@@ -57,7 +57,7 @@ test("Blue Iris-only profile saves do not refresh or invalidate ReID direction",
       blue_iris_motion_profile_version: 3,
     }),
   };
-  const service = new CaptureAssetService({ repository, fileStorage: {} });
+  const service = new VehicleDirectionService({ repository, fileStorage: {} });
   service.refreshCameraDirection = async () => {
     refreshCount += 1;
     return { evaluated: 0 };
@@ -83,7 +83,7 @@ test("Blue Iris-only profile saves do not refresh or invalidate ReID direction",
 
 test("direction profile persistence advances ReID and Blue Iris revisions independently", async () => {
   const calls = [];
-  const repository = new CaptureAssetRepository({
+  const repository = new VehicleDirectionRepository({
     executor: {
       async query(text, values) {
         calls.push({ text, values });
@@ -134,7 +134,7 @@ test("direction profile persistence advances ReID and Blue Iris revisions indepe
 
 test("Blue Iris shadow diagnostics are restricted to one selected camera", async () => {
   const calls = [];
-  const repository = new CaptureAssetRepository({
+  const repository = new VehicleDirectionRepository({
     executor: {
       async query(text, values) {
         calls.push({ text, values });
@@ -214,7 +214,7 @@ test("a reviewed front or rear capture receives its camera direction immediately
     getAsset: async () => ({
       read_id: 42,
       camera_name: "Gate LPR 2",
-      embedding_model: VEHICLE_REID_MODEL,
+      embedding_model: DIRECTION_EMBEDDING_MODEL,
       vehicle_embedding: "indexed",
     }),
     saveOrientationLabel: async ({ orientation }) => ({
@@ -237,7 +237,7 @@ test("a reviewed front or rear capture receives its camera direction immediately
       return observation;
     },
   };
-  const service = new CaptureAssetService({ repository, fileStorage: {} });
+  const service = new VehicleDirectionService({ repository, fileStorage: {} });
 
   const result = await service.recordOrientationLabel({
     readId: 42,
@@ -264,7 +264,7 @@ test("historical evaluation discovers and preserves an existing human orientatio
     getAsset: async () => ({
       read_id: 42,
       camera_name: "Street LPR 2",
-      embedding_model: VEHICLE_REID_MODEL,
+      embedding_model: DIRECTION_EMBEDDING_MODEL,
       vehicle_embedding: "indexed",
     }),
     getDirectionProfile: async () => ({
@@ -282,7 +282,7 @@ test("historical evaluation discovers and preserves an existing human orientatio
     ],
     saveDirectionObservation: async (observation) => observations.push(observation),
   };
-  const service = new CaptureAssetService({ repository, fileStorage: {} });
+  const service = new VehicleDirectionService({ repository, fileStorage: {} });
 
   const result = await service.refreshDirectionObservation(42);
 
@@ -291,6 +291,25 @@ test("historical evaluation discovers and preserves an existing human orientatio
   assert.equal(result.confidence, 1);
   assert.equal(result.directionLabel, "Westbound");
   assert.equal(observations[0].result.orientation, "rear");
+});
+
+test("a replaced crop cannot produce a successful stale direction observation", async () => {
+  const service = new VehicleDirectionService({ repository: {
+    getAsset: async () => ({
+      read_id: 42, camera_name: "Test camera", embedding_id: 19,
+      embedding_model: DIRECTION_EMBEDDING_MODEL, vehicle_embedding: "indexed",
+    }),
+    getDirectionProfile: async () => ({
+      enabled: true, profile_version: 1,
+      front_direction_label: "Entering", rear_direction_label: "Leaving",
+    }),
+    listOrientationSamples: async () => [{ read_id: 42, orientation: "front" }],
+    saveDirectionObservation: async (observation) => {
+      assert.equal(observation.sourceEmbeddingId, 19);
+      return false;
+    },
+  }, fileStorage: {} });
+  assert.equal(await service.refreshDirectionObservation(42), null);
 });
 
 test("mapped Blue Iris direction prevents ReID from replacing or renotifying the read", async () => {
@@ -318,7 +337,7 @@ test("mapped Blue Iris direction prevents ReID from replacing or renotifying the
       reidWrites += 1;
     },
   };
-  const service = new CaptureAssetService({ repository, fileStorage: {} });
+  const service = new VehicleDirectionService({ repository, fileStorage: {} });
 
   const observation = await service.refreshDirectionObservation(42);
 
@@ -351,7 +370,7 @@ test("monochrome nighttime captures bypass Blue Iris and ReID direction", async 
     getAsset: async () => ({
       read_id: 77,
       camera_name: "Street LPR 2",
-      embedding_model: VEHICLE_REID_MODEL,
+      embedding_model: DIRECTION_EMBEDDING_MODEL,
       vehicle_embedding: "indexed",
     }),
     getDirectionProfile: async () => ({
@@ -365,7 +384,7 @@ test("monochrome nighttime captures bypass Blue Iris and ReID direction", async 
     },
     saveDirectionObservation: async (observation) => observations.push(observation),
   };
-  const service = new CaptureAssetService({ repository, fileStorage: {} });
+  const service = new VehicleDirectionService({ repository, fileStorage: {} });
 
   const observation = await service.refreshDirectionObservation(77);
 
@@ -410,7 +429,7 @@ test("historical direction backfill is bounded, resumable, and records individua
       failed: 1,
     }),
   };
-  const service = new CaptureAssetService({ repository, fileStorage: {}, logger: {} });
+  const service = new VehicleDirectionService({ repository, fileStorage: {}, logger: {} });
   service.refreshDirectionObservation = async (readId) => {
     if (readId === 12) {
       const error = new Error("bad descriptor");
@@ -452,7 +471,7 @@ test("pausing historical re-evaluation still allows ordinary live direction work
       failed: 0,
     }),
   };
-  const service = new CaptureAssetService({ repository, fileStorage: {} });
+  const service = new VehicleDirectionService({ repository, fileStorage: {} });
 
   const result = await service.backfillDirectionBatch({ limit: 20 });
 
@@ -463,7 +482,7 @@ test("pausing historical re-evaluation still allows ordinary live direction work
 
 test("historical direction queries join camera profiles through their declared read alias", async () => {
   const queries = [];
-  const repository = new CaptureAssetRepository({
+  const repository = new VehicleDirectionRepository({
     executor: {
       query: async (text) => {
         queries.push(text);
@@ -472,20 +491,20 @@ test("historical direction queries join camera profiles through their declared r
     },
   });
 
-  await repository.getDirectionBackfillStatus(VEHICLE_REID_MODEL, "vehicle-orientation-v1");
-  await repository.listDirectionBackfillCandidates(VEHICLE_REID_MODEL, "vehicle-orientation-v1", 5);
+  await repository.getDirectionBackfillStatus(DIRECTION_EMBEDDING_MODEL, "vehicle-orientation-v1");
+  await repository.listDirectionBackfillCandidates(DIRECTION_EMBEDDING_MODEL, "vehicle-orientation-v1", 5);
 
   assert.equal(queries.length, 2);
   for (const query of queries) {
     assert.match(query, /JOIN public\.plate_reads reads ON reads\.id = ca\.read_id/i);
-    assert.match(query, /cvp\.camera_key = LOWER\(BTRIM\(reads\.camera_name\)\)/i);
+    assert.match(query, /profiles\.camera_key = LOWER\(BTRIM\(reads\.camera_name\)\)/i);
     assert.doesNotMatch(query, /BTRIM\(pr\.camera_name\)/i);
   }
 });
 
 test("historical direction re-evaluation queues machine results and preserves manual reviews", async () => {
   const calls = [];
-  const repository = new CaptureAssetRepository({
+  const repository = new VehicleDirectionRepository({
     executor: {
       async query(text, values) {
         calls.push({ text, values });
@@ -513,7 +532,7 @@ test("historical direction re-evaluation queues machine results and preserves ma
 
   const result = await repository.queueDirectionReevaluation({
     cameraName: "Street LPR 2",
-    embeddingModel: VEHICLE_REID_MODEL,
+    embeddingModel: DIRECTION_EMBEDDING_MODEL,
     classifierVersion: "vehicle-orientation-v1",
     actor: { id: 1 },
   });
@@ -524,7 +543,7 @@ test("historical direction re-evaluation queues machine results and preserves ma
   assert.equal(result.failuresCleared, 1);
   assert.equal(calls.some((call) => call.text.includes("DELETE FROM public.vehicle_direction_observations")), false);
   const queueCall = calls.find((call) => call.text.includes("INSERT INTO public.vehicle_direction_reevaluation_queue"));
-  assert.match(queueCall.text, /LEFT JOIN public\.vehicle_orientation_labels labels/i);
+  assert.match(queueCall.text, /LEFT JOIN public\.current_vehicle_orientation_labels labels/i);
   assert.match(queueCall.text, /labels\.read_id IS NULL/i);
   assert.match(queueCall.text, /observations\.classifier_version IS NOT DISTINCT FROM \$4/i);
   assert.match(queueCall.text, /LOWER\(BTRIM\(reads\.camera_name\)\) = LOWER\(BTRIM\(\$5\)\)/i);
@@ -557,8 +576,8 @@ test("direction schema and Community administrator setup are durable and camera 
   assert.match(migration, /2026072601_vehicle_direction_notifications/i);
   assert.match(migration, /vehicle\.direction_classified/i);
   assert.match(migration, /'direction'/i);
-  assert.match(migration, /2026072602_reviewed_vehicle_direction_truth/i);
-  assert.match(migration, /ON CONFLICT \(read_id\) DO UPDATE SET/i);
+  assert.match(migration, /2026092701_native_reid/i);
+  assert.match(migration, /CREATE OR REPLACE VIEW public\.current_vehicle_direction_observations/i);
   assert.match(migration, /2026072603_vehicle_direction_backfill/i);
   assert.match(migration, /vehicle_direction_backfill_failures/i);
   assert.match(migration, /vehicle_direction_reevaluation_queue/i);

@@ -45,7 +45,6 @@ test("automatic crops remain inert until enabled after a completed campaign", as
       async getActivation() {
         return {
           enabled: false,
-          completedCampaign: true,
           activeCampaign: false,
           state: "disabled",
         };
@@ -87,7 +86,6 @@ test("automatic crop previews and re-renders one exact asset snapshot", async ()
       async getActivation() {
         return {
           enabled: true,
-          completedCampaign: true,
           activeCampaign: false,
           state: "active",
         };
@@ -197,7 +195,7 @@ test("automatic crop migration, runtime, and actions are inert and provider neut
   ]);
   assert.match(migration, /2026081501_vehicle_image_crop_live_worker/);
   assert.match(migration, /vehicle_image_crop_live_control/);
-  assert.match(migration, /enabled BOOLEAN NOT NULL DEFAULT FALSE/);
+  assert.match(migration, /enabled BOOLEAN NOT NULL DEFAULT TRUE/);
   assert.match(migration, /vehicle_image_crop_live_jobs/);
   const migrationSlice = migration.slice(
     migration.indexOf("-- Durable, default-off crop generation")
@@ -225,17 +223,14 @@ test("automatic crop activation state fails closed", () => {
   assert.equal(activationState({ enabled: false }), "disabled");
   assert.equal(activationState({
     enabled: true,
-    completed_campaign: false,
     active_campaign: false,
-  }), "waiting_for_initial_campaign");
+  }), "active");
   assert.equal(activationState({
     enabled: true,
-    completed_campaign: true,
     active_campaign: true,
   }), "paused_for_operator_campaign");
   assert.equal(activationState({
     enabled: true,
-    completed_campaign: true,
     active_campaign: false,
   }), "active");
 });

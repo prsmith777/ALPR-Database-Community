@@ -27,21 +27,17 @@ test("Community Vehicle Setup loads only portable camera direction data", async 
 });
 
 test("direction setup skips calibration and status queries when a tab does not display them", async () => {
-  const service = await source("lib/capture-asset-service.mjs");
+  const service = await source("lib/vehicle-direction-service.mjs");
   assert.match(service, /includeBackfill = options\?\.includeBackfill !== false/);
   assert.match(service, /selected && includeCaptures/);
   assert.match(service, /&& includeBlueIrisTriggerDirection/);
-  assert.match(service, /this\.getStatus\(\{ includeDirection: false \}\)/);
-  assert.match(service, /const \[status, direction, vehicleTypePending, vehicleColorPending, v1Producer\] = await Promise\.all/);
+  assert.match(service, /includeBackfill/);
+  assert.doesNotMatch(service, /getConversionOverview|getStorageHealth/);
 });
 
-test("Vehicle Intelligence paints before camera detector previews are loaded", async () => {
-  const [actions, component] = await Promise.all([
-    source("app/actions.js"),
-    source("components/VisualSearch.jsx"),
-  ]);
-  assert.match(actions, /includeCameraSetup: canManageIndex && input\?\.includeCameraSetup === true/);
-  assert.match(actions, /export async function getVisualSearchCameraSetup\(\)/);
-  assert.match(component, /window\.setTimeout\([\s\S]*refreshCameraSetup\(\)[\s\S]*250/);
-  assert.match(component, /current\?\.cameraProfiles \? \{ cameraProfiles: current\.cameraProfiles \}/);
+test("Vehicle Intelligence requests bounded primary browse results", async () => {
+  const page = await source("app/visual_search/page.jsx");
+  assert.match(page, /primaryBrowse: true/);
+  assert.match(page, /browseMode: true/);
+  assert.doesNotMatch(page, /getVehicleReidAuthorityMode/);
 });

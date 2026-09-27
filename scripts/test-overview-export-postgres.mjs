@@ -477,26 +477,8 @@ try {
       new Date(historyBase.getTime() + 4_000).toISOString()],
   );
   historyReadIds.push(Number(exhaustedLiveRead.rows[0].id));
-  for (const id of [legacyHistoryReadId, protectedHistoryReadId]) {
-    await pool.query(
-      `INSERT INTO public.vehicle_attribute_observations (
-         read_id, attribute_key, status, attribute_value, confidence,
-         provider, model_version, raw_result
-       ) VALUES ($1, 'color', 'ready', 'red', 0.9,
-                 'local-hsv-histogram', 'vehicle-color-hsv-v2', '{"reason":null}'::jsonb)`,
-      [id],
-    );
-  }
-  await pool.query(
-    `INSERT INTO public.vehicle_attribute_observations (
-       read_id, attribute_key, status, attribute_value, confidence,
-       provider, model_version, raw_result
-     ) VALUES ($1, 'color', 'unknown', NULL, NULL,
-               'local-hsv-histogram', 'vehicle-color-hsv-v2',
-               '{"reason":"monochrome_capture"}'::jsonb)`,
-    [nightHistoryReadId],
-  );
-
+  // These reads have no exact-current canonical crop. A plate-camera color
+  // cache must not classify them; the history worker performs image preflight.
   const historyScope = {
     startAt: new Date(historyBase.getTime() - 1_000).toISOString(),
     endAt: new Date(historyBase.getTime() + 10_000).toISOString(),
@@ -507,12 +489,12 @@ try {
   const preview = await repositoryA.previewEntryOverviewBackfillRun(historyScope);
   historyRunIds.push(Number(preview.id));
   assert.equal(preview.counts.total, 4);
-  assert.equal(preview.counts.eligible, 1);
-  assert.equal(preview.counts.needs_preflight, 1);
+  assert.equal(preview.counts.eligible, 0);
+  assert.equal(preview.counts.needs_preflight, 3);
   assert.equal(preview.counts.preserved, 1);
-  assert.equal(preview.counts.nighttime, 1);
+  assert.equal(preview.counts.nighttime, 0);
   assert.equal(preview.counts.upgrade_candidates, 1);
-  assert.equal(preview.counts.missing_candidates, 1);
+  assert.equal(preview.counts.missing_candidates, 2);
   const concurrentConfirmations = await Promise.allSettled([
     repositoryA.confirmEntryOverviewBackfillRun({
       runId: preview.id,
@@ -531,14 +513,14 @@ try {
   assert.equal(confirmationLosers.length, 1);
   assert.match(String(confirmationLosers[0].reason?.message || ""), /already has an active batch/);
   const confirmed = confirmationWinners[0].value;
-  assert.equal(confirmed.queued, 2);
+  assert.equal(confirmed.queued, 3);
   const activeHistoryBatch = await pool.query(
     `SELECT COUNT(*)::integer AS count
      FROM public.vehicle_entry_overview_backfill_jobs
      WHERE run_id = $1 AND status = 'queued'`,
     [preview.id],
   );
-  assert.equal(Number(activeHistoryBatch.rows[0].count), 2);
+  assert.equal(Number(activeHistoryBatch.rows[0].count), 3);
   const retained = await pool.query(
     `SELECT vehicle_image_path, vehicle_image_source_kind, vehicle_image_queue_kind,
             vehicle_overview_candidate_id, vehicle_image_source_read_id
@@ -734,6 +716,16 @@ try {
   assert.equal(concurrentWinner.rows[0].vehicle_image_source_kind, "overview_pair_share");
   assert.equal(Number(concurrentWinner.rows[0].vehicle_overview_candidate_id), historyCandidateId);
   assert.equal(Number(concurrentWinner.rows[0].vehicle_image_source_read_id), readId);
+  // Without a read-owned color cache, this missing image is inspected by the
+  // preflight worker rather than declared nighttime from unrelated evidence.
+  const nightClaim = await repositoryA.claimNextEntryOverviewBackfillJob();
+  assert.equal(Number(nightClaim.id), nightHistoryReadId);
+  await repositoryA.markEntryOverviewBackfillFailed(nightClaim.entry_history_job_id, {
+    claimToken: nightClaim.vehicle_image_claim_token,
+    errorCode: "ENTRY_HISTORY_MONOCHROME_NIGHT",
+    retryable: false,
+    unavailable: true,
+  });
   const completedMainRun = await repositoryA.getEntryOverviewBackfillRun(preview.id);
   assert.equal(completedMainRun.status, "completed");
 
@@ -800,7 +792,7 @@ try {
   const zeroPreview = await repositoryA.previewEntryOverviewBackfillRun({
     ...historyScope,
     startAt: new Date(historyBase.getTime() + 1_500).toISOString(),
-    endAt: new Date(historyBase.getTime() + 3_500).toISOString(),
+    endAt: new Date(historyBase.getTime() + 2_500).toISOString(),
   });
   historyRunIds.push(Number(zeroPreview.id));
   const zeroConfirmed = await repositoryA.confirmEntryOverviewBackfillRun({

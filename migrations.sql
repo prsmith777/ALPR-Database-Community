@@ -1,8 +1,19 @@
--- A live release runs this file in one transaction while the previous app is
--- still serving traffic. Take the radar-settings lock before any other DDL so
--- the legacy correlation worker cannot acquire radar_settings and then wait on
--- a relation already locked by this migration, which would form a deadlock.
--- Clean installs do not have the table yet and intentionally skip this lock.
+-- Retire an obsolete reconciliation phase before installing current checks.
+DO $reconciliation_upgrade$
+BEGIN
+  IF to_regclass('public.storage_reconciliation_runs') IS NOT NULL THEN
+    UPDATE public.storage_reconciliation_runs SET phase = 'plate-reads'
+      WHERE phase = 'capture-assets';
+    ALTER TABLE public.storage_reconciliation_runs
+      DROP COLUMN IF EXISTS max_capture_asset_id CASCADE,
+      DROP COLUMN IF EXISTS capture_asset_cursor CASCADE;
+  END IF;
+END
+$reconciliation_upgrade$;
+
+-- Community updates stop the application before applying this transaction.
+-- Retain deterministic lock ordering for maintenance tooling that may also hold
+-- radar_settings. Clean installs do not have the table yet and skip this lock.
 DO $migration_lock$
 BEGIN
     IF to_regclass('public.radar_settings') IS NOT NULL THEN
@@ -1439,229 +1450,6 @@ VALUES (
 )
 ON CONFLICT (version) DO NOTHING;
 
--- Local-only visual search foundation. Derived vehicle-region crops and
--- explainable exact/perceptual hashes are separate from immutable source
--- captures. No historical work is queued automatically by this migration.
-CREATE TABLE IF NOT EXISTS public.capture_assets (
-    id BIGSERIAL PRIMARY KEY,
-    read_id INTEGER NOT NULL
-        REFERENCES public.plate_reads(id) ON DELETE CASCADE,
-    asset_type VARCHAR(30) NOT NULL DEFAULT 'vehicle_crop'
-        CHECK (asset_type IN ('vehicle_crop')),
-    algorithm_version VARCHAR(40) NOT NULL,
-    status VARCHAR(20) NOT NULL
-        CHECK (status IN ('ready', 'failed')),
-    source_image_path VARCHAR(255) NOT NULL,
-    derived_path VARCHAR(255),
-    source_sha256 CHAR(64)
-        CHECK (source_sha256 IS NULL OR source_sha256 ~ '^[0-9a-f]{64}$'),
-    perceptual_hash CHAR(16)
-        CHECK (perceptual_hash IS NULL OR perceptual_hash ~ '^[0-9a-f]{16}$'),
-    crop_box JSONB,
-    image_width INTEGER CHECK (image_width IS NULL OR image_width > 0),
-    image_height INTEGER CHECK (image_height IS NULL OR image_height > 0),
-    crop_width INTEGER CHECK (crop_width IS NULL OR crop_width > 0),
-    crop_height INTEGER CHECK (crop_height IS NULL OR crop_height > 0),
-    attempt_count INTEGER NOT NULL DEFAULT 1 CHECK (attempt_count > 0),
-    error_code VARCHAR(80),
-    indexed_at TIMESTAMPTZ,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    UNIQUE (read_id, asset_type, algorithm_version),
-    CONSTRAINT capture_assets_ready_state CHECK (
-        (status = 'ready'
-         AND derived_path IS NOT NULL
-         AND source_sha256 IS NOT NULL
-         AND perceptual_hash IS NOT NULL
-         AND crop_box IS NOT NULL
-         AND indexed_at IS NOT NULL
-         AND error_code IS NULL)
-        OR
-        (status = 'failed'
-         AND derived_path IS NULL
-         AND source_sha256 IS NULL
-         AND perceptual_hash IS NULL
-         AND indexed_at IS NULL
-         AND error_code IS NOT NULL)
-    )
-);
-
-CREATE INDEX IF NOT EXISTS idx_capture_assets_ready_hash
-    ON public.capture_assets (perceptual_hash, read_id)
-    WHERE status = 'ready';
-CREATE INDEX IF NOT EXISTS idx_capture_assets_status
-    ON public.capture_assets (status, updated_at DESC, id DESC);
-
-CREATE OR REPLACE FUNCTION public.capture_asset_set_updated_at()
-RETURNS TRIGGER AS $$
-BEGIN
-    NEW.updated_at = CURRENT_TIMESTAMP;
-    RETURN NEW;
-END;
-$$ LANGUAGE plpgsql;
-
-DROP TRIGGER IF EXISTS capture_assets_set_updated_at ON public.capture_assets;
-CREATE TRIGGER capture_assets_set_updated_at
-BEFORE UPDATE ON public.capture_assets
-FOR EACH ROW EXECUTE FUNCTION public.capture_asset_set_updated_at();
-
-INSERT INTO public.schema_migrations (version, description)
-VALUES (
-    '2026072207_image_similarity_foundation',
-    'Add inert local derived capture assets for resumable exact and perceptual image search.'
-)
-ON CONFLICT (version) DO NOTHING;
-
--- Camera-scoped crop profiles allow tight LPR and wide overview cameras to
--- derive appropriately framed search assets without modifying source images.
-CREATE TABLE IF NOT EXISTS public.camera_visual_profiles (
-    camera_key VARCHAR(100) PRIMARY KEY,
-    camera_name VARCHAR(100) NOT NULL,
-    crop_mode VARCHAR(20) NOT NULL DEFAULT 'auto'
-        CHECK (crop_mode IN ('auto', 'custom', 'full_frame')),
-    context_percent INTEGER NOT NULL DEFAULT 90
-        CHECK (context_percent BETWEEN 40 AND 100),
-    vertical_offset_percent INTEGER NOT NULL DEFAULT 0
-        CHECK (vertical_offset_percent BETWEEN -25 AND 25),
-    profile_version INTEGER NOT NULL DEFAULT 1 CHECK (profile_version > 0),
-    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
-);
-
-ALTER TABLE public.capture_assets
-    ADD COLUMN IF NOT EXISTS crop_profile_version INTEGER NOT NULL DEFAULT 1
-        CHECK (crop_profile_version > 0);
-
-CREATE OR REPLACE FUNCTION public.camera_visual_profile_set_updated_at()
-RETURNS TRIGGER AS $$
-BEGIN
-    NEW.updated_at = CURRENT_TIMESTAMP;
-    RETURN NEW;
-END;
-$$ LANGUAGE plpgsql;
-
-DROP TRIGGER IF EXISTS camera_visual_profiles_set_updated_at ON public.camera_visual_profiles;
-CREATE TRIGGER camera_visual_profiles_set_updated_at
-BEFORE UPDATE ON public.camera_visual_profiles
-FOR EACH ROW EXECUTE FUNCTION public.camera_visual_profile_set_updated_at();
-
-INSERT INTO public.schema_migrations (version, description)
-VALUES (
-    '2026072208_camera_visual_profiles',
-    'Add versioned camera-specific crop setup for derived visual-search assets.'
-)
-ON CONFLICT (version) DO NOTHING;
-
--- A compact color-distribution signal complements structural dHash ranking.
--- Existing assets remain valid and fall back safely until background indexing
--- persists their color signature; searches may derive it transiently meanwhile.
-ALTER TABLE public.capture_assets
-    ADD COLUMN IF NOT EXISTS color_signature CHAR(40)
-        CHECK (color_signature IS NULL OR color_signature ~ '^[0-9a-f]{40}$');
-
-INSERT INTO public.schema_migrations (version, description)
-VALUES (
-    '2026072301_visual_color_signatures',
-    'Add a backward-compatible compact color signal for explainable multi-signal visual ranking.'
-)
-ON CONFLICT (version) DO NOTHING;
-
--- Version the color signal so the improved vehicle-focused histogram can be
--- derived lazily for existing assets without mixing incompatible signatures.
-ALTER TABLE public.capture_assets
-    ADD COLUMN IF NOT EXISTS color_signature_version SMALLINT
-        CHECK (color_signature_version IS NULL OR color_signature_version > 0);
-
-INSERT INTO public.schema_migrations (version, description)
-VALUES (
-    '2026072302_vehicle_focus_ranking',
-    'Version vehicle-focused color signatures for conservative visual ranking and lazy compatibility.'
-)
-ON CONFLICT (version) DO NOTHING;
-
--- Learned vehicle re-identification descriptors replace heuristic plate,
--- structure, and color ranking. Embeddings are fixed-size normalized float32
--- vectors; plate text remains display metadata and is never a ranking input.
-ALTER TABLE public.capture_assets
-    ADD COLUMN IF NOT EXISTS vehicle_embedding BYTEA
-        CHECK (vehicle_embedding IS NULL OR octet_length(vehicle_embedding) = 2048),
-    ADD COLUMN IF NOT EXISTS embedding_model VARCHAR(80),
-    ADD COLUMN IF NOT EXISTS detector_model VARCHAR(80),
-    ADD COLUMN IF NOT EXISTS detection_confidence REAL
-        CHECK (detection_confidence IS NULL OR detection_confidence BETWEEN 0 AND 1);
-
-INSERT INTO public.schema_migrations (version, description)
-VALUES (
-    '2026072303_vehicle_reid_embeddings',
-    'Add plate-independent OpenVINO vehicle ReID embeddings and detector provenance.'
-)
-ON CONFLICT (version) DO NOTHING;
-
--- Vehicle detection now scans the complete source image before any fallback is
--- considered. Preserve explicit operator choices while giving unconfigured
--- cameras a safe full-image fallback and a new profile revision.
-ALTER TABLE public.camera_visual_profiles
-    ALTER COLUMN crop_mode SET DEFAULT 'full_frame',
-    ALTER COLUMN context_percent SET DEFAULT 100;
-
-INSERT INTO public.camera_visual_profiles (
-    camera_key, camera_name, crop_mode, context_percent,
-    vertical_offset_percent, profile_version
-)
-SELECT camera_key, camera_name, 'full_frame', 100, 0, 2
-FROM (
-    SELECT DISTINCT ON (LOWER(BTRIM(camera_name)))
-        LOWER(BTRIM(camera_name)) AS camera_key,
-        camera_name
-    FROM public.plate_reads
-    WHERE camera_name IS NOT NULL AND BTRIM(camera_name) <> ''
-    ORDER BY LOWER(BTRIM(camera_name)), "timestamp" DESC
-) cameras
-ON CONFLICT (camera_key) DO NOTHING;
-
-INSERT INTO public.schema_migrations (version, description)
-VALUES (
-    '2026072304_vehicle_detector_fallbacks',
-    'Default unconfigured cameras to full-image detector fallback while preserving explicit profiles.'
-)
-ON CONFLICT (version) DO NOTHING;
-
--- Human calibration labels are stored against a canonical pair of immutable
--- capture reads and the exact embedding model that produced the score. The
--- row holds the current label while append-only audit_events preserve every
--- label change and its previous value.
-CREATE TABLE IF NOT EXISTS public.vehicle_match_feedback (
-    id BIGSERIAL PRIMARY KEY,
-    read_id_low INTEGER NOT NULL
-        REFERENCES public.plate_reads(id) ON DELETE CASCADE,
-    read_id_high INTEGER NOT NULL
-        REFERENCES public.plate_reads(id) ON DELETE CASCADE,
-    embedding_model VARCHAR(80) NOT NULL,
-    similarity_score REAL NOT NULL
-        CHECK (similarity_score BETWEEN -1 AND 1),
-    label VARCHAR(30) NOT NULL
-        CHECK (label IN ('same_vehicle', 'different_vehicle')),
-    actor_user_id BIGINT REFERENCES public.users(id) ON DELETE SET NULL,
-    actor_username VARCHAR(64) NOT NULL,
-    actor_display_name VARCHAR(120) NOT NULL,
-    revision INTEGER NOT NULL DEFAULT 1 CHECK (revision > 0),
-    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    CONSTRAINT vehicle_match_feedback_distinct_pair
-        CHECK (read_id_low < read_id_high),
-    UNIQUE (read_id_low, read_id_high, embedding_model)
-);
-
-CREATE INDEX IF NOT EXISTS idx_vehicle_match_feedback_model_label
-    ON public.vehicle_match_feedback (embedding_model, label, updated_at DESC);
-
-INSERT INTO public.schema_migrations (version, description)
-VALUES (
-    '2026072401_vehicle_match_feedback',
-    'Add audited human same/different vehicle labels for local Vehicle ReID calibration.'
-)
-ON CONFLICT (version) DO NOTHING;
-
 -- Notification operations adds an explicit rule clock, optional quiet hours,
 -- and lease-safe scheduled evaluation for camera activity rules. Existing
 -- accepted-read rules retain their behavior and remain unscheduled.
@@ -1809,9 +1597,7 @@ CREATE TABLE IF NOT EXISTS public.storage_reconciliation_runs (
     scan_started_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     completed_at TIMESTAMPTZ,
     max_plate_read_id BIGINT NOT NULL DEFAULT 0,
-    max_capture_asset_id BIGINT NOT NULL DEFAULT 0,
     plate_read_cursor BIGINT NOT NULL DEFAULT 0,
-    capture_asset_cursor BIGINT NOT NULL DEFAULT 0,
     files_scanned BIGINT NOT NULL DEFAULT 0,
     bytes_scanned BIGINT NOT NULL DEFAULT 0,
     references_checked BIGINT NOT NULL DEFAULT 0,
@@ -1826,11 +1612,11 @@ CREATE TABLE IF NOT EXISTS public.storage_reconciliation_runs (
     updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     CONSTRAINT storage_reconciliation_status CHECK (status IN ('running', 'completed', 'failed')),
     CONSTRAINT storage_reconciliation_phase CHECK (
-        phase IN ('filesystem', 'plate-reads', 'capture-assets', 'completed')
+        phase IN ('filesystem', 'plate-reads', 'completed')
     ),
     CONSTRAINT storage_reconciliation_counts CHECK (
-        max_plate_read_id >= 0 AND max_capture_asset_id >= 0 AND
-        plate_read_cursor >= 0 AND capture_asset_cursor >= 0 AND
+        max_plate_read_id >= 0 AND
+        plate_read_cursor >= 0 AND
         files_scanned >= 0 AND bytes_scanned >= 0 AND references_checked >= 0 AND
         recent_files_skipped >= 0 AND skipped_entries >= 0 AND error_count >= 0 AND
         orphan_files >= 0 AND orphan_bytes >= 0 AND missing_reference_paths >= 0
@@ -1959,86 +1745,6 @@ VALUES (
 )
 ON CONFLICT (version) DO NOTHING;
 
--- Vehicle attributes are immutable per-read model observations. A better
--- future capture adds evidence; it never rewrites an older capture's result.
-CREATE TABLE IF NOT EXISTS public.vehicle_attribute_observations (
-    id BIGSERIAL PRIMARY KEY,
-    read_id INTEGER NOT NULL REFERENCES public.plate_reads(id) ON DELETE CASCADE,
-    attribute_key VARCHAR(40) NOT NULL,
-    status VARCHAR(20) NOT NULL CHECK (status IN ('ready', 'unknown', 'failed')),
-    attribute_value VARCHAR(120),
-    confidence REAL CHECK (confidence BETWEEN 0 AND 1),
-    provider VARCHAR(80) NOT NULL,
-    model_version VARCHAR(80) NOT NULL,
-    raw_result JSONB NOT NULL DEFAULT '{}'::JSONB,
-    error_code VARCHAR(80),
-    evaluated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    CONSTRAINT vehicle_attribute_observation_state CHECK (
-        (status = 'ready' AND attribute_value IS NOT NULL AND confidence IS NOT NULL AND error_code IS NULL) OR
-        (status = 'unknown' AND attribute_value IS NULL AND error_code IS NULL) OR
-        (status = 'failed' AND attribute_value IS NULL AND error_code IS NOT NULL)
-    ),
-    UNIQUE (read_id, attribute_key, provider, model_version)
-);
-
-CREATE INDEX IF NOT EXISTS idx_vehicle_attribute_observations_lookup
-    ON public.vehicle_attribute_observations (attribute_key, attribute_value, status, confidence DESC);
-
-INSERT INTO public.schema_migrations (version, description)
-VALUES (
-    '2026072505_vehicle_attribute_observations',
-    'Add per-read vehicle attribute evidence with confidence and provider/model provenance.'
-)
-ON CONFLICT (version) DO NOTHING;
-
--- Shadow clusters are candidate groupings, never plate ownership claims.
--- Plate text is retained for review but is not an input to assignment.
-CREATE TABLE IF NOT EXISTS public.vehicle_clusters (
-    id BIGSERIAL PRIMARY KEY,
-    status VARCHAR(20) NOT NULL DEFAULT 'shadow'
-        CHECK (status IN ('shadow', 'confirmed', 'retired')),
-    representative_read_id INTEGER NOT NULL UNIQUE
-        REFERENCES public.plate_reads(id) ON DELETE CASCADE,
-    embedding_model VARCHAR(80) NOT NULL,
-    algorithm_version VARCHAR(80) NOT NULL,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
-);
-
-CREATE TABLE IF NOT EXISTS public.vehicle_cluster_assignments (
-    read_id INTEGER PRIMARY KEY REFERENCES public.plate_reads(id) ON DELETE CASCADE,
-    cluster_id BIGINT NOT NULL REFERENCES public.vehicle_clusters(id) ON DELETE CASCADE,
-    assignment_status VARCHAR(20) NOT NULL
-        CHECK (assignment_status IN ('seed', 'suggested', 'confirmed')),
-    similarity REAL CHECK (similarity BETWEEN -1 AND 1),
-    similarity_margin REAL CHECK (similarity_margin BETWEEN -2 AND 2),
-    embedding_model VARCHAR(80) NOT NULL,
-    algorithm_version VARCHAR(80) NOT NULL,
-    actor_user_id BIGINT REFERENCES public.users(id) ON DELETE SET NULL,
-    actor_username VARCHAR(64),
-    actor_display_name VARCHAR(120),
-    revision INTEGER NOT NULL DEFAULT 1 CHECK (revision > 0),
-    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    CONSTRAINT vehicle_cluster_assignment_evidence CHECK (
-        (assignment_status = 'seed' AND similarity IS NULL) OR
-        (assignment_status IN ('suggested', 'confirmed') AND similarity IS NOT NULL)
-    )
-);
-
-CREATE INDEX IF NOT EXISTS idx_vehicle_cluster_assignments_cluster
-    ON public.vehicle_cluster_assignments (cluster_id, assignment_status, updated_at DESC);
-CREATE INDEX IF NOT EXISTS idx_vehicle_cluster_assignments_review
-    ON public.vehicle_cluster_assignments (assignment_status, similarity DESC, updated_at DESC)
-    WHERE assignment_status = 'suggested';
-
-INSERT INTO public.schema_migrations (version, description)
-VALUES (
-    '2026072506_vehicle_shadow_clusters',
-    'Add reviewable descriptor-only shadow vehicle clusters without plate ownership or mismatch alerts.'
-)
-ON CONFLICT (version) DO NOTHING;
-
 -- Direction classification is emitted after Vehicle ReID completes, so it has
 -- a distinct event type and can be filtered using camera-configured labels.
 ALTER TABLE IF EXISTS public.notification_rules
@@ -2077,65 +1783,8 @@ VALUES (
 )
 ON CONFLICT (version) DO NOTHING;
 
--- A human front/rear review is authoritative even while a camera is still
--- collecting enough samples to classify unlabeled captures. Repair any
--- reviewed rows that an earlier release left in the Unknown state.
-WITH orientation_counts AS (
-    SELECT camera_key, embedding_model,
-           COUNT(*) FILTER (WHERE orientation = 'front') AS front_count,
-           COUNT(*) FILTER (WHERE orientation = 'rear') AS rear_count
-    FROM public.vehicle_orientation_labels
-    GROUP BY camera_key, embedding_model
-)
-INSERT INTO public.vehicle_direction_observations (
-    read_id, camera_key, embedding_model, classifier_version,
-    profile_version, status, orientation, orientation_confidence,
-    direction_label, sample_counts, evaluated_at
-)
-SELECT labels.read_id,
-       labels.camera_key,
-       labels.embedding_model,
-       'vehicle-reid-orientation-knn-v1',
-       profiles.profile_version,
-       'ready',
-       labels.orientation,
-       1,
-       CASE labels.orientation
-           WHEN 'front' THEN profiles.front_direction_label
-           ELSE profiles.rear_direction_label
-       END,
-       jsonb_build_object(
-           'front', counts.front_count,
-           'rear', counts.rear_count
-       ),
-       CURRENT_TIMESTAMP
-FROM public.vehicle_orientation_labels labels
-JOIN public.camera_direction_profiles profiles
-  ON profiles.camera_key = labels.camera_key
-JOIN orientation_counts counts
-  ON counts.camera_key = labels.camera_key
- AND counts.embedding_model = labels.embedding_model
-WHERE profiles.enabled = TRUE
-ON CONFLICT (read_id) DO UPDATE SET
-    camera_key = EXCLUDED.camera_key,
-    embedding_model = EXCLUDED.embedding_model,
-    classifier_version = EXCLUDED.classifier_version,
-    profile_version = EXCLUDED.profile_version,
-    status = EXCLUDED.status,
-    orientation = EXCLUDED.orientation,
-    orientation_confidence = EXCLUDED.orientation_confidence,
-    direction_label = EXCLUDED.direction_label,
-    sample_counts = EXCLUDED.sample_counts,
-    evaluated_at = EXCLUDED.evaluated_at;
 
-INSERT INTO public.schema_migrations (version, description)
-VALUES (
-    '2026072602_reviewed_vehicle_direction_truth',
-    'Make human-reviewed front/rear labels immediately authoritative and repair older reviewed observations.'
-)
-ON CONFLICT (version) DO NOTHING;
-
--- Historical direction work is derived from durable capture assets and is
+-- Historical direction work is derived from current canonical crop evidence and is
 -- naturally resumable: current observations are skipped, while repeat
 -- failures are retained for review instead of blocking the remaining corpus.
 CREATE TABLE IF NOT EXISTS public.vehicle_direction_backfill_failures (
@@ -2187,104 +1836,10 @@ INSERT INTO public.vehicle_direction_reevaluation_control (singleton, paused)
 VALUES (TRUE, FALSE)
 ON CONFLICT (singleton) DO NOTHING;
 
--- Carry an in-progress re-evaluation from the previous release into the new
--- durable queue. The earlier implementation represented queued work by
--- deleting machine observations, so current missing/outdated rows are the only
--- safe evidence available during this one-time upgrade.
-INSERT INTO public.vehicle_direction_reevaluation_queue (read_id, camera_key)
-SELECT ca.read_id, LOWER(BTRIM(reads.camera_name))
-FROM public.capture_assets ca
-JOIN public.plate_reads reads ON reads.id = ca.read_id
-LEFT JOIN public.camera_visual_profiles cvp
-  ON cvp.camera_key = LOWER(BTRIM(reads.camera_name))
-JOIN public.camera_direction_profiles profiles
-  ON profiles.camera_key = LOWER(BTRIM(reads.camera_name))
-LEFT JOIN public.vehicle_direction_observations observations
-  ON observations.read_id = ca.read_id
-LEFT JOIN public.vehicle_orientation_labels labels
-  ON labels.read_id = ca.read_id
- AND labels.embedding_model = 'vehicle-reid-0001-ir-fp16-v1'
-WHERE ca.asset_type = 'vehicle_crop'
-  AND ca.algorithm_version = 'vehicle_reid_0001_v1'
-  AND ca.status = 'ready'
-  AND ca.crop_profile_version = COALESCE(cvp.profile_version, 1)
-  AND ca.embedding_model = 'vehicle-reid-0001-ir-fp16-v1'
-  AND ca.vehicle_embedding IS NOT NULL
-  AND labels.read_id IS NULL
-  AND (
-    observations.read_id IS NULL OR
-    observations.embedding_model IS DISTINCT FROM 'vehicle-reid-0001-ir-fp16-v1' OR
-    observations.classifier_version IS DISTINCT FROM 'vehicle-reid-orientation-knn-v1' OR
-    observations.profile_version IS DISTINCT FROM profiles.profile_version
-  )
-ON CONFLICT (read_id) DO NOTHING;
-
 INSERT INTO public.schema_migrations (version, description)
 VALUES (
     '2026072701_vehicle_direction_reevaluation_queue',
     'Preserve current directions during re-evaluation and add durable pause/resume controls.'
-)
-ON CONFLICT (version) DO NOTHING;
-
--- A confirmed shadow-cluster assignment is evidence that a capture belongs to
--- a vehicle, but it is not by itself permission to claim that the vehicle is
--- associated with the capture's effective plate. Keep that second review
--- decision explicit and independently auditable so later mismatch detection
--- can rely only on confirmed baselines.
-CREATE TABLE IF NOT EXISTS public.vehicle_plate_associations (
-    id BIGSERIAL PRIMARY KEY,
-    cluster_id BIGINT NOT NULL REFERENCES public.vehicle_clusters(id) ON DELETE CASCADE,
-    plate_number VARCHAR(10) NOT NULL REFERENCES public.plates(plate_number) ON DELETE CASCADE,
-    status VARCHAR(20) NOT NULL DEFAULT 'suggested'
-        CHECK (status IN ('suggested', 'confirmed', 'rejected')),
-    evidence_count INTEGER NOT NULL DEFAULT 1 CHECK (evidence_count > 0),
-    confidence REAL CHECK (confidence BETWEEN -1 AND 1),
-    first_seen_at TIMESTAMPTZ,
-    last_seen_at TIMESTAMPTZ,
-    actor_user_id BIGINT REFERENCES public.users(id) ON DELETE SET NULL,
-    actor_username VARCHAR(64),
-    actor_display_name VARCHAR(120),
-    revision INTEGER NOT NULL DEFAULT 1 CHECK (revision > 0),
-    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    UNIQUE (cluster_id, plate_number)
-);
-
-CREATE INDEX IF NOT EXISTS idx_vehicle_plate_associations_review
-    ON public.vehicle_plate_associations (status, updated_at DESC)
-    WHERE status = 'suggested';
-CREATE INDEX IF NOT EXISTS idx_vehicle_plate_associations_plate
-    ON public.vehicle_plate_associations (plate_number, status, updated_at DESC);
-
--- Preserve earlier human cluster reviews as plate-association suggestions.
--- Effective plate text is review evidence only and never participates in ReID
--- clustering or becomes authoritative without a separate confirmation.
-INSERT INTO public.vehicle_plate_associations (
-    cluster_id, plate_number, status, evidence_count, confidence,
-    first_seen_at, last_seen_at
-)
-SELECT assignments.cluster_id,
-       reads.plate_number,
-       'suggested',
-       COUNT(*)::INTEGER,
-       AVG(assignments.similarity)::REAL,
-       MIN(reads."timestamp"),
-       MAX(reads."timestamp")
-FROM public.vehicle_cluster_assignments assignments
-JOIN public.plate_reads reads ON reads.id = assignments.read_id
-WHERE assignments.assignment_status = 'confirmed'
-GROUP BY assignments.cluster_id, reads.plate_number
-ON CONFLICT (cluster_id, plate_number) DO UPDATE SET
-    evidence_count = EXCLUDED.evidence_count,
-    confidence = EXCLUDED.confidence,
-    first_seen_at = EXCLUDED.first_seen_at,
-    last_seen_at = EXCLUDED.last_seen_at,
-    updated_at = CURRENT_TIMESTAMP;
-
-INSERT INTO public.schema_migrations (version, description)
-VALUES (
-    '2026072702_vehicle_plate_associations',
-    'Add explicitly reviewed effective-plate associations as the safe vehicle-profile baseline.'
 )
 ON CONFLICT (version) DO NOTHING;
 
@@ -4584,7 +4139,7 @@ ALTER TABLE public.storage_reconciliation_runs
 ALTER TABLE public.storage_reconciliation_runs
   ADD CONSTRAINT storage_reconciliation_phase CHECK (
     phase IN (
-      'filesystem', 'plate-reads', 'capture-assets',
+      'filesystem', 'plate-reads',
       'vehicle-image-assets', 'vehicle-image-derivatives', 'completed'
     )
   );
@@ -4593,9 +4148,9 @@ ALTER TABLE public.storage_reconciliation_runs
   DROP CONSTRAINT IF EXISTS storage_reconciliation_counts;
 ALTER TABLE public.storage_reconciliation_runs
   ADD CONSTRAINT storage_reconciliation_counts CHECK (
-    max_plate_read_id >= 0 AND max_capture_asset_id >= 0
+    max_plate_read_id >= 0
     AND max_vehicle_image_asset_id >= 0
-    AND plate_read_cursor >= 0 AND capture_asset_cursor >= 0
+    AND plate_read_cursor >= 0
     AND vehicle_image_asset_cursor >= 0
     AND files_scanned >= 0 AND bytes_scanned >= 0
     AND references_checked >= 0 AND recent_files_skipped >= 0
@@ -4782,7 +4337,7 @@ ON CONFLICT(version) DO NOTHING;
 -- not depend on this queue.
 CREATE TABLE IF NOT EXISTS public.vehicle_image_asset_live_catalog_control (
   singleton BOOLEAN PRIMARY KEY DEFAULT TRUE CHECK (singleton = TRUE),
-  enabled BOOLEAN NOT NULL DEFAULT FALSE,
+  enabled BOOLEAN NOT NULL DEFAULT TRUE,
   enabled_by_user_id BIGINT REFERENCES public.users(id) ON DELETE SET NULL,
   enabled_at TIMESTAMPTZ,
   disabled_at TIMESTAMPTZ,
@@ -4795,7 +4350,7 @@ CREATE TABLE IF NOT EXISTS public.vehicle_image_asset_live_catalog_control (
 
 INSERT INTO public.vehicle_image_asset_live_catalog_control (
   singleton, enabled, enabled_by_user_id, enabled_at, disabled_at
-) VALUES (TRUE, FALSE, NULL, NULL, CURRENT_TIMESTAMP)
+) VALUES (TRUE, TRUE, NULL, CURRENT_TIMESTAMP, NULL)
 ON CONFLICT (singleton) DO NOTHING;
 
 CREATE TABLE IF NOT EXISTS public.vehicle_image_asset_live_catalog_jobs (
@@ -5273,7 +4828,7 @@ ALTER TABLE public.storage_reconciliation_runs
 ALTER TABLE public.storage_reconciliation_runs
   ADD CONSTRAINT storage_reconciliation_phase CHECK (
     phase IN (
-      'filesystem', 'plate-reads', 'capture-assets',
+      'filesystem', 'plate-reads',
       'vehicle-image-assets', 'vehicle-image-derivatives', 'completed'
     )
   );
@@ -5282,10 +4837,10 @@ ALTER TABLE public.storage_reconciliation_runs
   DROP CONSTRAINT IF EXISTS storage_reconciliation_counts;
 ALTER TABLE public.storage_reconciliation_runs
   ADD CONSTRAINT storage_reconciliation_counts CHECK (
-    max_plate_read_id >= 0 AND max_capture_asset_id >= 0
+    max_plate_read_id >= 0
     AND max_vehicle_image_asset_id >= 0
     AND max_vehicle_image_derivative_id >= 0
-    AND plate_read_cursor >= 0 AND capture_asset_cursor >= 0
+    AND plate_read_cursor >= 0
     AND vehicle_image_asset_cursor >= 0
     AND vehicle_image_derivative_cursor >= 0
     AND files_scanned >= 0 AND bytes_scanned >= 0
@@ -5305,7 +4860,7 @@ ON CONFLICT(version) DO NOTHING;
 -- crop algorithm and yields whenever an operator crop campaign is active.
 CREATE TABLE IF NOT EXISTS public.vehicle_image_crop_live_control (
   singleton BOOLEAN PRIMARY KEY DEFAULT TRUE CHECK (singleton = TRUE),
-  enabled BOOLEAN NOT NULL DEFAULT FALSE,
+  enabled BOOLEAN NOT NULL DEFAULT TRUE,
   enabled_by_user_id BIGINT REFERENCES public.users(id) ON DELETE SET NULL,
   enabled_at TIMESTAMPTZ,
   disabled_at TIMESTAMPTZ,
@@ -5318,7 +4873,7 @@ CREATE TABLE IF NOT EXISTS public.vehicle_image_crop_live_control (
 
 INSERT INTO public.vehicle_image_crop_live_control (
   singleton, enabled, enabled_by_user_id, enabled_at, disabled_at
-) VALUES (TRUE, FALSE, NULL, NULL, CURRENT_TIMESTAMP)
+) VALUES (TRUE, TRUE, NULL, CURRENT_TIMESTAMP, NULL)
 ON CONFLICT (singleton) DO NOTHING;
 
 CREATE TABLE IF NOT EXISTS public.vehicle_image_crop_live_jobs (
@@ -6182,7 +5737,7 @@ ON CONFLICT(version) DO NOTHING;
 
 -- ReID v2 profile candidates are immutable shadow snapshots built only from
 -- exact effective/corrected plate agreement and audited Same-vehicle labels.
--- They do not reuse the current vehicle_clusters tables, infer a score cutoff,
+-- They preserve explicit evidence and do not infer a score cutoff,
 -- or create a vehicle assignment. Conflicts fail closed into separate evidence.
 CREATE TABLE IF NOT EXISTS public.vehicle_reid_v2_profile_candidate_runs (
   id BIGSERIAL PRIMARY KEY,
@@ -6336,929 +5891,77 @@ INSERT INTO public.schema_migrations(version,description) VALUES
  ('2026081602_vehicle_reid_v2_profile_candidates','Add immutable evidence-backed ReID v2 shadow profile candidate snapshots using exact effective plates and audited Same labels, with conflicts retained separately and no threshold, cluster, or assignment write.')
 ON CONFLICT(version) DO NOTHING;
 
--- Additive authoritative ReID v2 ownership and a preview-only historical
--- conversion foundation. The migration seeds the transition control in the
--- existing shadow mode, but deliberately creates no authoritative profile,
--- member, read assignment, conversion run, job, or projected result.
-ALTER TABLE public.vehicle_reid_v2_profile_candidate_conflicts
-  DROP CONSTRAINT IF EXISTS vehicle_reid_v2_profile_candidate_conflicts_reason_check;
-ALTER TABLE public.vehicle_reid_v2_profile_candidate_conflicts
-  ADD CONSTRAINT vehicle_reid_v2_profile_candidate_conflicts_reason_check CHECK (
-    reason IN (
-      'human_different','human_unsure','dissimilar_effective_plates',
-      'ambiguous_effective_plates','stale_review_evidence','mixed'
-    )
-  );
-
-CREATE UNIQUE INDEX IF NOT EXISTS idx_reid_v2_candidate_run_conversion_contract
-  ON public.vehicle_reid_v2_profile_candidate_runs (
-    id, snapshot_fingerprint, algorithm_version,
-    embedding_model, embedding_algorithm_version
-  );
-
-CREATE TABLE IF NOT EXISTS public.vehicle_reid_v2_conversion_runs (
-  id BIGSERIAL PRIMARY KEY,
-  status VARCHAR(20) NOT NULL DEFAULT 'previewing' CHECK (
-    status IN (
-      'previewing','ready','paused','accepted','running','completed',
-      'stale','cancelled','failed','rolled_back'
-    )
-  ),
-  phase VARCHAR(24) NOT NULL DEFAULT 'freeze' CHECK (
-    phase IN (
-      'freeze','project_profiles','project_reads','revalidate',
-      'materialize','complete'
-    )
-  ),
-  resume_status VARCHAR(20) CHECK (
-    resume_status IS NULL OR resume_status IN ('previewing','running')
-  ),
-  max_read_id INTEGER NOT NULL CHECK (max_read_id >= 0),
-  max_derivative_id BIGINT NOT NULL CHECK (max_derivative_id >= 0),
-  max_plate_review_id BIGINT NOT NULL CHECK (max_plate_review_id >= 0),
-  max_pair_review_id BIGINT NOT NULL CHECK (max_pair_review_id >= 0),
-  crop_kind VARCHAR(32) NOT NULL CHECK (NULLIF(BTRIM(crop_kind), '') IS NOT NULL),
-  crop_algorithm_version VARCHAR(100) NOT NULL CHECK (
-    NULLIF(BTRIM(crop_algorithm_version), '') IS NOT NULL
-  ),
-  embedding_model VARCHAR(100) NOT NULL CHECK (
-    NULLIF(BTRIM(embedding_model), '') IS NOT NULL
-  ),
-  embedding_algorithm_version VARCHAR(100) NOT NULL CHECK (
-    NULLIF(BTRIM(embedding_algorithm_version), '') IS NOT NULL
-  ),
-  source_profile_candidate_run_id BIGINT NOT NULL
-    REFERENCES public.vehicle_reid_v2_profile_candidate_runs(id)
-    ON DELETE RESTRICT,
-  source_profile_candidate_fingerprint CHAR(64) NOT NULL CHECK (
-    source_profile_candidate_fingerprint ~ '^[0-9a-f]{64}$'
-  ),
-  profile_candidate_algorithm_version VARCHAR(100) NOT NULL CHECK (
-    NULLIF(BTRIM(profile_candidate_algorithm_version), '') IS NOT NULL
-  ),
-  identity_evidence_fingerprint CHAR(64) CHECK (
-    identity_evidence_fingerprint IS NULL
-    OR identity_evidence_fingerprint ~ '^[0-9a-f]{64}$'
-  ),
-  preview_fingerprint CHAR(64) CHECK (
-    preview_fingerprint IS NULL OR preview_fingerprint ~ '^[0-9a-f]{64}$'
-  ),
-  comparison_fingerprint CHAR(64) CHECK (
-    comparison_fingerprint IS NULL
-    OR comparison_fingerprint ~ '^[0-9a-f]{64}$'
-  ),
-  accepted_preview_fingerprint CHAR(64) CHECK (
-    accepted_preview_fingerprint IS NULL
-    OR accepted_preview_fingerprint ~ '^[0-9a-f]{64}$'
-  ),
-  last_revalidation_status VARCHAR(16) NOT NULL DEFAULT 'not_run' CHECK (
-    last_revalidation_status IN ('not_run','current','stale','failed')
-  ),
-  last_revalidation_fingerprint CHAR(64) CHECK (
-    last_revalidation_fingerprint IS NULL
-    OR last_revalidation_fingerprint ~ '^[0-9a-f]{64}$'
-  ),
-  last_revalidated_at TIMESTAMPTZ,
-  last_revalidation_error_code VARCHAR(80),
-  batch_size INTEGER NOT NULL DEFAULT 25 CHECK (batch_size IN (1,5,25,250)),
-  eligible_crops INTEGER NOT NULL DEFAULT 0 CHECK (eligible_crops >= 0),
-  exact_current_embeddings INTEGER NOT NULL DEFAULT 0 CHECK (
-    exact_current_embeddings >= 0
-  ),
-  projected_profiles INTEGER NOT NULL DEFAULT 0 CHECK (projected_profiles >= 0),
-  projected_multi_member_profiles INTEGER NOT NULL DEFAULT 0 CHECK (
-    projected_multi_member_profiles >= 0
-  ),
-  projected_singleton_profiles INTEGER NOT NULL DEFAULT 0 CHECK (
-    projected_singleton_profiles >= 0
-  ),
-  projected_members INTEGER NOT NULL DEFAULT 0 CHECK (projected_members >= 0),
-  assigned_reads INTEGER NOT NULL DEFAULT 0 CHECK (assigned_reads >= 0),
-  canonical_image_assignments INTEGER NOT NULL DEFAULT 0 CHECK (
-    canonical_image_assignments >= 0
-  ),
-  shared_asset_assignments INTEGER NOT NULL DEFAULT 0 CHECK (
-    shared_asset_assignments >= 0
-  ),
-  exact_plate_only_assignments INTEGER NOT NULL DEFAULT 0 CHECK (
-    exact_plate_only_assignments >= 0
-  ),
-  historical_exact_plate_assignments INTEGER NOT NULL DEFAULT 0 CHECK (
-    historical_exact_plate_assignments >= 0
-  ),
-  nighttime_exact_plate_assignments INTEGER NOT NULL DEFAULT 0 CHECK (
-    nighttime_exact_plate_assignments >= 0
-  ),
-  conflicted_components INTEGER NOT NULL DEFAULT 0 CHECK (
-    conflicted_components >= 0
-  ),
-  conflicted_reads INTEGER NOT NULL DEFAULT 0 CHECK (conflicted_reads >= 0),
-  unassigned_reads INTEGER NOT NULL DEFAULT 0 CHECK (unassigned_reads >= 0),
-  stale_evidence_reads INTEGER NOT NULL DEFAULT 0 CHECK (
-    stale_evidence_reads >= 0
-  ),
-  v1_assigned_reads INTEGER NOT NULL DEFAULT 0 CHECK (v1_assigned_reads >= 0),
-  v1_only_reads INTEGER NOT NULL DEFAULT 0 CHECK (v1_only_reads >= 0),
-  v2_only_reads INTEGER NOT NULL DEFAULT 0 CHECK (v2_only_reads >= 0),
-  both_assigned_reads INTEGER NOT NULL DEFAULT 0 CHECK (both_assigned_reads >= 0),
-  neither_assigned_reads INTEGER NOT NULL DEFAULT 0 CHECK (
-    neither_assigned_reads >= 0
-  ),
-  preview_metrics JSONB NOT NULL DEFAULT '{}'::jsonb CHECK (
-    JSONB_TYPEOF(preview_metrics) = 'object'
-  ),
-  actor_user_id BIGINT NOT NULL REFERENCES public.users(id) ON DELETE RESTRICT,
-  actor_username VARCHAR(64) NOT NULL CHECK (
-    NULLIF(BTRIM(actor_username), '') IS NOT NULL
-  ),
-  actor_display_name VARCHAR(120) NOT NULL CHECK (
-    NULLIF(BTRIM(actor_display_name), '') IS NOT NULL
-  ),
-  accepted_actor_user_id BIGINT REFERENCES public.users(id) ON DELETE SET NULL,
-  accepted_actor_username VARCHAR(64),
-  accepted_actor_display_name VARCHAR(120),
-  accepted_at TIMESTAMPTZ,
-  paused_at TIMESTAMPTZ,
-  cancelled_at TIMESTAMPTZ,
-  completed_at TIMESTAMPTZ,
-  stale_at TIMESTAMPTZ,
-  last_error_code VARCHAR(80),
-  last_error_details JSONB CHECK (
-    last_error_details IS NULL OR JSONB_TYPEOF(last_error_details) = 'object'
-  ),
-  created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  CHECK (
-    projected_profiles
-      = projected_multi_member_profiles + projected_singleton_profiles
-  ),
-  CHECK (
-    status NOT IN ('ready','accepted','running','completed','rolled_back')
-    OR (
-      identity_evidence_fingerprint IS NOT NULL
-      AND preview_fingerprint IS NOT NULL
-    )
-  ),
-  CHECK (
-    status NOT IN ('accepted','running','completed','rolled_back')
-    OR (
-      accepted_at IS NOT NULL
-      AND accepted_preview_fingerprint = preview_fingerprint
-      AND NULLIF(BTRIM(accepted_actor_username), '') IS NOT NULL
-      AND NULLIF(BTRIM(accepted_actor_display_name), '') IS NOT NULL
-      AND last_revalidation_status = 'current'
-      AND last_revalidation_fingerprint = identity_evidence_fingerprint
-      AND last_revalidated_at IS NOT NULL
-    )
-  ),
-  CHECK (
-    (last_revalidation_status = 'not_run'
-      AND last_revalidation_fingerprint IS NULL
-      AND last_revalidated_at IS NULL
-      AND last_revalidation_error_code IS NULL)
-    OR (last_revalidation_status = 'current'
-      AND last_revalidation_fingerprint IS NOT NULL
-      AND last_revalidated_at IS NOT NULL
-      AND last_revalidation_error_code IS NULL)
-    OR (last_revalidation_status = 'stale'
-      AND last_revalidation_fingerprint IS NOT NULL
-      AND last_revalidated_at IS NOT NULL
-      AND last_revalidation_error_code IS NOT NULL)
-    OR (last_revalidation_status = 'failed'
-      AND last_revalidated_at IS NOT NULL
-      AND last_revalidation_error_code IS NOT NULL)
-  ),
-  CHECK (
-    (status = 'paused' AND resume_status IS NOT NULL AND paused_at IS NOT NULL)
-    OR (status <> 'paused' AND resume_status IS NULL)
-  ),
-  CHECK (
-    (status = 'cancelled' AND cancelled_at IS NOT NULL)
-    OR status <> 'cancelled'
-  ),
-  CHECK (
-    (status = 'stale' AND stale_at IS NOT NULL AND last_error_code IS NOT NULL)
-    OR status <> 'stale'
-  ),
-  CHECK (
-    (status = 'failed' AND last_error_code IS NOT NULL)
-    OR status <> 'failed'
-  ),
-  CHECK (
-    (status IN ('completed','rolled_back') AND completed_at IS NOT NULL)
-    OR status NOT IN ('completed','rolled_back')
-  )
-);
-
-CREATE UNIQUE INDEX IF NOT EXISTS idx_reid_v2_conversion_one_active
-  ON public.vehicle_reid_v2_conversion_runs ((TRUE))
-  WHERE status IN ('previewing','ready','paused','accepted','running');
-CREATE INDEX IF NOT EXISTS idx_reid_v2_conversion_history
-  ON public.vehicle_reid_v2_conversion_runs (created_at DESC, id DESC);
-
-ALTER TABLE public.vehicle_reid_v2_conversion_runs
-  DROP CONSTRAINT IF EXISTS vehicle_reid_v2_conversion_candidate_contract;
-ALTER TABLE public.vehicle_reid_v2_conversion_runs
-  ADD CONSTRAINT vehicle_reid_v2_conversion_candidate_contract
-  FOREIGN KEY (
-    source_profile_candidate_run_id, source_profile_candidate_fingerprint,
-    profile_candidate_algorithm_version, embedding_model,
-    embedding_algorithm_version
-  ) REFERENCES public.vehicle_reid_v2_profile_candidate_runs (
-    id, snapshot_fingerprint, algorithm_version,
-    embedding_model, embedding_algorithm_version
-  ) ON DELETE RESTRICT;
-
-CREATE OR REPLACE FUNCTION public.validate_vehicle_reid_v2_conversion_transition()
-RETURNS TRIGGER AS $$
-DECLARE
-  allowed BOOLEAN := FALSE;
-  mutable_keys TEXT[] := ARRAY['updated_at'];
+-- One-time retirement of obsolete derived-index objects on upgrade.
+-- Run only with the app stopped and a verified database backup (the updater
+-- enforces both). Original reads, images, users, tags, and reviews are retained.
+-- These names are upgrade targets, never runtime dependencies.
+DROP FUNCTION IF EXISTS public.validate_vehicle_reid_control_transition() CASCADE;
+DROP FUNCTION IF EXISTS public.validate_vehicle_reid_control_stage2_transition() CASCADE;
+DROP FUNCTION IF EXISTS public.seed_vehicle_reid_v2_live_discovery_state() CASCADE;
+DROP FUNCTION IF EXISTS public.guard_stopped_vehicle_reid_v1_writes() CASCADE;
+DROP FUNCTION IF EXISTS public.guard_vehicle_reid_v2_origin_authority_mutation() CASCADE;
+DROP FUNCTION IF EXISTS public.validate_vehicle_reid_v2_conversion_transition() CASCADE;
+DROP FUNCTION IF EXISTS public.validate_vehicle_reid_v2_materialization_transition() CASCADE;
+DROP FUNCTION IF EXISTS public.validate_vehicle_reid_v2_stage2_materialization_transition() CASCADE;
+DROP FUNCTION IF EXISTS public.prevent_vehicle_reid_v2_conversion_snapshot_mutation() CASCADE;
+DROP FUNCTION IF EXISTS public.capture_asset_set_updated_at() CASCADE;
+DROP FUNCTION IF EXISTS public.camera_visual_profile_set_updated_at() CASCADE;
+DROP FUNCTION IF EXISTS public.assert_vehicle_reid_v2_exact_materialization(bigint);
+DROP FUNCTION IF EXISTS public.assert_vehicle_reid_v2_stage2_materialization(bigint);
+DO $native_control$
 BEGIN
-  IF TG_OP = 'INSERT' THEN
-    IF NEW.status <> 'previewing' OR NEW.phase <> 'freeze'
-      OR NEW.resume_status IS NOT NULL
-      OR NEW.preview_fingerprint IS NOT NULL
-      OR NEW.comparison_fingerprint IS NOT NULL
-      OR NEW.accepted_preview_fingerprint IS NOT NULL
-      OR NEW.last_revalidation_status <> 'not_run'
-      OR NEW.last_revalidation_fingerprint IS NOT NULL
-      OR NEW.last_revalidated_at IS NOT NULL
-      OR NEW.last_revalidation_error_code IS NOT NULL
-      OR NEW.accepted_actor_user_id IS NOT NULL
-      OR NEW.accepted_actor_username IS NOT NULL
-      OR NEW.accepted_actor_display_name IS NOT NULL
-      OR NEW.accepted_at IS NOT NULL
-      OR NEW.paused_at IS NOT NULL
-      OR NEW.cancelled_at IS NOT NULL
-      OR NEW.completed_at IS NOT NULL
-      OR NEW.stale_at IS NOT NULL
-      OR NEW.last_error_code IS NOT NULL
-      OR NEW.last_error_details IS NOT NULL THEN
-      RAISE EXCEPTION 'ReID v2 conversion runs must begin as an untouched preview freeze'
-        USING ERRCODE = '23514',
-              CONSTRAINT = 'vehicle_reid_v2_conversion_initial_state';
-    END IF;
-    RETURN NEW;
+  IF EXISTS (SELECT 1 FROM information_schema.columns
+    WHERE table_schema = 'public' AND table_name = 'vehicle_reid_control'
+      AND column_name = 'previous_mode') THEN
+    DROP TABLE public.vehicle_reid_control;
+    UPDATE public.vehicle_image_asset_live_catalog_control
+      SET enabled = TRUE, enabled_at = CURRENT_TIMESTAMP, disabled_at = NULL;
+    UPDATE public.vehicle_image_crop_live_control
+      SET enabled = TRUE, enabled_at = CURRENT_TIMESTAMP, disabled_at = NULL;
   END IF;
+END
+$native_control$;
+ALTER TABLE IF EXISTS public.vehicle_reid_v2_profiles
+  DROP COLUMN IF EXISTS origin_conversion_run_id CASCADE,
+  DROP COLUMN IF EXISTS origin_projection_key CASCADE;
+ALTER TABLE IF EXISTS public.vehicle_reid_v2_profile_members
+  DROP COLUMN IF EXISTS origin_conversion_run_id CASCADE,
+  DROP COLUMN IF EXISTS origin_projected_member_fingerprint CASCADE;
+ALTER TABLE IF EXISTS public.vehicle_reid_v2_read_assignments
+  DROP COLUMN IF EXISTS origin_conversion_run_id CASCADE,
+  DROP COLUMN IF EXISTS origin_disposition_fingerprint CASCADE;
+ALTER TABLE IF EXISTS public.vehicle_reid_v2_profile_plate_anchors
+  DROP COLUMN IF EXISTS origin_conversion_run_id CASCADE,
+  DROP COLUMN IF EXISTS origin_projection_key CASCADE;
+ALTER TABLE IF EXISTS public.vehicle_reid_v2_live_discovery_state
+  DROP COLUMN IF EXISTS transition_run_id CASCADE;
+DROP TABLE IF EXISTS public.vehicle_reid_v2_conversion_v1_comparisons;
+DROP TABLE IF EXISTS public.vehicle_reid_v2_conversion_conflicts;
+DROP TABLE IF EXISTS public.vehicle_reid_v2_conversion_read_dispositions;
+DROP TABLE IF EXISTS public.vehicle_reid_v2_conversion_projected_members;
+DROP TABLE IF EXISTS public.vehicle_reid_v2_conversion_projected_profiles;
+DROP TABLE IF EXISTS public.vehicle_reid_v2_conversion_jobs;
+DROP TABLE IF EXISTS public.vehicle_reid_v2_conversion_review_evidence;
+DROP TABLE IF EXISTS public.vehicle_reid_v2_conversion_read_evidence;
+DROP TABLE IF EXISTS public.vehicle_reid_v2_conversion_crop_evidence;
+DROP TABLE IF EXISTS public.vehicle_reid_v2_conversion_runs;
+DROP TABLE IF EXISTS public.vehicle_plate_associations;
+DROP TABLE IF EXISTS public.vehicle_cluster_assignments;
+DROP TABLE IF EXISTS public.vehicle_clusters;
+DROP TABLE IF EXISTS public.vehicle_match_feedback;
+DROP TABLE IF EXISTS public.capture_assets;
+DROP TABLE IF EXISTS public.camera_visual_profiles;
 
-  IF NEW.status = OLD.status AND NEW.phase = OLD.phase THEN
-    allowed := TRUE;
-    IF OLD.status = 'ready' THEN
-      mutable_keys := ARRAY[
-        'last_revalidation_status','last_revalidation_fingerprint',
-        'last_revalidated_at','last_revalidation_error_code',
-        'last_error_details','updated_at'
-      ];
-    END IF;
-    IF OLD.accepted_actor_user_id IS NOT NULL
-      AND NEW.accepted_actor_user_id IS NULL THEN
-      mutable_keys := ARRAY_APPEND(mutable_keys, 'accepted_actor_user_id');
-    END IF;
-  ELSIF OLD.status = 'previewing' AND NEW.status = 'previewing'
-    AND OLD.phase = 'freeze' AND NEW.phase = 'project_reads' THEN
-    allowed := TRUE;
-    mutable_keys := ARRAY['phase','updated_at'];
-  ELSIF OLD.status = 'previewing' AND NEW.status = 'paused'
-    AND OLD.phase = 'project_reads' AND NEW.phase = 'project_reads' THEN
-    allowed := TRUE;
-    mutable_keys := ARRAY['status','resume_status','paused_at','updated_at'];
-  ELSIF OLD.status = 'paused' AND OLD.resume_status = 'previewing'
-    AND NEW.status = 'previewing'
-    AND OLD.phase = 'project_reads' AND NEW.phase = 'project_reads' THEN
-    allowed := TRUE;
-    mutable_keys := ARRAY['status','resume_status','paused_at','updated_at'];
-  ELSIF OLD.status = 'previewing' AND NEW.status = 'ready'
-    AND OLD.phase = 'project_reads' AND NEW.phase = 'revalidate' THEN
-    allowed := TRUE;
-    mutable_keys := ARRAY[
-      'status','phase','preview_fingerprint','comparison_fingerprint',
-      'assigned_reads','canonical_image_assignments','shared_asset_assignments',
-      'exact_plate_only_assignments','historical_exact_plate_assignments',
-      'nighttime_exact_plate_assignments','conflicted_components',
-      'conflicted_reads','unassigned_reads','stale_evidence_reads',
-      'v1_assigned_reads','v1_only_reads','v2_only_reads',
-      'both_assigned_reads','neither_assigned_reads','preview_metrics','updated_at'
-    ];
-  ELSIF OLD.status = 'previewing' AND NEW.status = 'failed'
-    AND OLD.phase = 'project_reads' AND NEW.phase = 'project_reads' THEN
-    allowed := TRUE;
-    mutable_keys := ARRAY['status','last_error_code','last_error_details','updated_at'];
-  ELSIF OLD.status = 'failed' AND NEW.status = 'previewing'
-    AND OLD.phase = 'project_reads' AND NEW.phase = 'project_reads' THEN
-    allowed := TRUE;
-    mutable_keys := ARRAY['status','last_error_code','last_error_details','updated_at'];
-  ELSIF OLD.status IN ('previewing','ready','paused') AND NEW.status = 'cancelled'
-    AND NEW.phase = OLD.phase THEN
-    allowed := TRUE;
-    mutable_keys := ARRAY[
-      'status','resume_status','cancelled_at','updated_at'
-    ];
-  ELSIF OLD.status = 'ready' AND NEW.status = 'stale'
-    AND OLD.phase = 'revalidate' AND NEW.phase = 'revalidate' THEN
-    allowed := TRUE;
-    mutable_keys := ARRAY[
-      'status','stale_at','last_error_code','last_error_details',
-      'last_revalidation_status','last_revalidation_fingerprint',
-      'last_revalidated_at','last_revalidation_error_code','updated_at'
-    ];
-  ELSIF OLD.status = 'ready' AND NEW.status = 'accepted'
-    AND OLD.phase = 'revalidate' AND NEW.phase = 'revalidate' THEN
-    allowed := TRUE;
-    mutable_keys := ARRAY[
-      'status','accepted_preview_fingerprint','accepted_actor_user_id',
-      'accepted_actor_username','accepted_actor_display_name','accepted_at','updated_at'
-    ];
-  ELSIF OLD.status = 'accepted' AND NEW.status = 'running'
-    AND OLD.phase = 'revalidate' AND NEW.phase = 'materialize' THEN
-    allowed := TRUE;
-    mutable_keys := ARRAY['status','phase','updated_at'];
-  ELSIF OLD.status = 'running' AND NEW.status = 'paused'
-    AND OLD.phase = 'materialize' AND NEW.phase = 'materialize' THEN
-    allowed := TRUE;
-    mutable_keys := ARRAY['status','resume_status','paused_at','updated_at'];
-  ELSIF OLD.status = 'paused' AND OLD.resume_status = 'running'
-    AND NEW.status = 'running'
-    AND OLD.phase = 'materialize' AND NEW.phase = 'materialize' THEN
-    allowed := TRUE;
-    mutable_keys := ARRAY['status','resume_status','paused_at','updated_at'];
-  ELSIF OLD.status = 'running' AND NEW.status = 'completed'
-    AND OLD.phase = 'materialize' AND NEW.phase = 'complete' THEN
-    allowed := TRUE;
-    mutable_keys := ARRAY['status','phase','completed_at','updated_at'];
-  ELSIF OLD.status IN ('accepted','running') AND NEW.status IN ('stale','failed')
-    AND NEW.phase = OLD.phase THEN
-    allowed := TRUE;
-    mutable_keys := ARRAY[
-      'status','stale_at','last_error_code','last_error_details',
-      'last_revalidation_status','last_revalidation_fingerprint',
-      'last_revalidated_at','last_revalidation_error_code','updated_at'
-    ];
-  ELSIF OLD.status = 'completed' AND NEW.status = 'rolled_back'
-    AND OLD.phase = 'complete' AND NEW.phase = 'complete' THEN
-    allowed := TRUE;
-    mutable_keys := ARRAY['status','updated_at'];
-  END IF;
-
-  IF NOT allowed THEN
-    RAISE EXCEPTION 'Invalid ReID v2 conversion transition from %/% to %/%',
-      OLD.status, OLD.phase, NEW.status, NEW.phase
-      USING ERRCODE = '23514',
-            CONSTRAINT = 'vehicle_reid_v2_conversion_transition';
-  END IF;
-  IF (TO_JSONB(NEW) - mutable_keys) IS DISTINCT FROM
-     (TO_JSONB(OLD) - mutable_keys) THEN
-    RAISE EXCEPTION 'ReID v2 conversion transition attempted to rewrite sealed fields'
-      USING ERRCODE = '23514',
-            CONSTRAINT = 'vehicle_reid_v2_conversion_sealed_fields';
-  END IF;
-  RETURN NEW;
-END;
-$$ LANGUAGE plpgsql;
-
-DROP TRIGGER IF EXISTS vehicle_reid_v2_conversion_validate_transition
-  ON public.vehicle_reid_v2_conversion_runs;
-CREATE TRIGGER vehicle_reid_v2_conversion_validate_transition
-BEFORE INSERT OR UPDATE ON public.vehicle_reid_v2_conversion_runs
-FOR EACH ROW EXECUTE FUNCTION public.validate_vehicle_reid_v2_conversion_transition();
-
--- Frozen snapshot rows intentionally keep source identifiers as scalars rather
--- than live foreign keys. Read deletion or source replacement must not rewrite
--- the exact evidence that an operator previewed.
-CREATE TABLE IF NOT EXISTS public.vehicle_reid_v2_conversion_crop_evidence (
-  run_id BIGINT NOT NULL
-    REFERENCES public.vehicle_reid_v2_conversion_runs(id) ON DELETE RESTRICT,
-  derivative_id BIGINT NOT NULL CHECK (derivative_id > 0),
-  asset_id BIGINT NOT NULL CHECK (asset_id > 0),
-  derivative_kind VARCHAR(32) NOT NULL CHECK (
-    NULLIF(BTRIM(derivative_kind), '') IS NOT NULL
-  ),
-  crop_algorithm_version VARCHAR(100) NOT NULL CHECK (
-    NULLIF(BTRIM(crop_algorithm_version), '') IS NOT NULL
-  ),
-  asset_source_sha256 CHAR(64) NOT NULL CHECK (
-    asset_source_sha256 ~ '^[0-9a-f]{64}$'
-  ),
-  crop_content_sha256 CHAR(64) NOT NULL CHECK (
-    crop_content_sha256 ~ '^[0-9a-f]{64}$'
-  ),
-  crop_storage_path TEXT NOT NULL CHECK (
-    NULLIF(BTRIM(crop_storage_path), '') IS NOT NULL
-  ),
-  embedding_id BIGINT NOT NULL CHECK (embedding_id > 0),
-  embedding_model VARCHAR(100) NOT NULL CHECK (
-    NULLIF(BTRIM(embedding_model), '') IS NOT NULL
-  ),
-  embedding_algorithm_version VARCHAR(100) NOT NULL CHECK (
-    NULLIF(BTRIM(embedding_algorithm_version), '') IS NOT NULL
-  ),
-  embedding_source_sha256 CHAR(64) NOT NULL CHECK (
-    embedding_source_sha256 ~ '^[0-9a-f]{64}$'
-  ),
-  embedding_sha256 CHAR(64) NOT NULL CHECK (
-    embedding_sha256 ~ '^[0-9a-f]{64}$'
-  ),
-  embedding_dimensions SMALLINT NOT NULL CHECK (embedding_dimensions = 512),
-  representative_read_id INTEGER NOT NULL CHECK (representative_read_id > 0),
-  representative_source_kind VARCHAR(40) NOT NULL CHECK (
-    NULLIF(BTRIM(representative_source_kind), '') IS NOT NULL
-  ),
-  representative_source_path TEXT NOT NULL CHECK (
-    NULLIF(BTRIM(representative_source_path), '') IS NOT NULL
-  ),
-  representative_source_updated_at TIMESTAMPTZ,
-  representative_link_updated_at TIMESTAMPTZ NOT NULL,
-  effective_plates JSONB NOT NULL DEFAULT '[]'::jsonb CHECK (
-    JSONB_TYPEOF(effective_plates) = 'array'
-  ),
-  overview_contexts JSONB NOT NULL DEFAULT '[]'::jsonb CHECK (
-    JSONB_TYPEOF(overview_contexts) = 'array'
-  ),
-  evidence_fingerprint CHAR(64) NOT NULL CHECK (
-    evidence_fingerprint ~ '^[0-9a-f]{64}$'
-  ),
-  created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  PRIMARY KEY (run_id, derivative_id),
-  UNIQUE (run_id, asset_id),
-  UNIQUE (run_id, evidence_fingerprint)
+-- ReID is native and exclusive: there is no alternate identity provider.
+CREATE TABLE IF NOT EXISTS public.vehicle_reid_control (
+  singleton BOOLEAN PRIMARY KEY DEFAULT TRUE CHECK (singleton = TRUE),
+  mode VARCHAR(16) NOT NULL DEFAULT 'v2_primary' CHECK (mode = 'v2_primary'),
+  processing_enabled BOOLEAN NOT NULL DEFAULT TRUE,
+  revision INTEGER NOT NULL DEFAULT 1 CHECK (revision > 0)
 );
+INSERT INTO public.vehicle_reid_control(singleton) VALUES (TRUE)
+ON CONFLICT (singleton) DO NOTHING;
 
-CREATE INDEX IF NOT EXISTS idx_reid_v2_conversion_crop_asset
-  ON public.vehicle_reid_v2_conversion_crop_evidence (run_id, asset_id);
-CREATE INDEX IF NOT EXISTS idx_reid_v2_conversion_crop_embedding
-  ON public.vehicle_reid_v2_conversion_crop_evidence (run_id, embedding_id);
-
-CREATE TABLE IF NOT EXISTS public.vehicle_reid_v2_conversion_read_evidence (
-  run_id BIGINT NOT NULL
-    REFERENCES public.vehicle_reid_v2_conversion_runs(id) ON DELETE RESTRICT,
-  read_id INTEGER NOT NULL CHECK (read_id > 0),
-  read_event_identity VARCHAR(80),
-  read_timestamp TIMESTAMPTZ NOT NULL,
-  read_created_at TIMESTAMPTZ NOT NULL,
-  camera_name VARCHAR(120),
-  observed_plate VARCHAR(10) NOT NULL,
-  effective_plate VARCHAR(10) NOT NULL,
-  normalized_effective_plate VARCHAR(32) CHECK (
-    normalized_effective_plate IS NULL
-    OR normalized_effective_plate ~ '^[A-Z0-9]+$'
-  ),
-  plate_review_status VARCHAR(24) NOT NULL CHECK (
-    plate_review_status IN (
-      'unreviewed','confirmed','corrected','rejected','alias_resolved'
-    )
-  ),
-  plate_review_revision INTEGER NOT NULL CHECK (plate_review_revision >= 0),
-  last_plate_review_id BIGINT CHECK (
-    last_plate_review_id IS NULL OR last_plate_review_id > 0
-  ),
-  last_plate_review_action VARCHAR(24),
-  last_plate_review_created_at TIMESTAMPTZ,
-  applied_alias_id BIGINT CHECK (applied_alias_id IS NULL OR applied_alias_id > 0),
-  plate_evidence_fingerprint CHAR(64) NOT NULL CHECK (
-    plate_evidence_fingerprint ~ '^[0-9a-f]{64}$'
-  ),
-  vehicle_image_status VARCHAR(20),
-  vehicle_image_queue_kind VARCHAR(20),
-  vehicle_image_error_code VARCHAR(80),
-  vehicle_image_path TEXT,
-  vehicle_image_source_kind VARCHAR(40),
-  vehicle_image_updated_at TIMESTAMPTZ,
-  daylight_status VARCHAR(12) NOT NULL DEFAULT 'unknown' CHECK (
-    daylight_status IN ('daytime','nighttime','unknown')
-  ),
-  canonical_link_state VARCHAR(16) NOT NULL CHECK (
-    canonical_link_state IN (
-      'current','incomplete','display_only','stale','absent'
-    )
-  ),
-  asset_id BIGINT CHECK (asset_id IS NULL OR asset_id > 0),
-  derivative_id BIGINT CHECK (derivative_id IS NULL OR derivative_id > 0),
-  embedding_id BIGINT CHECK (embedding_id IS NULL OR embedding_id > 0),
-  source_read_id INTEGER CHECK (source_read_id IS NULL OR source_read_id > 0),
-  source_kind VARCHAR(40),
-  relationship VARCHAR(24),
-  identity_eligible BOOLEAN,
-  overview_context VARCHAR(12) CHECK (
-    overview_context IS NULL OR overview_context IN ('street','entry')
-  ),
-  source_path_snapshot TEXT,
-  source_updated_at TIMESTAMPTZ,
-  link_updated_at TIMESTAMPTZ,
-  crop_evidence_fingerprint CHAR(64) CHECK (
-    crop_evidence_fingerprint IS NULL
-    OR crop_evidence_fingerprint ~ '^[0-9a-f]{64}$'
-  ),
-  evidence_fingerprint CHAR(64) NOT NULL CHECK (
-    evidence_fingerprint ~ '^[0-9a-f]{64}$'
-  ),
-  created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  PRIMARY KEY (run_id, read_id),
-  UNIQUE (run_id, evidence_fingerprint),
-  CHECK (
-    (canonical_link_state = 'current'
-      AND asset_id IS NOT NULL
-      AND derivative_id IS NOT NULL
-      AND embedding_id IS NOT NULL
-      AND identity_eligible = TRUE
-      AND NULLIF(BTRIM(source_kind), '') IS NOT NULL
-      AND NULLIF(BTRIM(relationship), '') IS NOT NULL
-      AND relationship <> 'display_fallback'
-      AND NULLIF(BTRIM(source_path_snapshot), '') IS NOT NULL
-      AND link_updated_at IS NOT NULL)
-    OR canonical_link_state <> 'current'
-  ),
-  CHECK (
-    (canonical_link_state = 'incomplete'
-      AND asset_id IS NOT NULL
-      AND identity_eligible = TRUE
-      AND NULLIF(BTRIM(source_kind), '') IS NOT NULL
-      AND NULLIF(BTRIM(relationship), '') IS NOT NULL
-      AND relationship <> 'display_fallback'
-      AND NULLIF(BTRIM(source_path_snapshot), '') IS NOT NULL
-      AND link_updated_at IS NOT NULL
-      AND (derivative_id IS NULL OR embedding_id IS NULL)
-      AND (derivative_id IS NOT NULL OR embedding_id IS NULL))
-    OR canonical_link_state <> 'incomplete'
-  ),
-  CHECK (
-    (canonical_link_state = 'display_only'
-      AND asset_id IS NOT NULL
-      AND identity_eligible = FALSE
-      AND NULLIF(BTRIM(source_kind), '') IS NOT NULL
-      AND relationship = 'display_fallback'
-      AND NULLIF(BTRIM(source_path_snapshot), '') IS NOT NULL
-      AND link_updated_at IS NOT NULL)
-    OR canonical_link_state <> 'display_only'
-  ),
-  CHECK (
-    canonical_link_state <> 'absent'
-    OR (
-      asset_id IS NULL AND derivative_id IS NULL AND embedding_id IS NULL
-      AND source_read_id IS NULL AND source_kind IS NULL
-      AND identity_eligible IS NULL AND relationship IS NULL
-      AND overview_context IS NULL AND source_path_snapshot IS NULL
-      AND source_updated_at IS NULL AND link_updated_at IS NULL
-    )
-  )
-);
-
-CREATE INDEX IF NOT EXISTS idx_reid_v2_conversion_read_plate
-  ON public.vehicle_reid_v2_conversion_read_evidence (
-    run_id, normalized_effective_plate, read_id
-  ) WHERE normalized_effective_plate IS NOT NULL;
-CREATE INDEX IF NOT EXISTS idx_reid_v2_conversion_read_crop
-  ON public.vehicle_reid_v2_conversion_read_evidence (run_id, derivative_id, read_id)
-  WHERE derivative_id IS NOT NULL;
-CREATE INDEX IF NOT EXISTS idx_reid_v2_conversion_read_state
-  ON public.vehicle_reid_v2_conversion_read_evidence (
-    run_id, canonical_link_state, daylight_status, read_id
-  );
-
-CREATE TABLE IF NOT EXISTS public.vehicle_reid_v2_conversion_review_evidence (
-  run_id BIGINT NOT NULL
-    REFERENCES public.vehicle_reid_v2_conversion_runs(id) ON DELETE RESTRICT,
-  review_id BIGINT NOT NULL CHECK (review_id > 0),
-  revision INTEGER NOT NULL CHECK (revision > 0),
-  derivative_id_low BIGINT NOT NULL CHECK (derivative_id_low > 0),
-  derivative_id_high BIGINT NOT NULL CHECK (derivative_id_high > 0),
-  source_sha256_low CHAR(64) NOT NULL CHECK (
-    source_sha256_low ~ '^[0-9a-f]{64}$'
-  ),
-  source_sha256_high CHAR(64) NOT NULL CHECK (
-    source_sha256_high ~ '^[0-9a-f]{64}$'
-  ),
-  embedding_id_low BIGINT NOT NULL CHECK (embedding_id_low > 0),
-  embedding_id_high BIGINT NOT NULL CHECK (embedding_id_high > 0),
-  embedding_model VARCHAR(100) NOT NULL CHECK (
-    NULLIF(BTRIM(embedding_model), '') IS NOT NULL
-  ),
-  embedding_algorithm_version VARCHAR(100) NOT NULL CHECK (
-    NULLIF(BTRIM(embedding_algorithm_version), '') IS NOT NULL
-  ),
-  similarity_score DOUBLE PRECISION NOT NULL CHECK (
-    similarity_score BETWEEN -1 AND 1
-  ),
-  label VARCHAR(24) NOT NULL CHECK (
-    label IN ('same_vehicle','different_vehicle','unsure')
-  ),
-  evidence_plate_low TEXT,
-  evidence_plate_high TEXT,
-  campaign_id BIGINT CHECK (campaign_id IS NULL OR campaign_id > 0),
-  review_updated_at TIMESTAMPTZ NOT NULL,
-  evidence_fingerprint CHAR(64) NOT NULL CHECK (
-    evidence_fingerprint ~ '^[0-9a-f]{64}$'
-  ),
-  created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  PRIMARY KEY (run_id, review_id),
-  UNIQUE (
-    run_id, derivative_id_low, derivative_id_high,
-    embedding_model, embedding_algorithm_version
-  ),
-  UNIQUE (run_id, evidence_fingerprint),
-  CHECK (derivative_id_low < derivative_id_high),
-  CHECK (embedding_id_low <> embedding_id_high)
-);
-
-CREATE INDEX IF NOT EXISTS idx_reid_v2_conversion_review_pair
-  ON public.vehicle_reid_v2_conversion_review_evidence (
-    run_id, derivative_id_low, derivative_id_high, label
-  );
-
-CREATE TABLE IF NOT EXISTS public.vehicle_reid_v2_conversion_jobs (
-  id BIGSERIAL PRIMARY KEY,
-  run_id BIGINT NOT NULL
-    REFERENCES public.vehicle_reid_v2_conversion_runs(id) ON DELETE RESTRICT,
-  work_key VARCHAR(100) NOT NULL CHECK (NULLIF(BTRIM(work_key), '') IS NOT NULL),
-  stage VARCHAR(24) NOT NULL CHECK (
-    stage IN (
-      'freeze_crops','freeze_reads','freeze_reviews','project_profiles',
-      'project_reads','revalidate','materialize'
-    )
-  ),
-  scope_start_id BIGINT CHECK (scope_start_id IS NULL OR scope_start_id >= 0),
-  scope_end_id BIGINT CHECK (scope_end_id IS NULL OR scope_end_id >= 0),
-  status VARCHAR(20) NOT NULL DEFAULT 'pending' CHECK (
-    status IN ('pending','processing','ready','stale','failed','cancelled')
-  ),
-  attempt_count SMALLINT NOT NULL DEFAULT 0 CHECK (attempt_count BETWEEN 0 AND 3),
-  operator_retry_count SMALLINT NOT NULL DEFAULT 0 CHECK (
-    operator_retry_count BETWEEN 0 AND 1
-  ),
-  retryable BOOLEAN NOT NULL DEFAULT TRUE,
-  claim_token UUID,
-  heartbeat_at TIMESTAMPTZ,
-  processing_deadline_at TIMESTAMPTZ,
-  next_attempt_at TIMESTAMPTZ,
-  processed_count INTEGER NOT NULL DEFAULT 0 CHECK (processed_count >= 0),
-  error_code VARCHAR(80),
-  error_details JSONB CHECK (
-    error_details IS NULL OR JSONB_TYPEOF(error_details) = 'object'
-  ),
-  completed_at TIMESTAMPTZ,
-  created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  UNIQUE (run_id, work_key),
-  CHECK (
-    (scope_start_id IS NULL AND scope_end_id IS NULL)
-    OR (
-      scope_start_id IS NOT NULL AND scope_end_id IS NOT NULL
-      AND scope_start_id <= scope_end_id
-    )
-  ),
-  CHECK (
-    (status = 'processing'
-      AND claim_token IS NOT NULL AND processing_deadline_at IS NOT NULL)
-    OR (status <> 'processing'
-      AND claim_token IS NULL AND processing_deadline_at IS NULL)
-  ),
-  CHECK (
-    (status IN ('stale','failed') AND error_code IS NOT NULL)
-    OR status NOT IN ('stale','failed')
-  ),
-  CHECK (
-    (status = 'ready' AND completed_at IS NOT NULL)
-    OR status <> 'ready'
-  )
-);
-
-CREATE INDEX IF NOT EXISTS idx_reid_v2_conversion_job_claim
-  ON public.vehicle_reid_v2_conversion_jobs (
-    run_id, status, next_attempt_at, stage, scope_start_id, id
-  ) WHERE status IN ('pending','processing','failed');
-CREATE INDEX IF NOT EXISTS idx_reid_v2_conversion_job_history
-  ON public.vehicle_reid_v2_conversion_jobs (run_id, stage, status, id);
-
-CREATE TABLE IF NOT EXISTS public.vehicle_reid_v2_conversion_projected_profiles (
-  id BIGSERIAL PRIMARY KEY,
-  run_id BIGINT NOT NULL
-    REFERENCES public.vehicle_reid_v2_conversion_runs(id) ON DELETE RESTRICT,
-  projection_key CHAR(64) NOT NULL CHECK (projection_key ~ '^[0-9a-f]{64}$'),
-  profile_kind VARCHAR(24) NOT NULL CHECK (
-    profile_kind IN ('multi_member','provisional_singleton')
-  ),
-  evidence_basis VARCHAR(32) NOT NULL CHECK (
-    evidence_basis IN (
-      'exact_effective_plate','human_same','mixed','provisional_singleton'
-    )
-  ),
-  representative_derivative_id BIGINT NOT NULL CHECK (
-    representative_derivative_id > 0
-  ),
-  representative_embedding_id BIGINT NOT NULL CHECK (
-    representative_embedding_id > 0
-  ),
-  representative_source_sha256 CHAR(64) NOT NULL CHECK (
-    representative_source_sha256 ~ '^[0-9a-f]{64}$'
-  ),
-  member_count INTEGER NOT NULL CHECK (member_count > 0),
-  read_count INTEGER NOT NULL DEFAULT 0 CHECK (read_count >= 0),
-  anchor_plates JSONB NOT NULL DEFAULT '[]'::jsonb CHECK (
-    JSONB_TYPEOF(anchor_plates) = 'array'
-  ),
-  camera_names JSONB NOT NULL DEFAULT '[]'::jsonb CHECK (
-    JSONB_TYPEOF(camera_names) = 'array'
-  ),
-  overview_contexts JSONB NOT NULL DEFAULT '[]'::jsonb CHECK (
-    JSONB_TYPEOF(overview_contexts) = 'array'
-  ),
-  projection_fingerprint CHAR(64) NOT NULL CHECK (
-    projection_fingerprint ~ '^[0-9a-f]{64}$'
-  ),
-  created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  UNIQUE (run_id, projection_key),
-  UNIQUE (run_id, id),
-  UNIQUE (run_id, projection_fingerprint),
-  CHECK (
-    (profile_kind = 'multi_member'
-      AND member_count >= 2
-      AND evidence_basis <> 'provisional_singleton')
-    OR (profile_kind = 'provisional_singleton'
-      AND member_count = 1
-      AND evidence_basis = 'provisional_singleton')
-  )
-);
-
-CREATE INDEX IF NOT EXISTS idx_reid_v2_projected_profile_run
-  ON public.vehicle_reid_v2_conversion_projected_profiles (
-    run_id, profile_kind, member_count DESC, id
-  );
-
-CREATE TABLE IF NOT EXISTS public.vehicle_reid_v2_conversion_projected_members (
-  run_id BIGINT NOT NULL,
-  projected_profile_id BIGINT NOT NULL,
-  derivative_id BIGINT NOT NULL CHECK (derivative_id > 0),
-  asset_id BIGINT NOT NULL CHECK (asset_id > 0),
-  embedding_id BIGINT NOT NULL CHECK (embedding_id > 0),
-  crop_content_sha256 CHAR(64) NOT NULL CHECK (
-    crop_content_sha256 ~ '^[0-9a-f]{64}$'
-  ),
-  embedding_sha256 CHAR(64) NOT NULL CHECK (
-    embedding_sha256 ~ '^[0-9a-f]{64}$'
-  ),
-  evidence_basis VARCHAR(32) NOT NULL CHECK (
-    evidence_basis IN (
-      'exact_effective_plate','human_same','mixed','provisional_singleton'
-    )
-  ),
-  effective_plates JSONB NOT NULL DEFAULT '[]'::jsonb CHECK (
-    JSONB_TYPEOF(effective_plates) = 'array'
-  ),
-  member_fingerprint CHAR(64) NOT NULL CHECK (
-    member_fingerprint ~ '^[0-9a-f]{64}$'
-  ),
-  created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  PRIMARY KEY (projected_profile_id, derivative_id),
-  UNIQUE (run_id, derivative_id),
-  UNIQUE (run_id, member_fingerprint),
-  FOREIGN KEY (run_id, projected_profile_id)
-    REFERENCES public.vehicle_reid_v2_conversion_projected_profiles(run_id, id)
-    ON DELETE RESTRICT
-);
-
-CREATE INDEX IF NOT EXISTS idx_reid_v2_projected_member_run
-  ON public.vehicle_reid_v2_conversion_projected_members (
-    run_id, projected_profile_id, derivative_id
-  );
-
-CREATE TABLE IF NOT EXISTS public.vehicle_reid_v2_conversion_read_dispositions (
-  run_id BIGINT NOT NULL
-    REFERENCES public.vehicle_reid_v2_conversion_runs(id) ON DELETE RESTRICT,
-  read_id INTEGER NOT NULL CHECK (read_id > 0),
-  disposition VARCHAR(20) NOT NULL CHECK (
-    disposition IN ('assigned','unassigned','conflict','stale','unavailable')
-  ),
-  projected_profile_id BIGINT,
-  assignment_basis VARCHAR(32) CHECK (
-    assignment_basis IS NULL OR assignment_basis IN (
-      'canonical_image','shared_asset','exact_effective_plate','human_same'
-    )
-  ),
-  profile_evidence_basis VARCHAR(32) CHECK (
-    profile_evidence_basis IS NULL OR profile_evidence_basis IN (
-      'exact_effective_plate','human_same','mixed','provisional_singleton'
-    )
-  ),
-  reason_code VARCHAR(80) NOT NULL CHECK (NULLIF(BTRIM(reason_code), '') IS NOT NULL),
-  asset_id BIGINT CHECK (asset_id IS NULL OR asset_id > 0),
-  derivative_id BIGINT CHECK (derivative_id IS NULL OR derivative_id > 0),
-  embedding_id BIGINT CHECK (embedding_id IS NULL OR embedding_id > 0),
-  normalized_effective_plate VARCHAR(32) CHECK (
-    normalized_effective_plate IS NULL
-    OR normalized_effective_plate ~ '^[A-Z0-9]+$'
-  ),
-  historical BOOLEAN NOT NULL DEFAULT FALSE,
-  nighttime BOOLEAN NOT NULL DEFAULT FALSE,
-  disposition_fingerprint CHAR(64) NOT NULL CHECK (
-    disposition_fingerprint ~ '^[0-9a-f]{64}$'
-  ),
-  created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  PRIMARY KEY (run_id, read_id),
-  UNIQUE (run_id, disposition_fingerprint),
-  FOREIGN KEY (run_id, projected_profile_id)
-    REFERENCES public.vehicle_reid_v2_conversion_projected_profiles(run_id, id)
-    ON DELETE RESTRICT,
-  FOREIGN KEY (run_id, read_id)
-    REFERENCES public.vehicle_reid_v2_conversion_read_evidence(run_id, read_id)
-    ON DELETE RESTRICT,
-  CHECK (
-    (disposition = 'assigned'
-      AND projected_profile_id IS NOT NULL
-      AND assignment_basis IS NOT NULL
-      AND profile_evidence_basis IS NOT NULL)
-    OR (disposition <> 'assigned'
-      AND projected_profile_id IS NULL
-      AND assignment_basis IS NULL
-      AND profile_evidence_basis IS NULL)
-  ),
-  CHECK (
-    assignment_basis NOT IN ('canonical_image','shared_asset','human_same')
-    OR (
-      asset_id IS NOT NULL AND derivative_id IS NOT NULL
-      AND embedding_id IS NOT NULL
-    )
-  )
-);
-
-CREATE INDEX IF NOT EXISTS idx_reid_v2_disposition_status
-  ON public.vehicle_reid_v2_conversion_read_dispositions (
-    run_id, disposition, reason_code, read_id
-  );
-CREATE INDEX IF NOT EXISTS idx_reid_v2_disposition_profile
-  ON public.vehicle_reid_v2_conversion_read_dispositions (
-    run_id, projected_profile_id, read_id
-  ) WHERE projected_profile_id IS NOT NULL;
-
-CREATE TABLE IF NOT EXISTS public.vehicle_reid_v2_conversion_conflicts (
-  id BIGSERIAL PRIMARY KEY,
-  run_id BIGINT NOT NULL
-    REFERENCES public.vehicle_reid_v2_conversion_runs(id) ON DELETE RESTRICT,
-  conflict_key CHAR(64) NOT NULL CHECK (conflict_key ~ '^[0-9a-f]{64}$'),
-  scope VARCHAR(20) NOT NULL CHECK (
-    scope IN ('component','crop','read','review','source_link')
-  ),
-  reason VARCHAR(48) NOT NULL CHECK (
-    reason IN (
-      'human_different','human_unsure','dissimilar_effective_plates',
-      'ambiguous_effective_plates','stale_source_link','source_replaced',
-      'missing_evidence','mixed'
-    )
-  ),
-  derivative_ids JSONB NOT NULL DEFAULT '[]'::jsonb CHECK (
-    JSONB_TYPEOF(derivative_ids) = 'array'
-  ),
-  read_ids JSONB NOT NULL DEFAULT '[]'::jsonb CHECK (
-    JSONB_TYPEOF(read_ids) = 'array'
-  ),
-  review_ids JSONB NOT NULL DEFAULT '[]'::jsonb CHECK (
-    JSONB_TYPEOF(review_ids) = 'array'
-  ),
-  effective_plates JSONB NOT NULL DEFAULT '[]'::jsonb CHECK (
-    JSONB_TYPEOF(effective_plates) = 'array'
-  ),
-  details JSONB NOT NULL DEFAULT '{}'::jsonb CHECK (
-    JSONB_TYPEOF(details) = 'object'
-  ),
-  created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  UNIQUE (run_id, conflict_key)
-);
-
-CREATE INDEX IF NOT EXISTS idx_reid_v2_conversion_conflict_run
-  ON public.vehicle_reid_v2_conversion_conflicts (run_id, reason, scope, id);
-
--- V1 membership is frozen only for observation and agreement metrics. It is
--- structurally separate from every v2 evidence and projection table so it
--- cannot become a positive identity edge accidentally.
-CREATE TABLE IF NOT EXISTS public.vehicle_reid_v2_conversion_v1_comparisons (
-  run_id BIGINT NOT NULL
-    REFERENCES public.vehicle_reid_v2_conversion_runs(id) ON DELETE RESTRICT,
-  read_id INTEGER NOT NULL CHECK (read_id > 0),
-  v1_cluster_id BIGINT CHECK (v1_cluster_id IS NULL OR v1_cluster_id > 0),
-  v1_assignment_status VARCHAR(20),
-  v1_assignment_revision INTEGER CHECK (
-    v1_assignment_revision IS NULL OR v1_assignment_revision > 0
-  ),
-  v1_embedding_model VARCHAR(80),
-  v1_algorithm_version VARCHAR(80),
-  comparison_fingerprint CHAR(64) NOT NULL CHECK (
-    comparison_fingerprint ~ '^[0-9a-f]{64}$'
-  ),
-  observation_only BOOLEAN NOT NULL DEFAULT TRUE CHECK (observation_only = TRUE),
-  created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  PRIMARY KEY (run_id, read_id),
-  UNIQUE (run_id, comparison_fingerprint),
-  FOREIGN KEY (run_id, read_id)
-    REFERENCES public.vehicle_reid_v2_conversion_read_evidence(run_id, read_id)
-    ON DELETE RESTRICT
-);
-
-CREATE INDEX IF NOT EXISTS idx_reid_v2_v1_comparison_cluster
-  ON public.vehicle_reid_v2_conversion_v1_comparisons (
-    run_id, v1_cluster_id, read_id
-  ) WHERE v1_cluster_id IS NOT NULL;
-
--- Stable authoritative v2 IDs are independent BIGSERIAL values. A projected
--- profile key is retained as provenance only and is never exposed as, or
--- copied into, the authoritative profile id.
 CREATE TABLE IF NOT EXISTS public.vehicle_reid_v2_profiles (
   id BIGSERIAL PRIMARY KEY,
   status VARCHAR(16) NOT NULL CHECK (
@@ -7280,11 +5983,6 @@ CREATE TABLE IF NOT EXISTS public.vehicle_reid_v2_profiles (
   representative_evidence_fingerprint CHAR(64) NOT NULL CHECK (
     representative_evidence_fingerprint ~ '^[0-9a-f]{64}$'
   ),
-  origin_conversion_run_id BIGINT
-    REFERENCES public.vehicle_reid_v2_conversion_runs(id) ON DELETE RESTRICT,
-  origin_projection_key CHAR(64) CHECK (
-    origin_projection_key IS NULL OR origin_projection_key ~ '^[0-9a-f]{64}$'
-  ),
   merged_into_profile_id BIGINT
     REFERENCES public.vehicle_reid_v2_profiles(id) ON DELETE RESTRICT,
   created_by_user_id BIGINT REFERENCES public.users(id) ON DELETE SET NULL,
@@ -7298,15 +5996,6 @@ CREATE TABLE IF NOT EXISTS public.vehicle_reid_v2_profiles (
   retired_at TIMESTAMPTZ,
   created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  UNIQUE (origin_conversion_run_id, origin_projection_key),
-  FOREIGN KEY (origin_conversion_run_id, origin_projection_key)
-    REFERENCES public.vehicle_reid_v2_conversion_projected_profiles(
-      run_id, projection_key
-    ) ON DELETE RESTRICT,
-  CHECK (
-    (origin_conversion_run_id IS NULL AND origin_projection_key IS NULL)
-    OR (origin_conversion_run_id IS NOT NULL AND origin_projection_key IS NOT NULL)
-  ),
   CHECK (
     (status = 'merged'
       AND merged_into_profile_id IS NOT NULL
@@ -7383,28 +6072,10 @@ CREATE TABLE IF NOT EXISTS public.vehicle_reid_v2_profile_members (
   evidence_fingerprint CHAR(64) NOT NULL CHECK (
     evidence_fingerprint ~ '^[0-9a-f]{64}$'
   ),
-  origin_conversion_run_id BIGINT
-    REFERENCES public.vehicle_reid_v2_conversion_runs(id) ON DELETE RESTRICT,
-  origin_projected_member_fingerprint CHAR(64) CHECK (
-    origin_projected_member_fingerprint IS NULL
-    OR origin_projected_member_fingerprint ~ '^[0-9a-f]{64}$'
-  ),
   ended_at TIMESTAMPTZ,
   created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
   UNIQUE (profile_id, id),
-  UNIQUE (origin_conversion_run_id, origin_projected_member_fingerprint),
-  FOREIGN KEY (
-    origin_conversion_run_id, origin_projected_member_fingerprint
-  ) REFERENCES public.vehicle_reid_v2_conversion_projected_members(
-    run_id, member_fingerprint
-  ) ON DELETE RESTRICT,
-  CHECK (
-    (origin_conversion_run_id IS NULL
-      AND origin_projected_member_fingerprint IS NULL)
-    OR (origin_conversion_run_id IS NOT NULL
-      AND origin_projected_member_fingerprint IS NOT NULL)
-  ),
   CHECK (
     (status = 'current' AND ended_at IS NULL)
     OR (status <> 'current' AND ended_at IS NOT NULL)
@@ -7467,28 +6138,12 @@ CREATE TABLE IF NOT EXISTS public.vehicle_reid_v2_read_assignments (
   evidence_fingerprint CHAR(64) NOT NULL CHECK (
     evidence_fingerprint ~ '^[0-9a-f]{64}$'
   ),
-  origin_conversion_run_id BIGINT
-    REFERENCES public.vehicle_reid_v2_conversion_runs(id) ON DELETE RESTRICT,
-  origin_disposition_fingerprint CHAR(64) CHECK (
-    origin_disposition_fingerprint IS NULL
-    OR origin_disposition_fingerprint ~ '^[0-9a-f]{64}$'
-  ),
   ended_at TIMESTAMPTZ,
   created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  UNIQUE (origin_conversion_run_id, origin_disposition_fingerprint),
-  FOREIGN KEY (origin_conversion_run_id, origin_disposition_fingerprint)
-    REFERENCES public.vehicle_reid_v2_conversion_read_dispositions(
-      run_id, disposition_fingerprint
-    ) ON DELETE RESTRICT,
   FOREIGN KEY (profile_id, profile_member_id)
     REFERENCES public.vehicle_reid_v2_profile_members(profile_id, id)
     ON DELETE RESTRICT,
-  CHECK (
-    (origin_conversion_run_id IS NULL AND origin_disposition_fingerprint IS NULL)
-    OR (origin_conversion_run_id IS NOT NULL
-      AND origin_disposition_fingerprint IS NOT NULL)
-  ),
   CHECK (plate_review_status <> 'rejected'),
   CHECK (
     (status = 'active' AND ended_at IS NULL)
@@ -7512,7 +6167,7 @@ CREATE TABLE IF NOT EXISTS public.vehicle_reid_v2_read_assignments (
   )
 );
 
--- Do not recreate the original Stage 1 one-active-row index here.  A later
+
 -- migration intentionally preserves sealed active history after its evidence
 -- becomes stale and enforces one exact-current assignment through the
 -- current-contract view plus a per-read transaction lock.  Recreating the
@@ -7549,20 +6204,6 @@ BEGIN
             CONSTRAINT = 'vehicle_reid_v2_profile_representative_contract';
   END IF;
 
-  IF NEW.origin_conversion_run_id IS NOT NULL AND NOT EXISTS (
-    SELECT 1
-    FROM public.vehicle_reid_v2_conversion_projected_profiles projected
-    WHERE projected.run_id = NEW.origin_conversion_run_id
-      AND projected.projection_key = NEW.origin_projection_key
-      AND projected.representative_derivative_id = NEW.representative_derivative_id
-      AND projected.representative_embedding_id = NEW.representative_embedding_id
-      AND projected.representative_source_sha256 = NEW.representative_source_sha256
-      AND projected.evidence_basis = NEW.provenance_basis
-  ) THEN
-    RAISE EXCEPTION 'ReID v2 profile does not exactly reproduce its preview provenance'
-      USING ERRCODE = '23514',
-            CONSTRAINT = 'vehicle_reid_v2_profile_preview_contract';
-  END IF;
   RETURN NEW;
 END;
 $$ LANGUAGE plpgsql;
@@ -7602,29 +6243,6 @@ BEGIN
             CONSTRAINT = 'vehicle_reid_v2_member_canonical_contract';
   END IF;
 
-  IF NEW.origin_conversion_run_id IS NOT NULL AND NOT EXISTS (
-    SELECT 1
-    FROM public.vehicle_reid_v2_conversion_projected_members projected_members
-    JOIN public.vehicle_reid_v2_conversion_projected_profiles projected_profiles
-      ON projected_profiles.run_id = projected_members.run_id
-     AND projected_profiles.id = projected_members.projected_profile_id
-    JOIN public.vehicle_reid_v2_profiles profiles
-      ON profiles.id = NEW.profile_id
-    WHERE projected_members.run_id = NEW.origin_conversion_run_id
-      AND projected_members.member_fingerprint = NEW.origin_projected_member_fingerprint
-      AND projected_members.derivative_id = NEW.derivative_id
-      AND projected_members.asset_id = NEW.asset_id
-      AND projected_members.embedding_id = NEW.embedding_id
-      AND projected_members.crop_content_sha256 = NEW.crop_content_sha256
-      AND projected_members.embedding_sha256 = NEW.embedding_sha256
-      AND projected_members.evidence_basis = NEW.membership_basis
-      AND profiles.origin_conversion_run_id = projected_profiles.run_id
-      AND profiles.origin_projection_key = projected_profiles.projection_key
-  ) THEN
-    RAISE EXCEPTION 'ReID v2 member does not exactly reproduce its preview provenance'
-      USING ERRCODE = '23514',
-            CONSTRAINT = 'vehicle_reid_v2_member_preview_contract';
-  END IF;
   RETURN NEW;
 END;
 $$ LANGUAGE plpgsql;
@@ -7634,696 +6252,6 @@ DROP TRIGGER IF EXISTS vehicle_reid_v2_members_validate_contract
 CREATE TRIGGER vehicle_reid_v2_members_validate_contract
 BEFORE INSERT OR UPDATE ON public.vehicle_reid_v2_profile_members
 FOR EACH ROW EXECUTE FUNCTION public.validate_vehicle_reid_v2_member_contract();
-
-CREATE OR REPLACE FUNCTION public.validate_vehicle_reid_v2_assignment_contract()
-RETURNS TRIGGER AS $$
-BEGIN
-  IF NEW.status = 'active' AND NOT EXISTS (
-    SELECT 1 FROM public.vehicle_reid_v2_profiles profiles
-    WHERE profiles.id = NEW.profile_id
-      AND profiles.revision = NEW.profile_revision
-      AND profiles.provenance_basis = NEW.profile_membership_basis
-  ) THEN
-    RAISE EXCEPTION 'ReID v2 assignment does not bind the current profile revision and basis'
-      USING ERRCODE = '23514',
-            CONSTRAINT = 'vehicle_reid_v2_assignment_profile_contract';
-  END IF;
-
-  IF NEW.status = 'active'
-    AND NEW.assignment_basis IN ('canonical_image','shared_asset','human_same')
-    AND NOT EXISTS (
-      SELECT 1
-      FROM public.vehicle_reid_v2_profile_members members
-      JOIN public.vehicle_image_asset_reads links
-        ON links.asset_id = members.asset_id
-       AND links.read_id = NEW.read_id
-      JOIN public.plate_reads reads ON reads.id = links.read_id
-      WHERE members.id = NEW.profile_member_id
-        AND members.profile_id = NEW.profile_id
-        AND members.status = 'current'
-        AND members.asset_id = NEW.asset_id
-        AND members.derivative_id = NEW.derivative_id
-        AND members.embedding_id = NEW.embedding_id
-        AND links.identity_eligible = TRUE
-        AND links.relationship <> 'display_fallback'
-        AND links.source_kind IS NOT DISTINCT FROM NEW.source_kind
-        AND links.relationship IS NOT DISTINCT FROM NEW.source_relationship
-        AND links.source_path_snapshot IS NOT DISTINCT FROM NEW.source_path_snapshot
-        AND links.source_updated_at IS NOT DISTINCT FROM NEW.source_updated_at
-        AND links.updated_at IS NOT DISTINCT FROM NEW.source_link_updated_at
-        AND reads.vehicle_image_status = 'ready'
-        AND reads.vehicle_image_path = links.source_path_snapshot
-        AND reads.vehicle_image_source_kind = links.source_kind
-        AND reads.vehicle_image_updated_at IS NOT DISTINCT FROM links.source_updated_at
-    ) THEN
-    RAISE EXCEPTION 'ReID v2 image assignment is not an exact current member/source-link contract'
-      USING ERRCODE = '23514',
-            CONSTRAINT = 'vehicle_reid_v2_assignment_member_contract';
-  END IF;
-
-  IF NEW.status = 'active'
-    AND NEW.assignment_basis = 'exact_effective_plate'
-    AND NOT EXISTS (
-      SELECT 1 FROM public.plate_reads reads
-      WHERE reads.id = NEW.read_id
-        AND UPPER(REGEXP_REPLACE(reads.plate_number, '[^A-Za-z0-9]', '', 'g'))
-              = NEW.normalized_effective_plate
-        AND reads.review_status = NEW.plate_review_status
-        AND reads.review_revision = NEW.plate_review_revision
-        AND reads.applied_alias_id IS NOT DISTINCT FROM NEW.applied_alias_id
-        AND NEW.plate_review_id IS NOT DISTINCT FROM (
-          SELECT reviews.id
-          FROM public.plate_read_reviews reviews
-          WHERE reviews.read_id = NEW.read_id
-          ORDER BY reviews.created_at DESC, reviews.id DESC
-          LIMIT 1
-        )
-    ) THEN
-    RAISE EXCEPTION 'ReID v2 exact-plate assignment is not current reviewed plate evidence'
-      USING ERRCODE = '23514',
-            CONSTRAINT = 'vehicle_reid_v2_assignment_plate_contract';
-  END IF;
-
-  IF NEW.status = 'active'
-    AND NEW.assignment_basis = 'exact_effective_plate'
-    AND (
-      NEW.origin_conversion_run_id IS NULL
-      OR NOT EXISTS (
-        SELECT 1
-        FROM public.vehicle_reid_v2_profiles profiles
-        JOIN public.vehicle_reid_v2_conversion_projected_profiles projected
-          ON projected.run_id = profiles.origin_conversion_run_id
-         AND projected.projection_key = profiles.origin_projection_key
-        WHERE profiles.id = NEW.profile_id
-          AND profiles.origin_conversion_run_id = NEW.origin_conversion_run_id
-          AND projected.anchor_plates ? NEW.normalized_effective_plate
-      )
-    ) THEN
-    RAISE EXCEPTION 'ReID v2 exact-plate assignment requires conversion-origin projected profile plate evidence'
-      USING ERRCODE = '23514',
-            CONSTRAINT = 'vehicle_reid_v2_assignment_plate_profile_contract';
-  END IF;
-
-  IF NEW.origin_conversion_run_id IS NOT NULL AND NOT EXISTS (
-    SELECT 1
-    FROM public.vehicle_reid_v2_conversion_read_dispositions dispositions
-    JOIN public.vehicle_reid_v2_conversion_projected_profiles projected_profiles
-      ON projected_profiles.run_id = dispositions.run_id
-     AND projected_profiles.id = dispositions.projected_profile_id
-    JOIN public.vehicle_reid_v2_profiles profiles
-      ON profiles.id = NEW.profile_id
-    WHERE dispositions.run_id = NEW.origin_conversion_run_id
-      AND dispositions.disposition_fingerprint = NEW.origin_disposition_fingerprint
-      AND dispositions.read_id = NEW.read_id
-      AND dispositions.disposition = 'assigned'
-      AND dispositions.assignment_basis = NEW.assignment_basis
-      AND dispositions.profile_evidence_basis = NEW.profile_membership_basis
-      AND dispositions.asset_id IS NOT DISTINCT FROM NEW.asset_id
-      AND dispositions.derivative_id IS NOT DISTINCT FROM NEW.derivative_id
-      AND dispositions.embedding_id IS NOT DISTINCT FROM NEW.embedding_id
-      AND dispositions.normalized_effective_plate
-            IS NOT DISTINCT FROM NEW.normalized_effective_plate
-      AND profiles.origin_conversion_run_id = projected_profiles.run_id
-      AND profiles.origin_projection_key = projected_profiles.projection_key
-  ) THEN
-    RAISE EXCEPTION 'ReID v2 assignment does not exactly reproduce its preview provenance'
-      USING ERRCODE = '23514',
-            CONSTRAINT = 'vehicle_reid_v2_assignment_preview_contract';
-  END IF;
-  RETURN NEW;
-END;
-$$ LANGUAGE plpgsql;
-
-DROP TRIGGER IF EXISTS vehicle_reid_v2_assignments_validate_contract
-  ON public.vehicle_reid_v2_read_assignments;
-CREATE TRIGGER vehicle_reid_v2_assignments_validate_contract
-BEFORE INSERT OR UPDATE ON public.vehicle_reid_v2_read_assignments
-FOR EACH ROW EXECUTE FUNCTION public.validate_vehicle_reid_v2_assignment_contract();
-
-CREATE OR REPLACE FUNCTION public.guard_vehicle_reid_v2_origin_authority_mutation()
-RETURNS TRIGGER AS $$
-DECLARE
-  authority_run_id BIGINT;
-BEGIN
-  IF TG_OP = 'DELETE' THEN
-    authority_run_id := OLD.origin_conversion_run_id;
-  ELSE
-    authority_run_id := NEW.origin_conversion_run_id;
-  END IF;
-
-  IF TG_OP = 'UPDATE'
-    AND NEW.origin_conversion_run_id
-          IS DISTINCT FROM OLD.origin_conversion_run_id THEN
-    RAISE EXCEPTION 'ReID v2 conversion-origin authority cannot change its origin run'
-      USING ERRCODE = '23514',
-            CONSTRAINT = 'vehicle_reid_v2_origin_authority_run_immutable';
-  END IF;
-
-  IF authority_run_id IS NULL THEN
-    IF TG_OP = 'DELETE' THEN
-      RETURN OLD;
-    END IF;
-    RETURN NEW;
-  END IF;
-
-  PERFORM 1
-  FROM public.vehicle_reid_v2_conversion_runs runs
-  WHERE runs.id = authority_run_id
-    AND runs.status = 'running'
-    AND runs.phase = 'materialize'
-  FOR SHARE;
-  IF NOT FOUND THEN
-    RAISE EXCEPTION 'ReID v2 conversion-origin authority is sealed outside running/materialize'
-      USING ERRCODE = '23514',
-            CONSTRAINT = 'vehicle_reid_v2_origin_authority_materialization_window';
-  END IF;
-  IF TG_OP = 'DELETE' THEN
-    RETURN OLD;
-  END IF;
-  RETURN NEW;
-END;
-$$ LANGUAGE plpgsql;
-
-DROP TRIGGER IF EXISTS vehicle_reid_v2_profiles_origin_authority_guard
-  ON public.vehicle_reid_v2_profiles;
-CREATE TRIGGER vehicle_reid_v2_profiles_origin_authority_guard
-BEFORE INSERT OR UPDATE OR DELETE ON public.vehicle_reid_v2_profiles
-FOR EACH ROW EXECUTE FUNCTION public.guard_vehicle_reid_v2_origin_authority_mutation();
-
-DROP TRIGGER IF EXISTS vehicle_reid_v2_members_origin_authority_guard
-  ON public.vehicle_reid_v2_profile_members;
-CREATE TRIGGER vehicle_reid_v2_members_origin_authority_guard
-BEFORE INSERT OR UPDATE OR DELETE ON public.vehicle_reid_v2_profile_members
-FOR EACH ROW EXECUTE FUNCTION public.guard_vehicle_reid_v2_origin_authority_mutation();
-
-DROP TRIGGER IF EXISTS vehicle_reid_v2_assignments_origin_authority_guard
-  ON public.vehicle_reid_v2_read_assignments;
-CREATE TRIGGER vehicle_reid_v2_assignments_origin_authority_guard
-BEFORE INSERT OR UPDATE OR DELETE ON public.vehicle_reid_v2_read_assignments
-FOR EACH ROW EXECUTE FUNCTION public.guard_vehicle_reid_v2_origin_authority_mutation();
-
--- A completed conversion is an exact, one-for-one materialization of the
--- immutable projection that the operator accepted.  The origin keys alone
--- are not sufficient: they prove ancestry, but without this reconciliation a
--- partially copied run could still be marked complete and selected as the v2
--- authority.  Symmetric EXCEPT checks reject both missing and extra/mismatched
--- conversion-origin rows.
-CREATE OR REPLACE FUNCTION public.assert_vehicle_reid_v2_exact_materialization(
-  materialization_run_id BIGINT
-)
-RETURNS VOID AS $$
-BEGIN
-  IF materialization_run_id IS NULL OR NOT EXISTS (
-    SELECT 1
-    FROM public.vehicle_reid_v2_conversion_runs runs
-    WHERE runs.id = materialization_run_id
-  ) THEN
-    RAISE EXCEPTION 'ReID v2 exact materialization requires one conversion run'
-      USING ERRCODE = '23514',
-            CONSTRAINT = 'vehicle_reid_v2_exact_materialization_run';
-  END IF;
-
-  IF EXISTS (
-    SELECT 1
-    FROM public.vehicle_reid_v2_conversion_runs runs
-    WHERE runs.id = materialization_run_id
-      AND (
-        runs.projected_profiles <> (
-          SELECT COUNT(*)
-          FROM public.vehicle_reid_v2_conversion_projected_profiles projected
-          WHERE projected.run_id = runs.id
-        )
-        OR runs.projected_members <> (
-          SELECT COUNT(*)
-          FROM public.vehicle_reid_v2_conversion_projected_members members
-          WHERE members.run_id = runs.id
-        )
-        OR runs.assigned_reads <> (
-          SELECT COUNT(*)
-          FROM public.vehicle_reid_v2_conversion_read_dispositions dispositions
-          WHERE dispositions.run_id = runs.id
-            AND dispositions.disposition = 'assigned'
-        )
-      )
-  ) THEN
-    RAISE EXCEPTION 'ReID v2 materialization metrics do not match run % projection rows',
-      materialization_run_id
-      USING ERRCODE = '23514',
-            CONSTRAINT = 'vehicle_reid_v2_exact_materialization_counts';
-  END IF;
-
-  IF EXISTS (
-    (
-      SELECT
-        projected.projection_key::TEXT,
-        projected.profile_kind::TEXT,
-        projected.evidence_basis::TEXT,
-        projected.representative_derivative_id,
-        projected.representative_embedding_id,
-        projected.representative_source_sha256::TEXT,
-        1::INTEGER
-      FROM public.vehicle_reid_v2_conversion_projected_profiles projected
-      WHERE projected.run_id = materialization_run_id
-      EXCEPT
-      SELECT
-        profiles.origin_projection_key::TEXT,
-        CASE profiles.status
-          WHEN 'active' THEN 'multi_member'
-          WHEN 'provisional' THEN 'provisional_singleton'
-          ELSE NULL
-        END,
-        profiles.provenance_basis::TEXT,
-        profiles.representative_derivative_id,
-        profiles.representative_embedding_id,
-        profiles.representative_source_sha256::TEXT,
-        profiles.revision
-      FROM public.vehicle_reid_v2_profiles profiles
-      WHERE profiles.origin_conversion_run_id = materialization_run_id
-    )
-    UNION ALL
-    (
-      SELECT
-        profiles.origin_projection_key::TEXT,
-        CASE profiles.status
-          WHEN 'active' THEN 'multi_member'
-          WHEN 'provisional' THEN 'provisional_singleton'
-          ELSE NULL
-        END,
-        profiles.provenance_basis::TEXT,
-        profiles.representative_derivative_id,
-        profiles.representative_embedding_id,
-        profiles.representative_source_sha256::TEXT,
-        profiles.revision
-      FROM public.vehicle_reid_v2_profiles profiles
-      WHERE profiles.origin_conversion_run_id = materialization_run_id
-      EXCEPT
-      SELECT
-        projected.projection_key::TEXT,
-        projected.profile_kind::TEXT,
-        projected.evidence_basis::TEXT,
-        projected.representative_derivative_id,
-        projected.representative_embedding_id,
-        projected.representative_source_sha256::TEXT,
-        1::INTEGER
-      FROM public.vehicle_reid_v2_conversion_projected_profiles projected
-      WHERE projected.run_id = materialization_run_id
-    )
-  ) THEN
-    RAISE EXCEPTION 'ReID v2 profile materialization does not exactly reproduce run %',
-      materialization_run_id
-      USING ERRCODE = '23514',
-            CONSTRAINT = 'vehicle_reid_v2_exact_profile_materialization';
-  END IF;
-
-  IF EXISTS (
-    (
-      SELECT
-        projected_profiles.projection_key::TEXT,
-        projected_members.member_fingerprint::TEXT,
-        projected_members.derivative_id,
-        projected_members.asset_id,
-        projected_members.embedding_id,
-        projected_members.crop_content_sha256::TEXT,
-        projected_members.embedding_sha256::TEXT,
-        projected_members.evidence_basis::TEXT,
-        'current'::TEXT,
-        1::INTEGER
-      FROM public.vehicle_reid_v2_conversion_projected_members projected_members
-      JOIN public.vehicle_reid_v2_conversion_projected_profiles projected_profiles
-        ON projected_profiles.run_id = projected_members.run_id
-       AND projected_profiles.id = projected_members.projected_profile_id
-      WHERE projected_members.run_id = materialization_run_id
-      EXCEPT
-      SELECT
-        profiles.origin_projection_key::TEXT,
-        members.origin_projected_member_fingerprint::TEXT,
-        members.derivative_id,
-        members.asset_id,
-        members.embedding_id,
-        members.crop_content_sha256::TEXT,
-        members.embedding_sha256::TEXT,
-        members.membership_basis::TEXT,
-        members.status::TEXT,
-        members.revision
-      FROM public.vehicle_reid_v2_profile_members members
-      JOIN public.vehicle_reid_v2_profiles profiles
-        ON profiles.id = members.profile_id
-       AND profiles.origin_conversion_run_id = members.origin_conversion_run_id
-      WHERE members.origin_conversion_run_id = materialization_run_id
-    )
-    UNION ALL
-    (
-      SELECT
-        profiles.origin_projection_key::TEXT,
-        members.origin_projected_member_fingerprint::TEXT,
-        members.derivative_id,
-        members.asset_id,
-        members.embedding_id,
-        members.crop_content_sha256::TEXT,
-        members.embedding_sha256::TEXT,
-        members.membership_basis::TEXT,
-        members.status::TEXT,
-        members.revision
-      FROM public.vehicle_reid_v2_profile_members members
-      JOIN public.vehicle_reid_v2_profiles profiles
-        ON profiles.id = members.profile_id
-       AND profiles.origin_conversion_run_id = members.origin_conversion_run_id
-      WHERE members.origin_conversion_run_id = materialization_run_id
-      EXCEPT
-      SELECT
-        projected_profiles.projection_key::TEXT,
-        projected_members.member_fingerprint::TEXT,
-        projected_members.derivative_id,
-        projected_members.asset_id,
-        projected_members.embedding_id,
-        projected_members.crop_content_sha256::TEXT,
-        projected_members.embedding_sha256::TEXT,
-        projected_members.evidence_basis::TEXT,
-        'current'::TEXT,
-        1::INTEGER
-      FROM public.vehicle_reid_v2_conversion_projected_members projected_members
-      JOIN public.vehicle_reid_v2_conversion_projected_profiles projected_profiles
-        ON projected_profiles.run_id = projected_members.run_id
-       AND projected_profiles.id = projected_members.projected_profile_id
-      WHERE projected_members.run_id = materialization_run_id
-    )
-  ) THEN
-    RAISE EXCEPTION 'ReID v2 member materialization does not exactly reproduce run %',
-      materialization_run_id
-      USING ERRCODE = '23514',
-            CONSTRAINT = 'vehicle_reid_v2_exact_member_materialization';
-  END IF;
-
-  IF EXISTS (
-    (
-      SELECT
-        projected_profiles.projection_key::TEXT,
-        dispositions.disposition_fingerprint::TEXT,
-        dispositions.read_id,
-        dispositions.assignment_basis::TEXT,
-        dispositions.profile_evidence_basis::TEXT,
-        dispositions.asset_id,
-        dispositions.derivative_id,
-        dispositions.embedding_id,
-        dispositions.normalized_effective_plate::TEXT,
-        'active'::TEXT,
-        1::INTEGER,
-        1::INTEGER
-      FROM public.vehicle_reid_v2_conversion_read_dispositions dispositions
-      JOIN public.vehicle_reid_v2_conversion_projected_profiles projected_profiles
-        ON projected_profiles.run_id = dispositions.run_id
-       AND projected_profiles.id = dispositions.projected_profile_id
-      WHERE dispositions.run_id = materialization_run_id
-        AND dispositions.disposition = 'assigned'
-      EXCEPT
-      SELECT
-        profiles.origin_projection_key::TEXT,
-        assignments.origin_disposition_fingerprint::TEXT,
-        assignments.read_id,
-        assignments.assignment_basis::TEXT,
-        assignments.profile_membership_basis::TEXT,
-        assignments.asset_id,
-        assignments.derivative_id,
-        assignments.embedding_id,
-        assignments.normalized_effective_plate::TEXT,
-        assignments.status::TEXT,
-        assignments.revision,
-        assignments.profile_revision
-      FROM public.vehicle_reid_v2_read_assignments assignments
-      JOIN public.vehicle_reid_v2_profiles profiles
-        ON profiles.id = assignments.profile_id
-       AND profiles.origin_conversion_run_id = assignments.origin_conversion_run_id
-      WHERE assignments.origin_conversion_run_id = materialization_run_id
-    )
-    UNION ALL
-    (
-      SELECT
-        profiles.origin_projection_key::TEXT,
-        assignments.origin_disposition_fingerprint::TEXT,
-        assignments.read_id,
-        assignments.assignment_basis::TEXT,
-        assignments.profile_membership_basis::TEXT,
-        assignments.asset_id,
-        assignments.derivative_id,
-        assignments.embedding_id,
-        assignments.normalized_effective_plate::TEXT,
-        assignments.status::TEXT,
-        assignments.revision,
-        assignments.profile_revision
-      FROM public.vehicle_reid_v2_read_assignments assignments
-      JOIN public.vehicle_reid_v2_profiles profiles
-        ON profiles.id = assignments.profile_id
-       AND profiles.origin_conversion_run_id = assignments.origin_conversion_run_id
-      WHERE assignments.origin_conversion_run_id = materialization_run_id
-      EXCEPT
-      SELECT
-        projected_profiles.projection_key::TEXT,
-        dispositions.disposition_fingerprint::TEXT,
-        dispositions.read_id,
-        dispositions.assignment_basis::TEXT,
-        dispositions.profile_evidence_basis::TEXT,
-        dispositions.asset_id,
-        dispositions.derivative_id,
-        dispositions.embedding_id,
-        dispositions.normalized_effective_plate::TEXT,
-        'active'::TEXT,
-        1::INTEGER,
-        1::INTEGER
-      FROM public.vehicle_reid_v2_conversion_read_dispositions dispositions
-      JOIN public.vehicle_reid_v2_conversion_projected_profiles projected_profiles
-        ON projected_profiles.run_id = dispositions.run_id
-       AND projected_profiles.id = dispositions.projected_profile_id
-      WHERE dispositions.run_id = materialization_run_id
-        AND dispositions.disposition = 'assigned'
-    )
-  ) THEN
-    RAISE EXCEPTION 'ReID v2 assignment materialization does not exactly reproduce run %',
-      materialization_run_id
-      USING ERRCODE = '23514',
-            CONSTRAINT = 'vehicle_reid_v2_exact_assignment_materialization';
-  END IF;
-END;
-$$ LANGUAGE plpgsql;
-
-CREATE OR REPLACE FUNCTION public.validate_vehicle_reid_v2_materialization_transition()
-RETURNS TRIGGER AS $$
-BEGIN
-  IF OLD.status = 'running' AND OLD.phase = 'materialize'
-    AND NEW.status = 'completed' AND NEW.phase = 'complete' THEN
-    PERFORM public.assert_vehicle_reid_v2_exact_materialization(OLD.id);
-  END IF;
-  RETURN NEW;
-END;
-$$ LANGUAGE plpgsql;
-
-DROP TRIGGER IF EXISTS vehicle_reid_v2_conversion_exact_materialization
-  ON public.vehicle_reid_v2_conversion_runs;
-CREATE TRIGGER vehicle_reid_v2_conversion_exact_materialization
-BEFORE UPDATE ON public.vehicle_reid_v2_conversion_runs
-FOR EACH ROW EXECUTE FUNCTION public.validate_vehicle_reid_v2_materialization_transition();
-
-CREATE TABLE IF NOT EXISTS public.vehicle_reid_control (
-  singleton BOOLEAN PRIMARY KEY DEFAULT TRUE CHECK (singleton = TRUE),
-  mode VARCHAR(16) NOT NULL DEFAULT 'v2_shadow' CHECK (
-    mode IN ('v1_primary','v2_shadow','v2_primary','v1_rollback')
-  ),
-  previous_mode VARCHAR(16) CHECK (
-    previous_mode IS NULL
-    OR previous_mode IN ('v1_primary','v2_shadow','v2_primary','v1_rollback')
-  ),
-  revision INTEGER NOT NULL DEFAULT 1 CHECK (revision > 0),
-  transition_run_id BIGINT
-    REFERENCES public.vehicle_reid_v2_conversion_runs(id) ON DELETE RESTRICT,
-  transition_actor_user_id BIGINT REFERENCES public.users(id) ON DELETE SET NULL,
-  transition_actor_username VARCHAR(64),
-  transition_actor_display_name VARCHAR(120),
-  transition_reason VARCHAR(160) NOT NULL CHECK (
-    NULLIF(BTRIM(transition_reason), '') IS NOT NULL
-  ),
-  transitioned_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
-);
-
-INSERT INTO public.vehicle_reid_control (
-  singleton, mode, previous_mode, revision, transition_run_id,
-  transition_actor_user_id, transition_actor_username,
-  transition_actor_display_name, transition_reason
-) VALUES (
-  TRUE, 'v2_shadow', NULL, 1, NULL, NULL, NULL, NULL,
-  'Stage 1 additive foundation; v1 remains primary and v2 remains shadow-only.'
-)
-ON CONFLICT (singleton) DO NOTHING;
-
-CREATE OR REPLACE FUNCTION public.validate_vehicle_reid_control_transition()
-RETURNS TRIGGER AS $$
-BEGIN
-  IF TG_OP = 'DELETE' THEN
-    RAISE EXCEPTION 'The ReID authority control singleton cannot be deleted'
-      USING ERRCODE = '23514',
-            CONSTRAINT = 'vehicle_reid_control_singleton_immutable';
-  END IF;
-
-  IF TG_OP = 'UPDATE' AND NEW.mode = OLD.mode
-    AND (TO_JSONB(NEW) - 'updated_at') IS DISTINCT FROM
-        (TO_JSONB(OLD) - 'updated_at') THEN
-    RAISE EXCEPTION 'ReID authority provenance is immutable without a mode transition'
-      USING ERRCODE = '23514',
-            CONSTRAINT = 'vehicle_reid_control_same_mode_immutable';
-  END IF;
-
-  IF TG_OP = 'UPDATE' AND NEW.mode <> OLD.mode AND (
-    NEW.previous_mode IS DISTINCT FROM OLD.mode
-    OR NEW.revision <> OLD.revision + 1
-    OR NEW.transitioned_at <= OLD.transitioned_at
-  ) THEN
-    RAISE EXCEPTION 'ReID authority transitions require the prior mode, next revision, and a new timestamp'
-      USING ERRCODE = '23514',
-            CONSTRAINT = 'vehicle_reid_control_transition_revision';
-  END IF;
-
-  IF TG_OP = 'UPDATE' AND NEW.mode <> OLD.mode AND NOT (
-    (OLD.mode = 'v1_primary' AND NEW.mode = 'v2_shadow')
-    OR (OLD.mode IN ('v2_shadow','v1_rollback') AND NEW.mode = 'v2_primary')
-    OR (OLD.mode = 'v2_primary' AND NEW.mode = 'v1_rollback')
-  ) THEN
-    RAISE EXCEPTION 'Invalid ReID authority transition from % to %',
-      OLD.mode, NEW.mode
-      USING ERRCODE = '23514',
-            CONSTRAINT = 'vehicle_reid_control_transition_path';
-  END IF;
-
-  IF NEW.mode = 'v2_primary' AND NOT EXISTS (
-    SELECT 1 FROM public.vehicle_reid_v2_conversion_runs runs
-    WHERE runs.id = NEW.transition_run_id
-      AND runs.status = 'completed'
-      AND runs.phase = 'complete'
-      AND runs.accepted_preview_fingerprint = runs.preview_fingerprint
-      AND runs.last_revalidation_status = 'current'
-      AND runs.last_revalidation_fingerprint = runs.identity_evidence_fingerprint
-      AND runs.last_revalidated_at IS NOT NULL
-      AND runs.completed_at IS NOT NULL
-  ) THEN
-    RAISE EXCEPTION 'v2_primary requires one completed, exactly revalidated conversion run'
-      USING ERRCODE = '23514',
-            CONSTRAINT = 'vehicle_reid_control_v2_primary_run';
-  END IF;
-
-  IF NEW.mode = 'v2_primary' THEN
-    PERFORM public.assert_vehicle_reid_v2_exact_materialization(
-      NEW.transition_run_id
-    );
-  END IF;
-
-  IF NEW.mode = 'v1_rollback' AND (
-    NEW.previous_mode IS DISTINCT FROM 'v2_primary'
-    OR NEW.transition_run_id IS NULL
-    OR (TG_OP = 'UPDATE'
-      AND NEW.transition_run_id IS DISTINCT FROM OLD.transition_run_id)
-  ) THEN
-    RAISE EXCEPTION 'v1_rollback must immediately retain the v2_primary conversion run'
-      USING ERRCODE = '23514',
-            CONSTRAINT = 'vehicle_reid_control_v1_rollback_path';
-  END IF;
-
-  IF NEW.mode IN ('v2_primary','v1_rollback') AND (
-    NULLIF(BTRIM(NEW.transition_actor_username), '') IS NULL
-    OR NULLIF(BTRIM(NEW.transition_actor_display_name), '') IS NULL
-    OR NULLIF(BTRIM(NEW.transition_reason), '') IS NULL
-  ) THEN
-    RAISE EXCEPTION 'ReID authority transitions require an actor snapshot and reason'
-      USING ERRCODE = '23514',
-            CONSTRAINT = 'vehicle_reid_control_transition_actor';
-  END IF;
-  RETURN NEW;
-END;
-$$ LANGUAGE plpgsql;
-
-DROP TRIGGER IF EXISTS vehicle_reid_control_validate_transition
-  ON public.vehicle_reid_control;
-CREATE TRIGGER vehicle_reid_control_validate_transition
-BEFORE INSERT OR UPDATE OR DELETE ON public.vehicle_reid_control
-FOR EACH ROW EXECUTE FUNCTION public.validate_vehicle_reid_control_transition();
-
-CREATE OR REPLACE FUNCTION public.prevent_vehicle_reid_v2_conversion_snapshot_mutation()
-RETURNS TRIGGER LANGUAGE plpgsql AS $$
-BEGIN
-  IF TG_OP = 'INSERT' THEN
-    PERFORM 1 FROM public.vehicle_reid_v2_conversion_runs runs
-      WHERE runs.id = NEW.run_id
-        AND runs.status = 'previewing'
-        AND (
-          (TG_TABLE_NAME = 'vehicle_reid_v2_conversion_read_dispositions'
-            AND runs.phase = 'project_reads')
-          OR (TG_TABLE_NAME <> 'vehicle_reid_v2_conversion_read_dispositions'
-            AND runs.phase = 'freeze')
-        )
-      FOR SHARE;
-    IF FOUND THEN
-      RETURN NEW;
-    END IF;
-    RAISE EXCEPTION '% cannot append to a sealed ReID v2 conversion snapshot',
-      TG_TABLE_NAME;
-  END IF;
-  RAISE EXCEPTION '% is an immutable ReID v2 conversion snapshot table', TG_TABLE_NAME;
-END;
-$$;
-
-DROP TRIGGER IF EXISTS reid_v2_crop_evidence_immutable
-  ON public.vehicle_reid_v2_conversion_crop_evidence;
-CREATE TRIGGER reid_v2_crop_evidence_immutable
-BEFORE INSERT OR UPDATE OR DELETE ON public.vehicle_reid_v2_conversion_crop_evidence
-FOR EACH ROW EXECUTE FUNCTION public.prevent_vehicle_reid_v2_conversion_snapshot_mutation();
-
-DROP TRIGGER IF EXISTS reid_v2_read_evidence_immutable
-  ON public.vehicle_reid_v2_conversion_read_evidence;
-CREATE TRIGGER reid_v2_read_evidence_immutable
-BEFORE INSERT OR UPDATE OR DELETE ON public.vehicle_reid_v2_conversion_read_evidence
-FOR EACH ROW EXECUTE FUNCTION public.prevent_vehicle_reid_v2_conversion_snapshot_mutation();
-
-DROP TRIGGER IF EXISTS reid_v2_review_evidence_immutable
-  ON public.vehicle_reid_v2_conversion_review_evidence;
-CREATE TRIGGER reid_v2_review_evidence_immutable
-BEFORE INSERT OR UPDATE OR DELETE ON public.vehicle_reid_v2_conversion_review_evidence
-FOR EACH ROW EXECUTE FUNCTION public.prevent_vehicle_reid_v2_conversion_snapshot_mutation();
-
-DROP TRIGGER IF EXISTS reid_v2_projected_profiles_immutable
-  ON public.vehicle_reid_v2_conversion_projected_profiles;
-CREATE TRIGGER reid_v2_projected_profiles_immutable
-BEFORE INSERT OR UPDATE OR DELETE ON public.vehicle_reid_v2_conversion_projected_profiles
-FOR EACH ROW EXECUTE FUNCTION public.prevent_vehicle_reid_v2_conversion_snapshot_mutation();
-
-DROP TRIGGER IF EXISTS reid_v2_projected_members_immutable
-  ON public.vehicle_reid_v2_conversion_projected_members;
-CREATE TRIGGER reid_v2_projected_members_immutable
-BEFORE INSERT OR UPDATE OR DELETE ON public.vehicle_reid_v2_conversion_projected_members
-FOR EACH ROW EXECUTE FUNCTION public.prevent_vehicle_reid_v2_conversion_snapshot_mutation();
-
-DROP TRIGGER IF EXISTS reid_v2_read_dispositions_immutable
-  ON public.vehicle_reid_v2_conversion_read_dispositions;
-CREATE TRIGGER reid_v2_read_dispositions_immutable
-BEFORE INSERT OR UPDATE OR DELETE ON public.vehicle_reid_v2_conversion_read_dispositions
-FOR EACH ROW EXECUTE FUNCTION public.prevent_vehicle_reid_v2_conversion_snapshot_mutation();
-
-DROP TRIGGER IF EXISTS reid_v2_conversion_conflicts_immutable
-  ON public.vehicle_reid_v2_conversion_conflicts;
-CREATE TRIGGER reid_v2_conversion_conflicts_immutable
-BEFORE INSERT OR UPDATE OR DELETE ON public.vehicle_reid_v2_conversion_conflicts
-FOR EACH ROW EXECUTE FUNCTION public.prevent_vehicle_reid_v2_conversion_snapshot_mutation();
-
-DROP TRIGGER IF EXISTS reid_v2_v1_comparisons_immutable
-  ON public.vehicle_reid_v2_conversion_v1_comparisons;
-CREATE TRIGGER reid_v2_v1_comparisons_immutable
-BEFORE INSERT OR UPDATE OR DELETE ON public.vehicle_reid_v2_conversion_v1_comparisons
-FOR EACH ROW EXECUTE FUNCTION public.prevent_vehicle_reid_v2_conversion_snapshot_mutation();
-
-INSERT INTO public.schema_migrations(version,description) VALUES
- ('2026081603_vehicle_reid_v2_authoritative_stage1','Add empty stable ReID v2 authoritative profile, crop-member, and read-assignment ownership; a v2-shadow transition control; and immutable preview-only conversion evidence, projection, conflict, audit-state, retry, and v1-comparison foundations without changing current identity consumers or writing an authoritative assignment.')
-ON CONFLICT(version) DO NOTHING;
-
--- Stage 2 gives exact reviewed plates a durable, current-revalidated profile
--- anchor.  Conversion provenance remains immutable, while live anchors may be
--- added only from a read whose reviewed plate contract is still exact.
 CREATE TABLE IF NOT EXISTS public.vehicle_reid_v2_profile_plate_anchors (
   id BIGSERIAL PRIMARY KEY,
   profile_id BIGINT NOT NULL
@@ -8344,23 +6272,9 @@ CREATE TABLE IF NOT EXISTS public.vehicle_reid_v2_profile_plate_anchors (
   evidence_fingerprint CHAR(64) NOT NULL CHECK (
     evidence_fingerprint ~ '^[0-9a-f]{64}$'
   ),
-  origin_conversion_run_id BIGINT
-    REFERENCES public.vehicle_reid_v2_conversion_runs(id) ON DELETE RESTRICT,
-  origin_projection_key CHAR(64) CHECK (
-    origin_projection_key IS NULL OR origin_projection_key ~ '^[0-9a-f]{64}$'
-  ),
   ended_at TIMESTAMPTZ,
   created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  UNIQUE (origin_conversion_run_id, origin_projection_key, normalized_plate),
-  FOREIGN KEY (origin_conversion_run_id, origin_projection_key)
-    REFERENCES public.vehicle_reid_v2_conversion_projected_profiles(
-      run_id, projection_key
-    ) ON DELETE RESTRICT,
-  CHECK (
-    (origin_conversion_run_id IS NULL AND origin_projection_key IS NULL)
-    OR (origin_conversion_run_id IS NOT NULL AND origin_projection_key IS NOT NULL)
-  ),
   CHECK (
     (status = 'current' AND ended_at IS NULL)
     OR (status <> 'current' AND ended_at IS NOT NULL)
@@ -8368,7 +6282,7 @@ CREATE TABLE IF NOT EXISTS public.vehicle_reid_v2_profile_plate_anchors (
 );
 
 -- Exact-current uniqueness is enforced by the validation trigger below.  A
--- stale sealed conversion anchor must not block a later exact reviewed anchor,
+
 -- so the physical history may contain more than one status='current' row even
 -- though the current-evidence view can expose at most one.
 DROP INDEX IF EXISTS public.idx_reid_v2_plate_anchor_one_current_plate;
@@ -8435,21 +6349,6 @@ BEGIN
     END IF;
   END IF;
 
-  IF NEW.origin_conversion_run_id IS NOT NULL AND NOT EXISTS (
-    SELECT 1
-    FROM public.vehicle_reid_v2_profiles profiles
-    JOIN public.vehicle_reid_v2_conversion_projected_profiles projected
-      ON projected.run_id = profiles.origin_conversion_run_id
-     AND projected.projection_key = profiles.origin_projection_key
-    WHERE profiles.id = NEW.profile_id
-      AND projected.run_id = NEW.origin_conversion_run_id
-      AND projected.projection_key = NEW.origin_projection_key
-      AND projected.anchor_plates ? NEW.normalized_plate
-  ) THEN
-    RAISE EXCEPTION 'ReID v2 plate anchor does not reproduce its preview provenance'
-      USING ERRCODE = '23514',
-            CONSTRAINT = 'vehicle_reid_v2_plate_anchor_preview_contract';
-  END IF;
   RETURN NEW;
 END;
 $$ LANGUAGE plpgsql;
@@ -8459,16 +6358,6 @@ DROP TRIGGER IF EXISTS vehicle_reid_v2_plate_anchors_validate_contract
 CREATE TRIGGER vehicle_reid_v2_plate_anchors_validate_contract
 BEFORE INSERT OR UPDATE ON public.vehicle_reid_v2_profile_plate_anchors
 FOR EACH ROW EXECUTE FUNCTION public.validate_vehicle_reid_v2_plate_anchor_contract();
-
-DROP TRIGGER IF EXISTS vehicle_reid_v2_plate_anchors_origin_authority_guard
-  ON public.vehicle_reid_v2_profile_plate_anchors;
-CREATE TRIGGER vehicle_reid_v2_plate_anchors_origin_authority_guard
-BEFORE INSERT OR UPDATE OR DELETE ON public.vehicle_reid_v2_profile_plate_anchors
-FOR EACH ROW EXECUTE FUNCTION public.guard_vehicle_reid_v2_origin_authority_mutation();
-
--- New-read processing is deliberately bounded and observable.  A job row is
--- a retry/audit record, not identity evidence; only the authoritative tables
--- and their current-contract triggers can establish an assignment.
 CREATE TABLE IF NOT EXISTS public.vehicle_reid_v2_live_jobs (
   read_id INTEGER PRIMARY KEY
     REFERENCES public.plate_reads(id) ON DELETE CASCADE,
@@ -8520,7 +6409,7 @@ CREATE INDEX IF NOT EXISTS idx_reid_v2_live_job_profile
   WHERE profile_id IS NOT NULL;
 
 -- Audited Same decisions can collapse two stable public profile identifiers
--- without rewriting sealed conversion rows.  Consumers resolve only the
+
 -- current view below, so a revised/stale review fails closed automatically.
 CREATE TABLE IF NOT EXISTS public.vehicle_reid_v2_profile_merges (
   id BIGSERIAL PRIMARY KEY,
@@ -8821,7 +6710,7 @@ AND (
 
 -- Reviewed plate anchors also remain historical rows.  Only the exact latest
 -- plate-review contract is current, and merge aliases resolve to one stable
--- public profile identifier without rewriting conversion provenance.
+
 CREATE OR REPLACE VIEW public.vehicle_reid_v2_current_plate_anchors AS
 SELECT anchors.*,
        COALESCE(merges.target_profile_id, anchors.profile_id)
@@ -8903,11 +6792,11 @@ AND NOT EXISTS (
 );
 
 -- Exact-plate assignments now bind a durable current plate anchor.  Frozen
--- conversion assignments retain their preview provenance, while later live
+
 -- assignments may use the same current anchor without fabricating a frozen
 -- disposition fingerprint.
 --
--- The Stage 1 physical unique index cannot distinguish an exact-current row
+
 -- from a sealed row whose source/review contract later changed.  Preserve the
 -- sealed history and enforce one exact-current assignment per read under a
 -- per-read transaction lock instead.
@@ -8930,13 +6819,8 @@ BEGIN
       AND profiles.revision = NEW.profile_revision
       AND profiles.status IN ('active','provisional')
       AND (
-        (NEW.origin_conversion_run_id IS NOT NULL
-          AND profiles.provenance_basis = NEW.profile_membership_basis)
-        OR (NEW.origin_conversion_run_id IS NULL
-          AND NEW.assignment_basis = 'exact_effective_plate'
-          AND NEW.profile_membership_basis = 'exact_effective_plate')
-        OR (NEW.origin_conversion_run_id IS NULL
-          AND NEW.assignment_basis IN ('canonical_image','shared_asset','human_same')
+        (NEW.assignment_basis = 'exact_effective_plate')
+        OR (NEW.assignment_basis IN ('canonical_image','shared_asset','human_same')
           AND members.membership_basis = NEW.profile_membership_basis)
       )
   ) THEN
@@ -9014,32 +6898,6 @@ BEGIN
             CONSTRAINT = 'vehicle_reid_v2_assignment_plate_profile_contract';
   END IF;
 
-  IF NEW.origin_conversion_run_id IS NOT NULL AND NOT EXISTS (
-    SELECT 1
-    FROM public.vehicle_reid_v2_conversion_read_dispositions dispositions
-    JOIN public.vehicle_reid_v2_conversion_projected_profiles projected_profiles
-      ON projected_profiles.run_id = dispositions.run_id
-     AND projected_profiles.id = dispositions.projected_profile_id
-    JOIN public.vehicle_reid_v2_profiles profiles
-      ON profiles.id = NEW.profile_id
-    WHERE dispositions.run_id = NEW.origin_conversion_run_id
-      AND dispositions.disposition_fingerprint = NEW.origin_disposition_fingerprint
-      AND dispositions.read_id = NEW.read_id
-      AND dispositions.disposition = 'assigned'
-      AND dispositions.assignment_basis = NEW.assignment_basis
-      AND dispositions.profile_evidence_basis = NEW.profile_membership_basis
-      AND dispositions.asset_id IS NOT DISTINCT FROM NEW.asset_id
-      AND dispositions.derivative_id IS NOT DISTINCT FROM NEW.derivative_id
-      AND dispositions.embedding_id IS NOT DISTINCT FROM NEW.embedding_id
-      AND dispositions.normalized_effective_plate
-            IS NOT DISTINCT FROM NEW.normalized_effective_plate
-      AND profiles.origin_conversion_run_id = projected_profiles.run_id
-      AND profiles.origin_projection_key = projected_profiles.projection_key
-  ) THEN
-    RAISE EXCEPTION 'ReID v2 assignment does not exactly reproduce its preview provenance'
-      USING ERRCODE = '23514',
-            CONSTRAINT = 'vehicle_reid_v2_assignment_preview_contract';
-  END IF;
 
   IF NEW.status = 'active' THEN
     PERFORM pg_advisory_xact_lock(hashtext(
@@ -9094,10 +6952,6 @@ WHERE assignments.status = 'active'
   AND (
     (
       assignments.assignment_basis = 'exact_effective_plate'
-      AND (
-        assignments.origin_conversion_run_id IS NOT NULL
-        OR assignments.profile_membership_basis = 'exact_effective_plate'
-      )
       AND UPPER(REGEXP_REPLACE(reads.plate_number, '[^A-Za-z0-9]', '', 'g'))
             = assignments.normalized_effective_plate
       AND reads.review_status = assignments.plate_review_status
@@ -9149,98 +7003,8 @@ WHERE assignments.status = 'active'
     )
   );
 
--- Stage 2 completion and every v2-primary transition also reconcile the
--- immutable projected plate anchors in both directions.
-CREATE OR REPLACE FUNCTION public.assert_vehicle_reid_v2_stage2_materialization(
-  materialization_run_id BIGINT
-)
-RETURNS VOID AS $$
-BEGIN
-  PERFORM public.assert_vehicle_reid_v2_exact_materialization(materialization_run_id);
-  IF EXISTS (
-    (
-      SELECT projected.projection_key::TEXT, plates.value::TEXT
-      FROM public.vehicle_reid_v2_conversion_projected_profiles projected
-      CROSS JOIN LATERAL JSONB_ARRAY_ELEMENTS_TEXT(projected.anchor_plates) plates(value)
-      WHERE projected.run_id = materialization_run_id
-      EXCEPT
-      SELECT anchors.origin_projection_key::TEXT, anchors.normalized_plate::TEXT
-      FROM public.vehicle_reid_v2_profile_plate_anchors anchors
-      WHERE anchors.origin_conversion_run_id = materialization_run_id
-        AND anchors.status = 'current'
-    )
-    UNION ALL
-    (
-      SELECT anchors.origin_projection_key::TEXT, anchors.normalized_plate::TEXT
-      FROM public.vehicle_reid_v2_profile_plate_anchors anchors
-      WHERE anchors.origin_conversion_run_id = materialization_run_id
-        AND anchors.status = 'current'
-      EXCEPT
-      SELECT projected.projection_key::TEXT, plates.value::TEXT
-      FROM public.vehicle_reid_v2_conversion_projected_profiles projected
-      CROSS JOIN LATERAL JSONB_ARRAY_ELEMENTS_TEXT(projected.anchor_plates) plates(value)
-      WHERE projected.run_id = materialization_run_id
-    )
-  ) THEN
-    RAISE EXCEPTION 'ReID v2 plate-anchor materialization does not exactly reproduce run %',
-      materialization_run_id
-      USING ERRCODE = '23514',
-            CONSTRAINT = 'vehicle_reid_v2_exact_plate_anchor_materialization';
-  END IF;
-END;
-$$ LANGUAGE plpgsql;
-
-CREATE OR REPLACE FUNCTION public.validate_vehicle_reid_v2_stage2_materialization_transition()
-RETURNS TRIGGER AS $$
-BEGIN
-  IF OLD.status = 'running' AND OLD.phase = 'materialize'
-    AND NEW.status = 'completed' AND NEW.phase = 'complete' THEN
-    PERFORM public.assert_vehicle_reid_v2_stage2_materialization(OLD.id);
-  END IF;
-  RETURN NEW;
-END;
-$$ LANGUAGE plpgsql;
-
-DROP TRIGGER IF EXISTS vehicle_reid_v2_conversion_stage2_materialization
-  ON public.vehicle_reid_v2_conversion_runs;
-CREATE TRIGGER vehicle_reid_v2_conversion_stage2_materialization
-BEFORE UPDATE ON public.vehicle_reid_v2_conversion_runs
-FOR EACH ROW EXECUTE FUNCTION public.validate_vehicle_reid_v2_stage2_materialization_transition();
-
-CREATE OR REPLACE FUNCTION public.validate_vehicle_reid_control_stage2_transition()
-RETURNS TRIGGER AS $$
-BEGIN
-  IF NEW.mode = 'v2_primary' THEN
-    PERFORM public.assert_vehicle_reid_v2_stage2_materialization(
-      NEW.transition_run_id
-    );
-  END IF;
-  RETURN NEW;
-END;
-$$ LANGUAGE plpgsql;
-
-DROP TRIGGER IF EXISTS vehicle_reid_control_stage2_validate_transition
-  ON public.vehicle_reid_control;
-CREATE TRIGGER vehicle_reid_control_stage2_validate_transition
-BEFORE INSERT OR UPDATE ON public.vehicle_reid_control
-FOR EACH ROW EXECUTE FUNCTION public.validate_vehicle_reid_control_stage2_transition();
-
-INSERT INTO public.schema_migrations(version,description) VALUES
- ('2026081701_vehicle_reid_v2_primary_stage2','Add current-reviewed authoritative profile plate anchors, exact Stage 2 anchor reconciliation, bounded observable live-assignment jobs, and current-anchor exact-plate assignment guards while retaining v2 shadow mode until an explicit completed-run cutover.')
-ON CONFLICT(version) DO NOTHING;
-
-INSERT INTO public.schema_migrations(version,description) VALUES
- ('2026081702_vehicle_reid_v2_materialization_scale','Keep Stage 2 assignment materialization parameter-aware and bypass the exact-current consumer view when no indexed active assignment history exists; final exact reconciliation remains mandatory.')
-ON CONFLICT(version) DO NOTHING;
-
--- Live discovery progress is operational state, not authority provenance.  It
--- therefore lives outside vehicle_reid_control (whose same-mode rows are
--- deliberately immutable) and does not reference plate_reads: retention may
--- delete the read at a cursor without making discovery state invalid.
 CREATE TABLE IF NOT EXISTS public.vehicle_reid_v2_live_discovery_state (
   singleton BOOLEAN PRIMARY KEY DEFAULT TRUE CHECK (singleton = TRUE),
-  transition_run_id BIGINT
-    REFERENCES public.vehicle_reid_v2_conversion_runs(id) ON DELETE RESTRICT,
   forward_cursor_read_id INTEGER NOT NULL DEFAULT 0 CHECK (
     forward_cursor_read_id >= 0
   ),
@@ -9261,67 +7025,6 @@ CREATE TABLE IF NOT EXISTS public.vehicle_reid_v2_live_discovery_state (
   updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
   CHECK (revisit_upper_read_id <= forward_cursor_read_id)
 );
-
--- Install the singleton even while v2 is on standby.  The first exact
--- v2-primary transition below seeds it from that transition's completed run.
-INSERT INTO public.vehicle_reid_v2_live_discovery_state (singleton)
-VALUES (TRUE)
-ON CONFLICT (singleton) DO NOTHING;
-
--- Existing installations may already be primary or rolled back from primary.
--- Seed from the exact control run, never from MAX(plate_reads.id), and preserve
--- any cursor that has already advanced beyond the immutable conversion bound.
-INSERT INTO public.vehicle_reid_v2_live_discovery_state (
-  singleton, transition_run_id, forward_cursor_read_id,
-  revisit_cursor_read_id, revisit_upper_read_id, last_scanned_at
-)
-SELECT TRUE, runs.id, runs.max_read_id, runs.max_read_id, runs.max_read_id,
-       CURRENT_TIMESTAMP
-FROM public.vehicle_reid_control control
-JOIN public.vehicle_reid_v2_conversion_runs runs
-  ON runs.id = control.transition_run_id
- AND runs.status = 'completed'
- AND runs.phase = 'complete'
- AND runs.accepted_preview_fingerprint = runs.preview_fingerprint
- AND runs.last_revalidation_status = 'current'
- AND runs.last_revalidation_fingerprint = runs.identity_evidence_fingerprint
- AND runs.last_revalidated_at IS NOT NULL
- AND runs.completed_at IS NOT NULL
-WHERE control.singleton = TRUE
-ON CONFLICT (singleton) DO UPDATE
-SET transition_run_id = EXCLUDED.transition_run_id,
-    forward_cursor_read_id = GREATEST(
-      public.vehicle_reid_v2_live_discovery_state.forward_cursor_read_id,
-      EXCLUDED.forward_cursor_read_id
-    ),
-    revisit_cursor_read_id = CASE
-      WHEN public.vehicle_reid_v2_live_discovery_state.transition_run_id IS NULL
-       AND public.vehicle_reid_v2_live_discovery_state.last_scanned_at IS NULL
-       AND public.vehicle_reid_v2_live_discovery_state.revision = 1
-      THEN GREATEST(
-        public.vehicle_reid_v2_live_discovery_state.revisit_cursor_read_id,
-        EXCLUDED.revisit_cursor_read_id
-      )
-      ELSE public.vehicle_reid_v2_live_discovery_state.revisit_cursor_read_id
-    END,
-    revisit_upper_read_id = GREATEST(
-      public.vehicle_reid_v2_live_discovery_state.revisit_upper_read_id,
-      EXCLUDED.revisit_upper_read_id
-    ),
-    last_scanned_at = COALESCE(
-      public.vehicle_reid_v2_live_discovery_state.last_scanned_at,
-      EXCLUDED.last_scanned_at
-    ),
-    revision = public.vehicle_reid_v2_live_discovery_state.revision + 1,
-    updated_at = CURRENT_TIMESTAMP
-WHERE public.vehicle_reid_v2_live_discovery_state.transition_run_id
-        IS DISTINCT FROM EXCLUDED.transition_run_id
-   OR public.vehicle_reid_v2_live_discovery_state.forward_cursor_read_id
-        < EXCLUDED.forward_cursor_read_id
-   OR public.vehicle_reid_v2_live_discovery_state.revisit_upper_read_id
-        < EXCLUDED.revisit_upper_read_id
-   OR public.vehicle_reid_v2_live_discovery_state.last_scanned_at IS NULL;
-
 CREATE OR REPLACE FUNCTION public.validate_vehicle_reid_v2_live_discovery_state()
 RETURNS TRIGGER AS $$
 BEGIN
@@ -9350,287 +7053,112 @@ CREATE TRIGGER vehicle_reid_v2_live_discovery_validate
 BEFORE UPDATE OR DELETE ON public.vehicle_reid_v2_live_discovery_state
 FOR EACH ROW EXECUTE FUNCTION public.validate_vehicle_reid_v2_live_discovery_state();
 
-CREATE OR REPLACE FUNCTION public.seed_vehicle_reid_v2_live_discovery_state()
-RETURNS TRIGGER AS $$
+INSERT INTO public.vehicle_reid_v2_live_discovery_state(singleton)
+VALUES (TRUE) ON CONFLICT (singleton) DO NOTHING;
+
+CREATE TABLE IF NOT EXISTS public.vehicle_asset_analysis_jobs (
+  derivative_id BIGINT PRIMARY KEY REFERENCES public.vehicle_image_derivatives(id) ON DELETE CASCADE,
+  status VARCHAR(12) NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','processing','ready','failed')),
+  attempt_count SMALLINT NOT NULL DEFAULT 0 CHECK (attempt_count BETWEEN 0 AND 3),
+  claim_token UUID,
+  lease_until TIMESTAMPTZ,
+  next_attempt_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  error_code VARCHAR(100),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_vehicle_asset_analysis_pending
+  ON public.vehicle_asset_analysis_jobs(next_attempt_at, derivative_id)
+  WHERE status <> 'ready' AND attempt_count < 3;
+
+
+-- Read-facing attributes project exact-current canonical crops.
+DO $attribute_upgrade$
 BEGIN
-  IF NEW.mode = 'v2_primary'
-    AND (TG_OP = 'INSERT' OR OLD.mode IS DISTINCT FROM NEW.mode) THEN
-    INSERT INTO public.vehicle_reid_v2_live_discovery_state (
-      singleton, transition_run_id, forward_cursor_read_id,
-      revisit_cursor_read_id, revisit_upper_read_id, last_scanned_at
-    )
-    SELECT TRUE, runs.id, runs.max_read_id, runs.max_read_id, runs.max_read_id,
-           CURRENT_TIMESTAMP
-    FROM public.vehicle_reid_v2_conversion_runs runs
-    WHERE runs.id = NEW.transition_run_id
-      AND runs.status = 'completed'
-      AND runs.phase = 'complete'
-      AND runs.accepted_preview_fingerprint = runs.preview_fingerprint
-      AND runs.last_revalidation_status = 'current'
-      AND runs.last_revalidation_fingerprint = runs.identity_evidence_fingerprint
-      AND runs.last_revalidated_at IS NOT NULL
-      AND runs.completed_at IS NOT NULL
-    ON CONFLICT (singleton) DO UPDATE
-    SET transition_run_id = EXCLUDED.transition_run_id,
-        forward_cursor_read_id = GREATEST(
-          public.vehicle_reid_v2_live_discovery_state.forward_cursor_read_id,
-          EXCLUDED.forward_cursor_read_id
-        ),
-        revisit_cursor_read_id = CASE
-          WHEN public.vehicle_reid_v2_live_discovery_state.transition_run_id IS NULL
-           AND public.vehicle_reid_v2_live_discovery_state.last_scanned_at IS NULL
-           AND public.vehicle_reid_v2_live_discovery_state.revision = 1
-          THEN GREATEST(
-            public.vehicle_reid_v2_live_discovery_state.revisit_cursor_read_id,
-            EXCLUDED.revisit_cursor_read_id
-          )
-          ELSE public.vehicle_reid_v2_live_discovery_state.revisit_cursor_read_id
-        END,
-        revisit_upper_read_id = GREATEST(
-          public.vehicle_reid_v2_live_discovery_state.revisit_upper_read_id,
-          EXCLUDED.revisit_upper_read_id
-        ),
-        last_scanned_at = EXCLUDED.last_scanned_at,
-        revision = public.vehicle_reid_v2_live_discovery_state.revision + 1,
-        updated_at = CURRENT_TIMESTAMP;
+  IF EXISTS (SELECT 1 FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
+    WHERE n.nspname = 'public' AND c.relname = 'vehicle_attribute_observations' AND c.relkind = 'r') THEN
+    DROP TABLE public.vehicle_attribute_observations;
   END IF;
-  RETURN NEW;
-END;
-$$ LANGUAGE plpgsql;
+END
+$attribute_upgrade$;
+CREATE OR REPLACE VIEW public.vehicle_attribute_observations AS
+SELECT observations.id, links.read_id, observations.attribute_key,
+       observations.provider, observations.model_version, observations.status,
+       observations.attribute_value, observations.confidence, observations.raw_result,
+       observations.created_at AS evaluated_at
+FROM public.vehicle_image_asset_reads links
+JOIN public.plate_reads reads ON reads.id = links.read_id
+JOIN public.vehicle_image_assets assets ON assets.id = links.asset_id
+JOIN public.vehicle_image_derivatives derivatives ON derivatives.asset_id = assets.id
+  AND derivatives.source_sha256 = assets.content_sha256
+  AND derivatives.derivative_kind = 'vehicle_crop'
+  AND derivatives.algorithm_version = 'canonical-overview-detection-box-v1'
+JOIN public.vehicle_asset_attribute_observations observations
+  ON observations.derivative_id = derivatives.id
+ AND observations.source_sha256 = derivatives.content_sha256
+ AND observations.algorithm_version = 'canonical-overview-crop-attributes-v1'
+WHERE links.identity_eligible = TRUE AND links.relationship <> 'display_fallback'
+  AND reads.vehicle_image_status = 'ready' AND reads.vehicle_image_path = links.source_path_snapshot
+  AND reads.vehicle_image_source_kind = links.source_kind
+  AND reads.vehicle_image_updated_at IS NOT DISTINCT FROM links.source_updated_at;
 
-DROP TRIGGER IF EXISTS vehicle_reid_control_seed_live_discovery
-  ON public.vehicle_reid_control;
-CREATE TRIGGER vehicle_reid_control_seed_live_discovery
-AFTER INSERT OR UPDATE ON public.vehicle_reid_control
-FOR EACH ROW EXECUTE FUNCTION public.seed_vehicle_reid_v2_live_discovery_state();
+CREATE OR REPLACE VIEW public.vehicle_direction_sources AS
+SELECT DISTINCT ON (links.read_id)
+  links.read_id, derivatives.id AS derivative_id, embeddings.id AS embedding_id,
+  derivatives.storage_path AS derived_path, derivatives.content_sha256 AS source_sha256,
+  embeddings.embedding AS vehicle_embedding,
+  'canonical-crop-direction-v2'::text AS embedding_model,
+  'vehicle_crop'::text AS asset_type,
+  embeddings.algorithm_version,
+  'ready'::text AS status
+FROM public.vehicle_image_asset_reads links
+JOIN public.plate_reads reads ON reads.id = links.read_id
+JOIN public.vehicle_image_assets assets ON assets.id = links.asset_id
+JOIN public.vehicle_image_derivatives derivatives
+  ON derivatives.asset_id = assets.id
+ AND derivatives.source_sha256 = assets.content_sha256
+ AND derivatives.derivative_kind = 'vehicle_crop'
+ AND derivatives.algorithm_version = 'canonical-overview-detection-box-v1'
+JOIN public.vehicle_asset_embeddings embeddings
+  ON embeddings.derivative_id = derivatives.id
+ AND embeddings.source_sha256 = derivatives.content_sha256
+ AND embeddings.model_name = 'vehicle-reid-0001-ir-fp16-v1'
+ AND embeddings.algorithm_version = 'canonical-overview-crop-embedding-v1'
+WHERE links.identity_eligible = TRUE AND links.relationship <> 'display_fallback'
+  AND reads.vehicle_image_status = 'ready'
+  AND reads.vehicle_image_path = links.source_path_snapshot
+  AND reads.vehicle_image_source_kind = links.source_kind
+  AND reads.vehicle_image_updated_at IS NOT DISTINCT FROM links.source_updated_at
+ORDER BY links.read_id, derivatives.id DESC, embeddings.id DESC;
 
-INSERT INTO public.schema_migrations(version,description) VALUES
- ('2026081703_vehicle_reid_v2_bounded_live_discovery','Persist serialized forward and independent epoch-bounded revisit discovery cursors, seed them from the exact completed transition run without rewinding, and keep cursor/job progress transactionally bounded.')
-ON CONFLICT(version) DO NOTHING;
 
--- Stage 3 begins with a reversible producer stop, not deletion.  The default
--- keeps every existing installation unchanged.  An Administrator may stop the
--- legacy writer only while authoritative v2 remains primary; rolling consumers
--- back to v1 first requires an explicit producer restore.  Historical v1 rows,
--- derived files, reviews, assignments, and every original/Overview image are
--- retained unchanged by this migration and by either control transition.
-ALTER TABLE public.vehicle_reid_control
-  ADD COLUMN IF NOT EXISTS v1_producer_state VARCHAR(16) NOT NULL DEFAULT 'active'
-    CHECK (v1_producer_state IN ('active','stopped')),
-  ADD COLUMN IF NOT EXISTS v1_producer_revision INTEGER NOT NULL DEFAULT 1
-    CHECK (v1_producer_revision > 0),
-  ADD COLUMN IF NOT EXISTS v1_producer_actor_user_id BIGINT
-    REFERENCES public.users(id) ON DELETE SET NULL,
-  ADD COLUMN IF NOT EXISTS v1_producer_actor_username VARCHAR(64),
-  ADD COLUMN IF NOT EXISTS v1_producer_actor_display_name VARCHAR(120),
-  ADD COLUMN IF NOT EXISTS v1_producer_reason VARCHAR(160),
-  ADD COLUMN IF NOT EXISTS v1_producer_changed_at TIMESTAMPTZ;
+ALTER TABLE public.vehicle_orientation_labels
+  ADD COLUMN IF NOT EXISTS source_embedding_id BIGINT REFERENCES public.vehicle_asset_embeddings(id) ON DELETE CASCADE;
+ALTER TABLE public.vehicle_direction_observations
+  ADD COLUMN IF NOT EXISTS source_embedding_id BIGINT REFERENCES public.vehicle_asset_embeddings(id) ON DELETE CASCADE;
 
-CREATE OR REPLACE FUNCTION public.validate_vehicle_reid_control_transition()
-RETURNS TRIGGER AS $$
-DECLARE
-  producer_changed BOOLEAN := FALSE;
-BEGIN
-  IF TG_OP = 'DELETE' THEN
-    RAISE EXCEPTION 'The ReID authority control singleton cannot be deleted'
-      USING ERRCODE = '23514',
-            CONSTRAINT = 'vehicle_reid_control_singleton_immutable';
-  END IF;
+-- Reviewed examples and predictions belong to the exact current canonical crop.
+CREATE OR REPLACE VIEW public.current_vehicle_orientation_labels AS
+SELECT labels.* FROM public.vehicle_orientation_labels labels
+JOIN public.vehicle_direction_sources source
+  ON source.read_id = labels.read_id AND source.embedding_id = labels.source_embedding_id
+WHERE labels.embedding_model = 'canonical-crop-direction-v2';
 
-  IF TG_OP = 'UPDATE' THEN
-    producer_changed := NEW.v1_producer_state IS DISTINCT FROM OLD.v1_producer_state;
+CREATE OR REPLACE VIEW public.current_vehicle_direction_observations AS
+SELECT observations.* FROM public.vehicle_direction_observations observations
+WHERE observations.classifier_version = 'blue-iris-zone-crossing-v1'
+   OR (observations.classifier_version = 'canonical-crop-orientation-knn-v2'
+     AND EXISTS (SELECT 1 FROM public.vehicle_direction_sources source
+       WHERE source.read_id = observations.read_id
+         AND source.embedding_id = observations.source_embedding_id));
 
-    IF NEW.mode = OLD.mode AND NOT producer_changed
-      AND (TO_JSONB(NEW) - 'updated_at') IS DISTINCT FROM
-          (TO_JSONB(OLD) - 'updated_at') THEN
-      RAISE EXCEPTION 'ReID authority provenance is immutable without a mode transition'
-        USING ERRCODE = '23514',
-              CONSTRAINT = 'vehicle_reid_control_same_mode_immutable';
-    END IF;
+-- Retire only derived predictions/calibration that cannot identify their crop.
+DELETE FROM public.vehicle_direction_observations
+  WHERE classifier_version <> 'blue-iris-zone-crossing-v1' AND source_embedding_id IS NULL;
+DELETE FROM public.vehicle_orientation_labels WHERE source_embedding_id IS NULL;
 
-    IF producer_changed THEN
-      IF NEW.mode IS DISTINCT FROM OLD.mode THEN
-        RAISE EXCEPTION 'ReID authority and v1 producer transitions must be separate operations'
-          USING ERRCODE = '23514',
-                CONSTRAINT = 'vehicle_reid_control_separate_transitions';
-      END IF;
-      IF NEW.mode <> 'v2_primary' THEN
-        RAISE EXCEPTION 'The ReID v1 producer can change state only while v2 remains primary'
-          USING ERRCODE = '23514',
-                CONSTRAINT = 'vehicle_reid_control_v1_producer_requires_v2';
-      END IF;
-      IF NEW.v1_producer_revision <> OLD.v1_producer_revision + 1
-        OR NEW.v1_producer_changed_at IS NULL
-        OR (OLD.v1_producer_changed_at IS NOT NULL
-          AND NEW.v1_producer_changed_at <= OLD.v1_producer_changed_at) THEN
-        RAISE EXCEPTION 'ReID v1 producer transitions require the next revision and a new timestamp'
-          USING ERRCODE = '23514',
-                CONSTRAINT = 'vehicle_reid_control_v1_producer_revision';
-      END IF;
-      IF NULLIF(BTRIM(NEW.v1_producer_actor_username), '') IS NULL
-        OR NULLIF(BTRIM(NEW.v1_producer_actor_display_name), '') IS NULL
-        OR NULLIF(BTRIM(NEW.v1_producer_reason), '') IS NULL THEN
-        RAISE EXCEPTION 'ReID v1 producer transitions require an actor snapshot and reason'
-          USING ERRCODE = '23514',
-                CONSTRAINT = 'vehicle_reid_control_v1_producer_actor';
-      END IF;
-      IF (TO_JSONB(NEW)
-            - 'updated_at'
-            - 'v1_producer_state'
-            - 'v1_producer_revision'
-            - 'v1_producer_actor_user_id'
-            - 'v1_producer_actor_username'
-            - 'v1_producer_actor_display_name'
-            - 'v1_producer_reason'
-            - 'v1_producer_changed_at') IS DISTINCT FROM
-         (TO_JSONB(OLD)
-            - 'updated_at'
-            - 'v1_producer_state'
-            - 'v1_producer_revision'
-            - 'v1_producer_actor_user_id'
-            - 'v1_producer_actor_username'
-            - 'v1_producer_actor_display_name'
-            - 'v1_producer_reason'
-            - 'v1_producer_changed_at') THEN
-        RAISE EXCEPTION 'A ReID v1 producer transition cannot rewrite authority provenance'
-          USING ERRCODE = '23514',
-                CONSTRAINT = 'vehicle_reid_control_v1_producer_sealed';
-      END IF;
-    ELSIF NEW.mode <> OLD.mode AND (
-      NEW.v1_producer_state IS DISTINCT FROM OLD.v1_producer_state
-      OR NEW.v1_producer_revision IS DISTINCT FROM OLD.v1_producer_revision
-      OR NEW.v1_producer_actor_user_id IS DISTINCT FROM OLD.v1_producer_actor_user_id
-      OR NEW.v1_producer_actor_username IS DISTINCT FROM OLD.v1_producer_actor_username
-      OR NEW.v1_producer_actor_display_name IS DISTINCT FROM OLD.v1_producer_actor_display_name
-      OR NEW.v1_producer_reason IS DISTINCT FROM OLD.v1_producer_reason
-      OR NEW.v1_producer_changed_at IS DISTINCT FROM OLD.v1_producer_changed_at
-    ) THEN
-      RAISE EXCEPTION 'An authority transition cannot rewrite ReID v1 producer provenance'
-        USING ERRCODE = '23514',
-              CONSTRAINT = 'vehicle_reid_control_authority_seals_v1_producer';
-    END IF;
-  END IF;
-
-  IF TG_OP = 'UPDATE' AND NEW.mode <> OLD.mode AND (
-    NEW.previous_mode IS DISTINCT FROM OLD.mode
-    OR NEW.revision <> OLD.revision + 1
-    OR NEW.transitioned_at <= OLD.transitioned_at
-  ) THEN
-    RAISE EXCEPTION 'ReID authority transitions require the prior mode, next revision, and a new timestamp'
-      USING ERRCODE = '23514',
-            CONSTRAINT = 'vehicle_reid_control_transition_revision';
-  END IF;
-
-  IF TG_OP = 'UPDATE' AND NEW.mode <> OLD.mode AND NOT (
-    (OLD.mode = 'v1_primary' AND NEW.mode = 'v2_shadow')
-    OR (OLD.mode IN ('v2_shadow','v1_rollback') AND NEW.mode = 'v2_primary')
-    OR (OLD.mode = 'v2_primary' AND NEW.mode = 'v1_rollback')
-  ) THEN
-    RAISE EXCEPTION 'Invalid ReID authority transition from % to %',
-      OLD.mode, NEW.mode
-      USING ERRCODE = '23514',
-            CONSTRAINT = 'vehicle_reid_control_transition_path';
-  END IF;
-
-  IF NEW.mode = 'v2_primary' AND NOT EXISTS (
-    SELECT 1 FROM public.vehicle_reid_v2_conversion_runs runs
-    WHERE runs.id = NEW.transition_run_id
-      AND runs.status = 'completed'
-      AND runs.phase = 'complete'
-      AND runs.accepted_preview_fingerprint = runs.preview_fingerprint
-      AND runs.last_revalidation_status = 'current'
-      AND runs.last_revalidation_fingerprint = runs.identity_evidence_fingerprint
-      AND runs.last_revalidated_at IS NOT NULL
-      AND runs.completed_at IS NOT NULL
-  ) THEN
-    RAISE EXCEPTION 'v2_primary requires one completed, exactly revalidated conversion run'
-      USING ERRCODE = '23514',
-            CONSTRAINT = 'vehicle_reid_control_v2_primary_run';
-  END IF;
-
-  IF NEW.mode = 'v2_primary' THEN
-    PERFORM public.assert_vehicle_reid_v2_exact_materialization(
-      NEW.transition_run_id
-    );
-  END IF;
-
-  IF NEW.mode = 'v1_rollback' AND (
-    NEW.previous_mode IS DISTINCT FROM 'v2_primary'
-    OR NEW.transition_run_id IS NULL
-    OR (TG_OP = 'UPDATE'
-      AND NEW.transition_run_id IS DISTINCT FROM OLD.transition_run_id)
-  ) THEN
-    RAISE EXCEPTION 'v1_rollback must immediately retain the v2_primary conversion run'
-      USING ERRCODE = '23514',
-            CONSTRAINT = 'vehicle_reid_control_v1_rollback_path';
-  END IF;
-
-  IF NEW.mode = 'v1_rollback' AND NEW.v1_producer_state <> 'active' THEN
-    RAISE EXCEPTION 'v1_rollback requires an active ReID v1 producer'
-      USING ERRCODE = '23514',
-            CONSTRAINT = 'vehicle_reid_control_v1_producer_active_for_rollback';
-  END IF;
-
-  IF NEW.mode IN ('v2_primary','v1_rollback') AND (
-    NULLIF(BTRIM(NEW.transition_actor_username), '') IS NULL
-    OR NULLIF(BTRIM(NEW.transition_actor_display_name), '') IS NULL
-    OR NULLIF(BTRIM(NEW.transition_reason), '') IS NULL
-  ) THEN
-    RAISE EXCEPTION 'ReID authority transitions require an actor snapshot and reason'
-      USING ERRCODE = '23514',
-            CONSTRAINT = 'vehicle_reid_control_transition_actor';
-  END IF;
-  RETURN NEW;
-END;
-$$ LANGUAGE plpgsql;
-
-CREATE OR REPLACE FUNCTION public.guard_stopped_vehicle_reid_v1_writes()
-RETURNS TRIGGER AS $$
-BEGIN
-  IF EXISTS (
-    SELECT 1 FROM public.vehicle_reid_control
-    WHERE singleton = TRUE AND v1_producer_state = 'stopped'
-  ) THEN
-    RAISE EXCEPTION 'The retained ReID v1 producer is stopped'
-      USING ERRCODE = '55000',
-            CONSTRAINT = 'vehicle_reid_v1_producer_stopped';
-  END IF;
-  RETURN NEW;
-END;
-$$ LANGUAGE plpgsql;
-
-DROP TRIGGER IF EXISTS capture_assets_v1_producer_guard ON public.capture_assets;
-CREATE TRIGGER capture_assets_v1_producer_guard
-BEFORE INSERT OR UPDATE ON public.capture_assets
-FOR EACH ROW EXECUTE FUNCTION public.guard_stopped_vehicle_reid_v1_writes();
-
-DROP TRIGGER IF EXISTS vehicle_match_feedback_v1_producer_guard
-  ON public.vehicle_match_feedback;
-CREATE TRIGGER vehicle_match_feedback_v1_producer_guard
-BEFORE INSERT OR UPDATE ON public.vehicle_match_feedback
-FOR EACH ROW EXECUTE FUNCTION public.guard_stopped_vehicle_reid_v1_writes();
-
-DROP TRIGGER IF EXISTS vehicle_clusters_v1_producer_guard
-  ON public.vehicle_clusters;
-CREATE TRIGGER vehicle_clusters_v1_producer_guard
-BEFORE INSERT OR UPDATE ON public.vehicle_clusters
-FOR EACH ROW EXECUTE FUNCTION public.guard_stopped_vehicle_reid_v1_writes();
-
-DROP TRIGGER IF EXISTS vehicle_cluster_assignments_v1_producer_guard
-  ON public.vehicle_cluster_assignments;
-CREATE TRIGGER vehicle_cluster_assignments_v1_producer_guard
-BEFORE INSERT OR UPDATE ON public.vehicle_cluster_assignments
-FOR EACH ROW EXECUTE FUNCTION public.guard_stopped_vehicle_reid_v1_writes();
-
-DROP TRIGGER IF EXISTS vehicle_plate_associations_v1_producer_guard
-  ON public.vehicle_plate_associations;
-CREATE TRIGGER vehicle_plate_associations_v1_producer_guard
-BEFORE INSERT OR UPDATE ON public.vehicle_plate_associations
-FOR EACH ROW EXECUTE FUNCTION public.guard_stopped_vehicle_reid_v1_writes();
-
-INSERT INTO public.schema_migrations(version,description) VALUES
- ('2026082101_vehicle_reid_v1_producer_stop','Add an audited, reversible, default-active ReID v1 producer stop that requires v2_primary, preserves every historical row and file, blocks new legacy asset/feedback/cluster/association writes, and requires an explicit restore before consumer rollback.')
-ON CONFLICT(version) DO NOTHING;
+INSERT INTO public.schema_migrations(version, description) VALUES
+  ('2026092701_native_reid', 'Native canonical vehicle identity and automatic image processing')
+ON CONFLICT (version) DO NOTHING;
 
 -- Direct local speed-radar ingestion. The source reuses an existing MQTT broker
 -- credential record, stores only bounded JSON vehicle detections, and links one

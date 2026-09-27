@@ -60,6 +60,7 @@ test("storage health combines exact database and filesystem facts with a bounded
     ready_count: "7",
     failed_count: "1",
     source_missing_count: "1",
+    pending_count: "1",
     last_indexed_at: "2026-07-24T11:30:00.000Z",
     vehicle_image_asset_count: "4",
     vehicle_image_asset_bytes: "1200",
@@ -115,7 +116,7 @@ test("storage health combines exact database and filesystem facts with a bounded
         }] };
       }
       if (sql === STORAGE_HEALTH_LIVE_CATALOG_SQL) {
-        return { rows: [{ enabled: false, completed_campaign: true }] };
+        return { rows: [{ enabled: false }] };
       }
       if (sql === STORAGE_HEALTH_LIVE_CROP_RELATION_SQL) {
         return { rows: [{
@@ -124,7 +125,7 @@ test("storage health combines exact database and filesystem facts with a bounded
         }] };
       }
       if (sql === STORAGE_HEALTH_LIVE_CROP_SQL) {
-        return { rows: [{ enabled: false, completed_campaign: true }] };
+        return { rows: [{ enabled: false }] };
       }
       assert.fail("Unexpected storage-health query");
     },
@@ -172,7 +173,6 @@ test("storage health combines exact database and filesystem facts with a bounded
   });
   assert.deepEqual(snapshot.assets.canonicalVehicleImageLiveCatalog, {
     enabled: false,
-    completedCampaign: true,
   });
   assert.equal(snapshot.assets.canonicalVehicleCropCount, 2);
   assert.equal(snapshot.assets.canonicalVehicleCropPhysicalBytes, 400);
@@ -180,7 +180,6 @@ test("storage health combines exact database and filesystem facts with a bounded
   assert.equal(snapshot.assets.canonicalVehicleCropCurrentPhysicalBytes, 400);
   assert.deepEqual(snapshot.assets.canonicalVehicleCropLive, {
     enabled: false,
-    completedCampaign: true,
   });
   assert.equal(snapshot.growth.estimatedBytesPerRead, 400);
   assert.equal(snapshot.growth.estimatedBytesPerDay, 4_000);
@@ -313,7 +312,7 @@ test("enabled automatic catalog and crops contribute observed growth to capacity
         }] };
       }
       if (sql === STORAGE_HEALTH_LIVE_CATALOG_SQL) {
-        return { rows: [{ enabled: true, completed_campaign: true }] };
+        return { rows: [{ enabled: true }] };
       }
       if (sql === STORAGE_HEALTH_LIVE_CROP_RELATION_SQL) {
         return { rows: [{
@@ -322,7 +321,7 @@ test("enabled automatic catalog and crops contribute observed growth to capacity
         }] };
       }
       if (sql === STORAGE_HEALTH_LIVE_CROP_SQL) {
-        return { rows: [{ enabled: true, completed_campaign: true }] };
+        return { rows: [{ enabled: true }] };
       }
       assert.fail("Unexpected storage-health query");
     },

@@ -87,7 +87,6 @@ const forbiddenPathPrefixes = [
   "app/tpms/",
   "app/traffic/",
   "app/visual_search/reid-v2/",
-  "app/visual_search/review/",
   "components/chat/",
   "lib/host-maintenance",
   "lib/radar/",

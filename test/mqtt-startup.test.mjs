@@ -170,10 +170,9 @@ test("Next.js Node instrumentation delegates through the Node-only adapter", asy
   assert.equal(receivedLogger, logger);
 });
 
-test("Node instrumentation starts MQTT and automatic visual indexing together", async () => {
+test("Node instrumentation starts MQTT and canonical image workers together", async () => {
   const { logger } = makeLogger();
   let mqttCalls = 0;
-  let visualCalls = 0;
   let vehicleFrameCalls = 0;
   let notificationCalls = 0;
   let maintenanceCalls = 0;
@@ -190,15 +189,6 @@ test("Node instrumentation starts MQTT and automatic visual indexing together", 
       mqttCalls += 1;
       assert.equal(options.logger, logger);
       return { status: "started" };
-    },
-    async loadVisualStartup() {
-      return {
-        async startVisualIndexRuntimeWithRetry(options) {
-          visualCalls += 1;
-          assert.equal(options.logger, logger);
-          return { status: "started" };
-        },
-      };
     },
     async loadVehicleFrameStartup() {
       return {
@@ -293,7 +283,6 @@ test("Node instrumentation starts MQTT and automatic visual indexing together", 
   });
   assert.equal(result.status, "started");
   assert.equal(result.mqtt.status, "started");
-  assert.equal(result.visualIndex.status, "started");
   assert.equal(result.vehicleFrames.status, "started");
   assert.equal(result.notificationOperations.status, "started");
   assert.equal(result.maintenance.status, "started");
@@ -305,7 +294,6 @@ test("Node instrumentation starts MQTT and automatic visual indexing together", 
   assert.equal(result.vehicleAssetAttributes.status, "started");
   assert.equal(result.vehicleReid.status, "started");
   assert.equal(mqttCalls, 1);
-  assert.equal(visualCalls, 1);
   assert.equal(vehicleFrameCalls, 1);
   assert.equal(notificationCalls, 1);
   assert.equal(maintenanceCalls, 1);
@@ -318,7 +306,7 @@ test("Node instrumentation starts MQTT and automatic visual indexing together", 
   assert.equal(vehicleReidLiveCalls, 1);
 });
 
-test("a visual-index instrumentation import failure cannot prevent MQTT startup", async () => {
+test("a canonical embedding instrumentation import failure cannot prevent MQTT startup", async () => {
   const { logger, entries } = makeLogger();
   let mqttCalls = 0;
   const result = await registerNodeInstrumentation({
@@ -327,7 +315,7 @@ test("a visual-index instrumentation import failure cannot prevent MQTT startup"
       mqttCalls += 1;
       return { status: "started" };
     },
-    async loadVisualStartup() {
+    async loadVehicleAssetEmbeddingStartup() {
       throw new Error("OpenVINO module is temporarily unavailable");
     },
     async loadVehicleFrameStartup() {
@@ -351,9 +339,7 @@ test("a visual-index instrumentation import failure cannot prevent MQTT startup"
     async loadVehicleImageCropStartup() {
       return { async startVehicleImageCropRuntimeWithRetry() { return { status: "started" }; } };
     },
-    async loadVehicleAssetEmbeddingStartup() {
-      return { async startVehicleAssetEmbeddingRuntimeWithRetry() { return { status: "started" }; } };
-    },
+
     async loadVehicleAssetAttributeStartup() {
       return { async startVehicleAssetAttributeRuntimeWithRetry() { return { status: "started" }; } };
     },
@@ -364,9 +350,9 @@ test("a visual-index instrumentation import failure cannot prevent MQTT startup"
   assert.equal(mqttCalls, 1);
   assert.equal(result.status, "partial");
   assert.equal(result.mqtt.status, "started");
-  assert.equal(result.visualIndex.status, "error");
-  assert.match(result.visualIndex.error.message, /OpenVINO/);
-  assert.match(entries.at(-1).message, /Visual index instrumentation startup failed/);
+  assert.equal(result.vehicleAssetEmbeddings.status, "error");
+  assert.match(result.vehicleAssetEmbeddings.error.message, /OpenVINO/);
+  assert.match(entries.at(-1).message, /Canonical crop embeddings instrumentation startup failed/);
 });
 
 test("Node-only instrumentation loads the resilient MQTT startup wrapper", async () => {

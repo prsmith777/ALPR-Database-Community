@@ -476,10 +476,8 @@ try {
   const campaignActorId = await insertCampaignActor();
   const campaignRepository = new VehicleImageAssetCatalogCampaignRepository(pool);
   const liveRepository = new VehicleImageAssetLiveCatalogRepository(pool);
-  await assert.rejects(
-    liveRepository.setEnabled({ enabled: true, actorUserId: campaignActorId }),
-    /Complete the initial canonical Overview campaign/
-  );
+  assert.equal((await liveRepository.getActivation()).enabled, true);
+  await liveRepository.setEnabled({ enabled: false, actorUserId: campaignActorId });
   const campaignReadId = await insertReadyRead({
     plate: `C${suffix}`.slice(0, 10),
     imagePath: `derived/vehicle-asset-smoke/${suffix}-campaign-lifecycle.jpg`,
@@ -538,7 +536,6 @@ try {
 
   assert.deepEqual(await liveRepository.getActivation(), {
     enabled: false,
-    completedCampaign: true,
     activeCampaign: false,
     state: "disabled",
   });
@@ -631,7 +628,7 @@ try {
        AND actor_user_id = $1`,
     [campaignActorId]
   );
-  assert.equal(liveAuditState.rows[0].count, 2);
+  assert.equal(liveAuditState.rows[0].count, 3);
   assert.equal(liveAuditState.rows[0].invalid_source, 0);
   assert.equal(liveAuditState.rows[0].invalid_outcome, 0);
 

@@ -43,8 +43,6 @@ test("affected server-rendered clients use hydration-safe timestamps", async () 
   const paths = [
     "components/PlateTable.jsx",
     "components/FlaggedPlatesTable.jsx",
-    "components/VehicleClusters.jsx",
-    "components/VisualSearch.jsx",
     "app/logs/LogMessage.jsx",
     "app/logs/ReadPipelineTimeline.jsx",
     "app/logs/retention/LoggingRetentionPanel.jsx",

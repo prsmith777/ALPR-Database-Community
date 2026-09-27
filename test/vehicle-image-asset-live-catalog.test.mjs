@@ -31,7 +31,6 @@ test("automatic catalog remains inert until enabled after a completed campaign",
       async getActivation() {
         return {
           enabled: false,
-          completedCampaign: true,
           activeCampaign: false,
           state: "disabled",
         };
@@ -78,7 +77,6 @@ test("automatic catalog discovers and links a bounded current read", async () =>
       async getActivation() {
         return {
           enabled: true,
-          completedCampaign: true,
           activeCampaign: false,
           state: "active",
         };
@@ -197,7 +195,7 @@ test("automatic catalog migration and discovery are gated, durable, and provider
   ]);
   assert.match(migration, /2026081404_vehicle_image_asset_live_catalog/);
   assert.match(migration, /vehicle_image_asset_live_catalog_control/);
-  assert.match(migration, /enabled BOOLEAN NOT NULL DEFAULT FALSE/);
+  assert.match(migration, /enabled BOOLEAN NOT NULL DEFAULT TRUE/);
   assert.match(migration, /vehicle_image_asset_live_catalog_jobs/);
   const jobDefinition = migration.slice(
     migration.indexOf("CREATE TABLE IF NOT EXISTS public.vehicle_image_asset_live_catalog_jobs"),
@@ -208,7 +206,7 @@ test("automatic catalog migration and discovery are gated, durable, and provider
     migration.slice(migration.indexOf("2026081404_vehicle_image_asset_live_catalog")),
     /INSERT INTO public\.vehicle_image_asset_live_catalog_jobs[\s\S]*SELECT[\s\S]*plate_reads/
   );
-  assert.match(repository, /completed_campaign = TRUE/);
+  assert.match(repository, /processing_enabled/);
   assert.match(repository, /active_campaign = FALSE/);
   assert.match(repository, /FOR UPDATE OF jobs SKIP LOCKED/);
   assert.match(repository, /status = 'cataloged'/);
@@ -223,15 +221,15 @@ test("automatic catalog activation state is fail-closed", () => {
   const { activationState } = vehicleImageAssetLiveCatalogRepositoryInternals;
   assert.equal(activationState({ enabled: false }), "disabled");
   assert.equal(
-    activationState({ enabled: true, completed_campaign: false, active_campaign: false }),
-    "waiting_for_initial_campaign"
+    activationState({ enabled: true, active_campaign: false }),
+    "active"
   );
   assert.equal(
-    activationState({ enabled: true, completed_campaign: true, active_campaign: true }),
+    activationState({ enabled: true, active_campaign: true }),
     "paused_for_operator_campaign"
   );
   assert.equal(
-    activationState({ enabled: true, completed_campaign: true, active_campaign: false }),
+    activationState({ enabled: true, active_campaign: false }),
     "active"
   );
 });

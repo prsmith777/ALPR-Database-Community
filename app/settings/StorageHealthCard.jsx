@@ -102,11 +102,11 @@ export default function StorageHealthCard({ snapshot, view = "all" }) {
   const visibleErrors = (snapshot?.errors || []).filter(
     (error) => error !== "Host storage snapshot is not configured."
   );
-  const indexedTotal = assets
+  const analysisTotal = assets
     ? assets.readyCount + assets.failedCount + assets.pendingCount
     : 0;
-  const indexedPercent = indexedTotal
-    ? Number((assets.readyCount / indexedTotal * 100).toFixed(1))
+  const analysisPercent = analysisTotal
+    ? Number((assets.readyCount / analysisTotal * 100).toFixed(1))
     : 0;
 
   return (
@@ -126,7 +126,7 @@ export default function StorageHealthCard({ snapshot, view = "all" }) {
           <CardDescription className="mt-2">
             {view === "monitoring"
               ? "Scheduled dry-run evidence and bounded storage reconciliation. This view cannot delete or modify data."
-              : "Capacity, database, capture, and visual-index measurements. This view cannot delete or modify data."}
+              : "Capacity, database, capture, and vehicle-analysis measurements. This view cannot delete or modify data."}
           </CardDescription>
         </div>
         <Button
@@ -248,9 +248,9 @@ export default function StorageHealthCard({ snapshot, view = "all" }) {
           />
           <Metric
             icon={CheckCircle2}
-            label="Visual index"
+            label="Vehicle crop analysis"
             value={`${formatCount(assets?.readyCount)} ready`}
-            detail={`${indexedPercent}% · ${formatCount(assets?.pendingCount)} pending · ${formatCount(assets?.failedCount)} failed`}
+            detail={`${analysisPercent}% · ${formatCount(assets?.pendingCount)} pending · ${formatCount(assets?.failedCount)} failed`}
           />
         </div>
 
@@ -259,7 +259,7 @@ export default function StorageHealthCard({ snapshot, view = "all" }) {
             <h3 id="measurement-detail-title" className="font-semibold">Measurement detail</h3>
             <dl className="mt-3 space-y-3 text-sm">
               <div className="flex justify-between gap-4">
-                <dt className="text-muted-foreground">Index-confirmed missing sources</dt>
+                <dt className="text-muted-foreground">Analysis-reported missing crop files</dt>
                 <dd className="font-medium">{formatCount(assets?.sourceMissingCount)}</dd>
               </div>
               <div className="flex justify-between gap-4">
@@ -271,7 +271,7 @@ export default function StorageHealthCard({ snapshot, view = "all" }) {
                 <dd className="font-medium">{formatBytes(growth?.estimatedBytesPerDay)}</dd>
               </div>
               <div className="flex justify-between gap-4">
-                <dt className="text-muted-foreground">Last visual asset indexed</dt>
+                <dt className="text-muted-foreground">Last completed crop analysis</dt>
                 <dd className="text-right font-medium">{formatDate(assets?.lastIndexedAt, timeZone)}</dd>
               </div>
             </dl>

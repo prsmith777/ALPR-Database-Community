@@ -34,16 +34,16 @@ inherited Git history. Every release gate requires:
 - configurable fuzzy plate-matching profiles with an interactive profile test;
 - no radar-dependent speed fields in Community.
 
-Version 0.1.42 adds set-based current-evidence validation for Recognition Feed
-on databases already using ReID 2 primary mode, plus a consistent read snapshot
-for pagination and identity metadata. The default Community mode is unchanged;
-this does not introduce an advanced ReID administration UI. Synthetic PostgreSQL
-regression coverage includes stale evidence, merges, off-page conflicts, and
-database work reduction. See [feed performance](REID_FEED_PERFORMANCE.md).
+Version 0.1.43 makes ReID V2 the only Community identity pipeline. Fresh installs
+automatically catalog eligible vehicle images, create crops, and compute local
+embeddings and attributes. Vehicle Setup exposes processing status, pause/resume,
+and bounded retries. Recognition Feed retains the set-based, consistent-snapshot
+performance repair. Original plate reads and image files are retained on upgrade.
+See [vehicle identity](VEHICLE_IDENTITY.md) and [feed performance](REID_FEED_PERFORMANCE.md).
 
 ### Vehicle images and direction
 
-- locally stored vehicle views, local OpenVINO/ReID inference, basic visual
+- locally stored vehicle views, local OpenVINO/ReID inference, canonical visual
   similarity search, and vehicle profiles;
 - per-camera front/rear semantic labels and confidence thresholds;
 - manual Front view and Rear view training labels plus local ReID fallback;
