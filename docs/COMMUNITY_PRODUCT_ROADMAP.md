@@ -108,6 +108,9 @@ credentials and enables them. They do not require extra ALPR host packages.
   target without deleting the source;
 - exact-tag updates on standard Linux hosts and Linux VMs, available through
   both `./alpr-community` and an optional restricted browser-to-host service;
+- bounded transient OpenVINO download retries plus automatic restoration of
+  the exact previous application when an apply failure occurs before database
+  migration, without replacing the unchanged database;
 - v0.1.44 native-update validation with exact stopped-source retirement evidence,
   fresh updater processes, and a one-time maintenance launcher for older hosts;
   PostgreSQL tests exercise real dumps, migrations, transactional rollback, and

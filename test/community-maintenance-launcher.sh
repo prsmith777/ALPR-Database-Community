@@ -19,11 +19,11 @@ case "$*" in
     else echo https://github.com/prsmith777/ALPR-Database-Community.git; fi ;;
   'status --porcelain --untracked-files=no') [[ "$FIXTURE_MODE" != dirty ]] || echo ' M tracked-file'; true ;;
   'fetch origin '* ) [[ "$FIXTURE_MODE" != fetch-failed ]] ;;
-  'rev-parse v0.1.44^{commit}') printf '%040d\n' 2 ;;
+  'rev-parse v0.1.46^{commit}') printf '%040d\n' 2 ;;
   'merge-base --is-ancestor '* ) [[ "$FIXTURE_MODE" != wrong-branch ]] ;;
   'show '*':package.json')
     if [[ "$FIXTURE_MODE" == wrong-version ]]; then echo '{"version":"0.1.42"}'
-    else echo '{"version":"0.1.44"}'; fi ;;
+    else echo '{"version":"0.1.46"}'; fi ;;
   'archive --format=tar '*) tar -cf - -C "$MAINTENANCE_FIXTURE_ROOT/source" . ;;
   *) echo "Unexpected Git mutation: $*" >&2; exit 1 ;;
 esac
@@ -36,7 +36,7 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 const fixture = process.env.MAINTENANCE_FIXTURE_ROOT;
 assert.equal(process.argv[2], join(fixture, "installation"));
-assert.equal(process.argv[3], "v0.1.44");
+assert.equal(process.argv[3], "v0.1.46");
 assert.ok(!fileURLToPath(import.meta.url).startsWith(join(fixture, "installation")));
 writeFileSync(join(fixture, "called"), "verified isolated driver");
 STUB

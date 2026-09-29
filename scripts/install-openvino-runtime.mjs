@@ -7,12 +7,25 @@ import { pipeline } from "node:stream/promises";
 import { Transform } from "node:stream";
 import { Readable } from "node:stream";
 import { spawn } from "node:child_process";
+import { setTimeout as delay } from "node:timers/promises";
+import { fileURLToPath } from "node:url";
 
 const RUNTIME_URL = new URL(
   "https://storage.openvinotoolkit.org/repositories/openvino/nodejs_bindings/2025.4.0/linux/openvino_nodejs_bindings_linux_2025.4.0_x64.tar.gz"
 );
 const RUNTIME_SHA256 = "ec2cfcd283b9d2183899ea9a82be543d1144dae0fae58e6ee9894ce1b43730a6";
 const MAX_ARCHIVE_BYTES = 300 * 1024 * 1024;
+const DOWNLOAD_ATTEMPTS = 4;
+const DOWNLOAD_TIMEOUT_MS = 120_000;
+const TRANSIENT_NETWORK_CODES = new Set([
+  "EAI_AGAIN",
+  "ECONNRESET",
+  "ECONNREFUSED",
+  "ENETDOWN",
+  "ENETUNREACH",
+  "ENOTFOUND",
+  "ETIMEDOUT",
+]);
 
 function run(command, args) {
   return new Promise((resolve, reject) => {
@@ -40,6 +53,62 @@ async function sha256(filePath) {
   return hash.digest("hex");
 }
 
+function isTransientNetworkError(error) {
+  let current = error;
+  while (current) {
+    if (["AbortError", "TimeoutError"].includes(current.name)) return true;
+    if (TRANSIENT_NETWORK_CODES.has(current.code)) return true;
+    current = current.cause;
+  }
+  return false;
+}
+
+function retryableStatus(status) {
+  return status === 408 || status === 425 || status === 429 || status >= 500;
+}
+
+async function downloadRuntimeArchive(archivePath, options = {}) {
+  const fetchImplementation = options.fetchImplementation || fetch;
+  const sleep = options.sleep || delay;
+  const attempts = options.attempts || DOWNLOAD_ATTEMPTS;
+  const timeoutMs = options.timeoutMs || DOWNLOAD_TIMEOUT_MS;
+
+  for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    await rm(archivePath, { force: true });
+    try {
+      const response = await fetchImplementation(RUNTIME_URL, {
+        redirect: "error",
+        signal: AbortSignal.timeout(timeoutMs),
+      });
+      if (!response.ok || !response.body) {
+        const error = new Error(`OpenVINO runtime download failed with HTTP ${response.status}`);
+        error.retryable = retryableStatus(response.status);
+        throw error;
+      }
+      const declaredLength = Number(response.headers.get("content-length"));
+      if (Number.isFinite(declaredLength) && declaredLength > MAX_ARCHIVE_BYTES) {
+        throw new Error("OpenVINO runtime archive exceeds the size limit");
+      }
+      let received = 0;
+      const limiter = new Transform({
+        transform(chunk, _encoding, callback) {
+          received += chunk.length;
+          callback(received <= MAX_ARCHIVE_BYTES ? null : new Error("OpenVINO runtime archive exceeds the size limit"), chunk);
+        },
+      });
+      await pipeline(Readable.fromWeb(response.body), limiter, fs.createWriteStream(archivePath, { mode: 0o600 }));
+      return received;
+    } catch (error) {
+      await rm(archivePath, { force: true });
+      if (attempt === attempts || (!error.retryable && !isTransientNetworkError(error))) throw error;
+      const waitMs = attempt * 2_000;
+      console.warn(`OpenVINO runtime download attempt ${attempt} failed; retrying in ${waitMs / 1000} seconds.`);
+      await sleep(waitMs);
+    }
+  }
+  throw new Error("OpenVINO runtime download attempts were exhausted");
+}
+
 async function main() {
   assertSupportedBuildHost();
   const packageRoot = path.resolve("node_modules", "openvino-node");
@@ -52,22 +121,7 @@ async function main() {
   const archivePath = path.join(temporaryDirectory, "runtime.tar.gz");
   const destination = path.join(packageRoot, "bin");
   try {
-    const response = await fetch(RUNTIME_URL, { redirect: "error" });
-    if (!response.ok || !response.body) {
-      throw new Error(`OpenVINO runtime download failed with HTTP ${response.status}`);
-    }
-    const declaredLength = Number(response.headers.get("content-length"));
-    if (Number.isFinite(declaredLength) && declaredLength > MAX_ARCHIVE_BYTES) {
-      throw new Error("OpenVINO runtime archive exceeds the size limit");
-    }
-    let received = 0;
-    const limiter = new Transform({
-      transform(chunk, _encoding, callback) {
-        received += chunk.length;
-        callback(received <= MAX_ARCHIVE_BYTES ? null : new Error("OpenVINO runtime archive exceeds the size limit"), chunk);
-      },
-    });
-    await pipeline(Readable.fromWeb(response.body), limiter, fs.createWriteStream(archivePath, { mode: 0o600 }));
+    const received = await downloadRuntimeArchive(archivePath);
     const actualHash = await sha256(archivePath);
     if (actualHash !== RUNTIME_SHA256) {
       throw new Error(`OpenVINO runtime checksum mismatch: ${actualHash}`);
@@ -92,4 +146,15 @@ async function main() {
   }
 }
 
-await main();
+export const openvinoRuntimeInstallerInternals = Object.freeze({
+  DOWNLOAD_ATTEMPTS,
+  DOWNLOAD_TIMEOUT_MS,
+  RUNTIME_URL,
+  downloadRuntimeArchive,
+  isTransientNetworkError,
+  retryableStatus,
+});
+
+if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  await main();
+}

@@ -3,7 +3,7 @@ set -Eeuo pipefail
 
 # One-time bridge for installations whose already-loaded updater predates native
 # identity retirement. Download this release asset outside the checkout.
-release_tag="v0.1.44"
+release_tag="v0.1.46"
 if [[ "${1:-}" == "--help" ]]; then
   echo "Run from the existing ALPR Community checkout as its installation owner."
   echo "Loads verified $release_tag maintenance tools separately, then asks before updating."

@@ -616,7 +616,9 @@ async function applyRelease(environment, backupRoot, state, options = {}) {
   const clock = options.clock;
   state.status = "applying";
   delete state.lastFailure;
+  delete state.recovery;
   await saveState(backupRoot, state, clock);
+  let migrationStarted = false;
   try {
     git(runner, root, ["checkout", "--detach", state.target.tag], { inherit: true });
     const checkedOut = git(runner, root, ["rev-parse", "HEAD"], { quiet: true }).toLowerCase();
@@ -635,6 +637,7 @@ async function applyRelease(environment, backupRoot, state, options = {}) {
 
     compose(runner, root, ["up", "-d", "db"], { inherit: true });
     await waitForDatabase(runner, root, options.databaseReadyAttempts);
+    migrationStarted = true;
     compose(runner, root, ["run", "--rm", "--no-deps", "migrate"], { inherit: true });
     compose(runner, root, ["up", "-d", "--no-deps", "app"], { inherit: true });
     state.status = "validating";
@@ -643,6 +646,32 @@ async function applyRelease(environment, backupRoot, state, options = {}) {
   } catch (error) {
     state.status = "apply-failed";
     state.lastFailure = { phase: "apply", code: "apply-failed", at: timestamp(clock) };
+    if (!migrationStarted) {
+      state.recovery = {
+        attemptedAt: timestamp(clock),
+        previousApplicationRestored: false,
+      };
+      try {
+        await copyFile(state.backup.envPath, join(root, ".env"));
+        await chmod(join(root, ".env"), 0o600);
+        git(runner, root, ["checkout", "--detach", state.current.tag], { inherit: true });
+        const restoredCommit = git(runner, root, ["rev-parse", "HEAD"], { quiet: true }).toLowerCase();
+        if (restoredCommit !== state.current.commit) {
+          throw new Error("previous release tag changed during recovery");
+        }
+        compose(runner, root, ["up", "-d", "--no-deps", "app"], { inherit: true });
+        state.recovery.previousApplicationRestored = true;
+        state.status = "rolled-back";
+        state.rollback = {
+          automatic: true,
+          completedAt: timestamp(clock),
+          databaseRestored: false,
+          restoredTag: state.current.tag,
+        };
+      } catch {
+        state.recovery.code = "previous-application-restore-failed";
+      }
+    }
     await saveState(backupRoot, state, clock);
     throw error;
   }
@@ -1110,6 +1139,7 @@ export const communityUpdaterInternals = Object.freeze({
   INSTALL_ACKNOWLEDGEMENT,
   ROLLBACK_ACKNOWLEDGEMENT,
   applicationPort,
+  applyRelease,
   assertSafeChild,
   compareVersionTags,
   exactCurrentRelease,

@@ -335,6 +335,68 @@ test("the guided engine backs up, applies, validates, accepts, and rolls back wi
   }
 });
 
+test("a pre-migration build failure restores the exact previous release and application", async () => {
+  const temporaryRoot = await mkdtemp(join(tmpdir(), "alpr-updater-build-recovery-"));
+  const repository = join(temporaryRoot, "installation");
+  const backupRoot = join(temporaryRoot, "private-backups");
+  const currentCommit = "1".repeat(40);
+  const targetCommit = "2".repeat(40);
+  const commandLog = [];
+  let checkedOutCommit = currentCommit;
+  await mkdir(repository);
+  await mkdir(backupRoot);
+  await writeFile(join(repository, ".env"), "ALPR_APP_IMAGE=broken-target\n", { mode: 0o600 });
+  const backupEnv = join(backupRoot, "installation.env");
+  await writeFile(backupEnv, "ALPR_APP_IMAGE=known-good\n", { mode: 0o600 });
+  const state = {
+    formatVersion: internals.FORMAT_VERSION,
+    status: "backed-up",
+    current: { tag: "v0.1.45", version: "0.1.45", commit: currentCommit },
+    target: {
+      tag: "v0.1.46",
+      version: "0.1.46",
+      commit: targetCommit,
+      image: `alpr-community:0.1.46-${targetCommit.slice(0, 12)}`,
+    },
+    backup: { envPath: backupEnv },
+  };
+  const runner = (command, args) => {
+    commandLog.push([command, ...args]);
+    const joined = args.join(" ");
+    if (command === "git" && joined === "checkout --detach v0.1.46") {
+      checkedOutCommit = targetCommit;
+      return "";
+    }
+    if (command === "git" && joined === "checkout --detach v0.1.45") {
+      checkedOutCommit = currentCommit;
+      return "";
+    }
+    if (command === "git" && joined === "rev-parse HEAD") return checkedOutCommit;
+    if (command === "docker" && joined.startsWith("buildx create --name ")) return "builder";
+    if (command === "docker" && joined.startsWith("buildx build --builder ")) {
+      throw new Error("simulated transient OpenVINO download failure");
+    }
+    if (command === "docker" && joined.startsWith("buildx rm --force ")) return "";
+    if (command === "docker" && joined === "compose up -d --no-deps app") return "";
+    throw new Error(`unexpected fake command: ${command} ${joined}`);
+  };
+  try {
+    await assert.rejects(
+      internals.applyRelease({}, backupRoot, state, { root: repository, runner }),
+      /simulated transient OpenVINO/
+    );
+    assert.equal(checkedOutCommit, currentCommit);
+    assert.equal(await readFile(join(repository, ".env"), "utf8"), "ALPR_APP_IMAGE=known-good\n");
+    assert.equal(state.status, "rolled-back");
+    assert.equal(state.recovery.previousApplicationRestored, true);
+    assert.equal(state.rollback.databaseRestored, false);
+    assert.equal(state.rollback.restoredTag, "v0.1.45");
+    assert.ok(commandLog.some((entry) => entry.join(" ") === "docker compose up -d --no-deps app"));
+  } finally {
+    await rm(temporaryRoot, { recursive: true, force: true });
+  }
+});
+
 test("CLI help documents generic Linux support and all safety acknowledgements", async () => {
   const logger = memoryLogger();
   await runUpdaterCommand(["help"], {}, { logger });
