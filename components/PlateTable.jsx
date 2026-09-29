@@ -15,7 +15,6 @@ import {
   Download,
   ExternalLink,
   Maximize2,
-  Clock,
   ChevronUp,
   ChevronDown,
   ChevronsUpDown,
@@ -100,6 +99,7 @@ import PlateMatchModeSelect from "@/components/PlateMatchModeSelect";
 import PlateImage from "@/components/PlateImage";
 import MultiSelectFilter from "@/components/MultiSelectFilter";
 import LiveFeedDateRangeFilter from "@/components/LiveFeedDateRangeFilter";
+import FilterHourRange from "@/components/FilterHourRange";
 import {
   retryBlueIrisVehicleFrameForRead,
 } from "@/app/actions";
@@ -1392,8 +1392,8 @@ export default function PlateTable({
       return;
     }
     onUpdateFilters({
-      dateFrom: range.from.toDateString(),
-      dateTo: range.to.toDateString(),
+      dateFrom: format(range.from, "yyyy-MM-dd"),
+      dateTo: format(range.to, "yyyy-MM-dd"),
       timestampFrom: null,
       timestampTo: null,
       timeZone: null,
@@ -1594,180 +1594,6 @@ export default function PlateTable({
     const numericConfidence = Number(confidence); // Ensure it's a number
 
     return `${Number((numericConfidence * 100).toFixed(1))}%`;
-  };
-
-  const HourRangeFilter = ({
-    timeFormat,
-    value = {},
-    onChange,
-    triggerClassName = "",
-  }) => {
-    const [isOpen, setIsOpen] = useState(false);
-    // Local display state - what the user actually entered
-    const [displayHours, setDisplayHours] = useState({
-      from: null,
-      to: null,
-    });
-
-    // Generate hours based on time format
-    const hours = Array.from({ length: 24 }, (_, i) => {
-      if (timeFormat === 12) {
-        const period = i < 12 ? "AM" : "PM";
-        const hour = i === 0 ? 12 : i > 12 ? i - 12 : i;
-        return { value: i, label: `${hour}${period}` };
-      }
-      return { value: i, label: i.toString().padStart(2, "0") + ":00" };
-    });
-
-    const getTimeRangeLabel = () => {
-      if (
-        typeof displayHours.from === "number" &&
-        typeof displayHours.to === "number" &&
-        displayHours.from >= 0 &&
-        displayHours.from < 24 &&
-        displayHours.to >= 0 &&
-        displayHours.to < 24
-      ) {
-        // Always show what the user entered
-        return `${hours[displayHours.from].label} - ${
-          hours[displayHours.to].label
-        }`;
-      }
-      return "Hour Range";
-    };
-
-    const handleApply = () => {
-      if (
-        typeof displayHours.from === "number" &&
-        typeof displayHours.to === "number"
-      ) {
-        const tzOffset = -(new Date().getTimezoneOffset() / 60);
-
-        // Convert to UTC for the query parameters only
-        let utcFrom = (displayHours.from - tzOffset + 24) % 24;
-        let utcTo = (displayHours.to - tzOffset + 24) % 24;
-
-        // Adjust if the range spans past midnight
-        if (displayHours.to < displayHours.from) {
-          utcTo += 24; // Move 'to' into the next day
-        }
-
-        // Pass UTC hours for the query but maintain our local display state
-        onChange({
-          from: Math.floor(utcFrom),
-          to: Math.floor(utcTo),
-        });
-        setIsOpen(false);
-      }
-    };
-
-    const handleClear = () => {
-      setDisplayHours({ from: null, to: null });
-      onChange({ from: undefined, to: undefined });
-      setIsOpen(false);
-    };
-
-    return (
-      <Popover open={isOpen} onOpenChange={setIsOpen}>
-        <PopoverTrigger asChild>
-          <Button
-            variant="outline"
-            className={`hidden sm:flex gap-2 dark:bg-[#161618] ${triggerClassName}`}
-          >
-            <Clock className="h-4 w-4" />
-            {getTimeRangeLabel()}
-          </Button>
-        </PopoverTrigger>
-        <PopoverContent className="w-[300px] p-4">
-          <div className="space-y-4 ">
-            <div className="space-y-2">
-              <h4 className="font-medium">Filter by Hour</h4>
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label>From</Label>
-                  <Select
-                    value={
-                      typeof displayHours.from === "number"
-                        ? displayHours.from.toString()
-                        : undefined
-                    }
-                    onValueChange={(val) =>
-                      setDisplayHours((prev) => ({
-                        ...prev,
-                        from: parseInt(val),
-                      }))
-                    }
-                  >
-                    <SelectTrigger>
-                      <SelectValue placeholder="Start hour" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {hours.map((hour) => (
-                        <SelectItem
-                          key={hour.value}
-                          value={hour.value.toString()}
-                        >
-                          {hour.label}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="space-y-2">
-                  <Label>To</Label>
-                  <Select
-                    value={
-                      typeof displayHours.to === "number"
-                        ? displayHours.to.toString()
-                        : undefined
-                    }
-                    onValueChange={(val) =>
-                      setDisplayHours((prev) => ({
-                        ...prev,
-                        to: parseInt(val),
-                      }))
-                    }
-                  >
-                    <SelectTrigger>
-                      <SelectValue placeholder="End hour" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {hours.map((hour) => (
-                        <SelectItem
-                          key={hour.value}
-                          value={hour.value.toString()}
-                        >
-                          {hour.label}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-              </div>
-            </div>
-            <div className="flex gap-2">
-              <Button
-                variant="outline"
-                className="flex-1"
-                onClick={handleClear}
-              >
-                Clear
-              </Button>
-              <Button
-                className="flex-1"
-                onClick={handleApply}
-                disabled={
-                  typeof displayHours.from !== "number" ||
-                  typeof displayHours.to !== "number"
-                }
-              >
-                Apply
-              </Button>
-            </div>
-          </div>
-        </PopoverContent>
-      </Popover>
-    );
   };
 
   // Mobile filter sheet content
@@ -2119,17 +1945,17 @@ export default function PlateTable({
                 triggerClassName="w-full justify-start"
               />
 
-              <HourRangeFilter
+              <FilterHourRange
                 timeFormat={timeFormat}
-                value={filters.hourRange || {}}
+                value={filters.hourRange || null}
                 onChange={(hourRange) =>
                   onUpdateFilters({
                     hourFrom:
-                      typeof hourRange.from === "number"
+                      typeof hourRange?.from === "number"
                         ? hourRange.from.toString()
                         : undefined,
                     hourTo:
-                      typeof hourRange.to === "number"
+                      typeof hourRange?.to === "number"
                         ? hourRange.to.toString()
                         : undefined,
                   })

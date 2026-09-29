@@ -20,8 +20,10 @@ test("Live Feed date ranges isolate draft selection and keep timestamp predicate
   assert.match(dateFilter, /selected=\{draft\}/);
   assert.match(dateFilter, /onSelect=\{handleSelect\}/);
   assert.match(table, /if \(!range\) \{[\s\S]*?dateFrom: null,[\s\S]*?dateTo: null/);
-  assert.match(database, /pr\.timestamp >= \$\{dateFromParameter\}::date/);
-  assert.match(database, /pr\.timestamp < \(\$\{dateToParameter\}::date \+ INTERVAL '1 day'\)/);
+  assert.match(database, /const dateExpression = timeZoneParameter/);
+  assert.match(database, /\$\{dateExpression\} >= \$\{dateFromParameter\}::date/);
+  assert.match(database, /\$\{dateExpression\} < \(\$\{dateToParameter\}::date \+ INTERVAL '1 day'\)/);
+  assert.match(database, /pr\.timestamp AT TIME ZONE \$\{timeZoneParameter\}/);
   assert.doesNotMatch(database, /pr\.timestamp::date BETWEEN/);
 });
 

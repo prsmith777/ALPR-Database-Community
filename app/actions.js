@@ -145,6 +145,7 @@ import { formatTimeRange } from "@/lib/utils";
 import {
   getDashboardTimeWindow,
   normalizeDashboardCameraNames,
+  normalizeDashboardTimeZone,
 } from "@/lib/dashboard-time-distribution.mjs";
 import {
   querySystemLogIncident,
@@ -568,6 +569,7 @@ export async function getPlates(
           filters.matchMode || "balanced",
         matchingSettings: config.plateMatching,
         hourRange: filters.hourRange,
+        timeZone: normalizeDashboardTimeZone(process.env.TZ),
         cameraNames:
           Array.isArray(filters.cameraNames) && filters.cameraNames.length > 0
             ? filters.cameraNames
@@ -617,6 +619,11 @@ export async function getLatestPlateReads({
   await requirePermission("plate.read");
   try {
     const config = await getConfig();
+    const configuredTimeZone = normalizeDashboardTimeZone(process.env.TZ);
+    const queryTimeZone = normalizeDashboardTimeZone(
+      timeZone,
+      configuredTimeZone
+    );
     const result = await getPlateReads({
       page,
       pageSize,
@@ -635,7 +642,7 @@ export async function getLatestPlateReads({
         dateRange,
         timestampRange,
         hourRange,
-        timeZone,
+        timeZone: queryTimeZone,
         cameraNames:
           Array.isArray(cameraNames) && cameraNames.length > 0
             ? cameraNames

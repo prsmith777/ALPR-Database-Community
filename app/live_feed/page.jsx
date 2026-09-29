@@ -27,6 +27,7 @@ import {
   hasExplicitRecognitionFeedFilterState,
   hasRecognitionFeedFilterPreference,
   readRecognitionFeedFilterCookiePreference,
+  recognitionFeedFilterPreferenceFromSearchParams,
   recognitionFeedFilterPreferenceToSearchParams,
 } from "@/lib/recognition-feed-filter-preference.mjs";
 import {
@@ -60,6 +61,24 @@ export default async function LivePlates(props) {
   noStore(); // Opt-out of data caching for this component and its data fetches
 
   const searchParams = await props.searchParams;
+  const legacyManualHourQuery =
+    searchParams?.hourFrom &&
+    searchParams?.hourTo &&
+    !searchParams?.timeZone &&
+    [searchParams?.dateFrom, searchParams?.dateTo].some(
+      (value) => value && !/^\d{4}-\d{2}-\d{2}$/.test(String(value))
+    );
+  if (legacyManualHourQuery) {
+    const normalized = recognitionFeedFilterPreferenceFromSearchParams(
+      searchParams
+    );
+    const query = recognitionFeedFilterPreferenceToSearchParams({
+      ...normalized,
+      hourFrom: "",
+      hourTo: "",
+    }).toString();
+    redirect(`/live_feed${query ? `?${query}` : ""}`);
+  }
   const cookieStore = await cookies();
   const savedFilterPreference =
     readRecognitionFeedFilterCookiePreference(cookieStore);

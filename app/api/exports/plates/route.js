@@ -5,6 +5,7 @@ import {
 } from "@/lib/plate-export.mjs";
 import { getConfig } from "@/lib/settings";
 import { denyUnlessRoutePermission } from "@/lib/route-permission.mjs";
+import { normalizeDashboardTimeZone } from "@/lib/dashboard-time-distribution.mjs";
 
 export const dynamic = "force-dynamic";
 
@@ -50,6 +51,7 @@ export async function GET(request) {
           hourFrom !== undefined && hourTo !== undefined
             ? { from: hourFrom, to: hourTo }
             : null,
+        timeZone: normalizeDashboardTimeZone(process.env.TZ),
       },
       sortBy: url.searchParams.get("sortField") || "last_seen_at",
       sortDesc: url.searchParams.get("sortDirection") !== "asc",

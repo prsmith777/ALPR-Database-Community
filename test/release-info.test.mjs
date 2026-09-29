@@ -23,23 +23,23 @@ test("release information resolves a commit-pinned deployment image", () => {
     ALPR_RELEASE_CHANNEL: "staging",
   });
 
-  assert.equal(release.version, "0.1.44");
-  assert.equal(release.manualVersion, "3.9");
-  assert.equal(release.manualUpdatedAt, "September 27, 2026");
+  assert.equal(release.version, "0.1.45");
+  assert.equal(release.manualVersion, "3.10");
+  assert.equal(release.manualUpdatedAt, "September 29, 2026");
   assert.equal(release.gitSha, "8cd2fa8");
   assert.equal(release.channel, "staging");
   assert.equal(release.source, "commit-pinned image");
   assert.equal(release.readOnly, true);
   assert.equal(
     release.notes.title,
-    "Native ReID update recovery"
+    "Local-time filter correctness"
   );
-  assert.equal(release.notes.publishedAt, "2026-09-27");
+  assert.equal(release.notes.publishedAt, "2026-09-29");
   assert.ok(release.notes.items.length >= 3);
   const notes = release.notes.items.join(" ");
-  assert.match(notes, /snapshot/i);
-  assert.match(notes, /native ReID V2/i);
-  assert.match(notes, /regression tests/i);
+  assert.match(notes, /local time/i);
+  assert.match(notes, /America\/Phoenix/i);
+  assert.match(notes, /regression coverage/i);
 });
 
 test("an explicit valid SHA overrides the image tag", () => {

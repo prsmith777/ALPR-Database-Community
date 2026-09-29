@@ -29,6 +29,8 @@ function memoryStorage() {
 }
 
 test("Recognition Feed preferences round-trip every stable filter and sort option", () => {
+  assert.match(RECOGNITION_FEED_FILTER_PREFERENCE_STORAGE_KEY, /\.v2$/);
+  assert.match(RECOGNITION_FEED_FILTER_PREFERENCE_COOKIE_NAME, /_v2$/);
   const params = new URLSearchParams([
     ["search", " HYA2D4 "],
     ["tag", "resident"],
@@ -149,6 +151,9 @@ test("Recognition Feed restores saved state before querying and keeps explicit l
   assert.match(page, /readRecognitionFeedFilterCookiePreference/);
   assert.match(page, /hasExplicitRecognitionFeedFilterState/);
   assert.match(page, /redirect\(`\/live_feed\?\$\{savedQuery\}`\)/);
+  assert.match(page, /legacyManualHourQuery/);
+  assert.match(page, /hourFrom: ""/);
+  assert.match(page, /hourTo: ""/);
   assert.match(wrapper, /writeRecognitionFeedFilterPreference/);
   assert.match(wrapper, /recognitionFeedFilterPreferenceFromSearchParams/);
 
@@ -171,10 +176,11 @@ test("Recognition Feed restores saved state before querying and keeps explicit l
 });
 
 test("Recognition Feed desktop search and filters use one aligned five-column grid", async () => {
-  const table = await readFile(
-    new URL("../components/PlateTable.jsx", import.meta.url),
-    "utf8"
-  );
+  const [table, hourFilter, wrapper] = await Promise.all([
+    readFile(new URL("../components/PlateTable.jsx", import.meta.url), "utf8"),
+    readFile(new URL("../components/FilterHourRange.jsx", import.meta.url), "utf8"),
+    readFile(new URL("../components/PlateTableWrapper.jsx", import.meta.url), "utf8"),
+  ]);
   const desktopSearchGrid = table.slice(
     table.indexOf("{/* Search bar - Full Width on Mobile */}"),
     table.indexOf("{/* Active filters display */}")
@@ -190,7 +196,7 @@ test("Recognition Feed desktop search and filters use one aligned five-column gr
     'allLabel="All tags"',
     'allLabel="All cameras"',
     "<LiveFeedDateRangeFilter",
-    "<HourRangeFilter",
+    "<FilterHourRange",
     'allLabel="All review statuses"',
     'allLabel="All directions"',
   ];
@@ -203,6 +209,35 @@ test("Recognition Feed desktop search and filters use one aligned five-column gr
   assert.match(desktopSearchGrid, /triggerClassName="w-full justify-start"/);
   assert.doesNotMatch(desktopSearchGrid, />\s*Clear Filters\s*</);
   assert.doesNotMatch(table, /minimumSpeed|maximumSpeed|Speed range|field="speed"/);
+  assert.match(table, /import FilterHourRange from "@\/components\/FilterHourRange"/);
+  assert.doesNotMatch(table, /getTimezoneOffset|utcFrom|utcTo|const HourRangeFilter/);
+  assert.match(hourFilter, /setDraft\(\{ from: valueFrom, to: valueTo \}\)/);
+  assert.match(hourFilter, /onChange\(\{ from: draft\.from, to: draft\.to \}\)/);
+  assert.match(hourFilter, /onChange\(null\)/);
+  assert.match(table, /format\(range\.from, "yyyy-MM-dd"\)/);
+  assert.match(wrapper, /function localCalendarDate/);
+});
+
+test("Recognition Feed local dates remain calendar dates and hours reject old UTC overflow values", () => {
+  const preference = normalizeRecognitionFeedFilterPreference({
+    dateFrom: "2026-09-28",
+    dateTo: "2026-09-28",
+    hourFrom: 15,
+    hourTo: 16,
+  });
+  assert.equal(preference.dateFrom, "2026-09-28");
+  assert.equal(preference.dateTo, "2026-09-28");
+  assert.equal(preference.hourFrom, "15");
+  assert.equal(preference.hourTo, "16");
+
+  const legacyOverflow = normalizeRecognitionFeedFilterPreference({
+    dateFrom: "2026-09-28",
+    dateTo: "2026-09-28",
+    hourFrom: 46,
+    hourTo: 47,
+  });
+  assert.equal(legacyOverflow.hourFrom, "");
+  assert.equal(legacyOverflow.hourTo, "");
 });
 
 test("Community ignores legacy radar query keys and speed sorting", () => {

@@ -1,6 +1,6 @@
 # Community product roadmap
 
-Last reviewed: September 27, 2026
+Last reviewed: September 29, 2026
 
 This roadmap distinguishes capabilities that are available now from work that
 may be considered later. It is not a promise of dates. GitHub Releases and the
@@ -33,6 +33,10 @@ inherited Git history. Every release gate requires:
 - named users with Administrator, Operator, Viewer, and Auditor roles;
 - configurable fuzzy plate-matching profiles with an interactive profile test;
 - no radar-dependent speed fields in Community.
+
+Recognition Feed, Database, and export date/hour filters use the installation's
+configured IANA time zone. Users select local calendar dates and clock hours;
+the browser must not pre-convert those values to UTC.
 
 Version 0.1.43 makes ReID V2 the only Community identity pipeline. Fresh installs
 automatically catalog eligible vehicle images, create crops, and compute local
