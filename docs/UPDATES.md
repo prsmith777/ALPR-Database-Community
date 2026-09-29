@@ -44,7 +44,7 @@ shown on the GitHub Releases page, rather than deploying moving `main`:
 ```bash
 git clone https://github.com/prsmith777/ALPR-Database-Community.git
 cd ALPR-Database-Community
-git checkout --detach v0.1.45
+git checkout --detach v0.1.46
 ./alpr-community install
 ```
 
@@ -57,15 +57,16 @@ later Community-to-Community updates.
 
 Do not install v0.1.23 as a new deployment merely because it was the first
 release containing the updater. A retained installation already running exact
-v0.1.23 must use the one-time maintenance launcher below to reach v0.1.44.
+v0.1.23 must use the one-time maintenance launcher below to reach the current
+native release.
 
 ## One-time upgrade from v0.1.43 or earlier
 
 **Do not use the older browser agent or terminal updater to cross into native
 ReID.** Those versions keep old updater code loaded during installation and
 incorrectly reject the derived tables intentionally retired by v0.1.43. Use the
-verified v0.1.44 maintenance launcher below once. Fresh v0.1.44 installations
-and subsequent updates use the normal browser or terminal workflow.
+verified current-release maintenance launcher below once. Fresh v0.1.44 or
+later installations normally use the browser or terminal workflow.
 
 If v0.1.43 already failed with **post-update row counts decreased**, do not accept
 it, delete its backup, or edit recorded counts. On **Settings → Software Updates**,
@@ -84,7 +85,7 @@ alpr_native_update() (
   set -Eeuo pipefail
   download_dir="$(mktemp -d /tmp/alpr-maintenance-download.XXXXXX)"
   trap 'rm -rf -- "$download_dir"' EXIT
-  asset_base="https://github.com/prsmith777/ALPR-Database-Community/releases/download/v0.1.44"
+  asset_base="https://github.com/prsmith777/ALPR-Database-Community/releases/download/v0.1.46"
   curl -fLsS --retry 3 "$asset_base/community-maintenance.sh" -o "$download_dir/community-maintenance.sh"
   curl -fLsS --retry 3 "$asset_base/community-maintenance.sh.sha256" -o "$download_dir/community-maintenance.sh.sha256"
   (cd "$download_dir" && sha256sum --check --strict community-maintenance.sh.sha256)
@@ -95,7 +96,7 @@ unset -f alpr_native_update
 ```
 
 The launcher verifies the canonical repository and exact released tag, loads the
-fixed tools outside your checkout, and asks for **INSTALL v0.1.44**. It uses the
+fixed tools outside your checkout, and asks for **INSTALL v0.1.46**. It uses the
 same guarded backup/install workflow and does not reset or reinstall your system.
 It temporarily stops only this installation's matching per-user systemd update
 agent, then restarts it with the installed code. Keep the terminal open and do
@@ -214,6 +215,20 @@ The guarded workflow:
 11. starts the app and runs Technical system checks for database readiness, the exact running image,
     `/api/health-check`, protected table counts, and storage inventory;
 12. stops for manual acceptance.
+
+The pinned OpenVINO runtime download retries bounded transient DNS, timeout,
+connection, rate-limit, and server failures. It never bypasses the size limit
+or SHA-256 verification. If the image build or another apply step still fails
+before database migration begins, the updater restores the exact previous tag,
+private environment, and application container automatically. The database is
+unchanged, so that recovery does not replace it with the backup. The failed
+operation and private rollback artifacts remain recorded for diagnosis, and a
+new update can be attempted after correcting the host network or DNS problem.
+
+If a release older than v0.1.46 was performing the failed update, its already-
+loaded updater may not contain this automatic recovery. Keep the backup and
+use the guarded rollback action before retrying with the current maintenance
+launcher. Do not delete updater state or edit the database manually.
 
 The updater does not copy, archive, delete, or otherwise mutate `storage/`.
 That directory can be much larger than the database and should be protected by

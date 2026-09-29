@@ -102,6 +102,9 @@ system checks, separate real-use acceptance, rollback, and one-generation
 retention policy. After installation and Technical system checks finish, the
 administrator must complete the five checks shown on the page and select
 **Accept update** before another release can be installed.
+Image builds retry bounded transient OpenVINO download failures. A failure
+before database migration automatically restores the exact previous release
+and app without replacing the unchanged database.
 The web container never receives the Docker socket or arbitrary host command
 access.
 

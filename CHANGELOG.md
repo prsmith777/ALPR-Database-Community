@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+## 0.1.46 — Resilient Community updates (2026-09-29)
+
+- Retry transient DNS, timeout, connection, rate-limit, and server failures while downloading the pinned OpenVINO runtime during an image build; permanent client responses still fail immediately and the downloaded archive remains checksum verified.
+- If an image build or another apply step fails before database migration starts, automatically restore the exact previous tag, environment, and application container without replacing the unchanged database.
+- Preserve the failed operation and rollback artifacts for diagnosis while returning the installation to a usable, retryable prior-release state.
+- Add simulated DNS-failure and pre-migration application-recovery regressions, update the maintenance launcher, and advance the manual, update guide, roadmap, release notes, installation examples, and issue template.
+
 ## 0.1.45 — Local-time filter correctness (2026-09-29)
 
 - Fix the desktop Recognition Feed hour picker so selected local hours are not converted a second time to UTC and remain visible after navigation.

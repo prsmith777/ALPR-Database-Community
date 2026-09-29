@@ -18,7 +18,7 @@ async function source(path) {
 }
 
 test("the user guide is structured, searchable, and role-aware", () => {
-  assert.equal(HELP_MANUAL.manualVersion, "3.10");
+  assert.equal(HELP_MANUAL.manualVersion, "3.11");
   assert.ok(HELP_MANUAL.sections.length >= 24);
 
   const ids = HELP_MANUAL.sections.map((section) => section.id);
@@ -292,7 +292,7 @@ test("public installation instructions stay synchronized with the Linux bootstra
   assert.ok(install.includes(`git checkout --detach ${releaseTag}`));
   assert.ok(updates.includes(`git checkout --detach ${releaseTag}`));
   assert.match(updates, /one-time upgrade from v0\.1\.43 or earlier/i);
-  assert.ok(updates.includes("releases/download/v0.1.44"));
+  assert.ok(updates.includes(`releases/download/${releaseTag}`));
   assert.match(updates, /sha256sum --check --strict community-maintenance\.sh\.sha256/);
   assert.match(updates, /older installations must use the maintenance launcher/i);
   assert.ok(issueForm.includes(`placeholder: ${releaseTag}`));
