@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+## 0.1.45 — Local-time filter correctness (2026-09-29)
+
+- Fix the desktop Recognition Feed hour picker so selected local hours are not converted a second time to UTC and remain visible after navigation.
+- Apply the installation's configured IANA time zone explicitly to Recognition Feed, Database, and export date/hour queries instead of depending on the PostgreSQL session zone.
+- Preserve local calendar dates through URL and saved-filter restoration. Start a clean filter-preference generation and clear legacy dated hour links so converted pre-fix hours are not silently reused.
+- Add America/Phoenix query coverage, timezone-aware database filter checks, picker-state regressions, and documentation for local-time filtering.
+- Update Nodemailer and the MQTT proxy IP parser to their supported security-fixed releases after the dependency gate identified newly published advisories.
+- Update manual 3.10, release notes, installation/update examples, issue guidance, and roadmap.
+
 ## 0.1.44 — Native ReID update recovery (2026-09-27)
 
 - Fix the host updater falsely treating intentionally retired identity tables as lost user data during the native ReID upgrade.

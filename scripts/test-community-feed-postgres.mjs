@@ -693,6 +693,42 @@ async function testApplicationFeed(mode) {
     assert.ok(result.data.some(row => row.id === target.id), JSON.stringify(filters));
     assert.ok(result.pagination.total > 0);
   }
+  const originalTimestamp = target.timestamp;
+  try {
+    await pool.query(
+      "UPDATE plate_reads SET timestamp = $1::timestamptz WHERE id = $2",
+      ["2026-09-28T22:09:45.000Z", target.id]
+    );
+    const phoenixLocal = await getPlateReads({
+      filters: {
+        readId: target.id,
+        dateRange: { from: "2026-09-28", to: "2026-09-28" },
+        hourRange: { from: 15, to: 16 },
+        timeZone: "America/Phoenix",
+      },
+      pageSize: 100,
+    });
+    assert.deepEqual(
+      phoenixLocal.data.map((row) => Number(row.id)),
+      [Number(target.id)],
+      "3:09 PM Phoenix must remain hour 15 instead of being converted to UTC hour 22"
+    );
+    const doubleConverted = await getPlateReads({
+      filters: {
+        readId: target.id,
+        dateRange: { from: "2026-09-28", to: "2026-09-28" },
+        hourRange: { from: 22, to: 23 },
+        timeZone: "America/Phoenix",
+      },
+      pageSize: 100,
+    });
+    assert.deepEqual(doubleConverted.data, []);
+  } finally {
+    await pool.query(
+      "UPDATE plate_reads SET timestamp = $1::timestamptz WHERE id = $2",
+      [originalTimestamp, target.id]
+    );
+  }
   const noMatch = await getPlateReads({ filters: { cameraName: "not-a-camera" } });
   assert.equal(noMatch.pagination.total, 0);
   assert.deepEqual(noMatch.data, []);

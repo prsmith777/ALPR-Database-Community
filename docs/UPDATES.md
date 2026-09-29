@@ -44,7 +44,7 @@ shown on the GitHub Releases page, rather than deploying moving `main`:
 ```bash
 git clone https://github.com/prsmith777/ALPR-Database-Community.git
 cd ALPR-Database-Community
-git checkout --detach v0.1.44
+git checkout --detach v0.1.45
 ./alpr-community install
 ```
 

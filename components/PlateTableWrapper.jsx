@@ -33,6 +33,24 @@ import {
 
 const LIVE_REFRESH_TIMEOUT_MS = 15_000;
 
+function localCalendarDate(value) {
+  const match = String(value || "").match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (match) {
+    const [, year, month, day] = match;
+    const date = new Date(Number(year), Number(month) - 1, Number(day));
+    if (
+      date.getFullYear() === Number(year) &&
+      date.getMonth() === Number(month) - 1 &&
+      date.getDate() === Number(day)
+    ) {
+      return date;
+    }
+    return null;
+  }
+  const date = new Date(value || "");
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
 export default function PlateTableWrapper({
   data, // Initial data from server component (props from page.jsx)
   total, // Initial total from server component
@@ -586,16 +604,14 @@ export default function PlateTableWrapper({
         dateRange: {
           from:
             displayedParams.get("timestampFrom") || displayedParams.get("dateFrom")
-            ? new Date(
-                displayedParams.get("timestampFrom") ||
-                  displayedParams.get("dateFrom")
-              )
+            ? displayedParams.get("timestampFrom")
+              ? new Date(displayedParams.get("timestampFrom"))
+              : localCalendarDate(displayedParams.get("dateFrom"))
             : null,
           to: displayedParams.get("timestampTo") || displayedParams.get("dateTo")
-            ? new Date(
-                displayedParams.get("timestampTo") ||
-                  displayedParams.get("dateTo")
-              )
+            ? displayedParams.get("timestampTo")
+              ? new Date(displayedParams.get("timestampTo"))
+              : localCalendarDate(displayedParams.get("dateTo"))
             : null,
         },
         hourRange:

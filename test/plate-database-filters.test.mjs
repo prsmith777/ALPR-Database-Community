@@ -77,6 +77,30 @@ test("overnight hour filters use one read-scoped OR group", () => {
   assert.deepEqual(result.values, [22, 5]);
 });
 
+test("date and hour filters use the configured IANA time zone", () => {
+  const result = buildPlateDatabaseFilterClause({
+    dateRange: { from: "2026-09-28", to: "2026-09-28" },
+    hourRange: { from: 15, to: 16 },
+    timeZone: "America/Phoenix",
+  });
+
+  assert.match(
+    result.whereClause,
+    /\(pr_filter\.timestamp AT TIME ZONE \$1\)::date >= \$2/
+  );
+  assert.match(
+    result.whereClause,
+    /EXTRACT\(HOUR FROM \(pr_filter\.timestamp AT TIME ZONE \$1\)\) BETWEEN \$4 AND \$5/
+  );
+  assert.deepEqual(result.values, [
+    "America/Phoenix",
+    "2026-09-28",
+    "2026-09-28",
+    15,
+    16,
+  ]);
+});
+
 test("short fuzzy searches remain contains-only", () => {
   const result = buildPlateDatabaseFilterClause({
     search: "A1",
@@ -88,8 +112,15 @@ test("short fuzzy searches remain contains-only", () => {
 });
 
 test("database listing and export share the filter builder", async () => {
-  const source = await readFile(new URL("../lib/db.js", import.meta.url), "utf8");
+  const [source, actions, exportRoute] = await Promise.all([
+    readFile(new URL("../lib/db.js", import.meta.url), "utf8"),
+    readFile(new URL("../app/actions.js", import.meta.url), "utf8"),
+    readFile(new URL("../app/api/exports/plates/route.js", import.meta.url), "utf8"),
+  ]);
   assert.match(source, /buildPlateDatabaseFilterClause\(filters\)/);
   assert.match(source, /export async function getPlateDatabaseExport/);
   assert.match(source, /MAX_PLATE_EXPORT_ROWS = 50_000/);
+  assert.match(actions, /timeZone: normalizeDashboardTimeZone\(process\.env\.TZ\)/);
+  assert.match(actions, /normalizeDashboardTimeZone\(\s*timeZone,\s*configuredTimeZone\s*\)/);
+  assert.match(exportRoute, /timeZone: normalizeDashboardTimeZone\(process\.env\.TZ\)/);
 });
