@@ -4,6 +4,7 @@ import { spawnSync } from "node:child_process";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { assertWindowsHost, hashFile, verifyWindowsPackage } from "./windows-native-package.mjs";
+import { verifyWindowsSetupStartup } from "./test-windows-setup-startup.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 function run(command, args) {
@@ -50,6 +51,8 @@ export async function buildWindowsSetup(args = process.argv.slice(2)) {
   if (!installer.includes("AdministratorPasswordFile") || !installer.includes("CopyPrerequisites")) throw new Error("Rebuild the native package with the graphical installer engine");
   const manifestSha256 = await hashFile(path.join(packageRoot, "windows-package.json"));
   const { compiler, pins } = await ensureInstallerCompiler();
+  await verifyWindowsSetupStartup({ compiler });
+  console.log("Verified compiled installer wizard startup before packaging");
   const outputRoot = path.join(root, "dist", "setup");
   await mkdir(outputRoot, { recursive: true });
   const name = `ALPR-Community-${manifest.version}-${manifest.commit.slice(0,12)}-${manifest.channel}-Setup`;
@@ -65,7 +68,7 @@ export async function buildWindowsSetup(args = process.argv.slice(2)) {
   await writeFile(output + ".json", JSON.stringify({ formatVersion: 1, source: manifest.source,
     version: manifest.version, commit: manifest.commit, channel: manifest.channel,
     payloadManifestSha256: manifestSha256, setupSha256: checksum, prerequisites: pins,
-    signed: false, desktopAcceptance: "pending" }, null, 2) + "\n", { flag: "wx" });
+    signed: false, wizardStartup: "verified", desktopAcceptance: "pending" }, null, 2) + "\n", { flag: "wx" });
   console.log("Built graphical Windows setup: " + output);
   return output;
 }

@@ -58,6 +58,14 @@ testing. Windows may show an unknown-publisher or SmartScreen prompt. Signing,
 public distribution, and actual desktop installation/reboot acceptance remain
 required before recommending it to community users.
 
+The setup build executes a compiled startup probe before producing the installer.
+It creates the real password controls and temporary workspace name, then exits
+before installation. The probe includes no payload or installation actions and
+requires no administrator privileges. It also runs on Windows Server CI without
+changing the desktop OS requirements of the delivered installer. This catches
+script runtime errors that successful Inno compilation alone cannot detect;
+actual VM installation, service, reboot, and uninstall acceptance remain separate.
+
 ## Build a preview
 
 On Windows x64 with Node.js 24 and Yarn Classic:

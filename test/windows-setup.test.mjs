@@ -5,9 +5,26 @@ import { createHash } from "node:crypto";
 import { spawnSync } from "node:child_process";
 import path from "node:path";
 import os from "node:os";
+import { existsSync } from "node:fs";
+import { verifyWindowsSetupStartup } from "../scripts/test-windows-setup-startup.mjs";
 
 const powershell = process.platform === "win32" ? path.join(process.env.SystemRoot, "System32", "WindowsPowerShell", "v1.0", "powershell.exe") : null;
 const root = path.resolve(import.meta.dirname, "..");
+const compiler = process.env.ALPR_ISCC_PATH || path.join(root, ".native-dependencies/inno-6.7.3/ISCC.exe");
+test("compiled wizard startup passes and catches the original date separator type mismatch", {
+  skip: process.platform !== "win32" || !existsSync(compiler),
+}, async (t) => {
+  const verified = await verifyWindowsSetupStartup({ compiler });
+  assert.equal(verified.verified, true);
+  const fixture = await mkdtemp(path.join(os.tmpdir(), "alpr-inno-regression-"));
+  t.after(() => rm(fixture, { recursive: true, force: true }));
+  const source = await readFile(path.join(root, "scripts/windows/CommunitySetup.iss"), "utf8");
+  const originalBug = source.replace("GetDateTimeString('yyyymmddhhnnss', #0, #0)", "GetDateTimeString('yyyymmddhhnnss', '', '')");
+  assert.notEqual(originalBug, source, "The regression fixture must restore the original bug");
+  const sourceFile = path.join(fixture, "broken-startup.iss");
+  await writeFile(sourceFile, originalBug);
+  await assert.rejects(verifyWindowsSetupStartup({ compiler, sourceFile }), /Type Mismatch/);
+});
 function ps(script, env = {}) {
   const environment={...process.env};
   for (const [name,value] of Object.entries(env)) {

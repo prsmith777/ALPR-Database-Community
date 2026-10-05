@@ -22,14 +22,22 @@ AppName=ALPR Database Community
 AppVersion={#PackageVersion}
 AppPublisher=ALPR Database Community
 AppPublisherURL=https://github.com/prsmith777/ALPR-Database-Community
+#ifdef StartupProbe
+; This build only creates the wizard controls, then exits. No elevation,
+; payload, shortcuts, uninstaller, or application installation is permitted.
+DefaultDirName={tmp}\ALPR Startup Probe
+PrivilegesRequired=lowest
+Uninstallable=no
+#else
 DefaultDirName={autopf}\ALPR Community Setup
+PrivilegesRequired=admin
+#endif
 DisableDirPage=yes
 DisableProgramGroupPage=yes
 DisableWelcomePage=yes
 DisableReadyPage=yes
 UsePreviousAppDir=no
 UsePreviousGroup=no
-PrivilegesRequired=admin
 ArchitecturesAllowed=x64os
 ArchitecturesInstallIn64BitMode=x64os
 MinVersion=10.0.19045
@@ -39,7 +47,9 @@ Compression=lzma2/fast
 SolidCompression=yes
 OutputDir={#OutputRoot}
 OutputBaseFilename={#OutputName}
+#ifndef StartupProbe
 SetupIconFile={#PackageRoot}\app\public\license-plate.ico
+#endif
 UninstallDisplayName=ALPR Database Community
 UninstallDisplayIcon={uninstallexe}
 CloseApplications=no
@@ -47,6 +57,7 @@ RestartApplications=no
 SetupLogging=yes
 UninstallLogging=yes
 
+#ifndef StartupProbe
 [Files]
 Source: "Setup.ps1"; Flags: dontcopy
 Source: "Setup-Helpers.ps1"; Flags: dontcopy
@@ -67,6 +78,7 @@ Filename: "http://localhost:3000"; Description: "Open ALPR"; Flags: postinstall 
 ; InitializeUninstall verifies fixed roots and service ownership, then stops
 ; and unregisters both services before allowing this code-only deletion.
 Type: filesandordirs; Name: "{autopf}\ALPR Community"
+#endif
 
 [Code]
 var
@@ -93,8 +105,14 @@ begin
   RegQueryStringValue(HKLM64, 'SOFTWARE\Microsoft\Windows NT\CurrentVersion', 'DisplayVersion', DisplayVersion);
   Result := (Version.ProductType = VER_NT_WORKSTATION) and
     (((Version.Build = 19045) and (DisplayVersion = '22H2')) or (Version.Build >= 22000));
+#ifdef StartupProbe
+  // Windows Server CI can exercise wizard startup without being an install target.
+  Log('ALPR_STARTUP_PROBE_OS_CHECK=' + IntToStr(Ord(Result)));
+  Result := True;
+#else
   if not Result then
     MsgBox('ALPR requires Windows 10 22H2 or Windows 11 on an x64 computer.', mbError, MB_OK);
+#endif
 end;
 
 procedure InitializeWizard;
@@ -106,8 +124,15 @@ begin
   PasswordPage.Add('Administrator password (12 to 128 characters):', True);
   PasswordPage.Add('Confirm password:', True);
   WorkRoot := ExpandConstant('{commonappdata}\ALPR Community Setup\') +
-    GetDateTimeString('yyyymmddhhnnss', '', '') + '-' + IntToStr(GetTickCount and $7FFFFFFF);
+    GetDateTimeString('yyyymmddhhnnss', #0, #0) + '-' + IntToStr(GetTickCount and $7FFFFFFF);
   WizardForm.FinishedLabel.Caption := 'ALPR is ready. Sign in with the password you chose in Setup. Leave the username blank during first-time setup.';
+#ifdef StartupProbe
+  if (PasswordPage.Values[0] <> '') or
+    (PasswordPage.Values[1] <> '') or (WorkRoot = '') then
+    RaiseException('Startup probe did not initialize the password page and workspace.');
+  Log('ALPR_STARTUP_PROBE_PASSED');
+  Abort;
+#endif
 end;
 
 procedure CurPageChanged(CurPageID: Integer);
@@ -223,8 +248,10 @@ procedure DeinitializeSetup;
 var
   ResultCode: Integer;
 begin
+#ifndef StartupProbe
   if FileExists(ExpandConstant('{tmp}\Setup.ps1')) then
     RunSetupOperation('cleanup', ResultCode);
+#endif
 end;
 
 function InitializeUninstall: Boolean;
