@@ -20,6 +20,44 @@ initial target. The installer rejects Server, ARM64, 32-bit PowerShell, older
 Windows 10 builds, network shares, reparse-point roots, and non-NTFS volumes.
 Windows 10 compatibility does not extend Microsoft's Windows 10 support period.
 
+## Graphical setup preview
+
+The Windows setup executable is the user-facing installation path. It includes
+the Community application, Node, WinSW, recognition models, and a graphical
+password screen. Users do not need a terminal, Docker, WSL, or developer tools.
+
+For a clean test computer:
+
+1. Copy the maintainer-provided `ALPR-Community-...-Setup.exe` into Windows.
+2. Double-click it and approve the Windows administrator prompt.
+3. Choose and confirm an ALPR administrator password, then click **Install**.
+4. Wait for setup to finish. Click **Finish** to open ALPR in the browser.
+   Sign in with that password; leave the username blank on the initial login.
+
+An internet connection is required. Setup downloads PostgreSQL 17.10 and FFmpeg
+8.1.2 directly from their publishers using fixed versions and SHA-256 checksums.
+It installs the Microsoft Visual C++ x64 runtime when needed, verifying its
+checksum and Microsoft signature. If that component requires a reboot, restart
+Windows and run setup again. PostgreSQL and FFmpeg are copied into the protected
+application directory, so users do not need to maintain separate tool folders.
+
+Setup checks the OS, package inventory, ports, and all three recognition models
+before creating ALPR services or its database. Download/extraction scratch space
+is private to the installer and removed when it exits. The chosen password is
+passed through a private temporary file rather than a command-line argument.
+
+An **ALPR Database Community** shortcut opens the application. Windows **Apps &
+features** can remove the app and its services while preserving plate records,
+images, settings, and backups in `C:\ProgramData\ALPR Community`. This fresh-install
+preview refuses existing installations and retained data; guided repair,
+reinstallation, and upgrades are still release work. Use a clean VM for the first
+installer test and retain its pre-installation backup for repeatable testing.
+
+The current setup executable is unsigned and intended for maintainer-supervised
+testing. Windows may show an unknown-publisher or SmartScreen prompt. Signing,
+public distribution, and actual desktop installation/reboot acceptance remain
+required before recommending it to community users.
+
 ## Build a preview
 
 On Windows x64 with Node.js 24 and Yarn Classic:
@@ -32,7 +70,16 @@ yarn typecheck
 yarn lint
 yarn test:sanitize
 yarn package:windows --preview
+yarn package:windows:setup --package 'dist\alpr-community-VERSION-COMMIT-windows-x64' --preview
 ~~~
+
+Replace the setup command's package path with the directory printed by the native
+package build. The setup builder downloads a checksum-pinned Inno Setup 6.7.3
+compiler in portable mode into the build cache. It does not install a compiler
+or ALPR services on the build machine. The output in `dist\setup` includes the
+single setup executable, its SHA-256 sidecar, and a build record identifying the
+payload commit and prerequisite pins. Build setup from the same clean source
+commit as its native package.
 
 Packaging always rebuilds the application and embeds the exact source commit
 and preview/stable channel. Stable packages require a clean exact version tag.
@@ -46,11 +93,12 @@ The packaging gate runs CPU inference for detection, embedding, and attributes
 using the final bundled Node.exe and loads Sharp, bcrypt, pg, and MQTT there.
 Dependency licenses and third-party source links accompany the package.
 
-PostgreSQL and FFmpeg are operator-installed prerequisites in this preview.
-The Node runtime and WinSW are bundled. Automatic prerequisite acquisition,
-signed distribution, and release asset publishing remain release work.
+The graphical installer acquires PostgreSQL and FFmpeg automatically. The
+unwrapped native package also supports the operator workflow below with existing
+prerequisites. Signed distribution and release asset publishing remain release
+work.
 
-## Fresh installation
+## Operator installation from the native package
 
 Use a clean test VM initially. Install PostgreSQL 17 command-line tools and an
 FFmpeg distribution containing ffmpeg.exe and ffprobe.exe. Install the Microsoft
@@ -200,6 +248,9 @@ For BOTH a clean Windows 10 22H2 x64 VM and a maintained Windows 11 x64 VM:
 1. Install with unused paths, including paths containing spaces. Confirm
    non-admin prerequisite checking, invalid-platform refusal, dependency
    failure refusal, and port-conflict refusal before mutation.
+   Exercise the graphical setup with a normal Windows account, administrator
+   elevation, chosen-password login, component downloads, cancellation,
+   restart-required handling, shortcuts, and uninstall with retained data.
 2. Verify app and database service accounts, service SIDs, NTFS ACL inheritance,
    protected secrets/backups, and absence of write access to code from the app.
 3. Reboot; confirm database/app startup order, health, and graceful stop/restart.

@@ -362,6 +362,13 @@ jobs:
         run: yarn lint
       - name: Build and probe the final Windows runtime
         run: yarn package:windows --preview
+      - name: Build the graphical Windows setup executable
+        shell: pwsh
+        run: |
+          $package = @(Get-ChildItem -LiteralPath dist -Directory -Filter 'alpr-community-*-windows-x64')
+          if ($package.Count -ne 1) { throw 'Expected one freshly built native package' }
+          yarn package:windows:setup --package $package[0].FullName --preview
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Verify isolated native PostgreSQL and ingestion
         shell: pwsh
         run: |
@@ -382,7 +389,7 @@ jobs:
               [IO.Compression.ZipFileExtensions]::ExtractToFile($entry,$file)
             }
           } finally { $archive.Dispose() }
-          $package = Get-ChildItem -LiteralPath dist -Directory | Select-Object -First 1
+          $package = Get-ChildItem -LiteralPath dist -Directory -Filter 'alpr-community-*-windows-x64' | Select-Object -First 1
           node scripts/test-windows-native-runtime.mjs $package.FullName (Join-Path $destination 'pgsql/bin')
       - name: Keep reviewable preview package
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4

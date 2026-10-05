@@ -9,7 +9,9 @@ param(
     [ValidateRange(1024,65535)][int]$DatabasePort = 5433,
     [switch]$AllowPreview,
     [switch]$CheckOnly,
-    [switch]$ListenOnNetwork
+    [switch]$ListenOnNetwork,
+    [switch]$CopyPrerequisites,
+    [string]$AdministratorPasswordFile
 )
 $ErrorActionPreference = 'Stop'
 $packageRoot = $PSScriptRoot
@@ -35,7 +37,7 @@ function Assert-PortAvailable([int]$Port) {
     $listener = New-Object Net.Sockets.TcpListener([Net.IPAddress]::Any, $Port)
     try { $listener.Start() } finally { $listener.Stop() }
 }
-function Set-PrivateAcl([string]$Path, [string]$ServiceSid = '', [string]$Rights = 'Modify', [bool]$InheritServiceAccess = $true) {
+function Set-PrivateAcl([string]$Path, [string]$ServiceSid = '', [string]$Rights = 'Modify', [bool]$InheritServiceAccess = $true, [string]$AdditionalReadSid = '') {
     $acl = New-Object Security.AccessControl.DirectorySecurity
     $acl.SetAccessRuleProtection($true, $false)
     foreach ($sid in @('S-1-5-18','S-1-5-32-544')) {
@@ -50,6 +52,12 @@ function Set-PrivateAcl([string]$Path, [string]$ServiceSid = '', [string]$Rights
         $rule = New-Object Security.AccessControl.FileSystemAccessRule(
             (New-Object Security.Principal.SecurityIdentifier($ServiceSid)),
             $Rights, $inheritance, 'None', 'Allow')
+        $acl.AddAccessRule($rule)
+    }
+    if ($AdditionalReadSid) {
+        $rule = New-Object Security.AccessControl.FileSystemAccessRule(
+            (New-Object Security.Principal.SecurityIdentifier($AdditionalReadSid)),
+            'ReadAndExecute', 'ContainerInherit,ObjectInherit', 'None', 'Allow')
         $acl.AddAccessRule($rule)
     }
     Set-Acl -LiteralPath $Path -AclObject $acl
@@ -76,6 +84,14 @@ if (-not [Environment]::Is64BitOperatingSystem -or -not [Environment]::Is64BitPr
 }
 $installPath = Assert-LocalPath $InstallRoot
 $dataPath = Assert-LocalPath $DataRoot
+$selectedAdminPassword = $null
+if ($AdministratorPasswordFile) {
+    $passwordPath = Assert-LocalPath $AdministratorPasswordFile
+    $selectedAdminPassword = [IO.File]::ReadAllText($passwordPath)
+    if ($selectedAdminPassword.Length -lt 12 -or $selectedAdminPassword.Length -gt 128 -or $selectedAdminPassword -match '[\x00-\x1f]') {
+        throw 'Choose an administrator password containing 12 to 128 characters'
+    }
+}
 $PgBin = Assert-LocalPath $PgBin
 $FfmpegBin = Assert-LocalPath $FfmpegBin
 if ($installPath -eq $dataPath -or $dataPath.StartsWith("$installPath\",[StringComparison]::OrdinalIgnoreCase) -or
@@ -128,8 +144,10 @@ $principal = New-Object Security.Principal.WindowsPrincipal([Security.Principal.
 if (-not $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) { throw 'Run the installer in an elevated 64-bit PowerShell window' }
 # All checks above precede creation, service registration, and database initialization.
 New-Item -ItemType Directory -Path $installPath,$dataPath | Out-Null
-Set-PrivateAcl $installPath
 $installerSid = [Security.Principal.WindowsIdentity]::GetCurrent().User.Value
+# PostgreSQL drops the Administrator group while initializing. Its packaged
+# executables/share files need the installing user's explicit read grant too.
+Set-PrivateAcl $installPath $installerSid 'ReadAndExecute'
 # initdb drops Administrator group privileges on Windows. Grant the installing
 # user's SID during initialization, then replace it with service-specific ACLs.
 Set-PrivateAcl $dataPath $installerSid 'FullControl'
@@ -141,11 +159,20 @@ $releaseName = "$($manifest.version)-$($manifest.commit.Substring(0,12))"
 $releasePath = Join-Path $installPath "releases\$releaseName"
 New-Item -ItemType Directory -Path (Split-Path -Parent $releasePath) | Out-Null
 Copy-Item -LiteralPath $packageRoot -Destination $releasePath -Recurse
+if ($CopyPrerequisites) {
+    $prerequisites = Join-Path $installPath 'prerequisites'
+    New-Item -ItemType Directory -Path $prerequisites | Out-Null
+    Copy-Item -LiteralPath (Split-Path -Parent $PgBin) -Destination (Join-Path $prerequisites 'postgresql') -Recurse
+    Copy-Item -LiteralPath (Split-Path -Parent $FfmpegBin) -Destination (Join-Path $prerequisites 'ffmpeg') -Recurse
+    $PgBin = Join-Path $prerequisites 'postgresql\bin'
+    $FfmpegBin = Join-Path $prerequisites 'ffmpeg\bin'
+}
 New-Item -ItemType Directory -Path (Join-Path $installPath 'host'),(Join-Path $installPath 'runtime'),(Join-Path $installPath 'services') | Out-Null
 Copy-Item -Path (Join-Path $releasePath 'host\*') -Destination (Join-Path $installPath 'host') -Recurse
 Copy-Item -Path (Join-Path $releasePath 'runtime\*') -Destination (Join-Path $installPath 'runtime')
 $dbPassword = New-Secret
 $adminPassword = New-Secret
+if ($null -ne $selectedAdminPassword) { $adminPassword = $selectedAdminPassword }
 $hostAddress = '127.0.0.1'
 if ($ListenOnNetwork) { $hostAddress = '0.0.0.0' }
 $environment = @{
@@ -172,6 +199,7 @@ try {
     $dbRegistered = $true
     Invoke-Native "$env:SystemRoot\System32\sc.exe" @('sidtype','ALPRCommunityDatabase','unrestricted')
     $dbSid = Resolve-ServiceSid 'ALPRCommunityDatabase'
+    if ($CopyPrerequisites) { Set-PrivateAcl $installPath $installerSid 'ReadAndExecute' $true $dbSid }
     Set-PrivateAcl $management $dbSid 'ReadAndExecute' $false
     # Reset inherited/initializer ACLs only inside this newly created cluster,
     # then propagate the database service SID from its protected directory.
@@ -202,7 +230,9 @@ try {
     $appRegistered = $true
     Invoke-Native "$env:SystemRoot\System32\sc.exe" @('sidtype','ALPRCommunityApp','unrestricted')
     $appSid = Resolve-ServiceSid 'ALPRCommunityApp'
-    Set-PrivateAcl $installPath $appSid 'ReadAndExecute'
+    $databaseCodeSid = ''
+    if ($CopyPrerequisites) { $databaseCodeSid = $dbSid }
+    Set-PrivateAcl $installPath $appSid 'ReadAndExecute' $true $databaseCodeSid
     Set-PrivateAcl $dataPath $appSid 'ReadAndExecute'
     # Re-protect management after granting traversal on the data root.
     Set-PrivateAcl $management $dbSid 'ReadAndExecute' $false
@@ -218,8 +248,12 @@ try {
         Start-Sleep -Seconds 1
     }
     if (-not $healthy) { throw 'Application health check failed; preserve the installation and inspect service logs' }
-    Write-Utf8 (Join-Path $management 'initial-login.txt') ("Administrator password: $adminPassword" + [Environment]::NewLine)
-    Write-Output "ALPR is available at http://localhost:$AppPort. Initial sign-in is saved in $management\initial-login.txt (Administrators only). Store the password and delete that file after first sign-in."
+    if (-not $AdministratorPasswordFile) {
+        Write-Utf8 (Join-Path $management 'initial-login.txt') ("Administrator password: $adminPassword" + [Environment]::NewLine)
+        Write-Output "ALPR is available at http://localhost:$AppPort. Initial sign-in is saved in $management\initial-login.txt (Administrators only). Store the password and delete that file after first sign-in."
+    } else {
+        Write-Output "ALPR is available at http://localhost:$AppPort. Sign in using the administrator password you chose in Setup."
+    }
 } catch {
     if ($appRegistered) { Stop-Service ALPRCommunityApp -ErrorAction SilentlyContinue }
     if ($dbRegistered) { Stop-Service ALPRCommunityDatabase -ErrorAction SilentlyContinue }

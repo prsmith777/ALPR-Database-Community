@@ -94,7 +94,7 @@ async function main() {
   await cp(path.join(root, "scripts", "windows", "Service-Control.ps1"), path.join(destination, "host", "Service-Control.ps1"));
   await cp(path.join(root, "scripts", "openvino-runtime-probe.cjs"), path.join(destination, "app", "openvino-runtime-probe.cjs"));
   await writeFile(path.join(destination, "THIRD-PARTY-NOTICES.txt"),
-    "Node.js: runtime/Node-LICENSE.txt\nWinSW 2.12.0 (MIT): runtime/WinSW-LICENSE.txt\nOpenVINO 2025.4.0 (Apache-2.0): bundled licenses in app/node_modules/openvino-node/bin\nDependency license/notice files and their source paths: dependency-licenses/index.json\nPostgreSQL and FFmpeg are operator-installed prerequisites; binaries are not redistributed in this preview.\n");
+    "Node.js: runtime/Node-LICENSE.txt\nWinSW 2.12.0 (MIT): runtime/WinSW-LICENSE.txt\nOpenVINO 2025.4.0 (Apache-2.0): bundled licenses in app/node_modules/openvino-node/bin\nDependency license/notice files and their source paths: dependency-licenses/index.json\nPostgreSQL and FFmpeg are downloaded directly from their publishers by graphical setup, or installed separately by the operator. Their binaries are not embedded in this package or the setup executable.\n");
   await copyDependencyLicenses(path.join(root, "node_modules"), path.join(destination, "dependency-licenses"));
   // Exercise all three AI models using the shipped Node.exe and native DLLs.
   run(path.join(destination, "runtime", "node.exe"), ["openvino-runtime-probe.cjs"], { cwd: path.join(destination, "app") });
