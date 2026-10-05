@@ -65,6 +65,7 @@ Source: "setup-prerequisites.json"; Flags: dontcopy
 Source: "{#PackageRoot}\*"; DestDir: "{tmp}\payload"; Flags: dontcopy recursesubdirs createallsubdirs
 Source: "Uninstall.ps1"; DestDir: "{app}"; Flags: ignoreversion
 Source: "Setup-Helpers.ps1"; DestDir: "{app}"; Flags: ignoreversion
+Source: "Network-Helpers.ps1"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#PackageRoot}\LICENSE"; DestDir: "{app}"; Flags: ignoreversion
 
 [Icons]
@@ -83,6 +84,7 @@ Type: filesandordirs; Name: "{autopf}\ALPR Community"
 [Code]
 var
   PasswordPage: TInputQueryWizardPage;
+  NetworkAccessCheck: TNewCheckBox;
   WorkRoot: String;
   Prepared: Boolean;
   InstallationRunning: Boolean;
@@ -123,12 +125,21 @@ begin
     'This is a development preview for testing.');
   PasswordPage.Add('Administrator password (12 to 128 characters):', True);
   PasswordPage.Add('Confirm password:', True);
+  NetworkAccessCheck := TNewCheckBox.Create(WizardForm);
+  NetworkAccessCheck.Parent := PasswordPage.Surface;
+  NetworkAccessCheck.Left := 0;
+  NetworkAccessCheck.Top := PasswordPage.Edits[1].Top + PasswordPage.Edits[1].Height + ScaleY(12);
+  NetworkAccessCheck.Width := PasswordPage.SurfaceWidth;
+  NetworkAccessCheck.Height := ScaleY(20);
+  NetworkAccessCheck.Caption := 'Allow access from other devices on my local network';
+  NetworkAccessCheck.Checked := False;
   WorkRoot := ExpandConstant('{commonappdata}\ALPR Community Setup\') +
     GetDateTimeString('yyyymmddhhnnss', #0, #0) + '-' + IntToStr(GetTickCount and $7FFFFFFF);
   WizardForm.FinishedLabel.Caption := 'ALPR is ready. Sign in with the password you chose in Setup. Leave the username blank during first-time setup.';
 #ifdef StartupProbe
   if (PasswordPage.Values[0] <> '') or
-    (PasswordPage.Values[1] <> '') or (WorkRoot = '') then
+    (PasswordPage.Values[1] <> '') or (WorkRoot = '') or NetworkAccessCheck.Checked or
+    (NetworkAccessCheck.Top + NetworkAccessCheck.Height > PasswordPage.SurfaceHeight) then
     RaiseException('Startup probe did not initialize the password page and workspace.');
   Log('ALPR_STARTUP_PROBE_PASSED');
   Abort;
@@ -180,6 +191,8 @@ begin
   if Operation = 'prepare' then
     Parameters := Parameters + ' -PackageRoot "' + ExpandConstant('{tmp}\payload') +
       '" -ManifestSha256 {#ManifestSha256}';
+  if (Operation = 'prepare') and NetworkAccessCheck.Checked then
+    Parameters := Parameters + ' -ListenOnNetwork';
   Result := ExecAndLogOutput(Powershell, Parameters, '', SW_HIDE,
     ewWaitUntilTerminated, ResultCode, @SetupOutput);
 end;

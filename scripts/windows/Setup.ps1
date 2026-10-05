@@ -3,7 +3,8 @@ param(
     [Parameter(Mandatory = $true)][ValidateSet('prepare','install','verify','cleanup')][string]$Operation,
     [string]$PackageRoot,
     [string]$ManifestSha256,
-    [string]$WorkRoot
+    [string]$WorkRoot,
+    [switch]$ListenOnNetwork
 )
 $ErrorActionPreference = 'Stop'
 . (Join-Path $PSScriptRoot 'Setup-Helpers.ps1')
@@ -40,7 +41,7 @@ try {
         $parent = Split-Path -Parent $work
         Protect-SetupDirectory $parent
         Protect-SetupDirectory $work
-        $record = @{ formatVersion=1; workRoot=$work; manifestSha256=$ManifestSha256 }
+        $record = @{ formatVersion=1; workRoot=$work; manifestSha256=$ManifestSha256; listenOnNetwork=[bool]$ListenOnNetwork }
         [IO.File]::WriteAllText($recordFile, ($record | ConvertTo-Json), (New-Object Text.UTF8Encoding($false)))
         $payload = Join-Path $work 'payload'
         Copy-Item -LiteralPath $PackageRoot -Destination $payload -Recurse
@@ -88,10 +89,12 @@ try {
     $payload = Join-Path $work 'payload'
     Test-SetupPayload $payload $record.manifestSha256
     Progress 'Installing ALPR and starting its services...'
-    Native "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe" @(
+    $installArguments = @(
         '-NoProfile','-NonInteractive','-ExecutionPolicy','Bypass','-File',(Join-Path $payload 'Install.ps1'),
         '-AllowPreview','-CopyPrerequisites','-PgBin',$record.pgBin,'-FfmpegBin',$record.ffmpegBin,
         '-AdministratorPasswordFile',(Join-Path $work 'administrator-password.txt'))
+    if ($record.listenOnNetwork -eq $true) { $installArguments += '-ListenOnNetwork' }
+    Native "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe" $installArguments
     $controller = "$env:ProgramFiles\ALPR Community\host\Service-Control.ps1"
     Native "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe" @(
         '-NoProfile','-NonInteractive','-ExecutionPolicy','Bypass','-File',$controller,'-Operation','attest')

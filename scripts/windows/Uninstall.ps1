@@ -2,6 +2,7 @@
 param([switch]$CheckOnly)
 $ErrorActionPreference = 'Stop'
 . (Join-Path $PSScriptRoot 'Setup-Helpers.ps1')
+. (Join-Path $PSScriptRoot 'Network-Helpers.ps1')
 $root = Assert-SetupDirectory "$env:ProgramFiles\ALPR Community"
 $data = Assert-SetupDirectory "$env:ProgramData\ALPR Community"
 $file = Join-Path $root 'installation.json'
@@ -24,6 +25,7 @@ foreach ($name in @('ALPRCommunityApp','ALPRCommunityDatabase')) {
     }
     $services += $name
 }
+[void](Get-AlprNetworkRule ([int]$installation.environment.PORT))
 if ($CheckOnly) { Write-Output 'ALPR uninstall ownership checks passed.'; exit 0 }
 foreach ($name in $services) {
     $service = Get-Service -Name $name
@@ -34,6 +36,7 @@ foreach ($name in $services) {
     & "$env:SystemRoot\System32\sc.exe" delete $name
     if ($LASTEXITCODE -ne 0) { throw 'An ALPR service could not be removed; application files were preserved' }
 }
+Remove-AlprNetworkRule ([int]$installation.environment.PORT)
 # Preserve the protected metadata for a later guided reinstall/recovery. The
 # Inno uninstaller deletes only the verified code root; all ProgramData stays.
 Copy-Item -LiteralPath $file -Destination (Join-Path $data 'management\uninstalled-installation.json') -Force

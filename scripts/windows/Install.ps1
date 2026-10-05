@@ -15,6 +15,7 @@ param(
 )
 $ErrorActionPreference = 'Stop'
 $packageRoot = $PSScriptRoot
+. (Join-Path $packageRoot 'host\Network-Helpers.ps1')
 function Invoke-Native([string]$Executable, [string[]]$Arguments) {
     & $Executable @Arguments
     if ($LASTEXITCODE -ne 0) { throw "$Executable failed (exit $LASTEXITCODE)" }
@@ -142,6 +143,7 @@ try { Invoke-Native $node @('openvino-runtime-probe.cjs') } finally { Pop-Locati
 if ($CheckOnly) { Write-Output 'Native Windows prerequisites and package checks passed. No changes made.'; return }
 $principal = New-Object Security.Principal.WindowsPrincipal([Security.Principal.WindowsIdentity]::GetCurrent())
 if (-not $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) { throw 'Run the installer in an elevated 64-bit PowerShell window' }
+if ($ListenOnNetwork -and (Get-AlprNetworkRule $AppPort)) { throw 'An ALPR network rule already exists. Preserve it and contact the maintainer.' }
 # All checks above precede creation, service registration, and database initialization.
 New-Item -ItemType Directory -Path $installPath,$dataPath | Out-Null
 $installerSid = [Security.Principal.WindowsIdentity]::GetCurrent().User.Value
@@ -191,6 +193,7 @@ $pwfile = Join-Path $management 'initdb-password.tmp'
 Write-Utf8 $pwfile ($dbPassword + [Environment]::NewLine)
 $dbRegistered = $false
 $appRegistered = $false
+$networkRuleCreated = $false
 $originalPgPassword = $env:PGPASSWORD
 try {
     Invoke-Native (Join-Path $PgBin 'initdb.exe') @('-D',$database,'-U','postgres','--encoding=UTF8','--auth-host=scram-sha-256','--auth-local=scram-sha-256',"--pwfile=$pwfile")
@@ -248,6 +251,10 @@ try {
         Start-Sleep -Seconds 1
     }
     if (-not $healthy) { throw 'Application health check failed; preserve the installation and inspect service logs' }
+    if ($ListenOnNetwork) {
+        $networkRuleCreated = $true
+        New-AlprNetworkRule $AppPort
+    }
     if (-not $AdministratorPasswordFile) {
         Write-Utf8 (Join-Path $management 'initial-login.txt') ("Administrator password: $adminPassword" + [Environment]::NewLine)
         Write-Output "ALPR is available at http://localhost:$AppPort. Initial sign-in is saved in $management\initial-login.txt (Administrators only). Store the password and delete that file after first sign-in."
@@ -257,6 +264,7 @@ try {
 } catch {
     if ($appRegistered) { Stop-Service ALPRCommunityApp -ErrorAction SilentlyContinue }
     if ($dbRegistered) { Stop-Service ALPRCommunityDatabase -ErrorAction SilentlyContinue }
+    if ($networkRuleCreated) { Remove-AlprNetworkRule $AppPort }
     Write-Utf8 (Join-Path $management 'installer-error.txt') $_.Exception.Message
     throw
 } finally {

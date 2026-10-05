@@ -52,6 +52,7 @@ export async function buildWindowsSetup(args = process.argv.slice(2)) {
   const manifestSha256 = await hashFile(path.join(packageRoot, "windows-package.json"));
   const { compiler, pins } = await ensureInstallerCompiler();
   await verifyWindowsSetupStartup({ compiler });
+  await verifyWindowsSetupStartup({ compiler, sourceFile: path.join(root, "scripts/windows/CommunityNetwork.iss") });
   console.log("Verified compiled installer wizard startup before packaging");
   const outputRoot = path.join(root, "dist", "setup");
   await mkdir(outputRoot, { recursive: true });
@@ -68,7 +69,7 @@ export async function buildWindowsSetup(args = process.argv.slice(2)) {
   await writeFile(output + ".json", JSON.stringify({ formatVersion: 1, source: manifest.source,
     version: manifest.version, commit: manifest.commit, channel: manifest.channel,
     payloadManifestSha256: manifestSha256, setupSha256: checksum, prerequisites: pins,
-    signed: false, wizardStartup: "verified", desktopAcceptance: "pending" }, null, 2) + "\n", { flag: "wx" });
+    signed: false, wizardStartup: "verified", networkWizardStartup: "verified", desktopAcceptance: "pending" }, null, 2) + "\n", { flag: "wx" });
   console.log("Built graphical Windows setup: " + output);
   return output;
 }

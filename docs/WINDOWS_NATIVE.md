@@ -11,7 +11,7 @@ WSL. It is not yet a published or certified Windows release.
 
 | Target | Build/model evidence | Remaining acceptance |
 | --- | --- | --- |
-| Windows 10 22H2 x64, build 19045 | Explicit installer target; OS checks tested | Clean VM installation, service ACLs, reboot, integration, update and rollback |
+| Windows 10 22H2 x64, build 19045 | Supervised Pro VM installation, chosen-password sign-in, Settings repair and automatic startup after reboot reported working | Service ACL review, LAN access, integration, update, rollback and uninstall |
 | Maintained Windows 11 x64 | Locked dependencies, standalone build and packaged CPU inference verified locally | Clean VM installation, service ACLs, reboot, integration, update and rollback |
 | Home, Pro, Enterprise, Education | Same desktop installer; no edition-specific feature dependency | Edition acceptance on the two OS baselines |
 
@@ -31,6 +31,8 @@ For a clean test computer:
 1. Copy the maintainer-provided `ALPR-Community-...-Setup.exe` into Windows.
 2. Double-click it and approve the Windows administrator prompt.
 3. Choose and confirm an ALPR administrator password, then click **Install**.
+   Select **Allow access from other devices on my local network** if cameras
+   or another computer will connect to ALPR.
 4. Wait for setup to finish. Click **Finish** to open ALPR in the browser.
    Sign in with that password; leave the username blank on the initial login.
 
@@ -55,8 +57,8 @@ installer test and retain its pre-installation backup for repeatable testing.
 
 The current setup executable is unsigned and intended for maintainer-supervised
 testing. Windows may show an unknown-publisher or SmartScreen prompt. Signing,
-public distribution, and actual desktop installation/reboot acceptance remain
-required before recommending it to community users.
+public distribution, and the remaining desktop acceptance gates are required
+before recommending it to community users.
 
 The setup build executes a compiled startup probe before producing the installer.
 It creates the real password controls and temporary workspace name, then exits
@@ -90,6 +92,37 @@ migration or database restore. A failed startup restores the previous applicatio
 selection and checks that its service owns the listener. Both code releases and
 the protected repair record remain available. This supervised repair does not
 replace the planned general upgrade, reinstallation, or repair workflow.
+
+## Local network access
+
+Localhost is the default. Selecting network access listens on all IPv4 interfaces
+and creates one owned Windows firewall rule for the application port (normally
+3000), TCP, with remote addresses restricted to `LocalSubnet` and edge traversal
+blocked. It applies to all Windows network profiles so the same home network
+works even when Windows labels it Public; it does not change that profile.
+The database remains on loopback and no database firewall rule is created.
+This option is for a local network; it does not set up internet access or HTTPS.
+
+For an already-installed supervised preview, the maintainer can build the small
+graphical tool with `node scripts/build-windows-network.mjs` from clean source.
+It requires the original preview commit in Git history to pin the existing
+uninstaller checksum. Users double-click `ALPR-Network-Access-...exe`, approve
+elevation, leave **Allow other computers and cameras on my local network**
+selected, and click **Apply**. The tool displays the addresses to open from
+other devices. Choose **Only this computer** and apply again to disable access.
+
+The tool verifies release checksums and service ownership under the shared
+maintenance lock. It refuses pending updates and unexpected firewall rules,
+preserves credentials and stored data, and restarts only the application.
+It verifies health, process ownership and listener binding after the change.
+If the change fails, it restores the previous binding and firewall state.
+It also upgrades the exact original preview's uninstall script so uninstall
+removes the owned LAN rule. No database migration or restore runs.
+
+Automated tests use isolated fixtures and mocked service/firewall commands;
+compiled wizard startup also runs without installation or elevation. Actual
+desktop elevation, firewall enforcement and access from another LAN device
+remain acceptance checks on Windows 10 and Windows 11.
 
 ## Build a preview
 
@@ -178,15 +211,17 @@ access to code and modification rights only on its own runtime directories.
 Database files and rollback backups exclude the app service. Secrets are
 generated locally and stored under protected NTFS ACLs, never in source.
 
-The app starts after the database service and restarts after failure. WinSW
-sends Ctrl+C and allows 60 seconds for Next.js to shut down. Application/service
+The app starts automatically after the database service and restarts after failure.
+Its automatic startup is delayed, so ALPR may need a short wait after a reboot.
+WinSW sends Ctrl+C and allows 60 seconds for Next.js to shut down. Application/service
 logs and PostgreSQL logs have bounded rotation. Initial administrator login is
 saved in management\initial-login.txt, accessible to Administrators; store the
 password and delete that file after first sign-in.
 
-Localhost is the default. ListenOnNetwork deliberately changes the app listener
-to 0.0.0.0. Configure an appropriate firewall rule and HTTPS proxy for remote
-users/cameras. The installer does not silently open inbound network access.
+Localhost is the default. `ListenOnNetwork` deliberately changes the app listener
+to `0.0.0.0` and creates the local-subnet application firewall rule described
+above. Network access requires this explicit installer selection. An operator
+must separately configure HTTPS and access controls for use beyond a local LAN.
 
 A failed install stops only services it registered and preserves its data and
 private installer-error.txt for diagnosis. It does not delete an existing
@@ -287,6 +322,9 @@ For BOTH a clean Windows 10 22H2 x64 VM and a maintained Windows 11 x64 VM:
 2. Verify app and database service accounts, service SIDs, NTFS ACL inheritance,
    protected secrets/backups, and absence of write access to code from the app.
 3. Reboot; confirm database/app startup order, health, and graceful stop/restart.
+   Enable local network access and verify signed-in use from another device;
+   disable it and verify remote refusal with localhost still working. Confirm
+   uninstall removes only the owned firewall rule and preserves stored data.
 4. Sign in and ingest synthetic reads with images. Exercise search, dashboard,
    exports, all three AI models, and file/media retrieval.
 5. Exercise a real Blue Iris camera, MQTT, and FFmpeg timeline export against
