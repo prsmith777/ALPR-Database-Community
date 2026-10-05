@@ -20,9 +20,10 @@ initial target. The installer rejects Server, ARM64, 32-bit PowerShell, older
 Windows 10 builds, network shares, reparse-point roots, and non-NTFS volumes.
 Windows 10 compatibility does not extend Microsoft's Windows 10 support period.
 
-The supervised Windows 10 reboot result uses the current delayed automatic
-startup setting. Immediate startup with a database readiness check is a proposed
-improvement and has not been implemented or accepted by this reboot test.
+The supervised Windows 10 reboot result used the earlier delayed automatic
+startup setting. New installers use normal automatic startup with a PostgreSQL
+readiness check. That corrected startup path still requires a desktop reboot
+acceptance test. Existing installations retain their previous service settings.
 
 ## Graphical setup preview
 
@@ -215,8 +216,13 @@ access to code and modification rights only on its own runtime directories.
 Database files and rollback backups exclude the app service. Secrets are
 generated locally and stored under protected NTFS ACLs, never in source.
 
-The app starts automatically after the database service and restarts after failure.
-Its automatic startup is delayed, so ALPR may need a short wait after a reboot.
+The app uses normal automatic startup with a dependency on the database service.
+Its launcher immediately tests an authenticated, read-only PostgreSQL query and
+starts ALPR as soon as that succeeds. A failed check is retried once per second,
+with connection/query timeouts and a total startup budget of 60 seconds. Failure
+exits the launcher so Windows can retry the application service after 10 seconds.
+Stopping during readiness cancels the wait without launching ALPR. There is no
+unconditional boot delay.
 WinSW sends Ctrl+C and allows 60 seconds for Next.js to shut down. Application/service
 logs and PostgreSQL logs have bounded rotation. Initial administrator login is
 saved in management\initial-login.txt, accessible to Administrators; store the
