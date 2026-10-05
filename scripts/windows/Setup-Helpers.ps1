@@ -6,7 +6,7 @@ function Assert-SetupDirectory([string]$Path) {
     $full = [IO.Path]::GetFullPath($Path).TrimEnd('\')
     $probe = $full
     while ($probe) {
-        if ((Test-Path -LiteralPath $probe) -and ((Get-Item -LiteralPath $probe).Attributes -band [IO.FileAttributes]::ReparsePoint)) { throw 'Setup directories cannot contain links or junctions' }
+        if ((Test-Path -LiteralPath $probe) -and ((Get-Item -LiteralPath $probe -Force).Attributes -band [IO.FileAttributes]::ReparsePoint)) { throw 'Setup directories cannot contain links or junctions' }
         $probe = Split-Path -Parent $probe
     }
     return $full

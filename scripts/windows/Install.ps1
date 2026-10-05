@@ -28,7 +28,7 @@ function Assert-LocalPath([string]$Candidate) {
     if ($drive.FileSystem -ne 'NTFS') { throw 'Native ALPR data and releases require NTFS' }
     $probe = $full
     while ($probe) {
-        if ((Test-Path -LiteralPath $probe) -and ((Get-Item -LiteralPath $probe).Attributes -band [IO.FileAttributes]::ReparsePoint)) { throw 'Install paths cannot contain reparse points' }
+        if ((Test-Path -LiteralPath $probe) -and ((Get-Item -LiteralPath $probe -Force).Attributes -band [IO.FileAttributes]::ReparsePoint)) { throw 'Install paths cannot contain reparse points' }
         $probe = Split-Path -Parent $probe
     }
     return $full

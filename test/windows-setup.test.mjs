@@ -26,6 +26,13 @@ test("graphical setup scripts parse with inbox PowerShell 5.1", {skip:!powershel
   const result = ps("$failures=0; foreach ($name in @('Setup.ps1','Setup-Helpers.ps1','Uninstall.ps1','Install.ps1')) { $tokens=$null; $errors=$null; [System.Management.Automation.Language.Parser]::ParseFile((Join-Path $PWD ('scripts/windows/' + $name)),[ref]$tokens,[ref]$errors) | Out-Null; $failures += @($errors).Count; $errors | ForEach-Object { Write-Output $_.Message } }; if($failures){exit 1}");
   assert.equal(result.status,0,result.stdout+result.stderr);
 });
+test("setup and native installer validate paths below hidden Windows directories", {skip:!powershell}, async (t) => {
+  const fixture=await mkdtemp(path.join(os.tmpdir(),"alpr-setup-hidden-"));
+  t.after(()=>rm(fixture,{recursive:true,force:true}));
+  const result=ps(". ./scripts/windows/Setup-Helpers.ps1; $hidden=Join-Path $env:ALPR_TEST_ROOT 'hidden'; [void][IO.Directory]::CreateDirectory($hidden); [IO.File]::SetAttributes($hidden,([IO.FileAttributes]::Directory -bor [IO.FileAttributes]::Hidden)); $child=Join-Path $hidden 'new-install'; [void](Assert-SetupDirectory $child); $tokens=$null; $errors=$null; $ast=[Management.Automation.Language.Parser]::ParseFile((Join-Path $PWD 'scripts/windows/Install.ps1'),[ref]$tokens,[ref]$errors); $function=$ast.Find({param($node) $node -is [Management.Automation.Language.FunctionDefinitionAst] -and $node.Name -eq 'Assert-LocalPath'},$true); Invoke-Expression $function.Extent.Text; function Get-Volume { return [pscustomobject]@{FileSystem='NTFS'} }; [void](Assert-LocalPath $child); Write-Output 'Hidden ancestors verified by both installers'",{ALPR_TEST_ROOT:fixture});
+  assert.equal(result.status,0,result.stdout+result.stderr);
+  assert.match(result.stdout,/Hidden ancestors verified/);
+});
 test("setup payload verification rejects substitution, tampering and extra files", {skip:!powershell}, async (t) => {
   const fixture = await mkdtemp(path.join(os.tmpdir(),"alpr-setup-payload-"));
   t.after(()=>rm(fixture,{recursive:true,force:true}));
