@@ -11,7 +11,7 @@ WSL. It is not yet a published or certified Windows release.
 
 | Target | Build/model evidence | Remaining acceptance |
 | --- | --- | --- |
-| Windows 10 22H2 x64, build 19045 | Supervised Pro VM installation, chosen-password sign-in, Settings repair, automatic startup after reboot, laptop LAN sign-in, Blue Iris read-only connection and plate-alert ingestion reported working; remote health/login HTTP checks passed | Service ACL review, LAN disable/reboot checks, ingestion persistence after reboot, image/workflow acceptance, other integrations, update, rollback and uninstall |
+| Windows 10 22H2 x64, build 19045 | Supervised Pro VM installation, sign-in, Settings, LAN access, Blue Iris connection and plate ingestion reported working across reboot; post-reboot remote health HTTP check passed | Service ACL review, LAN disable check, remaining image/AI workflows, other integrations, update, rollback and uninstall |
 | Maintained Windows 11 x64 | Locked dependencies, standalone build and packaged CPU inference verified locally | Clean VM installation, service ACLs, reboot, integration, update and rollback |
 | Home, Pro, Enterprise, Education | Same desktop installer; no edition-specific feature dependency | Edition acceptance on the two OS baselines |
 
@@ -19,6 +19,10 @@ Windows Server, ARM64, 32-bit Windows, and LTSC certification are outside this
 initial target. The installer rejects Server, ARM64, 32-bit PowerShell, older
 Windows 10 builds, network shares, reparse-point roots, and non-NTFS volumes.
 Windows 10 compatibility does not extend Microsoft's Windows 10 support period.
+
+The supervised Windows 10 reboot result uses the current delayed automatic
+startup setting. Immediate startup with a database readiness check is a proposed
+improvement and has not been implemented or accepted by this reboot test.
 
 ## Graphical setup preview
 
