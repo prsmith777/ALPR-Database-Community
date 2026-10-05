@@ -80,7 +80,9 @@ Module._resolveFilename=function(request,parent,...rest){
   const launch = () => {
     const process = spawn(path.join(packageRoot,"runtime","node.exe"),[path.join(packageRoot,"host","windows-service.mjs"),installationFile],{
       cwd:root,windowsHide:true,stdio:["ignore","pipe","pipe","ipc"],
-      env:{...pgEnv,NODE_OPTIONS:'--require "'+sourceGuard+'"'},
+      // NODE_OPTIONS treats backslashes as escapes inside quotes. Forward
+      // slashes preserve Windows paths, including a temporary path with spaces.
+      env:{...pgEnv,NODE_OPTIONS:'--require "'+sourceGuard.replaceAll("\\","/")+'"'},
     });
     process.stdout.on("data",(chunk)=>{output+=chunk.toString();});
     process.stderr.on("data",(chunk)=>{output+=chunk.toString();});
@@ -88,7 +90,7 @@ Module._resolveFilename=function(request,parent,...rest){
   };
   const waitForDatabaseMessage = async () => {
     for(let attempt=0;attempt<100;attempt++){
-      if(server.exitCode!==null)throw new Error("Service launcher exited while waiting for PostgreSQL");
+      if(server.exitCode!==null)throw new Error("Service launcher exited while waiting for PostgreSQL\n"+output.replaceAll(secret,"[test credential]"));
       if(output.includes("Waiting for PostgreSQL"))return;
       await new Promise((resolve)=>setTimeout(resolve,50));
     }
@@ -102,7 +104,7 @@ Module._resolveFilename=function(request,parent,...rest){
   server.send("stop");
   await Promise.race([stoppedWaiting,new Promise((_,reject)=>setTimeout(()=>reject(new Error("Readiness cancellation timed out")),3000))]);
   assert.equal(server.exitCode,0,"Stopping during readiness must exit cleanly");
-  assert.ok(!output.includes("starting ALPR"),"Canceled readiness must not launch the application");
+  assert.ok(!output.includes("PostgreSQL is ready; starting ALPR."),"Canceled readiness must not launch the application");
   output="";
   server=launch();
   await waitForDatabaseMessage();

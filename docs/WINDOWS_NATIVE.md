@@ -25,6 +25,14 @@ startup setting. New installers use normal automatic startup with a PostgreSQL
 readiness check. That corrected startup path still requires a desktop reboot
 acceptance test. Existing installations retain their previous service settings.
 
+The packaged startup correction from commit `fa4799b7d1fd` passed an isolated
+Windows runtime test with PostgreSQL 17. It withheld the app while the database
+was stopped, exited cleanly when stopped during readiness, and served a healthy
+app about four seconds after the database was started. Chosen-password login,
+all 28 Settings pages, and synthetic plate/image ingestion also passed with
+access to the build checkout blocked. This is controlled runtime evidence;
+the new startup mode still needs the desktop reboot test above.
+
 ## Graphical setup preview
 
 The Windows setup executable is the user-facing installation path. It includes
