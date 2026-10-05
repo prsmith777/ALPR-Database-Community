@@ -11,7 +11,7 @@ WSL. It is not yet a published or certified Windows release.
 
 | Target | Build/model evidence | Remaining acceptance |
 | --- | --- | --- |
-| Windows 10 22H2 x64, build 19045 | Supervised Pro VM installation, chosen-password sign-in, Settings repair, automatic startup after reboot and laptop LAN sign-in reported working; remote health/login HTTP checks passed | Service ACL review, LAN disable/reboot checks, integration, update, rollback and uninstall |
+| Windows 10 22H2 x64, build 19045 | Supervised Pro VM installation, chosen-password sign-in, Settings repair, automatic startup after reboot, laptop LAN sign-in and Blue Iris read-only connection test reported working; remote health/login HTTP checks passed | Service ACL review, LAN disable/reboot checks, plate-alert ingestion, other integrations, update, rollback and uninstall |
 | Maintained Windows 11 x64 | Locked dependencies, standalone build and packaged CPU inference verified locally | Clean VM installation, service ACLs, reboot, integration, update and rollback |
 | Home, Pro, Enterprise, Education | Same desktop installer; no edition-specific feature dependency | Edition acceptance on the two OS baselines |
 
