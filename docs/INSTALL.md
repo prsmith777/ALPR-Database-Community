@@ -1,5 +1,9 @@
 # Fresh Community installation
 
+For the native Windows 10/11 development preview, follow
+[Native Windows preview](WINDOWS_NATIVE.md). The instructions below describe
+the supported Linux Docker installation.
+
 This guide creates a new, empty ALPR Database Community installation. It does
 not import an existing database. Existing-system operators should use the
 [automated migration runbook](MIGRATION_GUIDE.md) and keep the source system

@@ -54,6 +54,9 @@ function formatDate(value) {
 }
 
 function StatusBadge({ snapshot, workflow }) {
+  if (snapshot.deploymentProfile === "windows-native") {
+    return <span className="rounded-full bg-amber-500/15 px-2.5 py-1 text-xs font-medium text-amber-700 dark:text-amber-300">Native Windows preview</span>;
+  }
   if (!snapshot.agent.online) {
     return <span className="rounded-full bg-amber-500/15 px-2.5 py-1 text-xs font-medium text-amber-700 dark:text-amber-300">Agent offline</span>;
   }
@@ -67,6 +70,14 @@ function StatusBadge({ snapshot, workflow }) {
 }
 
 function WorkflowBanner({ snapshot, state, workflow, activeUpdateTag }) {
+  if (snapshot.deploymentProfile === "windows-native") {
+    return (
+      <div role="status" className="rounded-lg border border-amber-500/40 bg-amber-500/10 p-4">
+        <p className="font-semibold">Native Windows preview uses local administrator maintenance</p>
+        <p className="mt-2 text-sm text-muted-foreground">Use a verified Windows package for updates, validation, acceptance, and rollback. Browser installation will become available after the native update agent passes release acceptance.</p>
+      </div>
+    );
+  }
   if (!snapshot.agent.online) {
     return (
       <div role="alert" className="rounded-lg border border-amber-500/40 bg-amber-500/10 p-4">

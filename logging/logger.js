@@ -21,7 +21,7 @@ function boundedString(value) {
 }
 
 export function createOperationalLogger({ env = process.env, cwd = process.cwd() } = {}) {
-  const logDirectory = path.resolve(env.ALPR_LOG_DIR || path.join(cwd, "logs"));
+  const logDirectory = path.resolve(env.ALPR_LOG_DIR || path.join(env.ALPR_DATA_DIR || cwd, "logs"));
   const maxsize = positiveInteger(
     env.ALPR_OPERATIONAL_LOG_FILE_MAX_BYTES,
     DEFAULT_MAX_FILE_BYTES

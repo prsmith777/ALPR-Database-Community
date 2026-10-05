@@ -4,8 +4,14 @@ ALPR Database Community is supported on Linux x86-64. The automatic package
 installer uses explicit APT and RPM adapters so package names, repositories,
 service control, and rollback behavior remain predictable.
 
+A native Windows development preview targets Windows 10 22H2 x64 and maintained
+Windows 11 x64, using native services and PostgreSQL without Docker or WSL.
+Desktop service/reboot acceptance is pending; see
+[Native Windows preview](WINDOWS_NATIVE.md).
+
 | Host situation | Supported path |
 | --- | --- |
+| Windows 10 22H2 x64 / maintained Windows 11 x64 | Native development preview; follow WINDOWS_NATIVE.md and its acceptance gates. |
 | Ubuntu 22.04, 24.04, or 26.04 x86-64 | Run the automated bootstrap in new-install or migration-preparation mode. Ubuntu 24.04 remains the simplest recommended VM choice. |
 | Debian 12 or 13 x86-64 | Run the automated bootstrap in new-install or migration-preparation mode. |
 | Current RHEL, Rocky Linux, or AlmaLinux 8, 9, or 10 x86-64 | Run the automated bootstrap. Patch to the current supported minor release before migration so the PostgreSQL repository matches the host. |

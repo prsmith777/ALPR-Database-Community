@@ -155,7 +155,8 @@ test("the production image uses a supported non-root deterministic runtime", asy
   assert.equal(dockerfile.includes("yarn add"), false);
   assert.equal(packageJson.dependencies["openvino-node"], "2025.4.0");
   assert.match(openvinoInstaller, /storage\.openvinotoolkit\.org/);
-  assert.match(openvinoInstaller, /RUNTIME_SHA256 = "[0-9a-f]{64}"/);
+  assert.match(openvinoInstaller, /sha256: "ec2cfcd283b9d2183899ea9a82be543d1144dae0fae58e6ee9894ce1b43730a6"/);
+  assert.match(openvinoInstaller, /sha256: "d344132e42852a43ad8a1f7a5e91007fc31739b7b6cd6050cc5f3d397223cd2e"/);
   assert.match(openvinoInstaller, /MAX_ARCHIVE_BYTES/);
   assert.match(openvinoInstaller, /packageJson\.version !== "2025\.4\.0"/);
   assert.equal(

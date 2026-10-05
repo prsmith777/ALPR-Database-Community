@@ -3292,7 +3292,7 @@ async function readOperationalLogFile({ includeRotated = false } = {}) {
     10
   );
   const logDirectory = path.resolve(
-    process.env.ALPR_LOG_DIR || path.join(process.cwd(), "logs")
+    process.env.ALPR_LOG_DIR || path.join(process.env.ALPR_DATA_DIR || process.cwd(), "logs")
   );
   try {
     const names = await fs.readdir(logDirectory);

@@ -49,6 +49,10 @@ test("storage path resolution rejects traversal and unauthorized roots", () => {
     "\\\\server\\share\\secret.txt",
     "config/settings.yaml",
     "images/\0secret.jpg",
+    "images/plate.jpg:private-stream",
+    "images/CON.jpg",
+    "images/plate.jpg.",
+    "images/plate.jpg ",
   ];
 
   for (const invalidPath of invalidPaths) {

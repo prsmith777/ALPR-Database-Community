@@ -32,6 +32,11 @@ and prototype TPMS screens are intentionally not included.
 
 ## Quick start
 
+A native Windows development preview targets Windows 10 22H2 x64 and maintained
+Windows 11 x64, using the same Community application without Docker or WSL.
+See [Native Windows preview](docs/WINDOWS_NATIVE.md) for build, prerequisites,
+installer checks, service design, maintenance, and pending desktop acceptance.
+
 For the simplest supported path, start with Ubuntu Server 24.04 LTS x86-64,
 internet access, and a normal account with `sudo`. The automatic bootstrap also
 supports selected maintained Ubuntu, Debian, RHEL, Rocky Linux, AlmaLinux,

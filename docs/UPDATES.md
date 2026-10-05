@@ -14,9 +14,12 @@ Proxmox, VMware, Hyper-V, VirtualBox, Unraid, TrueNAS, or another hypervisor.
 The updater evaluates the Linux guest and its Docker Compose installation; it
 does not depend on or control the underlying VM host.
 
-Windows Docker installations are not supported by the current updater.
-A PowerShell launcher and Windows-specific path validation are planned. Do not
-run the Linux updater through WSL against a Windows Docker installation.
+Windows Docker installations are not supported by the Linux updater. The
+[native Windows preview](WINDOWS_NATIVE.md) has separate package verification,
+native service control, backup, validation, acceptance, and rollback commands.
+Browser installation and automatic Windows release discovery remain disabled
+during preview acceptance. Do not run the Linux updater through WSL against
+a Windows Docker installation.
 
 ## Requirements
 

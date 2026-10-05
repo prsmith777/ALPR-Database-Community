@@ -1,5 +1,10 @@
 # Community deployment
 
+The shared Community application also has a native Windows 10/11 development
+preview. Its installer, native services, data ACLs, runtime bundle, and
+maintenance workflow are documented in [Native Windows preview](WINDOWS_NATIVE.md).
+Desktop acceptance is required before publishing a certified Windows release.
+
 The Community edition is intended for self-hosted x86-64 Linux systems and
 Linux virtual machines. The verified release bootstrap supports an explicit
 matrix of maintained Ubuntu, Debian, RHEL, Rocky Linux, AlmaLinux, CentOS

@@ -330,3 +330,65 @@ jobs:
 
       - name: Verify runtime-only image contents
         run: node scripts/verify-runtime-image.mjs alpr-ci:${{ github.sha }}
+
+  windows-native:
+    name: Native Windows preview
+    runs-on: windows-2022
+    timeout-minutes: 30
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+      - name: Install locked native dependencies
+        shell: pwsh
+        run: |
+          corepack enable
+          corepack prepare yarn@1.22.22 --activate
+          yarn install --frozen-lockfile --ignore-scripts
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          node scripts/install-openvino-runtime.mjs
+      - name: Run Community and native lifecycle tests
+        run: yarn test
+      - name: Verify Community sanitation
+        run: yarn test:sanitize
+      - name: Typecheck
+        run: yarn typecheck
+      - name: Lint
+        run: yarn lint
+      - name: Build and probe the final Windows runtime
+        run: yarn package:windows --preview
+      - name: Verify isolated native PostgreSQL and ingestion
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path .native-dependencies | Out-Null
+          $archiveFile = Join-Path $PWD '.native-dependencies/postgresql17.zip'
+          Invoke-WebRequest -Uri 'https://get.enterprisedb.com/postgresql/postgresql-17.10-1-windows-x64-binaries.zip' -OutFile $archiveFile
+          if ((Get-FileHash -LiteralPath $archiveFile -Algorithm SHA256).Hash.ToLowerInvariant() -ne 'f9aafca58e7026a1ef2caeee711acf761671e57904d430adc85f468374f5a821') { throw 'PostgreSQL binary archive checksum mismatch' }
+          $destination = Join-Path $PWD '.native-dependencies/postgresql17'
+          Add-Type -AssemblyName System.IO.Compression.FileSystem
+          $archive = [IO.Compression.ZipFile]::OpenRead($archiveFile)
+          try {
+            foreach ($entry in $archive.Entries) {
+              $name = $entry.FullName.Replace('\','/')
+              if ($name -notmatch '^pgsql/(bin|lib|share)/' -or $name.EndsWith('/')) { continue }
+              if ($name.Split('/') -contains '..') { throw 'Unsafe archive path' }
+              $file = Join-Path $destination $name
+              New-Item -ItemType Directory -Force -Path (Split-Path -Parent $file) | Out-Null
+              [IO.Compression.ZipFileExtensions]::ExtractToFile($entry,$file)
+            }
+          } finally { $archive.Dispose() }
+          $package = Get-ChildItem -LiteralPath dist -Directory | Select-Object -First 1
+          node scripts/test-windows-native-runtime.mjs $package.FullName (Join-Path $destination 'pgsql/bin')
+      - name: Keep reviewable preview package
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: community-windows-preview
+          path: dist/
+          include-hidden-files: true
+          retention-days: 7
+          if-no-files-found: error
