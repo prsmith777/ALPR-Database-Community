@@ -38,9 +38,7 @@ try {
         Test-SetupPayload $PackageRoot $ManifestSha256
         if (Test-Path -LiteralPath $work) { throw 'This Setup workspace is already in use' }
         $parent = Split-Path -Parent $work
-        New-Item -ItemType Directory -Force -Path $parent | Out-Null
         Protect-SetupDirectory $parent
-        New-Item -ItemType Directory -Path $work | Out-Null
         Protect-SetupDirectory $work
         $record = @{ formatVersion=1; workRoot=$work; manifestSha256=$ManifestSha256 }
         [IO.File]::WriteAllText($recordFile, ($record | ConvertTo-Json), (New-Object Text.UTF8Encoding($false)))

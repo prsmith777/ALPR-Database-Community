@@ -12,6 +12,7 @@ function Assert-SetupDirectory([string]$Path) {
     return $full
 }
 function Protect-SetupDirectory([string]$Path) {
+    $full = Assert-SetupDirectory $Path
     $acl = New-Object Security.AccessControl.DirectorySecurity
     $acl.SetAccessRuleProtection($true, $false)
     $installerSid = [Security.Principal.WindowsIdentity]::GetCurrent().User.Value
@@ -21,7 +22,18 @@ function Protect-SetupDirectory([string]$Path) {
             'FullControl', 'ContainerInherit,ObjectInherit', 'None', 'Allow')
         $acl.AddAccessRule($rule)
     }
-    Set-Acl -LiteralPath $Path -AclObject $acl
+    if (Test-Path -LiteralPath $full) {
+        # A foreign owner can change a directory's DACL even after inherited
+        # permissions are removed. Never adopt that directory while elevated.
+        $owner = (Get-Acl -LiteralPath $full).GetOwner([Security.Principal.SecurityIdentifier]).Value
+        if ($owner -notin @('S-1-5-18','S-1-5-32-544',$installerSid)) { throw 'The setup workspace belongs to another Windows account; contact the maintainer' }
+        Set-Acl -LiteralPath $full -AclObject $acl
+    } else {
+        # Supply the private ACL at creation, rather than first creating a
+        # publicly writable directory and protecting it in a later operation.
+        [void][IO.Directory]::CreateDirectory($full, $acl)
+    }
+    [void](Assert-SetupDirectory $full)
 }
 function Assert-SetupHost {
     $os = Get-CimInstance Win32_OperatingSystem

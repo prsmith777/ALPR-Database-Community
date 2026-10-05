@@ -88,6 +88,13 @@ test("setup cleanup removes only its recorded attempt and preserves sibling data
   await assert.rejects(readFile(path.join(work,"setup-state.json")),{code:"ENOENT"});
   assert.equal(await readFile(path.join(retained,"important.txt"),"utf8"),"retained");
 });
+test("setup creates private scratch directories and rejects a foreign owner", {skip:!powershell}, async (t) => {
+  const fixture=await mkdtemp(path.join(os.tmpdir(),"alpr-setup-private-"));
+  t.after(()=>rm(fixture,{recursive:true,force:true}));
+  const result=ps(". ./scripts/windows/Setup-Helpers.ps1; $folder=Join-Path $env:ALPR_TEST_ROOT 'private'; Protect-SetupDirectory $folder; $acl=Get-Acl -LiteralPath $folder; if(-not $acl.AreAccessRulesProtected){throw 'Inheritance not protected'}; $sid=[Security.Principal.WindowsIdentity]::GetCurrent().User.Value; $rules=$acl.GetAccessRules($true,$true,[Security.Principal.SecurityIdentifier]); if(@($rules | Where-Object { $_.IdentityReference.Value -notin @('S-1-5-18','S-1-5-32-544',$sid) }).Count){throw 'Unexpected directory access'}; $foreign=New-Object Security.AccessControl.DirectorySecurity; $foreign.SetOwner((New-Object Security.Principal.SecurityIdentifier('S-1-1-0'))); function Get-Acl { return $foreign }; try { Protect-SetupDirectory $folder; exit 3 } catch { if($_.Exception.Message -notmatch 'another Windows account'){throw}; Write-Output 'Private creation and foreign ownership rejection passed' }",{ALPR_TEST_ROOT:fixture});
+  assert.equal(result.status,0,result.stdout+result.stderr);
+  assert.match(result.stdout,/foreign ownership rejection passed/);
+});
 test("uninstall rejects foreign service ownership before stopping either service", {skip:!powershell}, async (t) => {
   const fixture=await mkdtemp(path.join(os.tmpdir(),"alpr-setup-uninstall-"));
   t.after(()=>rm(fixture,{recursive:true,force:true}));
