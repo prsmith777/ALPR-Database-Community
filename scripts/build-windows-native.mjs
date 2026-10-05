@@ -85,7 +85,7 @@ async function main() {
     await writeFile(path.join(destination, "runtime", name), await license.text());
   }
   await mkdir(path.join(destination, "host"));
-  for (const file of ["windows-native-package.mjs", "windows-service.mjs", "windows-maintenance.mjs", "windows-deployment.mjs", "native-reid-upgrade-policy.mjs"]) {
+  for (const file of ["windows-native-package.mjs", "windows-service.mjs", "windows-maintenance.mjs", "windows-code-repair.mjs", "windows-deployment.mjs", "native-reid-upgrade-policy.mjs"]) {
     await cp(path.join(root, "scripts", file), path.join(destination, "host", file));
   }
   for (const file of ["schema.sql", "migrations.sql", "LICENSE"]) await cp(path.join(root, file), path.join(destination, file));

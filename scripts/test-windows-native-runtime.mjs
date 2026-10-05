@@ -6,6 +6,7 @@ import path from "node:path";
 import net from "node:net";
 import { spawn } from "node:child_process";
 import { once } from "node:events";
+import { fileURLToPath } from "node:url";
 import { nativeRunner } from "./windows-deployment.mjs";
 import { assertWindowsHost, verifyWindowsPackage } from "./windows-native-package.mjs";
 
@@ -41,8 +42,27 @@ try {
     pg("psql",["-X","-h","127.0.0.1","-p",String(dbPort),"-U","postgres","-d","postgres","--set","ON_ERROR_STOP=1","--single-transaction","--file",path.join(packageRoot,name)]);
   }
   const application = path.join(packageRoot,"app");
+  // Treat the build checkout as unavailable even when testing on its own host.
+  // Otherwise createRequire(import.meta.url) can silently load build-time files
+  // that do not exist on a user's machine.
+  const sourceRoot = fileURLToPath(new URL("..",import.meta.url));
+  const sourceGuard = path.join(root,"isolated-package.cjs");
+  await writeFile(sourceGuard, `const Module=require('node:module');const path=require('node:path');
+const source=${JSON.stringify(sourceRoot)},bundle=${JSON.stringify(packageRoot)};
+const within=(root,file)=>{const relative=path.relative(root,file);return !relative||(!relative.startsWith('..'+path.sep)&&relative!=='..'&&!path.isAbsolute(relative));};
+const original=Module._resolveFilename;
+Module._resolveFilename=function(request,parent,...rest){
+  if(parent?.filename&&within(source,parent.filename)&&!within(bundle,parent.filename)){
+    const error=new Error('Packaged runtime attempted to load a file from the build checkout: '+request);error.code='MODULE_NOT_FOUND';throw error;
+  }
+  const resolved=original.call(this,request,parent,...rest);
+  if(path.isAbsolute(resolved)&&within(source,resolved)&&!within(bundle,resolved)){
+    const error=new Error('Packaged runtime resolved a file outside its bundle: '+request);error.code='MODULE_NOT_FOUND';throw error;
+  }
+  return resolved;
+};`);
   const entry = "import {pathToFileURL} from 'node:url';import path from 'node:path';await import(pathToFileURL(path.join(process.cwd(),'server.js')));process.on('message',()=>process.emit('SIGINT'));";
-  server = spawn(path.join(packageRoot,"runtime","node.exe"),["--input-type=module","-e",entry],{
+  server = spawn(path.join(packageRoot,"runtime","node.exe"),["--require",sourceGuard,"--input-type=module","-e",entry],{
     cwd:application, windowsHide:true, stdio:["ignore","pipe","pipe","ipc"],
     env:{...process.env,NODE_ENV:"production",ALPR_DATA_DIR:data,HOSTNAME:"127.0.0.1",PORT:String(appPort),
       DB_HOST:"127.0.0.1:" + dbPort,DB_USER:"postgres",DB_NAME:"postgres",DB_PASSWORD:secret,ADMIN_PASSWORD:secret,
@@ -71,6 +91,34 @@ try {
     await new Promise((resolve) => setTimeout(resolve,250));
   }
   assert.ok(auth?.apiKey,"Native runtime must create authentication outside the release");
+  const actions = JSON.parse(await readFile(path.join(application,".next","server","server-reference-manifest.json"),"utf8"));
+  const loginId = Object.entries(actions.node).find(([,action]) => action.exportedName === "loginAction")?.[0];
+  assert.ok(loginId,"The packaged runtime must include the sign-in action");
+  const login = new FormData();
+  login.set("$ACTION_ID_" + loginId, "");
+  login.set("username", "");
+  login.set("password", secret);
+  const signedIn = await fetch(base + "/login",{method:"POST",headers:{origin:base},body:login});
+  const cookie = signedIn.headers.getSetCookie().find((value) => value.startsWith("session="))?.split(";")[0];
+  assert.ok(cookie,"Chosen administrator password must produce a signed-in session");
+  const settingsRoutes = [
+    "general", "database", "plate-matching", "review-corrections", "security", "release",
+    "blue-iris", "home-assistant", "data-privacy", "data-privacy/privacy",
+    "data-privacy/cleanup", "data-privacy/monitoring", "vehicle-intelligence", "software-updates",
+    "integrations", "integrations/mqtt", "integrations/mqtt/activity", "integrations/mqtt/cameras",
+    "integrations/pushover", "integrations/pushover/defaults", "integrations/pushover/test",
+    "integrations/pushover/usage", "integrations/email", "integrations/email/sender",
+    "integrations/email/test", "integrations/webhook", "integrations/webhook/safety",
+    "integrations/webhook/test",
+  ];
+  for (const section of settingsRoutes) {
+    const route = "/settings/" + section;
+    const page = await fetch(base + route,{headers:{cookie},redirect:"manual"});
+    await page.text();
+    if (page.status !== 200) {
+      throw new Error("Signed-in " + route + " failed: HTTP " + page.status + "\n" + output.replaceAll(secret,"[test credential]"));
+    }
+  }
   const { default:sharp } = await import("sharp");
   const image = await sharp({create:{width:320,height:240,channels:3,background:{r:40,g:80,b:120}}}).jpeg().toBuffer();
   const response = await fetch(base + "/api/plate-reads",{
@@ -85,7 +133,7 @@ try {
   assert.equal((await fetch(base + "/api/plate-reads",{method:"POST",headers:{"content-type":"application/json"},body:"{}"})).status,401);
   assert.equal(sql("SELECT count(*) FROM public.schema_migrations WHERE version = '2026092701_native_reid';"),"1");
   assert.ok(!output.includes(secret),"Runtime logs must not expose test credentials");
-  console.log("Native PostgreSQL 17 + standalone Windows runtime passed health, login page, auth persistence, synthetic ingestion, portable stored image, missing-key refusal, and schema checks.");
+  console.log("Native PostgreSQL 17 + standalone Windows runtime passed health, chosen-password sign-in, all " + settingsRoutes.length + " Settings pages without build-checkout access, auth persistence, synthetic ingestion, portable stored image, missing-key refusal, and schema checks.");
 } finally {
   if (server && server.exitCode === null) {
     const exited = once(server,"exit");

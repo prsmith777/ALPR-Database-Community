@@ -66,6 +66,31 @@ changing the desktop OS requirements of the delivered installer. This catches
 script runtime errors that successful Inno compilation alone cannot detect;
 actual VM installation, service, reboot, and uninstall acceptance remain separate.
 
+The runtime test signs in with the chosen password and requests every Settings
+page with the build checkout made unavailable. Release metadata uses a static
+JSON import so the standalone bundle carries its version rather than resolving
+package.json from the maintainer's machine.
+
+### Supervised Settings repair
+
+For an already-installed preview with the Settings packaging defect, a maintainer
+can build a separate graphical repair from a verified fixed package and the exact
+previous package:
+
+~~~powershell
+node scripts/build-windows-repair.mjs 'dist\FIXED_PACKAGE' 'dist\INSTALLED_PACKAGE'
+~~~
+
+Users double-click that repair executable, approve elevation, and click **Repair**.
+It verifies the exact installed source commit and every target checksum, requires
+an unchanged version, schema, and migration file, stages the new code, records the
+previous protected installation metadata, and restarts only the application.
+It preserves the password, configuration, images and database. It runs no schema
+migration or database restore. A failed startup restores the previous application
+selection and checks that its service owns the listener. Both code releases and
+the protected repair record remain available. This supervised repair does not
+replace the planned general upgrade, reinstallation, or repair workflow.
+
 ## Build a preview
 
 On Windows x64 with Node.js 24 and Yarn Classic:
