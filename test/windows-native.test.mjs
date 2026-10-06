@@ -6,7 +6,7 @@ import path from "node:path";
 import { spawnSync } from "node:child_process";
 import { runtimeDataPath } from "../lib/runtime-paths.mjs";
 import { assertWindowsHost, COMMUNITY_SOURCE, hashFile, listPackageFiles, safePackagePath, verifyWindowsPackage } from "../scripts/windows-native-package.mjs";
-import { assertPreservedFiles } from "../scripts/windows-deployment.mjs";
+import { assertPreservedFiles, loadWindowsDeployment } from "../scripts/windows-deployment.mjs";
 import { runWindowsUpdater } from "../scripts/windows-maintenance.mjs";
 import { openvinoRuntimeInstallerInternals } from "../scripts/install-openvino-runtime.mjs";
 
@@ -99,6 +99,24 @@ test("native data root stays independent of release working directory", () => {
   } finally {
     if (previous === undefined) delete process.env.ALPR_DATA_DIR; else process.env.ALPR_DATA_DIR = previous;
   }
+});
+
+test("Windows row counts use one snapshot and retry only bounded connection observations",async t=>{
+ const f=await fixture(t),installation={...f.deployment.installation,formatVersion:1,profile:"windows-native",environment:{DB_HOST:"127.0.0.1:5432",DB_USER:"postgres",DB_NAME:"postgres",DB_PASSWORD:"fixture"}};
+ await writeFile(f.deployment.installationFile,JSON.stringify(installation));
+ const queries=[];let resets=1;
+ const deployment=await loadWindowsDeployment(f.deployment.installationFile,{skipHostCheck:true,runner:(_exe,args)=>{
+  const query=args.at(-1);queries.push(query);
+  if(query.includes("pg_tables"))return "plate_reads\nplates";
+  if(resets-->0)throw new Error('psql: connection to server failed: server closed the connection unexpectedly');
+  return "plate_reads|2\nplates|1";
+ }});
+ assert.deepEqual(await deployment.counts(),{plate_reads:"2",plates:"1"});
+ assert.equal(queries.length,4);assert.match(queries[1],/UNION ALL/);
+ const refused=await loadWindowsDeployment(f.deployment.installationFile,{skipHostCheck:true,runner:()=>"bad;drop table plates"});
+ await assert.rejects(refused.counts(),/Unexpected public table name/);
+ const unavailable=await loadWindowsDeployment(f.deployment.installationFile,{skipHostCheck:true,runner:()=>{throw new Error("connection to server failed");}});
+ await assert.rejects(unavailable.counts(),/connection to server failed/);
 });
 test("package paths reject traversal, ADS, reserved names, and ambiguous Win32 suffixes", () => {
   for (const name of ["../outside","app/../secret","C:/secret","app\\server.js","app/CON.txt","app/name:stream","app/a.","app/a ","/absolute"]) assert.throws(() => safePackagePath("/fixture",name));

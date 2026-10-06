@@ -68,12 +68,15 @@ async function signedInActions(deployment) {
   const cookie=response.headers.getSetCookie().find(value=>value.startsWith("session="))?.split(";")[0];
   assert.ok(cookie,"Isolated installation must accept its existing administrator password");
   return async(input)=>{
+    console.log("Windows Settings operation: "+input.operation);
     const result=await fetch(base+"/settings/software-updates",{method:"POST",headers:{origin:base,cookie,"next-action":actionId("requestSoftwareUpdate"),"content-type":"text/plain;charset=UTF-8",accept:"text/x-component"},body:JSON.stringify([input])});
     const text=await result.text();assert.equal(result.status,200);
     const value=text.split("\n").filter(line=>/^\d+:\{/.test(line)).map(line=>{try{return JSON.parse(line.slice(line.indexOf(":")+1));}catch{return null;}}).find(value=>typeof value?.success === "boolean");
     assert.ok(value,"Real HTTP server action must return its result");assert.equal(value.success,true,value.error);
-    for(let attempt=0;attempt<600;attempt++){
+    let lastMessage;
+    for(let attempt=0;attempt<1200;attempt++){
       const state=JSON.parse(await readFile(path.join(dataRoot,"update-control/state.json"),"utf8"));
+      if(state.requestId === value.request.requestId && state.message !== lastMessage){console.log(state.message);lastMessage=state.message;}
       if(state.requestId === value.request.requestId && ["succeeded","failed"].includes(state.phase)){assert.equal(state.phase,"succeeded",state.message);return state;}
       await new Promise(resolve=>setTimeout(resolve,500));
     }

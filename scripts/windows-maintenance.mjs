@@ -60,10 +60,10 @@ async function validate(deployment, state) {
     if (installed.current !== state.target.name) throw new Error("Active release differs from update target");
     const manifest = await verifyWindowsPackage(path.join(deployment.releaseRoot, installed.current), { allowPreview: state.target.channel === "preview" });
     if (manifest.commit !== state.target.commit) throw new Error("Active release commit differs from update target");
+    const { health, running } = await verifyRunningRelease(deployment, state.target.name, state.target.commit);
     const counts = await deployment.counts();
     if (compareMinimumCounts(state.backup.counts, counts).length) throw new Error("Database row counts decreased after update");
     assertPreservedFiles(state.backup.storage, await fileInventory(path.join(deployment.data, "storage")));
-    const { health, running } = await verifyRunningRelease(deployment, state.target.name, state.target.commit);
     state.validation = { health, running, completedAt: new Date().toISOString(), counts };
     state.status = "ready-for-acceptance";
     delete state.lastFailure;

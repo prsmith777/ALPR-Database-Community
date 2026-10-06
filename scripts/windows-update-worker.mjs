@@ -6,6 +6,7 @@ import { validateCommunityUpdateRequest } from "../lib/community-update-control.
 import { loadWindowsDeployment, assertRealDirectory } from "./windows-deployment.mjs";
 import { runWindowsUpdater } from "./windows-maintenance.mjs";
 import { findWindowsUpdate, downloadWindowsUpdate } from "./windows-update-release.mjs";
+import { waitForWindowsDatabase } from "./windows-service-startup.mjs";
 
 const PHASES = Object.freeze({ preparing: "Checking the Windows runtime and AI models before stopping ALPR.",
   "backing-up": "Pausing ALPR and creating its recovery backup.", "backed-up": "Recovery backup verified.",
@@ -93,8 +94,12 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
     const request = JSON.parse(await readFile(requestFile,"utf8"));
     const environment={...process.env,ALPR_WINDOWS_INSTALLATION:installationFile};
     const progress=(message)=>send({kind:"progress",message});
-    const result = recovering ? windowsUpdateSummary("update",await runWindowsUpdater(["recover"],environment,{allowPreview:true,internalRecovery:true,progress}))
-      : await performWindowsUpdateRequest(request,environment,{progress});
+    let result;
+    if(recovering) {
+      const deployment=await loadWindowsDeployment(installationFile,{allowPreview:true});
+      await waitForWindowsDatabase(deployment.installation,path.join(deployment.currentPath,"app"));
+      result=windowsUpdateSummary("update",await runWindowsUpdater(["recover"],environment,{allowPreview:true,internalRecovery:true,deployment,progress}));
+    }else result=await performWindowsUpdateRequest(request,environment,{progress});
     send({kind:"result",result});
   } catch (error) {
     // Detailed errors stay in the protected updater log, never in public state.

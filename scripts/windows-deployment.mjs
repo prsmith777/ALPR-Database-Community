@@ -72,13 +72,29 @@ export async function loadWindowsDeployment(installationFile, options = {}) {
     async attest() { return JSON.parse(service("attest")); },
     backupRoot: path.join(data, "management", "backups"),
     async counts() {
-      const tables = sql("SELECT tablename FROM pg_tables WHERE schemaname = 'public' ORDER BY tablename;").split(/\r?\n/).filter(Boolean);
-      const counts = {};
-      for (const table of tables) {
-        if (!/^[a-z_][a-z0-9_]*$/.test(table)) throw new Error("Unexpected public table name");
-        counts[table] = sql("SELECT count(*) FROM public." + table + ";");
+      for(let attempt=0;;attempt++) {
+        try {
+          const tables = sql("SELECT tablename FROM pg_tables WHERE schemaname = 'public' ORDER BY tablename;").split(/\r?\n/).filter(Boolean);
+          if(tables.some(table=>!/^[a-z_][a-z0-9_]*$/.test(table)))throw new Error("Unexpected public table name");
+          if(!tables.length)return {};
+          // Count all tables in one statement/snapshot rather than opening a
+          // new Windows client process and connection for every table.
+          const rows=sql(tables.map(table=>`SELECT '${table}',count(*) FROM public.${table}`).join(" UNION ALL ")+";");
+          const counts={};
+          for(const row of rows.split(/\r?\n/)) {
+            const [table,count,...extra]=row.split("|");
+            if(!tables.includes(table) || !/^\d+$/.test(count || "") || extra.length || Object.hasOwn(counts,table))throw new Error("Invalid native database count result");
+            counts[table]=count;
+          }
+          if(Object.keys(counts).length !== tables.length)throw new Error("Native database count inventory differs");
+          return counts;
+        }catch(error) {
+          // Only repeat read-only observations after a transient connection
+          // reset. Mutating PostgreSQL operations are never replayed here.
+          if(attempt >= 2 || !/server closed the connection|connection to server[\s\S]*failed|could not connect to server/i.test(error.message))throw error;
+          await new Promise(resolve=>setTimeout(resolve,250));
+        }
       }
-      return counts;
     },
     async health() {
       const port = Number(installation.environment.PORT);
