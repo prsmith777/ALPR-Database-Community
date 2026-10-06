@@ -173,7 +173,10 @@ export default function SettingsForm({
         newFormData.append("webhookAllowPrivateNetworks", formData.get("webhookAllowPrivateNetworks") === "on");
         break;
       case "homeassistant":
-        newFormData.append("haEnabled", formData.get("haEnabled") === "on");
+        // IP-list saves are partial updates and must preserve the enable switch.
+        if (!formData.has("haWhitelist") || formData.has("haEnabled")) {
+          newFormData.append("haEnabled", formData.get("haEnabled") === "on");
+        }
         if (formData.get("haWhitelist")) {
           newFormData.append("haWhitelist", formData.get("haWhitelist"));
         }

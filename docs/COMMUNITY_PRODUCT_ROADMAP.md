@@ -1,6 +1,6 @@
 # Community product roadmap
 
-Last reviewed: October 5, 2026
+Last reviewed: October 6, 2026
 
 ## Native Windows implementation preview
 
@@ -65,6 +65,8 @@ See [vehicle identity](VEHICLE_IDENTITY.md) and [feed performance](REID_FEED_PER
 - locally stored vehicle views, local OpenVINO/ReID inference, canonical visual
   similarity search, and vehicle profiles;
 - per-camera front/rear semantic labels and confidence thresholds;
+- per-direction recorded vehicle sources with editable timing offsets and 0.25–3
+  second tolerances, explicit save state, and frame/direction diagnostics;
 - manual Front view and Rear view training labels plus local ReID fallback;
 - optional Blue Iris ordered-zone crossing mappings with fail-closed handling
   for missing, ambiguous, conflicting, and unsuitable nighttime evidence;

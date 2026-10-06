@@ -4712,6 +4712,7 @@ export async function labelVehicleOrientation(input = {}) {
   try {
     const data = await (await getVehicleDirectionService()).recordOrientationLabel({
       readId: input.readId,
+      sourceEmbeddingId: input.sourceEmbeddingId,
       orientation: input.orientation,
       actor: principal,
     });

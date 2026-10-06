@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Expose per-direction vehicle-source timing tolerance (0.25–3 seconds), explicit saved/unsaved state, recorded-frame diagnostics, and Blue Iris direction observations in the shared Linux/Windows Vehicle Setup screen.
+- Add a bounded front/rear training screen using current canonical crops; refuse changed embeddings and monochrome nighttime training before saving.
+- Preserve the Home Assistant whitelist enable setting when saving its IP list as a partial update.
+
 ## 0.1.47 — Portable vehicle images and Windows migration preview (2026-10-05)
 
 - Add a shared Vehicle image source setup for each saved camera direction. Use whole-vehicle recordings from the LPR camera itself or an explicitly selected overview camera; changing the primary source disables the prior mapping transactionally.

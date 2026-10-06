@@ -31,6 +31,12 @@ function DirectionImageSource({ cameraName, direction, profiles, cameras, onSave
   }
   return <div className="space-y-4 rounded-lg border p-4">
     <h3 className="font-medium">{direction}</h3>
+    <p className="text-sm text-muted-foreground" role="status">
+      {!saved ? "Not saved yet. Choose a source and save this direction below."
+        : ["sourceMode", "sourceCameraName", "sourceCameraShortName", "expectedDeltaMs", "toleranceMs", "enabled"]
+          .some((key) => draft[key] !== saved[key]) ? "Unsaved changes. Save this direction to apply them."
+          : saved.enabled ? "Saved and enabled for new eligible reads." : "Saved with this image source disabled."}
+    </p>
     <div className="grid gap-4 md:grid-cols-2">
       <div className="space-y-2">
         <Label htmlFor={`${prefix}-mode`}>Vehicle image source</Label>
@@ -59,6 +65,15 @@ function DirectionImageSource({ cameraName, direction, profiles, cameras, onSave
           value={draft.expectedDeltaMs / 1000} onChange={(event) => setDraft({ ...draft, expectedDeltaMs: Number(event.target.value) * 1000 })} />
         <p className="text-xs text-muted-foreground">Use a positive value if the vehicle reaches this camera after the plate read.</p>
       </div> : null}
+      <div className="space-y-2">
+        <Label htmlFor={`${prefix}-tolerance`}>Timing tolerance (seconds)</Label>
+        <Input id={`${prefix}-tolerance`} type="number" min="0.25" max="3" step="0.25" disabled={busy}
+          aria-describedby={`${prefix}-tolerance-help`} value={draft.toleranceMs / 1000}
+          onChange={(event) => setDraft({ ...draft, toleranceMs: Math.round(Number(event.target.value) * 1000) })} />
+        <p id={`${prefix}-tolerance-help`} className="text-xs text-muted-foreground">
+          Search this many seconds before and after the offset time. Choose 0.25 to 3 seconds.
+        </p>
+      </div>
       <div className="flex items-center justify-between gap-3 rounded-md border p-3">
         <Label htmlFor={`${prefix}-enabled`}>Use this image source</Label>
         <Switch id={`${prefix}-enabled`} checked={draft.enabled} disabled={busy} onCheckedChange={(enabled) => setDraft({ ...draft, enabled })} />

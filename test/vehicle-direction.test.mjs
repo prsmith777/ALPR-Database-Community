@@ -587,3 +587,30 @@ test("direction schema and Community administrator setup are durable and camera 
   assert.match(actions, /queueVehicleDirectionReevaluation[\s\S]*?requirePermission\("maintenance\.manage"\)/);
   assert.match(actions, /setVehicleDirectionReevaluationPaused[\s\S]*?requirePermission\("maintenance\.manage"\)/);
 });
+
+test("training rejects a changed displayed embedding and nighttime crops before writing a label", async () => {
+  let writes = 0;
+  const repository = {
+    getAsset: async () => ({ read_id: 42, camera_name: "Fixture camera", embedding_id: 19,
+      embedding_model: DIRECTION_EMBEDDING_MODEL, vehicle_embedding: "indexed" }),
+    getDirectionImageEligibility: async () => ({ eligible: false }),
+    saveOrientationLabel: async () => { writes++; },
+  };
+  const service = new VehicleDirectionService({ repository });
+  await assert.rejects(service.recordOrientationLabel({ readId: 42, sourceEmbeddingId: 18, orientation: "front" }),
+    /Direction image changed/);
+  await assert.rejects(service.recordOrientationLabel({ readId: 42, sourceEmbeddingId: 19, orientation: "front" }),
+    /Monochrome nighttime/);
+  assert.equal(writes, 0);
+});
+
+test("training setup supplies the exact current embedding with the displayed crop", async () => {
+  const service = new VehicleDirectionService({ repository: {
+    listDirectionProfiles: async () => [{ camera_name: "Fixture camera", front_count: 0, rear_count: 0 }],
+    listDirectionCalibrationCaptures: async () => [{ read_id: 42, embedding_id: 19,
+      derived_path: "derived/fixture.jpg", camera_name: "Fixture camera" }],
+  } });
+  const setup = await service.getDirectionSetup("Fixture camera", { includeBackfill: false, includeBlueIrisTriggerDirection: false });
+  assert.equal(setup.captures[0].sourceEmbeddingId, 19);
+  assert.equal(setup.captures[0].imageUrl, "/images/derived/fixture.jpg");
+});

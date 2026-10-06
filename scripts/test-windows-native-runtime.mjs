@@ -195,12 +195,22 @@ Module._resolveFilename=function(request,parent,...rest){
   await action("saveVehicleDirectionProfile", { cameraName:"Synthetic Windows", frontDirectionLabel:"Arriving", rearDirectionLabel:"Leaving",
     enabled:true, minimumConfidence:0.68, blueIrisMotionEnabled:true, blueIrisFrontTriggerType:"MOTION_A>B", blueIrisRearTriggerType:"MOTION_B>A" });
   const source = { plateCameraName:"Synthetic Windows", directionLabel:"Arriving", sourceMode:"overview",
-    sourceCameraName:"Synthetic overview", sourceCameraShortName:"SynthWide", expectedDeltaMs:0, toleranceMs:1500, enabled:true };
+    sourceCameraName:"Synthetic overview", sourceCameraShortName:"SynthWide", expectedDeltaMs:4500, toleranceMs:2000, enabled:true };
   await action("saveVehicleImageSource",source);
+  await action("saveVehicleImageSource",{...source,directionLabel:"Leaving",expectedDeltaMs:-4500,toleranceMs:750});
+  const overviewSetup = await action("getVehicleImageSourceSetup",{});
+  const overviewProfiles = overviewSetup.profiles.filter((profile) => profile.plateCameraName === source.plateCameraName && profile.enabled);
+  assert.equal(overviewProfiles.find((profile) => profile.directionLabel === "Arriving").toleranceMs,2000);
+  assert.equal(overviewProfiles.find((profile) => profile.directionLabel === "Arriving").expectedDeltaMs,4500);
+  assert.equal(overviewProfiles.find((profile) => profile.directionLabel === "Leaving").toleranceMs,750);
+  assert.equal(overviewProfiles.find((profile) => profile.directionLabel === "Leaving").expectedDeltaMs,-4500);
+  const frameStatus = await action("getBlueIrisVehicleFrameQueueStatus",{});
+  assert.ok(Array.isArray(frameStatus.overview.recentJobs));
+  console.log("Packaged actions persisted distinct per-direction offsets/tolerances and loaded frame diagnostics.");
   await action("saveVehicleImageSource",{...source,sourceMode:"lpr_camera",sourceCameraName:"Synthetic Windows",sourceCameraShortName:"SynthLPR"});
   const setup = await action("getVehicleImageSourceSetup",{});
   const saved = setup.profiles.filter((profile) => profile.plateCameraName === source.plateCameraName && profile.directionLabel === "Arriving" && profile.enabled);
-  assert.equal(saved.length,1); assert.equal(saved[0].sourceMode,"lpr_camera"); assert.equal(saved[0].sourceCameraShortName,"SynthLPR");
+  assert.equal(saved.length,1); assert.equal(saved[0].toleranceMs,2000); assert.equal(saved[0].expectedDeltaMs,0); assert.equal(saved[0].sourceMode,"lpr_camera"); assert.equal(saved[0].sourceCameraShortName,"SynthLPR");
   assert.equal(sql("SELECT count(*) FROM public.vehicle_overview_pair_profiles WHERE enabled AND plate_camera_name='Synthetic Windows' AND direction_label='Arriving';"),"1");
   console.log("Packaged authenticated actions passed direction save, overview-to-LPR source switching, exact reload persistence, and one active primary source.");
   assert.ok(!output.includes(secret),"Runtime logs must not expose test credentials");
