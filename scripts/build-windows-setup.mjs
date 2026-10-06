@@ -72,7 +72,7 @@ export async function buildWindowsSetup(args = process.argv.slice(2)) {
     version: manifest.version, commit: manifest.commit, channel: manifest.channel,
     payloadManifestSha256: manifestSha256, setupSha256: checksum, prerequisites: pins,
     signed: false, wizardStartup: "verified", networkWizardStartup: "verified", uninstallLifecycle: "verified",
-    startupMode: "Automatic", startupReadiness: "authenticated-postgresql-query", desktopAcceptance: "pending" }, null, 2) + "\n", { flag: "wx" });
+    startupMode: "Automatic", startupReadiness: "authenticated-postgresql-query", desktopAcceptance: "recorded-separately" }, null, 2) + "\n", { flag: "wx" });
   console.log("Built graphical Windows setup: " + output);
   return output;
 }
