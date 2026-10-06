@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Update available security fixes for image processing, IP parsing, source maps, selector parsing, and brace expansion; retain the dependency gate for the separately unpatched braces advisory.
+- Keep checked-out source line endings consistent across operating systems and exercise logical migration with the native Windows CI runtime.
+
 - Expose per-direction vehicle-source timing tolerance (0.25–3 seconds), explicit saved/unsaved state, recorded-frame diagnostics, and Blue Iris direction observations in the shared Linux/Windows Vehicle Setup screen.
 - Add a bounded front/rear training screen using current canonical crops; refuse changed embeddings and monochrome nighttime training before saving.
 - Preserve the Home Assistant whitelist enable setting when saving its IP list as a partial update.

@@ -344,6 +344,15 @@ jobs:
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: 24
+      - name: Use a canonical disposable fixture directory
+        shell: pwsh
+        run: |
+          $fixtureTemp = Join-Path $env:RUNNER_TEMP 'alpr-community-runtime-tests'
+          New-Item -ItemType Directory -Force -Path $fixtureTemp | Out-Null
+          $fixtureTemp = node -e "console.log(require('node:fs').realpathSync(process.argv[1]))" $fixtureTemp
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          Add-Content -LiteralPath $env:GITHUB_ENV -Value "TEMP=$fixtureTemp"
+          Add-Content -LiteralPath $env:GITHUB_ENV -Value "TMP=$fixtureTemp"
       - name: Install locked native dependencies
         shell: pwsh
         run: |
@@ -391,6 +400,9 @@ jobs:
           } finally { $archive.Dispose() }
           $package = Get-ChildItem -LiteralPath dist -Directory -Filter 'alpr-community-*-windows-x64' | Select-Object -First 1
           node scripts/test-windows-native-runtime.mjs $package.FullName (Join-Path $destination 'pgsql/bin')
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          node scripts/test-windows-migration-runtime.mjs $package.FullName $package.FullName (Join-Path $destination 'pgsql/bin')
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Keep reviewable preview package
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
