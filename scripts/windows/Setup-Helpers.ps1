@@ -45,9 +45,33 @@ function Assert-SetupHost {
     }
 }
 function Assert-SetupServicesAbsent {
-    foreach ($name in @('ALPRCommunityApp','ALPRCommunityDatabase')) {
+    foreach ($name in @('ALPRCommunityApp','ALPRCommunityDatabase','ALPRCommunityUpdater')) {
         if (Get-Service -Name $name -ErrorAction SilentlyContinue) { throw 'An ALPR service already exists. Use the ALPR update or repair installer instead of reinstalling.' }
     }
+}
+function Assert-ExistingSetup {
+    $root=Assert-SetupDirectory "$env:ProgramFiles\ALPR Community"
+    $data=Assert-SetupDirectory "$env:ProgramData\ALPR Community"
+    $file=Assert-SetupDirectory (Join-Path $root 'installation.json')
+    foreach($item in @($root,$data,(Join-Path $data 'management'),$file)) {
+        $acl=Get-Acl -LiteralPath $item
+        if($acl.GetOwner([Security.Principal.SecurityIdentifier]).Value -notin @('S-1-5-18','S-1-5-32-544',[Security.Principal.WindowsIdentity]::GetCurrent().User.Value)){throw 'Existing installation has an unexpected owner'}
+        foreach($rule in $acl.GetAccessRules($true,$true,[Security.Principal.SecurityIdentifier])) {
+            if($rule.AccessControlType -eq 'Allow' -and $rule.IdentityReference.Value -notin @('S-1-5-18','S-1-5-32-544',[Security.Principal.WindowsIdentity]::GetCurrent().User.Value) -and ([int]$rule.FileSystemRights -band 0xD0156)){throw 'Existing installation metadata is writable by another account'}
+        }
+    }
+    $record=Get-Content -LiteralPath $file -Raw | ConvertFrom-Json
+    if($record.profile -ne 'windows-native' -or $record.installRoot -ne $root -or $record.dataRoot -ne $data -or $record.pgBin -ne (Join-Path $root 'prerequisites\postgresql\bin') -or $record.current -notmatch '^\d+\.\d+\.\d+-[0-9a-f]{12}$'){throw 'Existing installation identity differs'}
+    foreach($name in @('ALPRCommunityApp','ALPRCommunityDatabase','ALPRCommunityUpdater')) {
+        $service=Get-CimInstance Win32_Service -Filter "Name='$name'"
+        if(!$service){if($name -ne 'ALPRCommunityUpdater'){throw 'Existing application or database service is missing'};continue}
+        $expected=Join-Path $root ('services\'+$name+'.exe')
+        if($name -eq 'ALPRCommunityDatabase'){$expected=Join-Path $record.pgBin 'pg_ctl.exe'}
+        if($service.PathName -notmatch ('^(?:"'+[regex]::Escape($expected)+'"|'+[regex]::Escape($expected)+')(?:\s|$)')){throw 'An ALPR service belongs to another installation'}
+        if($name -eq 'ALPRCommunityDatabase' -and $service.PathName -notmatch [regex]::Escape((Join-Path $data 'management\postgres'))){throw 'Database data directory differs'}
+    }
+    if((Test-Path -LiteralPath (Join-Path $data 'management\updates\active.json')) -or (Test-Path -LiteralPath (Join-Path $data 'management\backups\maintenance.lock'))){throw 'Wait for the current backup or update to finish'}
+    return $record
 }
 function Get-RetainedSetup([string]$InstallRoot, [string]$DataRoot) {
     $root = Assert-SetupDirectory $InstallRoot
@@ -205,7 +229,7 @@ function Get-SetupDownload([object]$Pin, [string]$Destination) {
         }
     }
 }
-function Expand-SetupArchive([string]$ArchiveFile, [string]$Destination, [ValidateSet('postgresql','ffmpeg')][string]$Kind) {
+function Expand-SetupArchive([string]$ArchiveFile, [string]$Destination, [ValidateSet('postgresql','ffmpeg','community')][string]$Kind) {
     Add-Type -AssemblyName System.IO.Compression, System.IO.Compression.FileSystem
     $root = Assert-SetupDirectory $Destination
     if (Test-Path -LiteralPath $root) { throw 'Archive destination is already used' }
@@ -231,6 +255,19 @@ function Expand-SetupArchive([string]$ArchiveFile, [string]$Destination, [Valida
             [IO.Compression.ZipFileExtensions]::ExtractToFile($entry,$file)
         }
     } finally { $archive.Dispose() }
+}
+
+function Wait-SetupChildProcess([Diagnostics.Process]$Process, [scriptblock]$WhileWaiting) {
+    # Inbox PowerShell 5.1 can lose ExitCode when a Start-Process instance is
+    # refreshed after redirecting output. Keep its native handle open and wait
+    # without Refresh so successful backups are not reported as failures.
+    $null = $Process.Handle
+    while (-not $Process.WaitForExit(200)) {
+        if ($WhileWaiting) { [void](& $WhileWaiting) }
+    }
+    $Process.WaitForExit()
+    if ($null -eq $Process.ExitCode) { throw 'Windows did not return the maintenance process result. Check the diagnostic log.' }
+    return [int]$Process.ExitCode
 }
 
 function Assert-SetupWorkRoot([string]$WorkRoot) {

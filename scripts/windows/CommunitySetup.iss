@@ -140,8 +140,11 @@ begin
   InstallModePage.Add('Start with an empty database');
   InstallModePage.Add('Move an existing ALPR database and images');
   InstallModePage.Add('Restore the ALPR data already on this computer');
+  InstallModePage.Add('Update ALPR already installed on this computer');
   InstallModePage.SelectedValueIndex := 0;
 #ifndef StartupProbe
+  if FileExists(ExpandConstant('{autopf}\ALPR Community\installation.json')) then
+    InstallModePage.SelectedValueIndex := 3;
   if FileExists(ExpandConstant('{commonappdata}\ALPR Community\management\uninstalled-installation.json')) and
     not FileExists(ExpandConstant('{autopf}\ALPR Community\installation.json')) then
     InstallModePage.SelectedValueIndex := 2;
@@ -191,6 +194,9 @@ begin
   InstallModePage.SelectedValueIndex := 2;
   if not ShouldSkipPage(MigrationPage.ID) or not ShouldSkipPage(PasswordPage.ID) then
     RaiseException('Retained recovery must keep the existing password and skip migration selection.');
+  InstallModePage.SelectedValueIndex := 3;
+  if not ShouldSkipPage(MigrationPage.ID) or not ShouldSkipPage(PasswordPage.ID) then
+    RaiseException('An existing installation update must preserve its password and skip migration selection.');
   InstallModePage.SelectedValueIndex := 0;
   Log('ALPR_STARTUP_PROBE_PASSED');
   Abort;
@@ -200,13 +206,15 @@ end;
 function ShouldSkipPage(PageID: Integer): Boolean;
 begin
   Result := ((PageID = MigrationPage.ID) and (InstallModePage.SelectedValueIndex <> 1)) or
-    ((PageID = PasswordPage.ID) and (InstallModePage.SelectedValueIndex = 2));
+    ((PageID = PasswordPage.ID) and ((InstallModePage.SelectedValueIndex = 2) or (InstallModePage.SelectedValueIndex = 3)));
 end;
 
 procedure CurPageChanged(CurPageID: Integer);
 begin
   if (CurPageID = InstallModePage.ID) and (InstallModePage.SelectedValueIndex = 2) then
     WizardForm.FinishedLabel.Caption := 'ALPR is ready. Your existing records, images, settings, API key and passwords have been kept. Sign in with your existing ALPR password.';
+  if (CurPageID = InstallModePage.ID) and (InstallModePage.SelectedValueIndex = 3) then
+    WizardForm.FinishedLabel.Caption := 'ALPR was updated. Your records, images, settings, API key and passwords have been kept. Sign in with your existing password and finish the checks in Settings > Software Updates. Future updates can be installed there.';
   if CurPageID = PasswordPage.ID then begin
     WizardForm.NextButton.Caption := 'Install';
     if InstallModePage.SelectedValueIndex = 1 then
@@ -244,7 +252,7 @@ begin
     LastError := Copy(S, 18, Length(S));
   if Pos('ALPR_SETUP_PROGRESS:', S) = 1 then begin
     ProgressPage.ProgressBar.Style := npbstMarquee;
-    if InstallModePage.SelectedValueIndex = 2 then
+    if (InstallModePage.SelectedValueIndex = 2) or (InstallModePage.SelectedValueIndex = 3) then
       ProgressPage.SetText(Copy(S, 21, Length(S)), 'Keeping your existing passwords, API key, records, images and settings.')
     else if InstallModePage.SelectedValueIndex = 1 then
       ProgressPage.SetText(Copy(S, 21, Length(S)), 'Your migration backup and original data are preserved.')
@@ -273,6 +281,8 @@ begin
       '" -ManifestSha256 {#ManifestSha256}';
   if InstallModePage.SelectedValueIndex = 2 then
     Parameters := Parameters + ' -ReuseRetainedData';
+  if InstallModePage.SelectedValueIndex = 3 then
+    Parameters := Parameters + ' -UpdateExisting';
   if (Operation = 'prepare') and NetworkAccessCheck.Checked and (InstallModePage.SelectedValueIndex <> 2) then
     Parameters := Parameters + ' -ListenOnNetwork';
   if (Operation = 'prepare') and (InstallModePage.SelectedValueIndex = 1) then
@@ -312,7 +322,7 @@ begin
       Result := Result + #13#10#13#10 + 'Close Setup and try again. Setup log: ' + ExpandConstant('{log}');
       Exit;
     end;
-    if (InstallModePage.SelectedValueIndex <> 2) and
+    if (InstallModePage.SelectedValueIndex <> 2) and (InstallModePage.SelectedValueIndex <> 3) and
       not SaveStringToFile(WorkRoot + '\administrator-password.txt', UTF8Encode(PasswordPage.Values[0]), False) then begin
       Result := 'Setup could not save the administrator password securely.';
       Exit;

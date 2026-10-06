@@ -25,23 +25,26 @@ function ps(code) {
 }
 assert.equal(ps("$p=New-Object Security.Principal.WindowsPrincipal([Security.Principal.WindowsIdentity]::GetCurrent());$p.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)"), "True", "Approve the administrator prompt for this isolated SCM test");
 const id = randomUUID().replaceAll("-", "");
-const names = { app: "ALPRTestApp" + id, database: "ALPRTestDatabase" + id };
+const names = { app: "ALPRTestApp" + id, database: "ALPRTestDatabase" + id, updater:"ALPRTestUpdater"+id };
 const root = path.join(process.env.ProgramData, "ALPR SCM Acceptance", id);
 const programs = path.join(root, "programs"), commonData = path.join(root, "data");
 const installRoot = path.join(programs, "ALPR Community"), dataRoot = path.join(commonData, "ALPR Community");
 const installationFile = path.join(installRoot, "installation.json");
 const report = { startedAt: new Date().toISOString(), scope: "Isolated service names, roots and loopback ports; working ALPR services and data are never targeted", boundary: "Real Windows SCM, WinSW, LocalService/NetworkService, service SID ACLs and production service-controller logic", status: "running" };
-const substitute = text => text.replaceAll("ALPRCommunityApp", names.app).replaceAll("ALPRCommunityDatabase", names.database);
+const substitute = text => text.replaceAll("ALPRCommunityApp", names.app).replaceAll("ALPRCommunityDatabase", names.database).replaceAll("ALPRCommunityUpdater",names.updater);
 async function freePort() {
   const server = net.createServer(); server.listen(0, "127.0.0.1"); await once(server, "listening");
   const port = server.address().port; await new Promise(resolve => server.close(resolve)); return port;
 }
 async function installerPackage(source, folder) {
   await cp(source, folder, { recursive: true, errorOnExist: true, force: false });
-  for (const name of ["Install.ps1", "Setup-Helpers.ps1", "Network-Helpers.ps1", "Service-Control.ps1"]) {
+  for (const name of ["Install.ps1", "Setup-Helpers.ps1", "Network-Helpers.ps1", "Service-Control.ps1","Update-Service.ps1","Pause-Updates.ps1","Enable-Updates.ps1","Expand-Update.ps1"]) {
     const destination = name === "Install.ps1" ? path.join(folder, name) : path.join(folder, "host", name);
     await writeFile(destination, substitute(await readFile(path.join(checkout, "scripts/windows", name), "utf8")));
   }
+  for(const name of ["windows-update-service.mjs","windows-update-worker.mjs","windows-update-release.mjs","windows-update-host.mjs","windows-enable-updates.mjs","windows-maintenance.mjs","windows-deployment.mjs","windows-native-package.mjs","native-reid-upgrade-policy.mjs"]){await cp(path.join(checkout,"scripts",name),path.join(folder,"host",name));}
+  await mkdir(path.join(folder,"lib"),{recursive:true});
+  for(const name of ["community-update-control.mjs","community-update-shape.mjs"]){await cp(path.join(checkout,"lib",name),path.join(folder,"lib",name));}
   const manifest = JSON.parse(await readFile(path.join(folder, "windows-package.json"), "utf8"));
   manifest.files = {};
   for (const name of (await listPackageFiles(folder)).filter(name => name !== "windows-package.json")) manifest.files[name] = await hashFile(path.join(folder, ...name.split("/")));
@@ -54,6 +57,59 @@ function install(folder, reuse = false) {
   return writeFile(path.join(root, reuse ? "reinstall.log" : "install.log"), output);
 }
 const appPort = await freePort(), dbPort = await freePort();
+async function signedInActions(deployment) {
+  const base="http://127.0.0.1:"+appPort;
+  const selected=path.join(deployment.releaseRoot,deployment.installation.current,"app");
+  const actions=JSON.parse(await readFile(path.join(selected,".next/server/server-reference-manifest.json"),"utf8"));
+  const actionId=name=>Object.entries(actions.node).find(([,value])=>value.exportedName === name)?.[0];
+  const login=new FormData();login.set("$ACTION_ID_"+actionId("loginAction"),"");login.set("username","");login.set("password",deployment.installation.environment.ADMIN_PASSWORD);
+  const response=await fetch(base+"/login",{method:"POST",headers:{origin:base},body:login});
+  const cookie=response.headers.getSetCookie().find(value=>value.startsWith("session="))?.split(";")[0];
+  assert.ok(cookie,"Isolated installation must accept its existing administrator password");
+  return async(input)=>{
+    const result=await fetch(base+"/settings/software-updates",{method:"POST",headers:{origin:base,cookie,"next-action":actionId("requestSoftwareUpdate"),"content-type":"text/plain;charset=UTF-8",accept:"text/x-component"},body:JSON.stringify([input])});
+    const text=await result.text();assert.equal(result.status,200);
+    const value=text.split("\n").filter(line=>/^\d+:\{/.test(line)).map(line=>{try{return JSON.parse(line.slice(line.indexOf(":")+1));}catch{return null;}}).find(value=>typeof value?.success === "boolean");
+    assert.ok(value,"Real HTTP server action must return its result");assert.equal(value.success,true,value.error);
+    for(let attempt=0;attempt<600;attempt++){
+      const state=JSON.parse(await readFile(path.join(dataRoot,"update-control/state.json"),"utf8"));
+      if(state.requestId === value.request.requestId && ["succeeded","failed"].includes(state.phase)){assert.equal(state.phase,"succeeded",state.message);return state;}
+      await new Promise(resolve=>setTimeout(resolve,500));
+    }
+    throw new Error("Windows UI operation did not finish within its acceptance deadline");
+  };
+}
+async function installFixtureReleaseSource(candidate) {
+  // Simulate GitHub responses in this private, namespaced fixture only. The
+  // production discovery/download functions, ZIP extraction, worker, SCM and
+  // HTTP server actions remain under test. No custom URL option ships to users.
+  const archive=path.join(root,"fixture-update.zip");
+  ps("Add-Type -AssemblyName System.IO.Compression.FileSystem;[IO.Compression.ZipFile]::CreateFromDirectory("+q(candidate)+","+q(archive)+",[IO.Compression.CompressionLevel]::Optimal,$false)");
+  const manifest=JSON.parse(await readFile(path.join(candidate,"windows-package.json"),"utf8"));
+  const {windowsUpdateAssetNames}=await import("./windows-update-release.mjs");
+  const names=windowsUpdateAssetNames("v"+manifest.version);
+  const {stat}=await import("node:fs/promises");
+  const source="https://github.com/prsmith777/ALPR-Database-Community",tag="v"+manifest.version;
+  const metadata={formatVersion:1,updaterProtocol:1,source,tag,channel:"stable",commit:manifest.commit,manifestSha256:await hashFile(path.join(candidate,"windows-package.json")),archive:{name:names.archive,sha256:await hashFile(archive),sizeBytes:(await stat(archive)).size}};
+  const metadataFile=path.join(root,"fixture-update.json");await writeFile(metadataFile,JSON.stringify(metadata));
+  const assets=[{name:names.archive,digest:"sha256:"+metadata.archive.sha256,size:metadata.archive.sizeBytes},{name:names.metadata,digest:"sha256:"+await hashFile(metadataFile),size:(await stat(metadataFile)).size}].map(asset=>({...asset,state:"uploaded",browser_download_url:`${source}/releases/download/${tag}/${asset.name}`}));
+  const release={tag_name:tag,html_url:`${source}/releases/tag/${tag}`,draft:false,prerelease:false,assets};
+  const mock=`import {readFile} from 'node:fs/promises';
+export async function fixtureFetch(url){
+ if(url.endsWith('/releases/latest') || url.endsWith('/releases/tags/${tag}'))return Response.json(${JSON.stringify(release)});
+ if(url.endsWith('/${names.metadata}'))return new Response(await readFile(${JSON.stringify(metadataFile)}));
+ if(url.endsWith('/${names.archive}'))return new Response(await readFile(${JSON.stringify(archive)}));
+ if(url.endsWith('/git/ref/tags/${tag}'))return Response.json({ref:'refs/tags/${tag}',object:{type:'commit',sha:'${manifest.commit}'}});
+ throw new Error('Unexpected fixture release URL');
+}`;
+  await writeFile(path.join(installRoot,"host/fixture-release.mjs"),mock);
+  const worker=path.join(installRoot,"host/windows-update-worker.mjs");
+  const original=await readFile(worker,"utf8");
+  const changed=original.replace('import { findWindowsUpdate, downloadWindowsUpdate } from "./windows-update-release.mjs";',
+    'import { findWindowsUpdate as realFind, downloadWindowsUpdate as realDownload } from "./windows-update-release.mjs";\nimport {fixtureFetch} from "./fixture-release.mjs";\nconst findWindowsUpdate=(current,target)=>realFind(current,target,{fetch:fixtureFetch});\nconst downloadWindowsUpdate=(candidate,destination,options)=>realDownload(candidate,destination,{...options,fetch:fixtureFetch});');
+  assert.notEqual(changed,original);await writeFile(worker,changed);
+  return {gitHubResponses:"isolated fixture",archiveSha256:metadata.archive.sha256};
+}
 let deployment;
 try {
   ps(". " + q(path.join(checkout, "scripts/windows/Setup-Helpers.ps1")) + ";Protect-SetupDirectory " + q(root));
@@ -69,6 +125,9 @@ try {
   assert.notEqual(older.version, newer.version, "Use distinct real release versions for the update test");
   report.packages = { from: { version: older.version, commit: older.commit }, to: { version: newer.version, commit: newer.commit } };
   const initial = await installerPackage(previous, path.join(root, "initial-package"));
+  const candidate=await installerPackage(target,path.join(root,"target-package"));
+  const fixtureManifest=JSON.parse(await readFile(path.join(candidate,"windows-package.json"),"utf8"));
+  fixtureManifest.channel="stable";await writeFile(path.join(candidate,"windows-package.json"),JSON.stringify(fixtureManifest));
   console.log("Installing isolated services using the real prior-version application...");
   await install(initial);
   deployment = await loadWindowsDeployment(installationFile, { allowPreview: true });
@@ -85,10 +144,17 @@ try {
   const authFile = path.join(dataRoot, "auth/auth.json"), settingsFile = path.join(dataRoot, "config/settings.yaml");
   const auth = JSON.parse(await readFile(authFile, "utf8")), settings = await hashFile(settingsFile), images = await fileInventory(path.join(dataRoot, "storage"));
   console.log("Upgrading the running isolated SCM installation...");
-  const updated = await runWindowsUpdater(["update", "--package", target, "--manifest-sha256", await hashFile(path.join(target, "windows-package.json"))], {}, { deployment, confirmed: true, allowPreview: true });
-  assert.equal(updated.status, "ready-for-acceptance");
+  const releaseEvidence=await installFixtureReleaseSource(candidate);
+  const action=await signedInActions(deployment);
+  const checked=await action({operation:"check"});assert.equal(checked.targetTag,"v"+newer.version);
+  const updated=await action({operation:"update",target:"v"+newer.version,confirmation:"INSTALL v"+newer.version});
+  assert.equal(updated.updaterStatus,"ready-for-acceptance");
   deployment = await loadWindowsDeployment(installationFile, { allowPreview: true });
   assert.equal((await deployment.attest()).commit, newer.commit);
+  const updatedActions=await signedInActions(deployment);
+  const accepted=await updatedActions({operation:"accept",confirmation:"I COMPLETED THE MANUAL CHECKS"});
+  assert.equal(accepted.updaterStatus,"accepted");
+  report.browserUpdate={status:"passed",realHttpAdminActions:true,separateUpdaterService:true,automaticBackup:true,technicalValidation:true,acceptance:true,...releaseEvidence};
   deployment.sql("UPDATE public.plate_reads SET camera_name='Changed after update' WHERE plate_number='SCMTEST1'; INSERT INTO public.plates(plate_number,occurrence_count) VALUES ('POSTUPDATE',0);");
   await writeFile(settingsFile, "general:\n  maxRecords: 111\n");
   console.log("Rolling back through real SCM stop/start and PostgreSQL restore...");
@@ -105,7 +171,7 @@ try {
   const uninstallRoot = path.join(root, "uninstaller"); await mkdir(uninstallRoot);
   for (const name of ["Uninstall.ps1", "Setup-Helpers.ps1", "Network-Helpers.ps1"]) await writeFile(path.join(uninstallRoot, name), substitute(await readFile(path.join(checkout, "scripts/windows", name), "utf8")));
   ps("$env:ProgramFiles=" + q(programs) + ";$env:ProgramData=" + q(commonData) + ";& " + q(path.join(uninstallRoot, "Uninstall.ps1")));
-  assert.equal(ps("@(Get-Service -Name " + q(names.app) + "," + q(names.database) + " -ErrorAction SilentlyContinue).Count"), "0");
+  assert.equal(ps("@(Get-Service -Name " + q(names.app) + "," + q(names.database) + "," +q(names.updater)+ " -ErrorAction SilentlyContinue).Count"), "0");
   // Equivalent of Inno's code-only [UninstallDelete]; the entire target is
   // generated within this test's recorded root and was previously attested.
   assert.ok(installRoot.startsWith(root + path.sep)); await rm(installRoot, { recursive: true, force: true, maxRetries: 8, retryDelay: 500 });
@@ -140,7 +206,7 @@ try {
   try {
     // Never target an arbitrary service by name alone. Both exact executable
     // roots must belong to the UUID fixture before stopping or deleting it.
-    ps("foreach($name in @(" + q(names.app) + "," + q(names.database) + ")){$s=Get-CimInstance Win32_Service -Filter (\"Name='\"+$name+\"'\");if($s){if($s.PathName -notlike " + q('*' + installRoot + '*') + "){throw 'Foreign service ownership; refusing cleanup'};Stop-Service -Name $name -ErrorAction Stop;& $env:SystemRoot\\System32\\sc.exe delete $name;if($LASTEXITCODE){throw 'SCM cleanup failed'}}}");
+    ps("foreach($name in @(" + q(names.updater)+","+q(names.app) + "," + q(names.database) + ")){$s=Get-CimInstance Win32_Service -Filter (\"Name='\"+$name+\"'\");if($s){if($s.PathName -notlike " + q('*' + installRoot + '*') + "){throw 'Foreign service ownership; refusing cleanup'};Stop-Service -Name $name -ErrorAction Stop;& $env:SystemRoot\\System32\\sc.exe delete $name;if($LASTEXITCODE){throw 'SCM cleanup failed'}}}");
     ps(". " + q(path.join(root, "initial-package/host/Network-Helpers.ps1")) + ";Remove-AlprNetworkRule " + appPort);
     report.cleanup = "owned test services removed";
   } catch (error) { report.cleanup = "preserved for diagnosis: " + error.message; process.exitCode = 1; }

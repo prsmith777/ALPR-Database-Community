@@ -41,9 +41,8 @@ try {
     $form.Controls.AddRange(@($label,$bar)); $form.Show()
     $arguments = @(('"' + (Join-Path $release 'host\windows-migration.mjs') + '"'),'export',('"' + $destination + '"'))
     $process = Start-Process -FilePath (Join-Path $release 'runtime\node.exe') -ArgumentList $arguments -PassThru -WindowStyle Hidden -RedirectStandardOutput (Join-Path $logRoot 'output.log') -RedirectStandardError (Join-Path $logRoot 'error.log')
-    while (-not $process.HasExited) { [Windows.Forms.Application]::DoEvents(); Start-Sleep -Milliseconds 200; $process.Refresh() }
-    $process.WaitForExit()
-    if ($process.ExitCode -ne 0) { throw "The backup could not complete. Your source data is preserved. Keep the diagnostic log: $logRoot" }
+    $exitCode = Wait-SetupChildProcess $process { [Windows.Forms.Application]::DoEvents() }
+    if ($exitCode -ne 0) { throw "The backup could not complete. Your source data is preserved. Keep the diagnostic log: $logRoot" }
     $form.Close(); $form = $null
     [void][Windows.Forms.MessageBox]::Show("Your verified backup is ready:`r`n$destination`r`n`r`nCopy this entire folder to the new computer. In ALPR Setup, choose Move an existing ALPR database and images.",'ALPR Migration Backup','OK','Information')
 } catch {

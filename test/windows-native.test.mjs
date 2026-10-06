@@ -191,6 +191,44 @@ test("maintenance refuses concurrent operations", async (t) => {
   await writeFile(path.join(f.deployment.backupRoot,"maintenance.lock"),"12345");
   await assert.rejects(runWindowsUpdater(["status"],{},f.options),/lock exists/);
 });
+test("UI updates recover the old database and service automatically when migration fails",async t=>{
+  const f=await fixture(t);
+  f.deployment.migrate=()=>{throw new Error("fixture migration failed");};
+  await assert.rejects(runWindowsUpdater(f.args,{}, {...f.options,automaticRecovery:true}),/fixture migration failed/);
+  const state=await runWindowsUpdater(["status"],{},f.options);
+  assert.equal(state.status,"rolled-back");assert.equal(state.recovery.previousApplicationRestored,true);
+  assert.equal((await f.deployment.attest()).commit,f.deployment.current.commit);
+  assert.ok(f.deployment.operations.includes("restore"));
+});
+test("the next UI update preserves an accepted backup during its retention window",async t=>{
+  const f=await fixture(t);
+  const first=await runWindowsUpdater(f.args,{},f.options);
+  await runWindowsUpdater(["accept"],{},f.options);
+  f.deployment.current=JSON.parse(await readFile(path.join(f.deployment.releaseRoot,first.target.name,"windows-package.json"),"utf8"));
+  f.deployment.installation=JSON.parse(await readFile(f.deployment.installationFile,"utf8"));
+  const target=path.join(f.root,"next");await makePackage(target,"0.1.48","c".repeat(40));
+  const next=await runWindowsUpdater(["update","--package",target,"--manifest-sha256",await hashFile(path.join(target,"windows-package.json"))],{}, {...f.options,retainPrevious:true});
+  assert.equal(next.status,"ready-for-acceptance");
+  assert.equal(await hashFile(path.join(f.deployment.backupRoot,first.backup.id,"postgres.dump")),first.backup.dumpSha256);
+  const history=JSON.parse(await readFile(path.join(f.deployment.backupRoot,`history-${first.backup.id}.json`),"utf8"));
+  assert.equal(history.status,"accepted");assert.equal(history.backup.id,first.backup.id);
+});
+test("interrupted migration recovery uses a dead process lock and never replays installation",async t=>{
+  const f=await fixture(t);
+  f.deployment.migrate=()=>{throw new Error("interrupted migration");};
+  await assert.rejects(runWindowsUpdater(f.args,{},f.options),/interrupted migration/);
+  const dead=spawnSync(process.execPath,["-e","process.exit(0)"],{windowsHide:true});
+  await writeFile(path.join(f.deployment.backupRoot,"maintenance.lock"),String(dead.pid));
+  await assert.rejects(runWindowsUpdater(["recover"],{},f.options),/Unsupported/);
+  const state=await runWindowsUpdater(["recover"],{}, {...f.options,internalRecovery:true});
+  assert.equal(state.status,"rolled-back");assert.equal(state.recovery.interrupted,true);
+  assert.equal((await f.deployment.attest()).commit,"a".repeat(40));
+});
+test("interrupted recovery refuses to steal a live maintenance process lock",async t=>{
+ const f=await fixture(t);await writeFile(path.join(f.deployment.backupRoot,"maintenance.lock"),String(process.pid));
+ await assert.rejects(runWindowsUpdater(["recover"],{}, {...f.options,internalRecovery:true}),/still running/);
+ assert.deepEqual(f.deployment.operations,[]);
+});
 test("Windows installer parses with inbox PowerShell 5.1", {skip:process.platform !== "win32"}, () => {
   const command = "$tokens=$null;$errors=$null;[System.Management.Automation.Language.Parser]::ParseFile($env:ALPR_TEST_INSTALLER,[ref]$tokens,[ref]$errors)|Out-Null;if($errors.Count){$errors|Out-String|Write-Error;exit 1}";
   for (const file of ["Install.ps1","Service-Control.ps1"]) {
