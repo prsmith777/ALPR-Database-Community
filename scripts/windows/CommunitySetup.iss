@@ -183,7 +183,9 @@ begin
   if CurPageID = PasswordPage.ID then begin
     WizardForm.NextButton.Caption := 'Install';
     if InstallModePage.SelectedValueIndex = 1 then
-      WizardForm.FinishedLabel.Caption := 'Your ALPR data is ready. Existing named accounts use their existing username and password. For setup administrator login, leave the username blank and use the password chosen in Setup. Keep the source and backup until you have checked your records and images.';
+      WizardForm.FinishedLabel.Caption := 'Your ALPR data is ready. Existing named accounts use their existing username and password. For setup administrator login, leave the username blank and use the password chosen in Setup. Keep the source and backup until you have checked your records and images.'
+    else
+      WizardForm.FinishedLabel.Caption := 'Your new ALPR installation is ready. Sign in with the password you chose in Setup. Leave the username blank during first-time setup.';
   end;
 end;
 
@@ -215,7 +217,10 @@ begin
     LastError := Copy(S, 18, Length(S));
   if Pos('ALPR_SETUP_PROGRESS:', S) = 1 then begin
     ProgressPage.ProgressBar.Style := npbstMarquee;
-    ProgressPage.SetText(Copy(S, 21, Length(S)), 'Your existing backup and source data are preserved.');
+    if InstallModePage.SelectedValueIndex = 1 then
+      ProgressPage.SetText(Copy(S, 21, Length(S)), 'Your migration backup and original data are preserved.')
+    else
+      ProgressPage.SetText(Copy(S, 21, Length(S)), 'Starting with an empty database and new settings.');
     WizardForm.PreparingMemo.Lines.Text := Copy(S, 21, Length(S));
     WizardForm.StatusLabel.Caption := Copy(S, 21, Length(S));
     WizardForm.Refresh;
