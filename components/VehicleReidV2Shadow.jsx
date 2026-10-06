@@ -547,7 +547,7 @@ function EvidenceBadge({ label, state }) {
 
 function VehicleImage({ source, priority = false }) {
   return (
-    <div className="relative aspect-[4/3] overflow-hidden rounded-lg border bg-muted">
+    <div className="relative aspect-4/3 overflow-hidden rounded-lg border bg-muted">
       <NextImage
         src={source.imageUrl}
         alt={`Canonical vehicle crop for ${sourceTitle(source)}`}
@@ -714,7 +714,7 @@ function SourcePicker({ data }) {
               })}
               className={`rounded-lg border p-3 transition-colors hover:border-primary ${selected ? "border-primary bg-primary/5" : ""}`}
             >
-              <div className="relative mb-3 aspect-[16/9] overflow-hidden rounded-md bg-muted">
+              <div className="relative mb-3 aspect-video overflow-hidden rounded-md bg-muted">
                 <NextImage
                   src={source.imageUrl}
                   alt={`Choose ${sourceTitle(source)} as the comparison source`}

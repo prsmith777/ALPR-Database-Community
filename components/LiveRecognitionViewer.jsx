@@ -297,7 +297,7 @@ export default function LiveRecognitionViewer({
             </div>
 
             {/* Image controls */}
-            <div className="flex justify-between items-center p-3 bg-background/80 backdrop-blur-sm border-t">
+            <div className="flex justify-between items-center p-3 bg-background/80 backdrop-blur-xs border-t">
               <div className="text-sm text-muted-foreground flex items-center gap-2">
                 <Camera className="h-4 w-4" />
                 {latestPlate.camera_name || "Unknown camera"}
@@ -330,8 +330,8 @@ export default function LiveRecognitionViewer({
           {/* Essential plate info - key details with prominence */}
           <div className="flex flex-col gap-4">
             {/* Plate number - largest and most prominent */}
-            <div className="bg-background dark:bg-[#0e0e10] rounded-lg border p-5 flex-grow-0">
-              <div className="flex justify-between items-start w-80 2xl:w-[22rem]">
+            <div className="bg-background dark:bg-[#0e0e10] rounded-lg border p-5 grow-0">
+              <div className="flex justify-between items-start w-80 2xl:w-88">
                 <div>
                   <div className="text-4xl font-mono font-bold tracking-wider">
                     {latestPlate.plate_number}
@@ -429,7 +429,7 @@ export default function LiveRecognitionViewer({
               )}
 
             {/* Tags */}
-            <div className="bg-background dark:bg-[#0e0e10] rounded-lg border p-4 flex-grow">
+            <div className="bg-background dark:bg-[#0e0e10] rounded-lg border p-4 grow">
               <h3 className="text-sm font-medium flex items-center mb-3">
                 <Tag className="h-4 w-4 mr-2 text-muted-foreground" />
                 Tags
@@ -521,7 +521,7 @@ export default function LiveRecognitionViewer({
                                 className="object-cover"
                               />
                             </div>
-                            <div className="flex-grow">
+                            <div className="grow">
                               <div className="font-medium">
                                 {new Date(read.timestamp).toLocaleString(
                                   undefined,

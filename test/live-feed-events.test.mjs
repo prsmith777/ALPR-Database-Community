@@ -52,3 +52,33 @@ test("Live Feed surfaces use a route-handler stream and ingestion publishes afte
   assert.match(delta, /filters: \{ readIds \}/);
   assert.match(delta, /Server-Timing/);
 });
+
+for (const signal of ["SIGINT", "SIGTERM"]) {
+  test(`Live Feed shutdown closes all active responses on ${signal}`, () => {
+    resetLiveFeedEventStateForTest();
+    const baseline = process.listenerCount(signal);
+    const closed = [];
+    addSseClient(() => {}, () => { closed.push("first"); throw new Error("Disconnected response"); });
+    addSseClient(() => {}, () => closed.push("second"));
+    assert.equal(process.listenerCount(signal), baseline + 1, "One process handler serves all clients");
+    process.emit(signal);
+    assert.deepEqual(closed, ["first", "second"]);
+    assert.equal(liveFeedEventStateForTest().clients, 0);
+    assert.equal(addSseClient(() => {}, () => closed.push("late")), null, "An in-flight request cannot reopen a stream during shutdown");
+    assert.deepEqual(closed, ["first", "second", "late"]);
+    resetLiveFeedEventStateForTest();
+    assert.equal(process.listenerCount(signal), baseline);
+  });
+}
+
+test("Live Feed failed sends close their response without losing other clients", () => {
+  resetLiveFeedEventStateForTest();
+  let closed = 0, delivered = 0;
+  addSseClient(() => { throw new Error("Gone"); }, () => closed++);
+  addSseClient(() => delivered++);
+  publishPlateReadChanges([42]);
+  assert.equal(closed, 1);
+  assert.equal(delivered, 1);
+  assert.equal(liveFeedEventStateForTest().clients, 1);
+  resetLiveFeedEventStateForTest();
+});

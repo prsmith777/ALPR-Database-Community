@@ -933,6 +933,14 @@ export const postgresMajorMigrationInternals = {
   quoteIdentifier,
   readEndpoint,
   resolveArtifactPath,
+  readVerifiedManifest,
+  inspectSourceApplication,
+  countTables,
+  listPublicTables,
+  query,
+  runProcess,
+  clientEnvironment,
+  executable,
 };
 
 if (process.argv[1] && resolve(process.argv[1]) === scriptPath) {

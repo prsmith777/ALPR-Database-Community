@@ -4,7 +4,7 @@ import { fileURLToPath } from "node:url";
 
 const scriptPath = fileURLToPath(import.meta.url);
 const root = resolve(dirname(scriptPath), "..");
-const ignoredDirectories = new Set([".git", ".next", "coverage", "node_modules"]);
+const ignoredDirectories = new Set([".git", ".next", "coverage", "node_modules", "dist", ".native-dependencies"]);
 const textExtensions = new Set([
   "",
   ".css",

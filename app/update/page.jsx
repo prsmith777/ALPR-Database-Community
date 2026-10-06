@@ -280,13 +280,13 @@ function StepItem({
       className={`flex items-start space-x-4 ${isDisabled ? "opacity-50" : ""}`}
     >
       <div
-        className={`flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center ${
+        className={`shrink-0 w-8 h-8 rounded-full flex items-center justify-center ${
           isComplete ? "bg-green-500 text-white" : "bg-gray-200 text-gray-500"
         }`}
       >
         {isComplete ? <CheckCircle className="h-5 w-5" /> : <span>{step}</span>}
       </div>
-      <div className="flex-grow">
+      <div className="grow">
         <h3 className="text-lg font-medium flex items-center mb-1">
           {icon}
           <span className="ml-2">{title}</span>

@@ -364,16 +364,12 @@ try {
 
   const duplicateHash = contentHash("concurrent-duplicate");
   const duplicateAsset = asset(duplicateHash);
-  const duplicateReadIds = await Promise.all([
+  const duplicateReadIds = await Promise.all(Array.from({ length: 8 }, (_, index) =>
     insertReadyRead({
-      plate: `D1${suffix}`.slice(0, 10),
-      imagePath: `derived/vehicle-asset-smoke/${suffix}-duplicate-1.jpg`,
-    }),
-    insertReadyRead({
-      plate: `D2${suffix}`.slice(0, 10),
-      imagePath: `derived/vehicle-asset-smoke/${suffix}-duplicate-2.jpg`,
-    }),
-  ]);
+      plate: `D${index}${suffix}`.slice(0, 10),
+      imagePath: `derived/vehicle-asset-smoke/${suffix}-duplicate-${index}.jpg`,
+    })
+  ));
   const duplicateResults = await Promise.all(
     duplicateReadIds.map((readId) => registerReadAsset(readId, duplicateAsset))
   );
@@ -388,7 +384,7 @@ try {
      WHERE assets.content_sha256 = $1`,
     [duplicateHash]
   );
-  assert.deepEqual(duplicateCounts.rows[0], { asset_count: 1, link_count: 2 });
+  assert.deepEqual(duplicateCounts.rows[0], { asset_count: 1, link_count: duplicateReadIds.length });
 
   const sourceReadId = await insertReadyRead({
     plate: `S${suffix}`.slice(0, 10),

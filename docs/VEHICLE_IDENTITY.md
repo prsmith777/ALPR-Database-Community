@@ -24,6 +24,30 @@ in progress can finish. Retries are bounded; repeated failures require diagnosis
 All-zero counts can mean no eligible image has reached the crop stage, not a
 failure of plate ingestion.
 
+### Recorded image source on Windows and Linux
+
+In **Settings > Vehicle Setup**, save the camera's front/rear travel labels and
+Blue Iris crossing mappings first. Connect Blue Iris and use **Test connection**
+to populate its camera list. The selected image camera must have recordings.
+
+Under **Vehicle images for ReID**, choose a source for each saved direction:
+
+- **This LPR camera** uses recordings from the same camera near the plate event.
+  It needs no separate overview camera, but the recording must show the complete
+  vehicle in color with one unambiguous tracked detection. A tight plate view
+  cannot supply identity evidence. Clipped vehicles and monochrome views are
+  rejected.
+- **Overview camera** uses the selected other Blue Iris camera. Set its timing
+  offset in seconds; positive means the vehicle reaches that view after the
+  plate read.
+
+Enable the source and save each direction separately. Changing a primary source
+disables the previous primary mapping for that camera/direction transactionally.
+Reload the page to verify it, then inspect a new plate read. Existing plate reads
+are not automatically retried by changing the source. A usable recorded frame
+still passes the normal crop, provenance, current-evidence, and ReID checks.
+Receiving a plate thumbnail or direction alone does not create an identity.
+
 ## Search, profiles, and reviews
 
 Vehicle Search ranks canonical crop embeddings locally. Similarity is evidence

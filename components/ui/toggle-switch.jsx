@@ -21,7 +21,7 @@ const ToggleSwitch = ({
       <input type="hidden" name={name} value={selected} />
       {/* Sliding highlight */}
       <div
-        className={`absolute top-1 transition-all duration-200 ease-in-out h-8 w-12 dark:bg-white bg-neutral-900  rounded-md shadow-sm ${
+        className={`absolute top-1 transition-all duration-200 ease-in-out h-8 w-12 dark:bg-white bg-neutral-900  rounded-md shadow-xs ${
           selected === options[1].value ? "translate-x-12" : "translate-x-0"
         }`}
       />

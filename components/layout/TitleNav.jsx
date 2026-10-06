@@ -28,7 +28,7 @@ export default function Component({
 
   return (
     <div className="flex min-h-screen flex-col py-4 px-6">
-      <header className="border-b backdrop-blur">
+      <header className="border-b backdrop-blur-sm">
         <div className="container flex h-14 items-center">
           <div className="flex items-center space-x-2">
             <h1 className="text-2xl font-semibold">{title}</h1>

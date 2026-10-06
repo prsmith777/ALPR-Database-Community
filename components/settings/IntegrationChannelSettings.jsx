@@ -60,7 +60,7 @@ function StatusCard({ enabled, configured, detail }) {
 
 function SaveMessage({ message, pending }) {
   return (
-    <div className="sticky bottom-0 z-10 flex flex-wrap items-center gap-3 border-t bg-background/95 py-4 backdrop-blur">
+    <div className="sticky bottom-0 z-10 flex flex-wrap items-center gap-3 border-t bg-background/95 py-4 backdrop-blur-sm">
       <Button type="submit" disabled={pending}>
         <Save className="mr-2 h-4 w-4" />
         {pending ? "Saving…" : "Save settings"}

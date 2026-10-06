@@ -1,6 +1,21 @@
 # Community product roadmap
 
-Last reviewed: September 29, 2026
+Last reviewed: October 6, 2026
+
+## Native Windows implementation preview
+
+Windows 10 22H2 x64 and maintained Windows 11 x64 share the existing Community
+application and version. The native preview adds checksum-pinned Windows
+OpenVINO packaging, a standalone runtime bundle, persistent data paths, portable
+image references, a PowerShell installer, NTFS/service SID permissions, native
+app/database services, and operator-verified backup/update/rollback maintenance.
+Final-package CPU inference and Windows builds are verified locally.
+
+Clean desktop VM service/ACL/reboot and real-integration acceptance, prerequisite
+acquisition, signed distribution, release asset publishing, and the restricted
+Windows browser update agent remain release gates. Linux installation and
+updater behavior remain the existing supported path. See
+[Native Windows preview](WINDOWS_NATIVE.md).
 
 This roadmap distinguishes capabilities that are available now from work that
 may be considered later. It is not a promise of dates. GitHub Releases and the
@@ -50,6 +65,8 @@ See [vehicle identity](VEHICLE_IDENTITY.md) and [feed performance](REID_FEED_PER
 - locally stored vehicle views, local OpenVINO/ReID inference, canonical visual
   similarity search, and vehicle profiles;
 - per-camera front/rear semantic labels and confidence thresholds;
+- per-direction recorded vehicle sources with editable timing offsets and 0.25–3
+  second tolerances, explicit save state, and frame/direction diagnostics;
 - manual Front view and Rear view training labels plus local ReID fallback;
 - optional Blue Iris ordered-zone crossing mappings with fail-closed handling
   for missing, ambiguous, conflicting, and unsuitable nighttime evidence;
@@ -159,9 +176,9 @@ downloaded into a new user's database or image library.
    PostgreSQL repositories add or retire distribution releases. Unsupported
    hosts will continue to receive read-only compatibility results and manual
    prerequisite guidance.
-5. Consider a native Windows or PowerShell deployment path only when its
-   service management, path validation, backup, update, and rollback behavior
-   can meet the same release gates.
+5. Complete the native Windows preview's desktop service/ACL/reboot, migration,
+   integration, update, and rollback acceptance gates, then certify the shared
+   Windows 10/11 installer and restricted update agent.
 6. Consider advanced visual-search or ReID administration only after it is
    portable, documented, default-off, privacy-reviewed, and recoverable.
 

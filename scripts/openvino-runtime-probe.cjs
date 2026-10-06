@@ -4,7 +4,7 @@ const path = require("node:path");
 
 const openvino = require("openvino-node");
 
-const MODEL_DIRECTORY = "/app/models/visual-search";
+const MODEL_DIRECTORY = process.env.VEHICLE_REID_MODEL_DIR || path.join(process.cwd(), "models", "visual-search");
 const MODEL_NAMES = Object.freeze([
   "vehicle-detection-0202.xml",
   "vehicle-reid-0001.xml",

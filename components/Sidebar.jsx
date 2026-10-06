@@ -89,7 +89,7 @@ export function Sidebar() {
                     onClick={() => router.push(item.href)}
                     aria-label={item.label}
                     className={cn(
-                      "h-10 w-10 p-0 hover:bg-transparent [&:not(:disabled)]:hover:bg-transparent",
+                      "h-10 w-10 p-0 hover:bg-transparent not-disabled:hover:bg-transparent",
                       isPathActive(item.href)
                         ? "text-blue-500"
                         : "hover:text-blue-500"
@@ -122,7 +122,7 @@ export function Sidebar() {
                   onClick={() => router.push("/logs")}
                   aria-label="System Logs"
                   className={cn(
-                    "h-10 w-10 p-0 hover:bg-transparent [&:not(:disabled)]:hover:bg-transparent",
+                    "h-10 w-10 p-0 hover:bg-transparent not-disabled:hover:bg-transparent",
                     isPathActive("/logs")
                       ? "text-blue-500"
                       : "hover:text-blue-500"
@@ -145,7 +145,7 @@ export function Sidebar() {
                   onClick={() => router.push("/help")}
                   aria-label="Help and user guide"
                   className={cn(
-                    "h-10 w-10 p-0 hover:bg-transparent [&:not(:disabled)]:hover:bg-transparent",
+                    "h-10 w-10 p-0 hover:bg-transparent not-disabled:hover:bg-transparent",
                     isPathActive("/help")
                       ? "text-blue-500"
                       : "hover:text-blue-500"
@@ -167,7 +167,7 @@ export function Sidebar() {
                   onClick={() => router.push("/settings")}
                   aria-label="Settings"
                   className={cn(
-                    "h-10 w-10 p-0 hover:bg-transparent [&:not(:disabled)]:hover:bg-transparent",
+                    "h-10 w-10 p-0 hover:bg-transparent not-disabled:hover:bg-transparent",
                     isPathActive("/settings")
                       ? "text-blue-500"
                       : "hover:text-blue-500"
@@ -188,7 +188,7 @@ export function Sidebar() {
                     type="submit"
                     variant="ghost"
                     aria-label="Log Out"
-                    className="h-10 w-10 p-0 hover:bg-transparent hover:text-red-500 [&:not(:disabled)]:hover:bg-transparent"
+                    className="h-10 w-10 p-0 hover:bg-transparent hover:text-red-500 not-disabled:hover:bg-transparent"
                   >
                     <LogOut className="h-5 w-5" />
                   </Button>

@@ -97,7 +97,7 @@ export default function PlateDatabaseFilters({
 
   return (
     <div className="space-y-3">
-      <div className="rounded-lg border bg-card p-4 shadow-sm">
+      <div className="rounded-lg border bg-card p-4 shadow-xs">
         <div className="flex flex-wrap items-center gap-3 sm:gap-4">
           <button
             type="button"

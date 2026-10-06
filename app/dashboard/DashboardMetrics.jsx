@@ -199,7 +199,7 @@ const PlateImagePreviews = ({
                 } : undefined}
               />
             </div>
-            <div className="absolute bottom-1 right-1 max-w-[calc(100%_-_0.5rem)] rounded bg-black/60 px-1.5 py-0.5 text-right text-[10px] text-white">
+            <div className="absolute bottom-1 right-1 max-w-[calc(100%-0.5rem)] rounded bg-black/60 px-1.5 py-0.5 text-right text-[10px] text-white">
               {img.isOverview
                 ? "Overview"
                 : new Date(img.timestamp).toLocaleTimeString()}
@@ -652,7 +652,7 @@ export default function DashboardMetrics() {
                     content={({ active, payload }) => {
                       if (active && payload && payload.length) {
                         return (
-                          <div className="rounded-lg border bg-background p-2 shadow-sm">
+                          <div className="rounded-lg border bg-background p-2 shadow-xs">
                             <div className="grid grid-cols-2 gap-2">
                               <div className="flex flex-col">
                                 <span className="text-[0.70rem] uppercase text-muted-foreground">

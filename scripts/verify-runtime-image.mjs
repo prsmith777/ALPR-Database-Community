@@ -25,6 +25,9 @@ const contract = {
     "/app/models/visual-search/vehicle-reid-0001.bin",
   ],
   forbidden: [
+    "/app/node_modules/next/dist/compiled/@vercel/nft",
+    "/app/node_modules/braces",
+    "/app/node_modules/micromatch",
     "/app/.git",
     "/app/.github",
     "/app/test",

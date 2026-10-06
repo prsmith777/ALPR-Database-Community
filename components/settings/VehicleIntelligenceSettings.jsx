@@ -8,6 +8,8 @@ import {
   saveVehicleDirectionProfile,
 } from "@/app/actions";
 import VehicleProcessingCard from "@/components/settings/VehicleProcessingCard";
+import VehicleImageSourceSettings from "@/components/settings/VehicleImageSourceSettings";
+import VehicleDirectionTraining from "@/components/settings/VehicleDirectionTraining";
 import { SettingsShell } from "@/components/settings/SettingsShell";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -221,6 +223,24 @@ export default function VehicleIntelligenceSettings({ initialData }) {
           )}
         </CardContent>
       </Card>
+      {profile ? <Card className="mt-5">
+        <CardHeader><CardTitle>Blue Iris direction diagnostics</CardTitle><CardDescription>
+          Recent ordered crossings received for {profile.cameraName}. Counts include reads received before configuration changes.
+        </CardDescription></CardHeader>
+        <CardContent className="space-y-3 text-sm">
+          <p>{data.blueIrisTriggerDirection?.received || 0} received · {data.blueIrisTriggerDirection?.ready || 0} mapped · {data.blueIrisTriggerDirection?.unknown || 0} unknown · {data.blueIrisTriggerDirection?.unmapped || 0} unmapped.</p>
+          <Button variant="outline" disabled={Boolean(busy)} onClick={() => selectCamera(cameraName)}>Refresh direction status</Button>
+          <div className="overflow-x-auto"><table className="w-full text-left">
+            <thead><tr><th className="p-2">Read</th><th className="p-2">Trigger</th><th className="p-2">Direction / status</th><th className="p-2">Reason</th></tr></thead>
+            <tbody>{data.blueIrisTriggerDirection?.recent.slice(0, 10).map((read) => <tr key={read.readId}>
+              <td className="p-2">{read.readId}</td><td className="p-2">{read.triggerType || "Missing"}</td>
+              <td className="p-2">{read.directionLabel || read.status}</td><td className="p-2">{read.errorCode || "—"}</td>
+            </tr>)}</tbody>
+          </table></div>
+        </CardContent>
+      </Card> : null}
+      {profile ? <VehicleImageSourceSettings key={`${profile.cameraName}:${profile.frontDirectionLabel}:${profile.rearDirectionLabel}`} profile={profile} /> : null}
+      {profile ? <VehicleDirectionTraining key={`${profile.cameraName}:${profile.profileVersion}`} profile={profile} /> : null}
     </SettingsShell>
   );
 }

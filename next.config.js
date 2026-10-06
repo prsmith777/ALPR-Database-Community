@@ -3,6 +3,11 @@
 const nextConfig = {
   output: "standalone",
   serverExternalPackages: ["openvino-node"],
+  // NFT is the build-time file tracer. Its compiled copy embeds braces and
+  // must not be shipped in the Windows or Linux standalone runtime.
+  outputFileTracingExcludes: {
+    "**": ["**/node_modules/next/dist/compiled/@vercel/nft/**"],
+  },
   async headers() {
     return [
       {

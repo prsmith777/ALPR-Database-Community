@@ -8,7 +8,7 @@ export default function BasicTitle({
 }) {
   return (
     <div className="flex min-h-screen flex-col px-4 sm:p-6">
-      <header className="hidden sm:block border-b backdrop-blur pb-4">
+      <header className="hidden sm:block border-b backdrop-blur-sm pb-4">
         <div className="container flex h-14 items-center">
           <div className="flex items-center space-x-2">
             <h1 className="text-2xl font-semibold">

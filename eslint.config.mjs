@@ -35,6 +35,8 @@ export default defineConfig([
     ".next/**",
     "out/**",
     "build/**",
+    "dist/**",
+    ".native-dependencies/**",
     "next-env.d.ts",
   ]),
 ]);

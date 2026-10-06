@@ -59,7 +59,7 @@ export default function ReadPipelineTimeline({
         : "Read not found";
 
   return (
-    <section className="flex-shrink-0 border-b border-border/60 bg-muted/10">
+    <section className="shrink-0 border-b border-border/60 bg-muted/10">
       <button
         type="button"
         className="flex min-h-9 w-full items-center justify-between gap-3 px-4 py-1.5 text-left text-xs"

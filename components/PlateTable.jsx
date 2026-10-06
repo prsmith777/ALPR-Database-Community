@@ -246,7 +246,7 @@ function PlateIdentity({ plate, compact = false }) {
       <div className="flex flex-wrap items-center gap-2">
         <Link
           href={`/live_feed?search=${encodeURIComponent(plate.plate_number)}&matchMode=off`}
-          className="text-foreground underline-offset-4 hover:underline focus-visible:rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+          className="text-foreground underline-offset-4 hover:underline focus-visible:rounded-sm focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-blue-500"
           title={`View exact reads for ${plate.plate_number}`}
         >
           {plate.plate_number}
@@ -1782,7 +1782,7 @@ export default function PlateTable({
     <TooltipProvider delayDuration={200}>
       <div className="">
         <div className="py-4">
-          <div className="mb-4 rounded-lg border bg-card p-4 shadow-sm">
+          <div className="mb-4 rounded-lg border bg-card p-4 shadow-xs">
             <div className="flex flex-wrap items-center gap-3 sm:gap-4">
               <button
                 type="button"
@@ -1821,7 +1821,7 @@ export default function PlateTable({
                   <SelectTrigger
                     id="recognition-feed-page-size"
                     aria-label="Results per page"
-                    className="h-8 w-[5.5rem] dark:bg-[#0e0e10]"
+                    className="h-8 w-22 dark:bg-[#0e0e10]"
                   >
                     <SelectValue>{pagination.pageSize}</SelectValue>
                   </SelectTrigger>
@@ -2488,7 +2488,7 @@ export default function PlateTable({
                   <div key={plate.id} className="p-3">
                     <div className="flex items-start gap-3">
                       {/* Image and basic info */}
-                      <div className="flex-shrink-0" style={{ width: "80px" }}>
+                      <div className="shrink-0" style={{ width: "80px" }}>
                         <PlateImage
                           plate={plate}
                           onClick={(e) => handleImageClick(e, plate)}
@@ -2849,13 +2849,13 @@ export default function PlateTable({
                   </div>
                   <div className="relative h-[40vh] w-full overflow-hidden rounded-md border bg-black sm:h-auto sm:min-h-0">
                     {selectedImage.vehicleImageUrl && (
-                      <div className="absolute left-2 top-2 z-20 flex flex-col rounded-md border bg-background/90 p-1 shadow-sm backdrop-blur">
+                      <div className="absolute left-2 top-2 z-20 flex flex-col rounded-md border bg-background/90 p-1 shadow-xs backdrop-blur-sm">
                         <Button type="button" size="sm" variant={displayedImageView === "plate" ? "default" : "ghost"} className="h-7 justify-start px-2 text-xs" onClick={() => handleSelectedImageViewChange("plate")}>Plate capture</Button>
                         <Button type="button" size="sm" variant={displayedImageView === "vehicle" ? "default" : "ghost"} className="h-7 justify-start px-2 text-xs" onClick={() => handleSelectedImageViewChange("vehicle")}>Vehicle view</Button>
                       </div>
                     )}
                     {!selectedImage.vehicleImageUrl && selectedImage.vehicleImageStatus && (
-                      <div className="absolute left-2 top-2 z-20 max-w-[min(26rem,calc(100%-1rem))] space-y-2 rounded-md border bg-background/90 px-3 py-2 text-xs shadow-sm backdrop-blur">
+                      <div className="absolute left-2 top-2 z-20 max-w-[min(26rem,calc(100%-1rem))] space-y-2 rounded-md border bg-background/90 px-3 py-2 text-xs shadow-xs backdrop-blur-sm">
                         <div>
                           Vehicle view: {{
                             pending: selectedImage.vehicleImageErrorCode === "WAITING_FOR_DAYTIME_OVERVIEW"

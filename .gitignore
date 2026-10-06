@@ -19,6 +19,8 @@
 
 # production
 /build
+/dist/
+/.native-dependencies/
 
 # misc
 .DS_Store

@@ -10,10 +10,27 @@ import { spawn } from "node:child_process";
 import { setTimeout as delay } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
 
-const RUNTIME_URL = new URL(
-  "https://storage.openvinotoolkit.org/repositories/openvino/nodejs_bindings/2025.4.0/linux/openvino_nodejs_bindings_linux_2025.4.0_x64.tar.gz"
-);
-const RUNTIME_SHA256 = "ec2cfcd283b9d2183899ea9a82be543d1144dae0fae58e6ee9894ce1b43730a6";
+const RUNTIMES = Object.freeze({
+  linux: {
+    sha256: "ec2cfcd283b9d2183899ea9a82be543d1144dae0fae58e6ee9894ce1b43730a6",
+    files: ["ov_node_addon.node", "libopenvino.so", "libopenvino_intel_cpu_plugin.so"],
+  },
+  win32: {
+    sha256: "d344132e42852a43ad8a1f7a5e91007fc31739b7b6cd6050cc5f3d397223cd2e",
+    files: ["ov_node_addon.node", "openvino.dll", "openvino_intel_cpu_plugin.dll"],
+  },
+});
+
+function runtimeForHost(platform = process.platform, arch = process.arch) {
+  if (!RUNTIMES[platform] || arch !== "x64") {
+    throw new Error(`Pinned OpenVINO runtime supports linux/x64 and win32/x64, received ${platform}/${arch}`);
+  }
+  return {
+    ...RUNTIMES[platform],
+    url: new URL(`https://storage.openvinotoolkit.org/repositories/openvino/nodejs_bindings/2025.4.0/${platform}/openvino_nodejs_bindings_${platform}_2025.4.0_x64.tar.gz`),
+  };
+}
+const RUNTIME_URL = runtimeForHost().url;
 const MAX_ARCHIVE_BYTES = 300 * 1024 * 1024;
 const DOWNLOAD_ATTEMPTS = 4;
 const DOWNLOAD_TIMEOUT_MS = 120_000;
@@ -29,7 +46,7 @@ const TRANSIENT_NETWORK_CODES = new Set([
 
 function run(command, args) {
   return new Promise((resolve, reject) => {
-    const child = spawn(command, args, { stdio: "inherit" });
+    const child = spawn(command, args, { stdio: "inherit", windowsHide: true });
     child.once("error", reject);
     child.once("exit", (code, signal) => {
       if (code === 0) resolve();
@@ -39,9 +56,7 @@ function run(command, args) {
 }
 
 function assertSupportedBuildHost() {
-  if (process.platform !== "linux" || process.arch !== "x64") {
-    throw new Error(`Pinned OpenVINO runtime supports linux/x64 builds, received ${process.platform}/${process.arch}`);
-  }
+  runtimeForHost();
   if (RUNTIME_URL.protocol !== "https:" || RUNTIME_URL.hostname !== "storage.openvinotoolkit.org") {
     throw new Error("Unexpected OpenVINO runtime origin");
   }
@@ -123,7 +138,7 @@ async function main() {
   try {
     const received = await downloadRuntimeArchive(archivePath);
     const actualHash = await sha256(archivePath);
-    if (actualHash !== RUNTIME_SHA256) {
+    if (actualHash !== runtimeForHost().sha256) {
       throw new Error(`OpenVINO runtime checksum mismatch: ${actualHash}`);
     }
 
@@ -134,10 +149,9 @@ async function main() {
       "--gzip",
       "--file", archivePath,
       "--directory", destination,
-      "--no-same-owner",
-      "--no-same-permissions",
+      ...(process.platform === "linux" ? ["--no-same-owner", "--no-same-permissions"] : []),
     ]);
-    for (const expected of ["ov_node_addon.node", "libopenvino.so", "libopenvino_intel_cpu_plugin.so"]) {
+    for (const expected of runtimeForHost().files) {
       await fs.promises.access(path.join(destination, expected), fs.constants.R_OK);
     }
     console.log(`Installed checksum-verified OpenVINO ${packageJson.version} runtime (${received} bytes).`);
@@ -150,6 +164,7 @@ export const openvinoRuntimeInstallerInternals = Object.freeze({
   DOWNLOAD_ATTEMPTS,
   DOWNLOAD_TIMEOUT_MS,
   RUNTIME_URL,
+  runtimeForHost,
   downloadRuntimeArchive,
   isTransientNetworkError,
   retryableStatus,

@@ -2,6 +2,31 @@
 
 ## Unreleased
 
+## 0.1.47 � Native Windows installation and portable vehicle images (2026-10-06)
+
+- Add guided recovery of data retained after uninstall: preserve passwords, API key, settings, records, images and network preference, and verify a protected recovery backup before reconnecting the database.
+- Exercise native version upgrade, transactional rollback and retained-data reinstall through isolated real Windows services.
+- Handle both unique constraints when concurrent reads register the same canonical vehicle image, retaining strict content and metadata validation.
+- Close active live-feed responses during server shutdown so a browser left open cannot hold service maintenance until the wrapper timeout.
+- Run Windows migration backup from the selected release so its bundled dependencies resolve after installation; preview repair refreshes the shortcut launcher while retaining its previous copy.
+
+- Correct WinSW 2.12's presence-based delayed-start setting: omit the XML element, enforce normal automatic startup and verify Windows service configuration in setup and preview repair.
+
+- Remove the unpatched `braces` dependency by upgrading to Tailwind 4, replacing build-time directory globbing and excluding the build-only NFT tracer from shipped runtimes. Update Next.js and available image-processing, IP-parsing, source-map and selector security fixes; keep the dependency gate enabled.
+- Keep checked-out source line endings consistent across operating systems and exercise logical migration with the native Windows CI runtime.
+
+- Expose per-direction vehicle-source timing tolerance (0.25–3 seconds), explicit saved/unsaved state, recorded-frame diagnostics, and Blue Iris direction observations in the shared Linux/Windows Vehicle Setup screen.
+- Add a bounded front/rear training screen using current canonical crops; refuse changed embeddings and monochrome nighttime training before saving.
+- Preserve the Home Assistant whitelist enable setting when saving its IP list as a partial update.
+
+## 0.1.47 — Portable vehicle images and Windows migration preview (2026-10-05)
+
+- Add a shared Vehicle image source setup for each saved camera direction. Use whole-vehicle recordings from the LPR camera itself or an explicitly selected overview camera; changing the primary source disables the prior mapping transactionally.
+- Require usable color, temporal association, and a complete, unambiguous vehicle for LPR recording frames before the existing canonical crop and ReID pipeline accepts them.
+- Add verified portable migration bundles and a native Windows setup import option for supported Original ALPR and Community databases on PostgreSQL 13 or 17. Preserve original records and image files, validate exact restored counts and checksums, migrate the target schema, and reset destination setup login while retaining integration keys and named accounts.
+- Add an installed Windows Migration Backup shortcut and real download percentages with animated installation and removal progress.
+- Advance the embedded manual and document Linux-to-Windows backup preparation, destination validation, and source retention.
+
 ## 0.1.46 — Resilient Community updates (2026-09-29)
 
 - Retry transient DNS, timeout, connection, rate-limit, and server failures while downloading the pinned OpenVINO runtime during an image build; permanent client responses still fail immediately and the downloaded archive remains checksum verified.

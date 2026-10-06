@@ -91,7 +91,7 @@ const TagDialog = ({
               value={tagColor}
               onChange={(e) => setTagColor(e.target.value)}
               placeholder="#RRGGBB"
-              className="flex-grow"
+              className="grow"
             />
           </div>
         </div>
@@ -221,7 +221,7 @@ const ElegantTagManagement = () => {
                   <Badge
                     key={tag.id}
                     variant="secondary"
-                    className="text-xs sm:text-sm py-1.5 sm:py-2 px-2 sm:px-4 flex items-center space-x-1 sm:space-x-2 hover:shadow-sm transition-shadow"
+                    className="text-xs sm:text-sm py-1.5 sm:py-2 px-2 sm:px-4 flex items-center space-x-1 sm:space-x-2 hover:shadow-xs transition-shadow"
                   >
                     <div
                       className="w-2.5 h-2.5 sm:w-3 sm:h-3 rounded-full"

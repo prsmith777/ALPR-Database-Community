@@ -87,7 +87,7 @@ function FilterSelect({ label, value, onChange, children }) {
       <select
         value={value}
         onChange={(event) => onChange(event.target.value)}
-        className="h-9 rounded-md border border-border bg-background px-3 text-sm text-foreground shadow-sm"
+        className="h-9 rounded-md border border-border bg-background px-3 text-sm text-foreground shadow-xs"
       >
         {children}
       </select>
@@ -99,7 +99,7 @@ function Detail({ label, children, wide = false }) {
   return (
     <div className={cn("min-w-0", wide && "sm:col-span-2 lg:col-span-3")}>
       <dt className="text-[11px] uppercase tracking-wide text-muted-foreground">{label}</dt>
-      <dd className="mt-0.5 break-words text-sm text-foreground">{children || "—"}</dd>
+      <dd className="mt-0.5 wrap-break-word text-sm text-foreground">{children || "—"}</dd>
     </div>
   );
 }
@@ -250,7 +250,7 @@ export default function IngressReceiptViewer({
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <form onSubmit={apply} className="flex-shrink-0 border-b bg-background">
+      <form onSubmit={apply} className="shrink-0 border-b bg-background">
         <div className="flex min-h-12 flex-wrap items-center gap-2 px-4 py-2">
           <Button
             type="button"
@@ -402,19 +402,19 @@ export default function IngressReceiptViewer({
       </form>
 
       {error && (
-        <Alert variant="destructive" className="m-4 flex-shrink-0">
+        <Alert variant="destructive" className="m-4 shrink-0">
           <AlertDescription>{error}</AlertDescription>
         </Alert>
       )}
 
-      <div className="flex flex-shrink-0 items-center justify-between border-b px-4 py-2 text-xs text-muted-foreground">
+      <div className="flex shrink-0 items-center justify-between border-b px-4 py-2 text-xs text-muted-foreground">
         <span>Showing {firstRow}–{lastRow} of {pageData?.total || 0} matching receipts</span>
         <span className="hidden sm:inline">Raw request values and API keys are never stored here.</span>
       </div>
 
       <div className="min-h-0 flex-1 overflow-auto">
         <table className="w-full min-w-[1050px] border-collapse text-sm">
-          <thead className="sticky top-0 z-[1] bg-background text-left text-xs text-muted-foreground shadow-[0_1px_0_hsl(var(--border))]">
+          <thead className="sticky top-0 z-1 bg-background text-left text-xs text-muted-foreground shadow-[0_1px_0_hsl(var(--border))]">
             <tr>
               <th className="w-10 px-3 py-2"><span className="sr-only">Details</span></th>
               <th className="px-3 py-2 font-medium">Received</th>
@@ -449,7 +449,7 @@ export default function IngressReceiptViewer({
         )}
       </div>
 
-      <div className="flex flex-shrink-0 items-center justify-between border-t bg-background px-4 py-2">
+      <div className="flex shrink-0 items-center justify-between border-t bg-background px-4 py-2">
         <Button
           type="button"
           size="sm"
@@ -534,7 +534,7 @@ function ReceiptRows({ receipt, expanded, detailsId, onToggle }) {
         <td className="px-3 py-2">
           <StatusBadge receipt={receipt} />
           {receipt.errorCode && (
-            <div className="mt-1 max-w-52 break-words font-mono text-xs text-red-500">{receipt.errorCode}</div>
+            <div className="mt-1 max-w-52 wrap-break-word font-mono text-xs text-red-500">{receipt.errorCode}</div>
           )}
         </td>
         <td className="px-3 py-2">
