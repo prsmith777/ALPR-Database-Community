@@ -119,7 +119,16 @@ function Backup-RetainedSetup([string]$DataRoot) {
     }
     $volume = Get-Volume -DriveLetter $data.Substring(0,1)
     if ($volume.SizeRemaining -lt ($bytes + 512MB)) { throw 'Not enough free space to verify a retained database backup. Free disk space and run Setup again.' }
-    Protect-SetupDirectory $backup
+    # Permanent database backups exclude the application service and the
+    # installing user's filtered token. initdb does not run in this directory.
+    $acl = New-Object Security.AccessControl.DirectorySecurity
+    $acl.SetAccessRuleProtection($true,$false)
+    foreach ($sid in @('S-1-5-18','S-1-5-32-544')) {
+        $acl.AddAccessRule((New-Object Security.AccessControl.FileSystemAccessRule((New-Object Security.Principal.SecurityIdentifier($sid)),'FullControl','ContainerInherit,ObjectInherit','None','Allow')))
+    }
+    $acl.SetOwner((New-Object Security.Principal.SecurityIdentifier('S-1-5-32-544')))
+    [void][IO.Directory]::CreateDirectory($backup,$acl)
+    $inventory = @{}
     foreach ($name in @('management\postgres','auth','config')) {
         $source = Join-Path $data $name
         $target = Join-Path $backup $name
@@ -130,11 +139,15 @@ function Backup-RetainedSetup([string]$DataRoot) {
         if ($files.Count -ne $copies.Count) { throw 'Retained data backup inventory is incomplete' }
         foreach ($file in $files) {
             $copy = Join-Path $target $file.FullName.Substring($source.Length + 1)
-            if ((Get-FileHash -LiteralPath $file.FullName).Hash -ne (Get-FileHash -LiteralPath $copy).Hash) { throw 'Retained data backup checksum mismatch' }
+            $hash = (Get-FileHash -LiteralPath $file.FullName).Hash.ToLowerInvariant()
+            if ($hash -ne (Get-FileHash -LiteralPath $copy).Hash.ToLowerInvariant()) { throw 'Retained data backup checksum mismatch' }
+            $inventory[($name.Replace('\','/') + '/' + $file.FullName.Substring($source.Length + 1).Replace('\','/'))] = $hash
         }
     }
     Copy-Item -LiteralPath (Join-Path $data 'management\uninstalled-installation.json') -Destination (Join-Path $backup 'installation.json')
-    [IO.File]::WriteAllText((Join-Path $backup 'verified.json'),('{"formatVersion":1,"status":"verified","createdAt":"' + [DateTime]::UtcNow.ToString('o') + '"}'))
+    $inventory['installation.json'] = (Get-FileHash -LiteralPath (Join-Path $backup 'installation.json')).Hash.ToLowerInvariant()
+    $verification = @{formatVersion=1;status='verified';createdAt=[DateTime]::UtcNow.ToString('o');files=$inventory}
+    [IO.File]::WriteAllText((Join-Path $backup 'verified.json'),($verification | ConvertTo-Json -Depth 4),(New-Object Text.UTF8Encoding($false)))
     return $backup
 }
 function Test-SetupPayload([string]$PackageRoot, [string]$ManifestSha256) {

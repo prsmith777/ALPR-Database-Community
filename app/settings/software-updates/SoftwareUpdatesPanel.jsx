@@ -34,6 +34,7 @@ const MANUAL_CHECKS = Object.freeze([
 ]);
 
 const COMMUNITY_RELEASE_BASE_URL = "https://github.com/prsmith777/ALPR-Database-Community/releases/tag/";
+const WINDOWS_UPDATE_GUIDE_URL = "https://github.com/prsmith777/ALPR-Database-Community/blob/main/docs/WINDOWS_NATIVE.md#native-maintenance";
 const COMMUNITY_UPDATE_GUIDE_URL = "https://github.com/prsmith777/ALPR-Database-Community/blob/main/docs/UPDATES.md";
 
 const ROLLBACK_STATES = new Set([
@@ -55,7 +56,7 @@ function formatDate(value) {
 
 function StatusBadge({ snapshot, workflow }) {
   if (snapshot.deploymentProfile === "windows-native") {
-    return <span className="rounded-full bg-amber-500/15 px-2.5 py-1 text-xs font-medium text-amber-700 dark:text-amber-300">Native Windows preview</span>;
+    return <span className="rounded-full bg-amber-500/15 px-2.5 py-1 text-xs font-medium text-amber-700 dark:text-amber-300">Native Windows</span>;
   }
   if (!snapshot.agent.online) {
     return <span className="rounded-full bg-amber-500/15 px-2.5 py-1 text-xs font-medium text-amber-700 dark:text-amber-300">Agent offline</span>;
@@ -73,8 +74,8 @@ function WorkflowBanner({ snapshot, state, workflow, activeUpdateTag }) {
   if (snapshot.deploymentProfile === "windows-native") {
     return (
       <div role="status" className="rounded-lg border border-amber-500/40 bg-amber-500/10 p-4">
-        <p className="font-semibold">Native Windows preview uses local administrator maintenance</p>
-        <p className="mt-2 text-sm text-muted-foreground">Use a verified Windows package for updates, validation, acceptance, and rollback. Browser installation will become available after the native update agent passes release acceptance.</p>
+        <p className="font-semibold">Windows updates require administrator access</p>
+        <p className="mt-2 text-sm text-muted-foreground">Follow the <a href={WINDOWS_UPDATE_GUIDE_URL} target="_blank" rel="noreferrer" className="underline">Windows update instructions</a> to preserve your database and settings. Windows updates are installed locally by an administrator.</p>
       </div>
     );
   }

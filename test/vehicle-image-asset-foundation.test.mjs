@@ -586,7 +586,7 @@ test("foundation migration is additive, inert, provider-neutral, and storage-saf
 
   assert.doesNotMatch(repositorySource, /reads\.image_path\b/);
   assert.match(repositorySource, /reads\.vehicle_image_path/);
-  assert.match(repositorySource, /ON CONFLICT \(content_sha256\) DO NOTHING/);
+  assert.match(repositorySource, /ON CONFLICT DO NOTHING/);
   assert.match(repositorySource, /FOR UPDATE/);
   assert.match(
     repositorySource,

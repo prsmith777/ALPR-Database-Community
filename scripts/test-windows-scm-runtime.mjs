@@ -57,11 +57,19 @@ const appPort = await freePort(), dbPort = await freePort();
 let deployment;
 try {
   ps(". " + q(path.join(checkout, "scripts/windows/Setup-Helpers.ps1")) + ";Protect-SetupDirectory " + q(root));
+  // Node canonicalizes every ancestor. Unlike Program Files/ProgramData,
+  // the deliberately private fixture scaffold has no default service-account
+  // read access. Grant directory-only access; product roots retain their own
+  // service-SID ACLs and private files do not inherit these account grants.
+  ps("foreach($p in @(" + [root, programs, commonData].map(q).join(",") + ")){[void][IO.Directory]::CreateDirectory($p);$acl=Get-Acl -LiteralPath $p;foreach($sid in @('S-1-5-19','S-1-5-20')){$acl.AddAccessRule((New-Object Security.AccessControl.FileSystemAccessRule((New-Object Security.Principal.SecurityIdentifier($sid)),'ReadAndExecute','None','None','Allow')))};Set-Acl -LiteralPath $p -AclObject $acl}");
+  report.installerSourceSha256 = await hashFile(path.join(checkout, "scripts/windows/Install.ps1"));
+  report.recoveryHelperSourceSha256 = await hashFile(path.join(checkout, "scripts/windows/Setup-Helpers.ps1"));
   const older = await verifyWindowsPackage(previous, { allowPreview: true });
   const newer = await verifyWindowsPackage(target, { allowPreview: true });
   assert.notEqual(older.version, newer.version, "Use distinct real release versions for the update test");
   report.packages = { from: { version: older.version, commit: older.commit }, to: { version: newer.version, commit: newer.commit } };
   const initial = await installerPackage(previous, path.join(root, "initial-package"));
+  console.log("Installing isolated services using the real prior-version application...");
   await install(initial);
   deployment = await loadWindowsDeployment(installationFile, { allowPreview: true });
   await deployment.health(); await deployment.attest();
@@ -76,18 +84,20 @@ try {
   await fetch("http://127.0.0.1:" + appPort + "/api/verify-session", { method: "POST", headers: { "content-type": "application/json" }, body: '{"sessionId":"invalid"}' });
   const authFile = path.join(dataRoot, "auth/auth.json"), settingsFile = path.join(dataRoot, "config/settings.yaml");
   const auth = JSON.parse(await readFile(authFile, "utf8")), settings = await hashFile(settingsFile), images = await fileInventory(path.join(dataRoot, "storage"));
+  console.log("Upgrading the running isolated SCM installation...");
   const updated = await runWindowsUpdater(["update", "--package", target, "--manifest-sha256", await hashFile(path.join(target, "windows-package.json"))], {}, { deployment, confirmed: true, allowPreview: true });
   assert.equal(updated.status, "ready-for-acceptance");
   deployment = await loadWindowsDeployment(installationFile, { allowPreview: true });
   assert.equal((await deployment.attest()).commit, newer.commit);
-  deployment.sql("UPDATE public.plate_reads SET camera_name='Changed after update' WHERE plate_number='SCMTEST1'; INSERT INTO public.plates(plate_number,occurrence_count) VALUES ('AFTERUPDATE',0);");
+  deployment.sql("UPDATE public.plate_reads SET camera_name='Changed after update' WHERE plate_number='SCMTEST1'; INSERT INTO public.plates(plate_number,occurrence_count) VALUES ('POSTUPDATE',0);");
   await writeFile(settingsFile, "general:\n  maxRecords: 111\n");
+  console.log("Rolling back through real SCM stop/start and PostgreSQL restore...");
   const rolledBack = await runWindowsUpdater(["rollback"], {}, { deployment, confirmed: true, allowPreview: true });
   assert.equal(rolledBack.status, "rolled-back");
   deployment = await loadWindowsDeployment(installationFile, { allowPreview: true });
   assert.equal((await deployment.attest()).commit, older.commit);
   assert.equal(deployment.sql("SELECT camera_name FROM public.plate_reads WHERE plate_number='SCMTEST1';"), "Isolated SCM fixture");
-  assert.equal(deployment.sql("SELECT count(*) FROM public.plates WHERE plate_number='AFTERUPDATE';"), "0");
+  assert.equal(deployment.sql("SELECT count(*) FROM public.plates WHERE plate_number='POSTUPDATE';"), "0");
   assert.equal(await hashFile(settingsFile), settings);
   assert.equal(JSON.parse(await readFile(authFile, "utf8")).apiKey, auth.apiKey);
   report.upgradeRollback = { status: "passed", realScmStopsAndStarts: true, selectedReleaseListenerAttested: true, changedRowsAndSettingsRestored: true };
@@ -101,6 +111,7 @@ try {
   assert.ok(installRoot.startsWith(root + path.sep)); await rm(installRoot, { recursive: true, force: true, maxRetries: 8, retryDelay: 500 });
   assert.equal(await hashFile(settingsFile), settings);
   const reinstall = await installerPackage(target, path.join(root, "reinstall-package"));
+  console.log("Reinstalling against retained data and existing credentials...");
   await install(reinstall, true);
   deployment = await loadWindowsDeployment(installationFile, { allowPreview: true });
   await deployment.health(); assert.equal((await deployment.attest()).commit, newer.commit);
@@ -115,7 +126,16 @@ try {
   report.retainedReinstall = { status: "passed", databaseRowPreserved: true, passwordAndApiKeyPreserved: true, settingsAndImageChecksumsPreserved: true, coldClusterBackupVerified: true, networkPreferenceAndPortsPreserved: true };
   report.status = "passed"; console.log("Uninstall and retained-data reinstall passed actual SCM and protected service accounts.");
 } catch (error) {
-  report.status = "failed"; report.error = error.stack; console.error(error.stack); process.exitCode = 1;
+  report.status = "failed"; report.error = error.stack?.slice(-12000); console.error(report.error); process.exitCode = 1;
+  try {
+    const record = JSON.parse(await readFile(installationFile, "utf8"));
+    report.serviceLogs = {};
+    for (const suffix of ["err.log", "out.log", "wrapper.log"]) {
+      let text = await readFile(path.join(dataRoot, "logs", names.app + "." + suffix), "utf8").catch(() => "");
+      for (const secret of [record.environment.DB_PASSWORD, record.environment.ADMIN_PASSWORD]) if (secret) text = text.replaceAll(secret, "[fixture credential]");
+      report.serviceLogs[suffix] = text.slice(-10000);
+    }
+  } catch { /* a pre-install refusal has no owned service logs */ }
 } finally {
   try {
     // Never target an arbitrary service by name alone. Both exact executable

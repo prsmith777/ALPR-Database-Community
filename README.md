@@ -32,11 +32,12 @@ and prototype TPMS screens are intentionally not included.
 
 ## Quick start
 
-A native Windows development preview targets Windows 10 22H2 x64 and maintained
-Windows 11 x64, using the same Community application without Docker or WSL.
-Its graphical setup handles prerequisites and service installation. See
-[Native Windows preview](docs/WINDOWS_NATIVE.md) for the setup steps, build,
-maintenance, and pending desktop acceptance.
+For **Windows 10 22H2 x64 or Windows 11 x64**, download the Windows Setup
+executable from [Community releases](https://github.com/prsmith777/ALPR-Database-Community/releases).
+Setup installs the required components and starts ALPR automatically; Docker and
+WSL are not required. You can start empty, import a verified Linux/Windows backup,
+or reconnect data kept after uninstalling. See [Native Windows installation](docs/WINDOWS_NATIVE.md)
+for installation, backups and maintenance.
 
 For the simplest supported path, start with Ubuntu Server 24.04 LTS x86-64,
 internet access, and a normal account with `sudo`. The automatic bootstrap also

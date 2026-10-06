@@ -2,12 +2,17 @@
 
 ## Unreleased
 
+## 0.1.47 — Native Windows installation and portable vehicle images (2026-10-06)
+
+- Add guided recovery of data retained after uninstall: preserve passwords, API key, settings, records, images and network preference, and verify a protected recovery backup before reconnecting the database.
+- Exercise native version upgrade, transactional rollback and retained-data reinstall through isolated real Windows services.
+- Handle both unique constraints when concurrent reads register the same canonical vehicle image, retaining strict content and metadata validation.
 - Close active live-feed responses during server shutdown so a browser left open cannot hold service maintenance until the wrapper timeout.
 - Run Windows migration backup from the selected release so its bundled dependencies resolve after installation; preview repair refreshes the shortcut launcher while retaining its previous copy.
 
 - Correct WinSW 2.12's presence-based delayed-start setting: omit the XML element, enforce normal automatic startup and verify Windows service configuration in setup and preview repair.
 
-- Update available security fixes for image processing, IP parsing, source maps, selector parsing, and brace expansion; retain the dependency gate for the separately unpatched braces advisory.
+- Remove the unpatched `braces` dependency by upgrading to Tailwind 4, replacing build-time directory globbing and excluding the build-only NFT tracer from shipped runtimes. Update Next.js and available image-processing, IP-parsing, source-map and selector security fixes; keep the dependency gate enabled.
 - Keep checked-out source line endings consistent across operating systems and exercise logical migration with the native Windows CI runtime.
 
 - Expose per-direction vehicle-source timing tolerance (0.25â€“3 seconds), explicit saved/unsaved state, recorded-frame diagnostics, and Blue Iris direction observations in the shared Linux/Windows Vehicle Setup screen.

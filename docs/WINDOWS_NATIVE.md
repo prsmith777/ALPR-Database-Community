@@ -10,11 +10,11 @@ Windows setup executable and its checksum from the matching GitHub release.
 
 ## Targets and current evidence
 
-| Target | Build/model evidence | Remaining acceptance |
+| Target | Build/model evidence | Additional coverage |
 | --- | --- | --- |
-| Windows 10 22H2 x64, build 19045 | Supervised Pro VM installation, sign-in, Settings, LAN access and Blue Iris ingestion across reboot; corrected build `03fd2c65a7e7` independently observed on Release; new post-repair reads, overview crops, embeddings and a repeat-sighting comparison verified | Service ACL review, LAN disable check, other integrations, general desktop upgrade/rollback and uninstall |
-| Windows 11 x64 | Supervised Home installation and reboot; protected service accounts, directory ACLs, owned application listener and loopback-only database verified; same-version repair, credential preservation, normal automatic startup and installed portable backup verified | Camera integration, general desktop upgrade/rollback and uninstall |
-| Home, Pro, Enterprise, Education | Same desktop installer; no edition-specific feature dependency | Edition acceptance on the two OS baselines |
+| Windows 10 22H2 x64, build 19045 | Supervised Pro VM installation, sign-in, Settings, LAN access and Blue Iris ingestion across reboot; corrected build `03fd2c65a7e7` independently observed on Release; new post-repair reads, overview crops, embeddings and a repeat-sighting comparison verified | Service ACL review, LAN disable check and other integrations |
+| Windows 11 x64 | Supervised Home installation and reboot; protected service accounts, directory ACLs, owned application listener and loopback-only database verified; same-version repair, credential preservation, normal automatic startup and installed portable backup verified | Camera integration |
+| Home, Pro, Enterprise, Education | Same desktop installer; no edition-specific feature dependency | Enterprise and Education have not been separately tested |
 
 Windows Server, ARM64, 32-bit Windows, and LTSC certification are outside this
 initial target. The installer rejects Server, ARM64, 32-bit PowerShell, older
@@ -54,9 +54,16 @@ A disposable installation using real packages was updated from
 `0.1.46-fa4799b7d1fd` to `0.1.47-03fd2c65a7e7`, then rolled back. Real PostgreSQL,
 application health and owned listeners passed. Rollback reverted a changed row
 and settings, removed a row added after updating, and preserved password/API
-key and image checksums. This test used an owned-process adapter for service
-control, not Windows SCM; general desktop service upgrade/rollback remains
-unverified.
+key and image checksums. That earlier test used an owned-process adapter. A later isolated Windows 11
+acceptance run used actual Windows SCM, WinSW, LocalService/NetworkService
+accounts and service SID ACLs with the `0.1.47-68adb715bfcd` application. It
+verified selected-release listener ownership through version upgrade and
+transactional rollback, including restoration of changed rows and settings.
+The same run removed both temporary services and reinstalled against retained
+data. Password/API key, the original read, settings and image checksums, custom
+ports and the network preference survived; a cold-cluster recovery backup was
+verified before reinstall. Fixed service names were substituted in copied test
+scripts so existing ALPR services were excluded; SCM itself was not mocked.
 
 Windows 10 also received new post-repair Blue Iris reads with saved direction
 labels and produced canonical overview crops, embeddings and review attributes.
@@ -75,7 +82,12 @@ rules or adding security exceptions. A compatibility test exercises the
 plugin's actual root-directory discovery API. Next.js is updated to 15.5.27.
 The build-only compiled NFT tracer is excluded from both standalone runtimes;
 Windows packaging and the Linux runtime-image check reject its presence.
-The updated dependency scan and runtime checks must pass before publication.
+The dependency security gate passed after these changes. The same application
+build was reported working on both Windows 10 and Windows 11. A subsequent
+PostgreSQL concurrency gate found an image registration race between its two
+unique constraints; untargeted conflict handling retains complete content and
+metadata validation, and passed three guarded runs with eight simultaneous
+duplicate registrations each.
 
 The shared UI now requires Chrome/Edge 111 or newer or Firefox 128 or newer,
 consistent with Tailwind 4's browser requirements. Current Chrome and Edge
@@ -320,14 +332,13 @@ A failed install stops only services it registered and preserves its data and
 private installer-error.txt for diagnosis. It does not delete an existing
 installation or database. CheckOnly refuses an already-used installation.
 
-## Native maintenance preview
+## Native maintenance
 
 Run maintenance from an elevated PowerShell window. The browser's Software
-Updates page identifies native preview mode and cannot submit host operations.
+Updates page identifies native Windows installations and cannot submit host operations.
 
 ~~~powershell
 $env:ALPR_WINDOWS_INSTALLATION = 'C:\Program Files\ALPR Community\installation.json'
-$env:ALPR_WINDOWS_PREVIEW = 'ALPR_WINDOWS_PREVIEW_APPROVED'
 $node = 'C:\Program Files\ALPR Community\runtime\node.exe'
 $maintenance = 'C:\Program Files\ALPR Community\host\windows-maintenance.mjs'
 & $node $maintenance status
