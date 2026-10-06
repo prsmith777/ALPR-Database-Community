@@ -96,7 +96,7 @@ export function TagDistributionChart({
                     if (active && payload && payload.length) {
                       const data = payload[0].payload;
                       return (
-                        <div className="rounded-md border bg-background p-2 shadow-sm">
+                        <div className="rounded-md border bg-background p-2 shadow-xs">
                           <div className="grid grid-cols-2 gap-2">
                             <div className="flex flex-col">
                               <span className="text-[0.70rem] uppercase text-muted-foreground">
@@ -133,7 +133,7 @@ export function TagDistributionChart({
                     <Cell
                       key={entry.category}
                       fill={entry.color || `var(--chart-${(index % 12) + 1})`}
-                      className="cursor-pointer outline-none"
+                      className="cursor-pointer outline-hidden"
                     />
                   ))}
                   <Label
@@ -150,7 +150,7 @@ export function TagDistributionChart({
                             ? `View all tagged ${resultLabel} in Recognition Feed`
                             : undefined
                         }
-                        className={totalHref ? "cursor-pointer outline-none" : undefined}
+                        className={totalHref ? "cursor-pointer outline-hidden" : undefined}
                         onClick={() => totalHref && router.push(totalHref)}
                         onKeyDown={(event) => {
                           if (
@@ -189,7 +189,7 @@ export function TagDistributionChart({
             <Link
               key={item.category}
               href={getTagHref(item.category)}
-              className="flex items-center justify-between rounded-sm hover:text-primary hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              className="flex items-center justify-between rounded-sm hover:text-primary hover:underline focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring"
               aria-label={`View ${item.category} ${resultLabel} in Recognition Feed`}
             >
               <div className="flex items-center gap-1 sm:gap-2">

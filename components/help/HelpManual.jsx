@@ -168,7 +168,7 @@ export default function HelpManual({ manual }) {
 
   return (
     <div className="mx-auto w-full max-w-7xl px-4 py-6 sm:px-6 lg:px-8">
-      <header className="rounded-xl border bg-gradient-to-br from-blue-50 via-background to-background p-5 dark:from-blue-950/35 sm:p-8">
+      <header className="rounded-xl border bg-linear-to-br from-blue-50 via-background to-background p-5 dark:from-blue-950/35 sm:p-8">
         <div className="flex flex-col gap-6 lg:flex-row lg:items-start lg:justify-between">
           <div className="max-w-3xl">
             <div className="flex items-center gap-2 text-sm font-medium text-blue-600 dark:text-blue-400">
@@ -218,7 +218,7 @@ export default function HelpManual({ manual }) {
                 href={link.href}
                 target="_blank"
                 rel="noreferrer"
-                className="rounded-lg border p-4 transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                className="rounded-lg border p-4 transition-colors hover:bg-muted focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring"
               >
                 <div className="flex items-center gap-2 font-medium">
                   <Icon className="h-4 w-4 text-blue-500" aria-hidden="true" />
@@ -295,7 +295,7 @@ export default function HelpManual({ manual }) {
                   <li key={section.id}>
                     <a
                       href={`#${section.id}`}
-                      className="block rounded-md px-2 py-2 text-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                      className="block rounded-md px-2 py-2 text-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring"
                     >
                       <span className="mr-2 text-xs text-blue-500">{index + 1}.</span>
                       {section.title}

@@ -106,7 +106,7 @@ export default function PlateMatchingSettings({ initialSettings }) {
         </Button>
       </div>
 
-      <Card className="border-blue-500/20 shadow-sm">
+      <Card className="border-blue-500/20 shadow-xs">
         <CardHeader className="border-b border-blue-500/10 bg-blue-500/5">
           <CardTitle className="text-blue-700 dark:text-blue-300">Site defaults</CardTitle>
         </CardHeader>
@@ -149,7 +149,7 @@ export default function PlateMatchingSettings({ initialSettings }) {
 
       <div className="grid gap-4 xl:grid-cols-3">
         {Object.entries(settings.profiles).map(([name, profile]) => (
-          <Card key={name} className="border-blue-500/20 shadow-sm">
+          <Card key={name} className="border-blue-500/20 shadow-xs">
             <CardHeader className="border-b border-blue-500/10 bg-blue-500/5">
               <CardTitle className="capitalize text-blue-700 dark:text-blue-300">{name}</CardTitle>
               <p className="text-sm text-muted-foreground">{PROFILE_DETAILS[name]}</p>
@@ -192,7 +192,7 @@ export default function PlateMatchingSettings({ initialSettings }) {
         ))}
       </div>
 
-      <Card className="border-blue-500/20 shadow-sm">
+      <Card className="border-blue-500/20 shadow-xs">
         <CardHeader className="border-b border-blue-500/10 bg-blue-500/5">
           <CardTitle className="text-blue-700 dark:text-blue-300">Test the profiles</CardTitle>
           <p className="text-sm text-muted-foreground">

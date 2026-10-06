@@ -14,7 +14,7 @@ export function NotificationOperationsPanel({ overview }) {
         <CardDescription>Recent rule decisions, quiet-hour suppression, delivery retries, and dead-letter outcomes.</CardDescription>
       </CardHeader>
       <CardContent>
-        {history.length === 0 ? <p className="text-sm text-muted-foreground">No unified-rule evaluations have been recorded yet.</p> : <div className="max-h-[36rem] space-y-2 overflow-y-auto pr-1">{history.map((item) => <details key={item.id} className="rounded-lg border p-3 text-sm">
+        {history.length === 0 ? <p className="text-sm text-muted-foreground">No unified-rule evaluations have been recorded yet.</p> : <div className="max-h-144 space-y-2 overflow-y-auto pr-1">{history.map((item) => <details key={item.id} className="rounded-lg border p-3 text-sm">
           <summary className="flex cursor-pointer flex-wrap items-center justify-between gap-2">
             <span><span className="font-medium">{item.ruleName}</span> · {item.eventType === "camera.activity_check" ? "Camera check" : `Read ${item.readId || ""}`}</span>
             <span className="flex items-center gap-2"><Badge variant={statusVariant(item.outcome)}>{item.outcome}</Badge><span className="text-xs text-muted-foreground">{new Date(item.evaluatedAt).toLocaleString()}</span></span>

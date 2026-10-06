@@ -369,7 +369,7 @@ export function KnownPlatesTable({ initialData }) {
                       <TableCell className="font-mono text-lg font-medium pl-4">
                         <Link
                           href={`/live_feed?search=${encodeURIComponent(plate.plate_number)}&matchMode=off`}
-                          className="text-foreground underline-offset-4 hover:underline focus-visible:rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+                          className="text-foreground underline-offset-4 hover:underline focus-visible:rounded-sm focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-blue-500"
                           title={`View exact reads for ${plate.plate_number}`}
                         >
                           {plate.plate_number}
@@ -544,7 +544,7 @@ export function KnownPlatesTable({ initialData }) {
                         <div className="flex items-center">
                           <Link
                             href={`/live_feed?search=${encodeURIComponent(plate.plate_number)}&matchMode=off`}
-                            className="font-mono text-lg font-medium pr-2 text-foreground underline-offset-4 hover:underline focus-visible:rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+                            className="font-mono text-lg font-medium pr-2 text-foreground underline-offset-4 hover:underline focus-visible:rounded-sm focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-blue-500"
                             title={`View exact reads for ${plate.plate_number}`}
                           >
                             {plate.plate_number}

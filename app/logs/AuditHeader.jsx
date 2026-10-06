@@ -14,7 +14,7 @@ const sections = [
 
 export default function AuditHeader({ active, version }) {
   return (
-    <div className="flex-shrink-0 border-b bg-background">
+    <div className="shrink-0 border-b bg-background">
       <div className="flex h-16 items-center justify-between gap-4 px-6">
         <div className="flex min-w-0 items-center gap-4">
           <h1 className="shrink-0 text-lg font-medium text-foreground">System Logs</h1>

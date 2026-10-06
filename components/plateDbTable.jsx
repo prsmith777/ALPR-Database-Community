@@ -1258,7 +1258,7 @@ export default function PlateTable({ matchingSettings }) {
                         key={index}
                         className="flex gap-3 border rounded-md p-2"
                       >
-                        <div className="w-20 h-16 relative flex-shrink-0">
+                        <div className="w-20 h-16 relative shrink-0">
                           <Image
                             src={
                               read.thumbnail_path

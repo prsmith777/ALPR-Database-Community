@@ -63,6 +63,16 @@ async function main() {
   await mkdir(path.dirname(destination), { recursive: true });
   await mkdir(destination);
   await cp(path.join(root, ".next", "standalone"), path.join(destination, "app"), { recursive: true, dereference: true });
+  for (const relative of ["next/dist/compiled/@vercel/nft", "braces", "micromatch"]) {
+    const forbidden = path.join(destination, "app", "node_modules", relative);
+    try {
+      await readdir(forbidden);
+    } catch (error) {
+      if (error.code === "ENOENT") continue;
+      throw error;
+    }
+    throw new Error("Build-only dependency leaked into the Windows runtime: " + relative);
+  }
   await cp(path.join(root, ".next", "static"), path.join(destination, "app", ".next", "static"), { recursive: true });
   await cp(path.join(root, "public"), path.join(destination, "app", "public"), { recursive: true });
   await cp(path.join(root, "models"), path.join(destination, "app", "models"), { recursive: true });

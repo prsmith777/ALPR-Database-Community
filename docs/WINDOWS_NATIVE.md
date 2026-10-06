@@ -11,8 +11,8 @@ WSL. It is not yet a published or certified Windows release.
 
 | Target | Build/model evidence | Remaining acceptance |
 | --- | --- | --- |
-| Windows 10 22H2 x64, build 19045 | Supervised Pro VM installation, sign-in, Settings, LAN access, Blue Iris connection and plate ingestion reported working across reboot; post-reboot remote health HTTP check passed | Service ACL review, LAN disable check, remaining image/AI workflows, other integrations, update, rollback and uninstall |
-| Windows 11 x64 | Supervised Home installation; protected service accounts, directory ACLs, owned application listener and loopback-only database verified | Reboot, integration, update, rollback and uninstall |
+| Windows 10 22H2 x64, build 19045 | Supervised Pro VM installation, sign-in, Settings, LAN access and Blue Iris ingestion across reboot; corrected build `03fd2c65a7e7` independently observed on Release; new post-repair reads, overview crops, embeddings and a repeat-sighting comparison verified | Service ACL review, LAN disable check, other integrations, general desktop upgrade/rollback and uninstall |
+| Windows 11 x64 | Supervised Home installation and reboot; protected service accounts, directory ACLs, owned application listener and loopback-only database verified; same-version repair, credential preservation, normal automatic startup and installed portable backup verified | Camera integration, general desktop upgrade/rollback and uninstall |
 | Home, Pro, Enterprise, Education | Same desktop installer; no edition-specific feature dependency | Edition acceptance on the two OS baselines |
 
 Windows Server, ARM64, 32-bit Windows, and LTSC certification are outside this
@@ -20,21 +20,65 @@ initial target. The installer rejects Server, ARM64, 32-bit PowerShell, older
 Windows 10 builds, network shares, reparse-point roots, and non-NTFS volumes.
 Windows 10 compatibility does not extend Microsoft's Windows 10 support period.
 
-The supervised Windows 10 reboot result used the earlier delayed automatic
-startup setting. New installers use normal automatic startup with a PostgreSQL
-readiness check and verify the actual Windows service configuration. WinSW
-2.12 treats the presence of its `delayedAutoStart` XML element as enabled,
-including text `false`; new installers omit that element. Preview repairs also
-clear the delayed startup flag on the existing owned application service.
-The corrected startup path still requires a desktop reboot acceptance test.
+New installers use normal automatic startup with a PostgreSQL readiness check
+and verify the actual Windows service configuration. WinSW 2.12 treats the
+presence of its `delayedAutoStart` XML element as enabled, including text
+`false`; new installers omit that element. Preview repairs clear the delayed
+startup flag on the existing owned application service. The corrected build
+`03fd2c65a7e7` passed supervised restarts on Windows 10 and Windows 11; both
+HTTP health endpoints responded afterward. Windows 11 also had a newer boot
+time and both services running. No fixed two-minute startup delay is required.
 
-The packaged startup correction from commit `fa4799b7d1fd` passed an isolated
-Windows runtime test with PostgreSQL 17. It withheld the app while the database
-was stopped, exited cleanly when stopped during readiness, and served a healthy
-app about four seconds after the database was started. Chosen-password login,
-all 28 Settings pages, and synthetic plate/image ingestion also passed with
-access to the build checkout blocked. This is controlled runtime evidence;
-the new startup mode still needs the desktop reboot test above.
+### Acceptance recorded October 6, 2026
+
+For application source `03fd2c65a7e7`, all application/platform CI jobs passed,
+including native model probes, packaged startup, sign-in, all 28 Settings
+routes, synthetic ingestion/images and authenticated Live Feed shutdown.
+The graphical installer build also passed compiled wizard-startup and
+disposable uninstall-event probes. CI uses Windows Server and does not replace
+the desktop checks above.
+
+A supervised Windows 11 repair selected the corrected release, preserved
+settings, administrator credentials and the API key, and refreshed the
+installed backup launcher. The application service stopped in 0.27 seconds
+and returned healthy in 3.39 seconds while PostgreSQL stayed running.
+
+A portable backup exported by that installed build was restored into an empty,
+disposable PostgreSQL 17 database. Source schema/count validation, 141 restored
+tables, API-key preservation, session invalidation, unchanged source backup,
+and refusal of an occupied target passed. That laptop backup contained no
+images; separate logical migration fixtures covered image checksums.
+
+A disposable installation using real packages was updated from
+`0.1.46-fa4799b7d1fd` to `0.1.47-03fd2c65a7e7`, then rolled back. Real PostgreSQL,
+application health and owned listeners passed. Rollback reverted a changed row
+and settings, removed a row added after updating, and preserved password/API
+key and image checksums. This test used an owned-process adapter for service
+control, not Windows SCM; general desktop service upgrade/rollback remains
+unverified.
+
+Windows 10 also received new post-repair Blue Iris reads with saved direction
+labels and produced canonical overview crops, embeddings and review attributes.
+One visually consistent vehicle seen in opposite directions ranked first at
+69.6% cosine similarity, with a 40.15 percentage-point margin. This is one
+functional comparison, not a general ReID accuracy benchmark or an automatic
+identity decision.
+
+An overnight availability check is optional and is not a release gate. It
+cannot by itself establish memory stability or image-matching accuracy.
+
+The release branch replaces Tailwind 3 with Tailwind 4 and resolves the
+Next.js lint plugin's directory globbing to tinyglobby 0.2.17, removing
+`braces` and `micromatch` from the dependency graph without disabling lint
+rules or adding security exceptions. A compatibility test exercises the
+plugin's actual root-directory discovery API. Next.js is updated to 15.5.27.
+The build-only compiled NFT tracer is excluded from both standalone runtimes;
+Windows packaging and the Linux runtime-image check reject its presence.
+The updated dependency scan and runtime checks must pass before publication.
+
+The shared UI now requires Chrome/Edge 111 or newer or Firefox 128 or newer,
+consistent with Tailwind 4's browser requirements. Current Chrome and Edge
+on both Windows 10 and 11 meet this requirement.
 
 ## Graphical setup preview
 

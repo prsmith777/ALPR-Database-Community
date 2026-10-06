@@ -392,14 +392,14 @@ const ImageViewer = ({
   const viewer = (fullscreen = false) => (
     <div
       data-testid={fullscreen ? "image-viewer-fullscreen" : "image-viewer-popup"}
-      className={fullscreen ? "pointer-events-auto fixed inset-0 z-[100] flex flex-col bg-black p-3" : "flex h-full flex-col"}
+      className={fullscreen ? "pointer-events-auto fixed inset-0 z-100 flex flex-col bg-black p-3" : "flex h-full flex-col"}
     >
       {fullscreen ? (
         <Button
           type="button"
           variant="secondary"
           size="icon"
-          className="absolute right-5 top-5 z-[110]"
+          className="absolute right-5 top-5 z-110"
           onClick={handleCloseFullscreen}
           aria-label="Close full screen image"
         >

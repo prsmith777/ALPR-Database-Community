@@ -85,7 +85,7 @@ function SettingsShellContent({ activeId, title, description, children }) {
 
   return (
       <div className="flex min-h-full bg-background">
-        <aside className={cn("hidden flex-shrink-0 border-r border-border bg-background transition-[width] lg:block", sidebarCollapsed ? "w-16" : "w-56")}>
+        <aside className={cn("hidden shrink-0 border-r border-border bg-background transition-[width] lg:block", sidebarCollapsed ? "w-16" : "w-56")}>
           <div className={cn("border-b border-border", sidebarCollapsed ? "p-3" : "p-4")}>
             <div className="flex items-center justify-between gap-2">
               {!sidebarCollapsed ? (
@@ -116,7 +116,7 @@ function SettingsShellContent({ activeId, title, description, children }) {
                     );
                     return (
                       <Link key={item.id} href={item.href} className={cn(classes, sidebarCollapsed && "justify-center px-2")} title={sidebarCollapsed ? item.title : undefined} aria-label={sidebarCollapsed ? item.title : undefined}>
-                        <Icon className="h-4 w-4 flex-shrink-0" />
+                        <Icon className="h-4 w-4 shrink-0" />
                         {!sidebarCollapsed ? item.title : null}
                       </Link>
                     );

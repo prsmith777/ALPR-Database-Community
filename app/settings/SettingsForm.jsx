@@ -995,7 +995,7 @@ export default function SettingsForm({
                     {renderSection()}
 
                     {/* Save Button */}
-                    <div className="sticky bottom-0 z-10 -mx-4 -mb-4 flex justify-start border-t border-border bg-background/95 px-4 py-4 shadow-[0_-8px_24px_-18px_rgba(0,0,0,0.45)] backdrop-blur sm:-mx-8 sm:-mb-8 sm:px-8">
+                    <div className="sticky bottom-0 z-10 -mx-4 -mb-4 flex justify-start border-t border-border bg-background/95 px-4 py-4 shadow-[0_-8px_24px_-18px_rgba(0,0,0,0.45)] backdrop-blur-sm sm:-mx-8 sm:-mb-8 sm:px-8">
                       <Button
                         type="submit"
                         disabled={isPending}

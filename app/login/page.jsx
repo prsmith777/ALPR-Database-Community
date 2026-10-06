@@ -73,7 +73,7 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="h-[100dvh] flex flex-col items-center justify-center bg-gradient-to-b from-background to-background/95 overflow-hidden">
+    <div className="h-dvh flex flex-col items-center justify-center bg-linear-to-b from-background to-background/95 overflow-hidden">
       <Image
         src="/grid.svg"
         className="absolute bottom-0 w-full -z-10 invert"

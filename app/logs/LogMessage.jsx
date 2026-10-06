@@ -35,7 +35,7 @@ function InlineFieldPill({ children, fieldKey, onReveal }) {
   return (
     <button
       type="button"
-      className="max-w-80 shrink-0 truncate rounded border border-border bg-muted/40 px-1.5 py-0.5 text-[10px] leading-4 text-muted-foreground transition-colors hover:border-foreground/40 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+      className="max-w-80 shrink-0 truncate rounded border border-border bg-muted/40 px-1.5 py-0.5 text-[10px] leading-4 text-muted-foreground transition-colors hover:border-foreground/40 hover:text-foreground focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring"
       onClick={() => onReveal(fieldKey)}
       aria-label={`Show ${fieldKey} in log details`}
       title={`Show ${fieldKey} in log details`}
@@ -236,7 +236,7 @@ export default function LogMessage({ log, expanded = false, onExpandedChange }) 
                 key={key}
                 id={`${fieldsId}-field-${index}`}
                 tabIndex={-1}
-                className={`block rounded-sm px-1 outline-none transition-colors ${
+                className={`block rounded-sm px-1 outline-hidden transition-colors ${
                   highlightedField === key
                     ? "bg-primary/15 ring-1 ring-inset ring-primary/40"
                     : ""

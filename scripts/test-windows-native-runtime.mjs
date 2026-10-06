@@ -69,6 +69,10 @@ Module._resolveFilename=function(request,parent,...rest){
     const error=new Error('Packaged runtime attempted to load a file from the build checkout: '+request);error.code='MODULE_NOT_FOUND';throw error;
   }
   const resolved=original.call(this,request,parent,...rest);
+  const normalized=resolved.replaceAll(String.fromCharCode(92),"/");
+  if(["/node_modules/braces/","/node_modules/micromatch/","/next/dist/compiled/@vercel/nft/"].some(part=>normalized.includes(part))){
+    throw new Error('Packaged runtime attempted to load a build-only glob dependency: '+request);
+  }
   if(path.isAbsolute(resolved)&&within(source,resolved)&&!within(bundle,resolved)){
     const error=new Error('Packaged runtime resolved a file outside its bundle: '+request);error.code='MODULE_NOT_FOUND';throw error;
   }

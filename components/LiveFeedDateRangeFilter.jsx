@@ -85,7 +85,7 @@ export default function LiveFeedDateRangeFilter({
         </Button>
       </PopoverTrigger>
       <PopoverContent
-        className="max-h-[var(--radix-popover-content-available-height)] w-[520px] overflow-y-auto overscroll-contain p-0"
+        className="max-h-(--radix-popover-content-available-height) w-[520px] overflow-y-auto overscroll-contain p-0"
         align="start"
         collisionPadding={16}
         sticky="always"

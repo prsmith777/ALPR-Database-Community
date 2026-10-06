@@ -16,7 +16,7 @@ export function NotificationRulesWorkspace({ builderOverview, operationsOverview
   return (
     <div>
       <Tabs value={routeTab.active} onValueChange={routeTab.navigate} className="space-y-5">
-        <TabsList className="grid h-auto w-full grid-cols-2 p-1 sm:w-[28rem]">
+        <TabsList className="grid h-auto w-full grid-cols-2 p-1 sm:w-md">
           <TabsTrigger value="rules" className="gap-2 py-2"><ListChecks className="h-4 w-4" />Rules</TabsTrigger>
           <TabsTrigger value="activity" className="gap-2 py-2"><Activity className="h-4 w-4" />Activity & delivery</TabsTrigger>
         </TabsList>

@@ -68,7 +68,7 @@ function FilterSelect({ label, value, onChange, children }) {
       <select
         value={value}
         onChange={(event) => onChange(event.target.value)}
-        className="h-9 rounded-md border border-border bg-background px-3 text-sm text-foreground shadow-sm"
+        className="h-9 rounded-md border border-border bg-background px-3 text-sm text-foreground shadow-xs"
       >
         {children}
       </select>
@@ -231,7 +231,7 @@ export default function LogViewer({
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <form onSubmit={apply} className="flex-shrink-0 border-b bg-background">
+      <form onSubmit={apply} className="shrink-0 border-b bg-background">
         <div className="flex min-h-12 flex-wrap items-center gap-2 px-4 py-2">
           <Button
             type="button"
@@ -511,7 +511,7 @@ export default function LogViewer({
           )}
         </div>
 
-        <div className="flex flex-shrink-0 items-center justify-between border-t px-4 py-2">
+        <div className="flex shrink-0 items-center justify-between border-t px-4 py-2">
           <Button
             type="button"
             size="sm"
