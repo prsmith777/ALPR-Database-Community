@@ -12,7 +12,7 @@ WSL. It is not yet a published or certified Windows release.
 | Target | Build/model evidence | Remaining acceptance |
 | --- | --- | --- |
 | Windows 10 22H2 x64, build 19045 | Supervised Pro VM installation, sign-in, Settings, LAN access, Blue Iris connection and plate ingestion reported working across reboot; post-reboot remote health HTTP check passed | Service ACL review, LAN disable check, remaining image/AI workflows, other integrations, update, rollback and uninstall |
-| Maintained Windows 11 x64 | Locked dependencies, standalone build and packaged CPU inference verified locally | Clean VM installation, service ACLs, reboot, integration, update and rollback |
+| Windows 11 x64 | Supervised Home installation; protected service accounts, directory ACLs, owned application listener and loopback-only database verified | Reboot, integration, update, rollback and uninstall |
 | Home, Pro, Enterprise, Education | Same desktop installer; no edition-specific feature dependency | Edition acceptance on the two OS baselines |
 
 Windows Server, ARM64, 32-bit Windows, and LTSC certification are outside this
@@ -22,8 +22,11 @@ Windows 10 compatibility does not extend Microsoft's Windows 10 support period.
 
 The supervised Windows 10 reboot result used the earlier delayed automatic
 startup setting. New installers use normal automatic startup with a PostgreSQL
-readiness check. That corrected startup path still requires a desktop reboot
-acceptance test. Existing installations retain their previous service settings.
+readiness check and verify the actual Windows service configuration. WinSW
+2.12 treats the presence of its `delayedAutoStart` XML element as enabled,
+including text `false`; new installers omit that element. Preview repairs also
+clear the delayed startup flag on the existing owned application service.
+The corrected startup path still requires a desktop reboot acceptance test.
 
 The packaged startup correction from commit `fa4799b7d1fd` passed an isolated
 Windows runtime test with PostgreSQL 17. It withheld the app while the database

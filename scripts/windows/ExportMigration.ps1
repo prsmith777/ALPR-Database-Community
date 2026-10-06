@@ -24,6 +24,12 @@ try {
     $logRoot = Join-Path "$env:ProgramData\ALPR Community\management" ('migration-log-' + [Guid]::NewGuid().ToString('N'))
     Protect-SetupDirectory $logRoot
     $env:ALPR_WINDOWS_INSTALLATION = Join-Path $root 'installation.json'
+    $installation = Get-Content -Raw -LiteralPath $env:ALPR_WINDOWS_INSTALLATION | ConvertFrom-Json
+    if ($installation.installRoot -ne $root -or $installation.profile -ne 'windows-native' -or
+        $installation.current -notmatch '^\d+\.\d+\.\d+-[0-9a-f]{12}$') { throw 'Invalid protected ALPR installation' }
+    # Migration dependencies live beside the selected release's app, rather
+    # than beside the fixed host shortcuts copied during initial installation.
+    $release = Assert-SetupDirectory (Join-Path $root ('releases\' + $installation.current))
     $form = New-Object Windows.Forms.Form
     $form.Text = 'ALPR Migration Backup'; $form.Width = 540; $form.Height = 170
     $form.StartPosition = 'CenterScreen'; $form.ControlBox = $false
@@ -33,8 +39,8 @@ try {
     $bar = New-Object Windows.Forms.ProgressBar
     $bar.SetBounds(20,75,480,20); $bar.Style = 'Marquee'; $bar.MarqueeAnimationSpeed = 30
     $form.Controls.AddRange(@($label,$bar)); $form.Show()
-    $arguments = @(('"' + (Join-Path $root 'host\windows-migration.mjs') + '"'),'export',('"' + $destination + '"'))
-    $process = Start-Process -FilePath (Join-Path $root 'runtime\node.exe') -ArgumentList $arguments -PassThru -WindowStyle Hidden -RedirectStandardOutput (Join-Path $logRoot 'output.log') -RedirectStandardError (Join-Path $logRoot 'error.log')
+    $arguments = @(('"' + (Join-Path $release 'host\windows-migration.mjs') + '"'),'export',('"' + $destination + '"'))
+    $process = Start-Process -FilePath (Join-Path $release 'runtime\node.exe') -ArgumentList $arguments -PassThru -WindowStyle Hidden -RedirectStandardOutput (Join-Path $logRoot 'output.log') -RedirectStandardError (Join-Path $logRoot 'error.log')
     while (-not $process.HasExited) { [Windows.Forms.Application]::DoEvents(); Start-Sleep -Milliseconds 200; $process.Refresh() }
     $process.WaitForExit()
     if ($process.ExitCode -ne 0) { throw "The backup could not complete. Your source data is preserved. Keep the diagnostic log: $logRoot" }

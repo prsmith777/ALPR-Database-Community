@@ -4,7 +4,7 @@ import { cp, mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import net from "node:net";
-import { spawn } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { once } from "node:events";
 import { fileURLToPath } from "node:url";
 import { nativeRunner } from "./windows-deployment.mjs";
@@ -213,6 +213,22 @@ Module._resolveFilename=function(request,parent,...rest){
   assert.equal(saved.length,1); assert.equal(saved[0].toleranceMs,2000); assert.equal(saved[0].expectedDeltaMs,0); assert.equal(saved[0].sourceMode,"lpr_camera"); assert.equal(saved[0].sourceCameraShortName,"SynthLPR");
   assert.equal(sql("SELECT count(*) FROM public.vehicle_overview_pair_profiles WHERE enabled AND plate_camera_name='Synthetic Windows' AND direction_label='Arriving';"),"1");
   console.log("Packaged authenticated actions passed direction save, overview-to-LPR source switching, exact reload persistence, and one active primary source.");
+  // A browser keeps this authenticated live feed open indefinitely. Shutdown
+  // must finish the response before Next.js waits for its HTTP server to close.
+  const liveFeed = await fetch(base + "/api/sse", {headers:{cookie}});
+  assert.equal(liveFeed.status,200,"The authenticated live feed must be available");
+  const liveReader = liveFeed.body.getReader();
+  assert.equal((await liveReader.read()).done,false,"Keep a real live response active during shutdown");
+  const cleanExit = once(server,"exit",{signal:AbortSignal.timeout(8000)});
+  server.send("stop");
+  await cleanExit.catch((error) => { throw new Error("Native shutdown timed out with an authenticated live feed still connected", {cause:error}); });
+  assert.equal(server.exitCode,0,"Shutdown with a live browser feed must exit cleanly");
+  let streamClosed = false;
+  for (let remaining=0; remaining<10; remaining++) {
+    if ((await liveReader.read()).done) { streamClosed = true; break; }
+  }
+  assert.ok(streamClosed,"Shutdown must finish the live response after any queued events");
+  console.log("Packaged runtime shut down cleanly with an authenticated live browser feed still connected.");
   assert.ok(!output.includes(secret),"Runtime logs must not expose test credentials");
   console.log("Native PostgreSQL 17 + standalone Windows runtime passed health, chosen-password sign-in, all " + settingsRoutes.length + " Settings pages without build-checkout access, auth persistence, synthetic ingestion, portable stored image, missing-key refusal, and schema checks.");
 } finally {
@@ -220,7 +236,12 @@ Module._resolveFilename=function(request,parent,...rest){
     const exited = once(server,"exit");
     server.send("stop");
     await Promise.race([exited,new Promise((resolve) => setTimeout(resolve,15_000))]);
-    if (server.exitCode === null) { server.kill(); await exited; }
+    if (server.exitCode === null) {
+      // Only the known disposable fixture tree; never kill unrelated Node apps.
+      if (process.platform === "win32") spawnSync("taskkill",["/PID",String(server.pid),"/T","/F"],{windowsHide:true});
+      else server.kill();
+      await exited;
+    }
   }
   if (databaseStarted) pg("pg_ctl",["-D",database,"-w","-m","fast","stop"]);
   // This directory was created by mkdtemp for this test, never an installation.

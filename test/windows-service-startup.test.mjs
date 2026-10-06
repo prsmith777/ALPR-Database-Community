@@ -95,6 +95,6 @@ test("startup refuses remote databases and malformed readiness limits", async ()
 
 test("new installs use normal automatic startup while retaining the database dependency", async () => {
   const source = await readFile(new URL("../scripts/windows/Install.ps1", import.meta.url), "utf8");
-  assert.match(source, /<depend>ALPRCommunityDatabase<\/depend><startmode>Automatic<\/startmode><delayedAutoStart>false<\/delayedAutoStart>/);
-  assert.doesNotMatch(source, /<delayedAutoStart>true<\/delayedAutoStart>/);
+  assert.match(source, /<depend>ALPRCommunityDatabase<\/depend><startmode>Automatic<\/startmode>/);
+  assert.doesNotMatch(source, /<delayedAutoStart[\s>\/]/);
 });

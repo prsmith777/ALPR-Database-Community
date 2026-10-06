@@ -239,10 +239,15 @@ try {
     $xmlHost = [Security.SecurityElement]::Escape((Join-Path $installPath 'host\windows-service.mjs'))
     $xmlInstallation = [Security.SecurityElement]::Escape((Join-Path $installPath 'installation.json'))
     $xmlLogs = [Security.SecurityElement]::Escape((Join-Path $dataPath 'logs'))
-    $xml = "<service><id>ALPRCommunityApp</id><name>ALPR Community</name><description>Native ALPR Community application</description><executable>$xmlNode</executable><arguments>&quot;$xmlHost&quot; &quot;$xmlInstallation&quot;</arguments><workingdirectory>$([Security.SecurityElement]::Escape($installPath))</workingdirectory><serviceaccount><domain>NT AUTHORITY</domain><user>LocalService</user></serviceaccount><depend>ALPRCommunityDatabase</depend><startmode>Automatic</startmode><delayedAutoStart>false</delayedAutoStart><onfailure action='restart' delay='10 sec'/><stoptimeout>60 sec</stoptimeout><logpath>$xmlLogs</logpath><log mode='roll-by-size'><sizeThreshold>10240</sizeThreshold><keepFiles>5</keepFiles></log></service>"
+    $xml = "<service><id>ALPRCommunityApp</id><name>ALPR Community</name><description>Native ALPR Community application</description><executable>$xmlNode</executable><arguments>&quot;$xmlHost&quot; &quot;$xmlInstallation&quot;</arguments><workingdirectory>$([Security.SecurityElement]::Escape($installPath))</workingdirectory><serviceaccount><domain>NT AUTHORITY</domain><user>LocalService</user></serviceaccount><depend>ALPRCommunityDatabase</depend><startmode>Automatic</startmode><onfailure action='restart' delay='10 sec'/><stoptimeout>60 sec</stoptimeout><logpath>$xmlLogs</logpath><log mode='roll-by-size'><sizeThreshold>10240</sizeThreshold><keepFiles>5</keepFiles></log></service>"
     Write-Utf8 (Join-Path $installPath 'services\ALPRCommunityApp.xml') $xml
     Invoke-Native $serviceFile @('install')
     $appRegistered = $true
+    # WinSW 2.12 enables delayed startup whenever its XML element exists,
+    # including when its text is "false". Omit the element and verify SCM state.
+    Invoke-Native "$env:SystemRoot\System32\sc.exe" @('config','ALPRCommunityApp','start=','auto')
+    $startup = Get-ItemProperty 'HKLM:\SYSTEM\CurrentControlSet\Services\ALPRCommunityApp'
+    if ($startup.Start -ne 2 -or $startup.DelayedAutoStart) { throw 'ALPR automatic startup could not be verified' }
     Invoke-Native "$env:SystemRoot\System32\sc.exe" @('sidtype','ALPRCommunityApp','unrestricted')
     $appSid = Resolve-ServiceSid 'ALPRCommunityApp'
     $databaseCodeSid = ''

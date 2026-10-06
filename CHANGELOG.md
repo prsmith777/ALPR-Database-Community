@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Close active live-feed responses during server shutdown so a browser left open cannot hold service maintenance until the wrapper timeout.
+- Run Windows migration backup from the selected release so its bundled dependencies resolve after installation; preview repair refreshes the shortcut launcher while retaining its previous copy.
+
+- Correct WinSW 2.12's presence-based delayed-start setting: omit the XML element, enforce normal automatic startup and verify Windows service configuration in setup and preview repair.
+
 - Update available security fixes for image processing, IP parsing, source maps, selector parsing, and brace expansion; retain the dependency gate for the separately unpatched braces advisory.
 - Keep checked-out source line endings consistent across operating systems and exercise logical migration with the native Windows CI runtime.
 

@@ -362,7 +362,18 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           node scripts/install-openvino-runtime.mjs
       - name: Run Community and native lifecycle tests
-        run: yarn test
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path .native-dependencies | Out-Null
+          node --test --test-concurrency=1 --test-reporter=spec --test-reporter=tap --test-reporter-destination=stdout --test-reporter-destination=.native-dependencies/windows-native-tests.tap test/*.test.mjs
+      - name: Keep native test diagnostics
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: community-windows-test-diagnostics
+          path: .native-dependencies/windows-native-tests.tap
+          retention-days: 7
+          if-no-files-found: warn
       - name: Verify Community sanitation
         run: yarn test:sanitize
       - name: Typecheck
