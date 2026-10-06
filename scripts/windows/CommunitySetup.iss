@@ -70,6 +70,7 @@ Source: "{#PackageRoot}\LICENSE"; DestDir: "{app}"; Flags: ignoreversion
 
 [Icons]
 Name: "{commonprograms}\ALPR Database Community"; Filename: "http://localhost:3000"; Comment: "Open ALPR Database Community"
+Name: "{commonprograms}\ALPR Migration Backup"; Filename: "{sys}\WindowsPowerShell\v1.0\powershell.exe"; Parameters: "-NoProfile -STA -ExecutionPolicy Bypass -WindowStyle Hidden -File ""{autopf}\ALPR Community\host\ExportMigration.ps1"""; Comment: "Make a verified ALPR backup for another computer"
 Name: "{commondesktop}\ALPR Database Community"; Filename: "http://localhost:3000"; Comment: "Open ALPR Database Community"
 
 [Run]
@@ -84,6 +85,10 @@ Type: filesandordirs; Name: "{autopf}\ALPR Community"
 [Code]
 var
   PasswordPage: TInputQueryWizardPage;
+  InstallModePage: TInputOptionWizardPage;
+  MigrationPage: TInputDirWizardPage;
+  SourceStoppedCheck: TNewCheckBox;
+  ProgressPage: TOutputProgressWizardPage;
   NetworkAccessCheck: TNewCheckBox;
   WorkRoot: String;
   Prepared: Boolean;
@@ -119,9 +124,25 @@ end;
 
 procedure InitializeWizard;
 begin
-  PasswordPage := CreateInputQueryPage(wpWelcome, 'Install ALPR Database Community',
+  InstallModePage := CreateInputOptionPage(wpWelcome, 'Set up ALPR', 'Choose how to start',
+    'Create a new installation, or move a verified ALPR backup from Linux or Windows.', True, False);
+  InstallModePage.Add('Start with an empty database');
+  InstallModePage.Add('Move an existing ALPR database and images');
+  InstallModePage.SelectedValueIndex := 0;
+  MigrationPage := CreateInputDirPage(InstallModePage.ID, 'Move your ALPR data', 'Choose your migration backup folder',
+    'Select the folder containing migration-backup.json. The backup and original computer remain available for recovery.', False, '');
+  MigrationPage.Add('ALPR migration backup:');
+  SourceStoppedCheck := TNewCheckBox.Create(WizardForm);
+  SourceStoppedCheck.Parent := MigrationPage.Surface;
+  SourceStoppedCheck.Top := MigrationPage.Edits[0].Top + MigrationPage.Edits[0].Height + ScaleY(12);
+  SourceStoppedCheck.Width := MigrationPage.SurfaceWidth;
+  SourceStoppedCheck.Height := ScaleY(36);
+  SourceStoppedCheck.Caption := 'I have paused ingestion on the old ALPR installation';
+  ProgressPage := CreateOutputProgressPage('Setting up ALPR', 'Please wait while Setup completes the current step');
+  PasswordPage := CreateInputQueryPage(MigrationPage.ID, 'Install ALPR Database Community',
     'Choose your administrator password',
     'You will use this password to sign in to ALPR. Setup downloads the required components and starts ALPR automatically. An internet connection is required.'#13#10#13#10 +
+    'For migration, this replaces the old setup administrator password. Existing named accounts keep their passwords.'#13#10 +
     'This is a development preview for testing.');
   PasswordPage.Add('Administrator password (12 to 128 characters):', True);
   PasswordPage.Add('Confirm password:', True);
@@ -137,19 +158,33 @@ begin
     GetDateTimeString('yyyymmddhhnnss', #0, #0) + '-' + IntToStr(GetTickCount and $7FFFFFFF);
   WizardForm.FinishedLabel.Caption := 'ALPR is ready. Sign in with the password you chose in Setup. Leave the username blank during first-time setup.';
 #ifdef StartupProbe
+  ProgressPage.ProgressBar.Style := npbstMarquee;
+  ProgressPage.ProgressBar.Style := npbstNormal;
+  ProgressPage.SetProgress(37, 100);
   if (PasswordPage.Values[0] <> '') or
     (PasswordPage.Values[1] <> '') or (WorkRoot = '') or NetworkAccessCheck.Checked or
-    (NetworkAccessCheck.Top + NetworkAccessCheck.Height > PasswordPage.SurfaceHeight) then
+    (NetworkAccessCheck.Top + NetworkAccessCheck.Height > PasswordPage.SurfaceHeight) or
+    (SourceStoppedCheck.Top + SourceStoppedCheck.Height > MigrationPage.SurfaceHeight) or
+    SourceStoppedCheck.Checked or (InstallModePage.SelectedValueIndex <> 0) or
+    (ProgressPage.ProgressBar.Position <> 37) then
     RaiseException('Startup probe did not initialize the password page and workspace.');
   Log('ALPR_STARTUP_PROBE_PASSED');
   Abort;
 #endif
 end;
 
+function ShouldSkipPage(PageID: Integer): Boolean;
+begin
+  Result := (PageID = MigrationPage.ID) and (InstallModePage.SelectedValueIndex = 0);
+end;
+
 procedure CurPageChanged(CurPageID: Integer);
 begin
-  if CurPageID = PasswordPage.ID then
+  if CurPageID = PasswordPage.ID then begin
     WizardForm.NextButton.Caption := 'Install';
+    if InstallModePage.SelectedValueIndex = 1 then
+      WizardForm.FinishedLabel.Caption := 'Your ALPR data is ready. Existing named accounts use their existing username and password. For setup administrator login, leave the username blank and use the password chosen in Setup. Keep the source and backup until you have checked your records and images.';
+  end;
 end;
 
 function NextButtonClick(CurPageID: Integer): Boolean;
@@ -158,6 +193,11 @@ var
   I: Integer;
 begin
   Result := True;
+  if CurPageID = MigrationPage.ID then begin
+    Result := SourceStoppedCheck.Checked and FileExists(MigrationPage.Values[0] + '\migration-backup.json');
+    if not Result then MsgBox('Choose a completed ALPR migration backup and pause ingestion on the old installation.', mbError, MB_OK);
+    Exit;
+  end;
   if CurPageID <> PasswordPage.ID then Exit;
   Password := PasswordPage.Values[0];
   Result := (Length(Password) >= 12) and (Length(Password) <= 128) and
@@ -174,9 +214,15 @@ begin
   if Pos('ALPR_SETUP_ERROR:', S) = 1 then
     LastError := Copy(S, 18, Length(S));
   if Pos('ALPR_SETUP_PROGRESS:', S) = 1 then begin
+    ProgressPage.ProgressBar.Style := npbstMarquee;
+    ProgressPage.SetText(Copy(S, 21, Length(S)), 'Your existing backup and source data are preserved.');
     WizardForm.PreparingMemo.Lines.Text := Copy(S, 21, Length(S));
     WizardForm.StatusLabel.Caption := Copy(S, 21, Length(S));
     WizardForm.Refresh;
+  end;
+  if Pos('ALPR_SETUP_PERCENT:', S) = 1 then begin
+    ProgressPage.ProgressBar.Style := npbstNormal;
+    ProgressPage.SetProgress(StrToIntDef(Copy(S, 20, Length(S)), 0), 100);
   end;
 end;
 
@@ -193,6 +239,8 @@ begin
       '" -ManifestSha256 {#ManifestSha256}';
   if (Operation = 'prepare') and NetworkAccessCheck.Checked then
     Parameters := Parameters + ' -ListenOnNetwork';
+  if (Operation = 'prepare') and (InstallModePage.SelectedValueIndex = 1) then
+    Parameters := Parameters + ' -MigrationBackup "' + MigrationPage.Values[0] + '"';
   Result := ExecAndLogOutput(Powershell, Parameters, '', SW_HIDE,
     ewWaitUntilTerminated, ResultCode, @SetupOutput);
 end;
@@ -204,6 +252,10 @@ begin
   Result := '';
   if Prepared then Exit;
   InstallationRunning := True;
+  ProgressPage.SetProgress(0, 100);
+  ProgressPage.ProgressBar.Style := npbstMarquee;
+  ProgressPage.SetText('Preparing the application files…', '');
+  ProgressPage.Show;
   try
     ExtractTemporaryFile('Setup.ps1');
     ExtractTemporaryFile('Setup-Helpers.ps1');
@@ -232,6 +284,7 @@ begin
     PasswordPage.Values[1] := '';
     Prepared := True;
   finally
+    ProgressPage.Hide;
     InstallationRunning := False;
   end;
 end;
@@ -242,13 +295,27 @@ var
 begin
   if CurStep <> ssInstall then Exit;
   InstallationRunning := True;
+  ProgressPage.SetProgress(0, 100);
+  ProgressPage.ProgressBar.Style := npbstMarquee;
+  ProgressPage.SetText('Installing ALPR…', '');
+  ProgressPage.Show;
   try
     if not Prepared or not RunSetupOperation('install', ResultCode) or (ResultCode <> 0) then begin
       if LastError = '' then LastError := 'ALPR could not finish installing.';
       RaiseException(LastError + #13#10 + 'Its data has been preserved. Setup log: ' + ExpandConstant('{log}'));
     end;
   finally
+    ProgressPage.Hide;
     InstallationRunning := False;
+  end;
+end;
+
+procedure UninstallOutput(const S: String; const Error, FirstLine: Boolean);
+begin
+  Log(S);
+  if Pos('ALPR_SETUP_PROGRESS:', S) = 1 then begin
+    UninstallProgressForm.StatusLabel.Caption := Copy(S, 21, Length(S));
+    UninstallProgressForm.Refresh;
   end;
 end;
 
@@ -284,9 +351,16 @@ var
   ResultCode: Integer;
 begin
   if CurUninstallStep = usUninstall then begin
+    UninstallProgressForm.ProgressBar.Style := npbstMarquee;
+    UninstallProgressForm.StatusLabel.Caption := 'Stopping ALPR and preserving your data…';
     if not ExecAndLogOutput(Powershell, '-NoProfile -NonInteractive -ExecutionPolicy Bypass -File "' +
-      ExpandConstant('{app}\Uninstall.ps1') + '"', '', SW_HIDE, ewWaitUntilTerminated, ResultCode, nil) or (ResultCode <> 0) then
+      ExpandConstant('{app}\Uninstall.ps1') + '"', '', SW_HIDE, ewWaitUntilTerminated, ResultCode, @UninstallOutput) or (ResultCode <> 0) then
       RaiseException('ALPR services could not be removed. Application files and data have been preserved.');
+    UninstallProgressForm.StatusLabel.Caption := 'Removing program files. Your plate records and images are preserved…';
+  end;
+  if CurUninstallStep = usPostUninstall then begin
+    UninstallProgressForm.ProgressBar.Style := npbstNormal;
+    UninstallProgressForm.ProgressBar.Position := UninstallProgressForm.ProgressBar.Max;
   end;
   if CurUninstallStep = usDone then
     MsgBox('ALPR has been removed. Your plate records, images, settings and backups are kept in ProgramData for recovery.', mbInformation, MB_OK);

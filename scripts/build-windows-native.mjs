@@ -69,6 +69,9 @@ async function main() {
   // The external OpenVINO package must include its native DLLs in the final
   // runtime, irrespective of Next.js tracing of dynamic addon loading.
   await cp(path.join(root, "node_modules", "openvino-node"), path.join(destination, "app", "node_modules", "openvino-node"), { recursive: true });
+  for (const dependency of ["js-yaml", "argparse"]) {
+    await cp(path.join(root, "node_modules", dependency), path.join(destination, "app", "node_modules", dependency), { recursive: true });
+  }
   await mkdir(path.join(destination, "runtime"));
   await cp(process.execPath, path.join(destination, "runtime", "node.exe"));
   const response = await fetch(WINSW_URL, { signal: AbortSignal.timeout(60_000) });
@@ -85,14 +88,14 @@ async function main() {
     await writeFile(path.join(destination, "runtime", name), await license.text());
   }
   await mkdir(path.join(destination, "host"));
-  for (const file of ["windows-native-package.mjs", "windows-service.mjs", "windows-service-startup.mjs", "windows-maintenance.mjs", "windows-code-repair.mjs", "windows-deployment.mjs", "native-reid-upgrade-policy.mjs"]) {
+  for (const file of ["windows-native-package.mjs", "windows-service.mjs", "windows-service-startup.mjs", "windows-maintenance.mjs", "windows-code-repair.mjs", "windows-deployment.mjs", "native-reid-upgrade-policy.mjs", "windows-migration.mjs", "community-migration-bundle.mjs", "postgres-major-migration.mjs"]) {
     await cp(path.join(root, "scripts", file), path.join(destination, "host", file));
   }
   for (const file of ["schema.sql", "migrations.sql", "LICENSE"]) await cp(path.join(root, file), path.join(destination, file));
   await cp(path.join(root, "scripts", "windows", "Install.ps1"), path.join(destination, "Install.ps1"));
   await cp(path.join(root, "docs", "WINDOWS_NATIVE.md"), path.join(destination, "README-WINDOWS.md"));
   await cp(path.join(root, "scripts", "windows", "Service-Control.ps1"), path.join(destination, "host", "Service-Control.ps1"));
-  for (const file of ["Network.ps1","Network-Helpers.ps1","Setup-Helpers.ps1"]) {
+  for (const file of ["Network.ps1","Network-Helpers.ps1","Setup-Helpers.ps1","ExportMigration.ps1"]) {
     await cp(path.join(root,"scripts/windows",file),path.join(destination,"host",file));
   }
   await cp(path.join(root, "scripts", "openvino-runtime-probe.cjs"), path.join(destination, "app", "openvino-runtime-probe.cjs"));
@@ -101,7 +104,7 @@ async function main() {
   await copyDependencyLicenses(path.join(root, "node_modules"), path.join(destination, "dependency-licenses"));
   // Exercise all three AI models using the shipped Node.exe and native DLLs.
   run(path.join(destination, "runtime", "node.exe"), ["openvino-runtime-probe.cjs"], { cwd: path.join(destination, "app") });
-  run(path.join(destination, "runtime", "node.exe"), ["-e", "require('sharp'); require('bcrypt'); require('pg'); require('mqtt')"], { cwd: path.join(destination, "app") });
+  run(path.join(destination, "runtime", "node.exe"), ["-e", "require('sharp'); require('bcrypt'); require('pg'); require('mqtt'); require('js-yaml')"], { cwd: path.join(destination, "app") });
   const files = {};
   for (const file of await listPackageFiles(destination)) files[file] = await hashFile(path.join(destination, ...file.split("/")));
   await writeFile(path.join(destination, "windows-package.json"), JSON.stringify({

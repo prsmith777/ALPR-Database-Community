@@ -11,7 +11,8 @@ param(
     [switch]$CheckOnly,
     [switch]$ListenOnNetwork,
     [switch]$CopyPrerequisites,
-    [string]$AdministratorPasswordFile
+    [string]$AdministratorPasswordFile,
+    [string]$MigrationBackup
 )
 $ErrorActionPreference = 'Stop'
 $packageRoot = $PSScriptRoot
@@ -140,6 +141,9 @@ $node = Join-Path $packageRoot 'runtime\node.exe'
 if ((& $node -p 'process.versions.node').Split('.')[0] -ne '24') { throw 'Bundled Node.js must be version 24' }
 Push-Location (Join-Path $packageRoot 'app')
 try { Invoke-Native $node @('openvino-runtime-probe.cjs') } finally { Pop-Location }
+if ($MigrationBackup) {
+    Invoke-Native $node @((Join-Path $packageRoot 'host\community-migration-bundle.mjs'),'verify','--source',([IO.Path]::GetFullPath($MigrationBackup)))
+}
 if ($CheckOnly) { Write-Output 'Native Windows prerequisites and package checks passed. No changes made.'; return }
 $principal = New-Object Security.Principal.WindowsPrincipal([Security.Principal.WindowsIdentity]::GetCurrent())
 if (-not $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) { throw 'Run the installer in an elevated 64-bit PowerShell window' }
@@ -218,8 +222,16 @@ try {
         Start-Sleep -Seconds 1
     }
     if (-not $ready) { throw 'PostgreSQL did not become ready' }
-    foreach ($sql in @('schema.sql','migrations.sql')) {
-        Invoke-Native (Join-Path $PgBin 'psql.exe') @('-X','-h','127.0.0.1','-p',[string]$DatabasePort,'-U','postgres','-d','postgres','--set','ON_ERROR_STOP=1','--single-transaction','--file',(Join-Path $releasePath $sql))
+    if ($MigrationBackup) {
+        Write-Output 'ALPR_SETUP_PROGRESS:Restoring and validating your database, images and settings...'
+        $env:ALPR_WINDOWS_INSTALLATION = Join-Path $installPath 'installation.json'
+        $env:ALPR_WINDOWS_MIGRATION = 'ALPR_EMPTY_WINDOWS_TARGET'
+        Invoke-Native (Join-Path $installPath 'runtime\node.exe') @((Join-Path $installPath 'host\windows-migration.mjs'),'restore',$MigrationBackup)
+    } else {
+        Write-Output 'ALPR_SETUP_PROGRESS:Creating your new database...'
+        foreach ($sql in @('schema.sql','migrations.sql')) {
+            Invoke-Native (Join-Path $PgBin 'psql.exe') @('-X','-h','127.0.0.1','-p',[string]$DatabasePort,'-U','postgres','-d','postgres','--set','ON_ERROR_STOP=1','--single-transaction','--file',(Join-Path $releasePath $sql))
+        }
     }
     $serviceFile = Join-Path $installPath 'services\ALPRCommunityApp.exe'
     Copy-Item -LiteralPath (Join-Path $installPath 'runtime\winsw.exe') -Destination $serviceFile
@@ -242,6 +254,7 @@ try {
     Set-PrivateAcl $database $dbSid 'Modify'
     foreach ($name in @('auth','config','logs','storage','update-control')) { Set-PrivateAcl (Join-Path $dataPath $name) $appSid 'Modify' }
     Start-Service -Name ALPRCommunityApp
+    Write-Output 'ALPR_SETUP_PROGRESS:Starting ALPR and checking that it is ready...'
     $healthy = $false
     for ($attempt=0; $attempt -lt 60; $attempt++) {
         try {

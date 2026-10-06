@@ -43,6 +43,7 @@ import {
   addUnseenPlate,
 } from "@/lib/db";
 import { normalizePlateMatchingSettings } from "@/lib/plate-matching.mjs";
+import { normalizeVehicleImageSource, vehicleImageSourceData } from "@/lib/vehicle-image-source.mjs";
 import { getPlateReviewRepository } from "@/lib/plate-review-runtime.mjs";
 import {
   applyDisabledNotificationMigration,
@@ -1949,6 +1950,47 @@ export async function getBlueIrisVehicleFrameQueueStatus(input = {}) {
   } catch (error) {
     return visualSearchFailure(error, "Unable to load Blue Iris vehicle-frame status.");
   }
+}
+
+export async function getVehicleImageSourceSetup() {
+  await requirePermission("system.manage_settings");
+  try {
+    const runtime = await getBlueIrisVehicleFrameRuntime();
+    const [profiles, inventory] = await Promise.all([
+      runtime.repository.listOverviewPairProfiles(),
+      (await getPool()).query(`SELECT short_name, display_name FROM public.blue_iris_camera_inventory
+        WHERE present = TRUE AND enabled = TRUE ORDER BY display_name, short_name`),
+    ]);
+    return { success: true, data: {
+      profiles: profiles.filter((profile) => profile.source_role === "primary").map(vehicleImageSourceData),
+      cameras: inventory.rows.map((camera) => ({ name: camera.display_name, id: camera.short_name })),
+    } };
+  } catch { return { success: false, error: "Unable to load vehicle image setup." }; }
+}
+
+export async function saveVehicleImageSource(input = {}) {
+  const principal = await requirePermission("system.manage_settings");
+  let normalized;
+  try { normalized = normalizeVehicleImageSource(input); }
+  catch (error) { return { success: false, error: error.message }; }
+  try {
+    const setup = await (await getVehicleDirectionService()).getDirectionSetup(normalized.plateCameraName);
+    const camera = setup.profiles.find((profile) => profile.cameraName === normalized.plateCameraName);
+    if (!camera || ![camera.frontDirectionLabel, camera.rearDirectionLabel].includes(normalized.directionLabel)) {
+      return { success: false, error: "Save your camera direction labels first, then select one of those directions." };
+    }
+    const inventory = await (await getPool()).query(`SELECT display_name FROM public.blue_iris_camera_inventory
+      WHERE present = TRUE AND enabled = TRUE AND LOWER(BTRIM(short_name)) = LOWER(BTRIM($1))`,
+      [normalized.sourceCameraShortName]);
+    if (inventory.rows.length !== 1 || inventory.rows[0].display_name.trim().toLowerCase() !== normalized.sourceCameraName.toLowerCase()) {
+      return { success: false, error: "The selected camera does not match the Blue Iris camera list. Test the Blue Iris connection and try again." };
+    }
+    const runtime = await getBlueIrisVehicleFrameRuntime();
+    const saved = await runtime.repository.saveOverviewPairProfile({ ...normalized, replacePrimary: true }, principal);
+    runtime.worker.wake();
+    revalidatePath("/settings/vehicle-intelligence");
+    return { success: true, data: vehicleImageSourceData(saved) };
+  } catch { return { success: false, error: "Unable to save vehicle image setup. Your previous setup has been retained." }; }
 }
 
 export async function getVehicleOverviewSetup() {

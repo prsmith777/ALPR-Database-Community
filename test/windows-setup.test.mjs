@@ -40,7 +40,7 @@ function ps(script, env = {}) {
   });
 }
 test("graphical setup scripts parse with inbox PowerShell 5.1", {skip:!powershell}, () => {
-  const result = ps("$failures=0; foreach ($name in @('Setup.ps1','Setup-Helpers.ps1','Uninstall.ps1','Install.ps1')) { $tokens=$null; $errors=$null; [System.Management.Automation.Language.Parser]::ParseFile((Join-Path $PWD ('scripts/windows/' + $name)),[ref]$tokens,[ref]$errors) | Out-Null; $failures += @($errors).Count; $errors | ForEach-Object { Write-Output $_.Message } }; if($failures){exit 1}");
+  const result = ps("$failures=0; foreach ($name in @('Setup.ps1','Setup-Helpers.ps1','Uninstall.ps1','Install.ps1','ExportMigration.ps1')) { $tokens=$null; $errors=$null; [System.Management.Automation.Language.Parser]::ParseFile((Join-Path $PWD ('scripts/windows/' + $name)),[ref]$tokens,[ref]$errors) | Out-Null; $failures += @($errors).Count; $errors | ForEach-Object { Write-Output $_.Message } }; if($failures){exit 1}");
   assert.equal(result.status,0,result.stdout+result.stderr);
 });
 test("setup and native installer validate paths below hidden Windows directories", {skip:!powershell}, async (t) => {

@@ -28,6 +28,7 @@ foreach ($name in @('ALPRCommunityApp','ALPRCommunityDatabase')) {
 [void](Get-AlprNetworkRule ([int]$installation.environment.PORT))
 if ($CheckOnly) { Write-Output 'ALPR uninstall ownership checks passed.'; exit 0 }
 foreach ($name in $services) {
+    Write-Output "ALPR_SETUP_PROGRESS:Stopping and removing $name..."
     $service = Get-Service -Name $name
     if ($service.Status -ne 'Stopped') {
         Stop-Service -InputObject $service
@@ -40,4 +41,4 @@ Remove-AlprNetworkRule ([int]$installation.environment.PORT)
 # Preserve the protected metadata for a later guided reinstall/recovery. The
 # Inno uninstaller deletes only the verified code root; all ProgramData stays.
 Copy-Item -LiteralPath $file -Destination (Join-Path $data 'management\uninstalled-installation.json') -Force
-Write-Output 'ALPR services removed. Plate records, images, settings and backups are preserved.'
+Write-Output 'ALPR_SETUP_PROGRESS:Services removed. Removing program files; your data is preserved...'

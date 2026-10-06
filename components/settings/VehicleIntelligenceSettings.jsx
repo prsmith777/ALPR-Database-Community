@@ -8,6 +8,7 @@ import {
   saveVehicleDirectionProfile,
 } from "@/app/actions";
 import VehicleProcessingCard from "@/components/settings/VehicleProcessingCard";
+import VehicleImageSourceSettings from "@/components/settings/VehicleImageSourceSettings";
 import { SettingsShell } from "@/components/settings/SettingsShell";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -221,6 +222,7 @@ export default function VehicleIntelligenceSettings({ initialData }) {
           )}
         </CardContent>
       </Card>
+      {profile ? <VehicleImageSourceSettings key={`${profile.cameraName}:${profile.frontDirectionLabel}:${profile.rearDirectionLabel}`} profile={profile} /> : null}
     </SettingsShell>
   );
 }

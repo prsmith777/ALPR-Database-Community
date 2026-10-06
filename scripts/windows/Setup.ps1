@@ -4,7 +4,8 @@ param(
     [string]$PackageRoot,
     [string]$ManifestSha256,
     [string]$WorkRoot,
-    [switch]$ListenOnNetwork
+    [switch]$ListenOnNetwork,
+    [string]$MigrationBackup
 )
 $ErrorActionPreference = 'Stop'
 . (Join-Path $PSScriptRoot 'Setup-Helpers.ps1')
@@ -18,6 +19,10 @@ function Native([string]$Executable, [string[]]$Arguments) {
 try {
     if ($Operation -eq 'verify') {
         Test-SetupPayload $PackageRoot $ManifestSha256
+        if ($MigrationBackup) {
+            Progress 'Checking your database and image backup...'
+            Native (Join-Path $PackageRoot 'runtime\node.exe') @((Join-Path $PackageRoot 'host\community-migration-bundle.mjs'),'verify','--source',$MigrationBackup)
+        }
         Write-Output 'Application payload verified.'
         exit 0
     }
@@ -45,6 +50,11 @@ try {
         [IO.File]::WriteAllText($recordFile, ($record | ConvertTo-Json), (New-Object Text.UTF8Encoding($false)))
         $payload = Join-Path $work 'payload'
         Copy-Item -LiteralPath $PackageRoot -Destination $payload -Recurse
+        if ($MigrationBackup) {
+            Progress 'Copying and verifying your migration backup...'
+            Native (Join-Path $payload 'runtime\node.exe') @((Join-Path $payload 'host\community-migration-bundle.mjs'),'stage','--source',$MigrationBackup,'--output',(Join-Path $work 'migration'))
+            $record.migrationBackup = Join-Path $work 'migration'
+        }
         $pins = Get-Content -Raw -LiteralPath (Join-Path $PSScriptRoot 'setup-prerequisites.json') | ConvertFrom-Json
         Progress 'Downloading the required database tools...'
         $pgArchive = Join-Path $work 'postgresql.zip'
@@ -94,6 +104,7 @@ try {
         '-AllowPreview','-CopyPrerequisites','-PgBin',$record.pgBin,'-FfmpegBin',$record.ffmpegBin,
         '-AdministratorPasswordFile',(Join-Path $work 'administrator-password.txt'))
     if ($record.listenOnNetwork -eq $true) { $installArguments += '-ListenOnNetwork' }
+    if ($record.migrationBackup) { $installArguments += @('-MigrationBackup',$record.migrationBackup) }
     Native "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe" $installArguments
     $controller = "$env:ProgramFiles\ALPR Community\host\Service-Control.ps1"
     Native "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe" @(

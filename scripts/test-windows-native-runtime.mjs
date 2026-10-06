@@ -174,6 +174,35 @@ Module._resolveFilename=function(request,parent,...rest){
   await readFile(path.join(data,"storage",...stored.split("/")));
   assert.equal((await fetch(base + "/api/plate-reads",{method:"POST",headers:{"content-type":"application/json"},body:"{}"})).status,401);
   assert.equal(sql("SELECT count(*) FROM public.schema_migrations WHERE version = '2026092701_native_reid';"),"1");
+  // Exercise the shipped server actions with the authenticated browser session,
+  // then reload through the read action rather than relying on an optimistic UI.
+  async function action(name, input) {
+    const id = Object.entries(actions.node).find(([,entry]) => entry.exportedName === name)?.[0];
+    assert.ok(id, "Packaged action must exist: " + name);
+    const response = await fetch(base + "/settings/vehicle-intelligence", { method:"POST",
+      headers:{ origin:base, cookie, "next-action":id, "content-type":"text/plain;charset=UTF-8", accept:"text/x-component" },
+      body:JSON.stringify([input]) });
+    const text = await response.text();
+    assert.equal(response.status,200,"Server action request failed: " + name);
+    const result = text.split("\n").filter((line) => /^\d+:\{/.test(line)).map((line) => {
+      try { return JSON.parse(line.slice(line.indexOf(":") + 1)); } catch { return null; }
+    }).find((value) => value && typeof value.success === "boolean");
+    assert.ok(result, "Server action returned no result: " + name);
+    assert.equal(result.success,true,result.error || name);
+    return result.data;
+  }
+  sql("INSERT INTO public.blue_iris_camera_inventory(short_name,display_name) VALUES ('SynthLPR','Synthetic Windows'),('SynthWide','Synthetic overview');");
+  await action("saveVehicleDirectionProfile", { cameraName:"Synthetic Windows", frontDirectionLabel:"Arriving", rearDirectionLabel:"Leaving",
+    enabled:true, minimumConfidence:0.68, blueIrisMotionEnabled:true, blueIrisFrontTriggerType:"MOTION_A>B", blueIrisRearTriggerType:"MOTION_B>A" });
+  const source = { plateCameraName:"Synthetic Windows", directionLabel:"Arriving", sourceMode:"overview",
+    sourceCameraName:"Synthetic overview", sourceCameraShortName:"SynthWide", expectedDeltaMs:0, toleranceMs:1500, enabled:true };
+  await action("saveVehicleImageSource",source);
+  await action("saveVehicleImageSource",{...source,sourceMode:"lpr_camera",sourceCameraName:"Synthetic Windows",sourceCameraShortName:"SynthLPR"});
+  const setup = await action("getVehicleImageSourceSetup",{});
+  const saved = setup.profiles.filter((profile) => profile.plateCameraName === source.plateCameraName && profile.directionLabel === "Arriving" && profile.enabled);
+  assert.equal(saved.length,1); assert.equal(saved[0].sourceMode,"lpr_camera"); assert.equal(saved[0].sourceCameraShortName,"SynthLPR");
+  assert.equal(sql("SELECT count(*) FROM public.vehicle_overview_pair_profiles WHERE enabled AND plate_camera_name='Synthetic Windows' AND direction_label='Arriving';"),"1");
+  console.log("Packaged authenticated actions passed direction save, overview-to-LPR source switching, exact reload persistence, and one active primary source.");
   assert.ok(!output.includes(secret),"Runtime logs must not expose test credentials");
   console.log("Native PostgreSQL 17 + standalone Windows runtime passed health, chosen-password sign-in, all " + settingsRoutes.length + " Settings pages without build-checkout access, auth persistence, synthetic ingestion, portable stored image, missing-key refusal, and schema checks.");
 } finally {

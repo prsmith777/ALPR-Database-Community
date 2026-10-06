@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+## 0.1.47 — Portable vehicle images and Windows migration preview (2026-10-05)
+
+- Add a shared Vehicle image source setup for each saved camera direction. Use whole-vehicle recordings from the LPR camera itself or an explicitly selected overview camera; changing the primary source disables the prior mapping transactionally.
+- Require usable color, temporal association, and a complete, unambiguous vehicle for LPR recording frames before the existing canonical crop and ReID pipeline accepts them.
+- Add verified portable migration bundles and a native Windows setup import option for supported Original ALPR and Community databases on PostgreSQL 13 or 17. Preserve original records and image files, validate exact restored counts and checksums, migrate the target schema, and reset destination setup login while retaining integration keys and named accounts.
+- Add an installed Windows Migration Backup shortcut and real download percentages with animated installation and removal progress.
+- Advance the embedded manual and document Linux-to-Windows backup preparation, destination validation, and source retention.
+
 ## 0.1.46 — Resilient Community updates (2026-09-29)
 
 - Retry transient DNS, timeout, connection, rate-limit, and server failures while downloading the pinned OpenVINO runtime during an image build; permanent client responses still fail immediately and the downloaded archive remains checksum verified.

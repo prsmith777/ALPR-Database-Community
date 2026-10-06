@@ -89,7 +89,16 @@ function Get-SetupDownload([object]$Pin, [string]$Destination) {
             $response = $request.GetResponse()
             $inputStream = $response.GetResponseStream()
             $outputStream = [IO.File]::Create($Destination)
-            $inputStream.CopyTo($outputStream)
+            $buffer = New-Object byte[] 1048576
+            $downloaded = [long]0; $lastPercent = -1
+            while (($read = $inputStream.Read($buffer,0,$buffer.Length)) -gt 0) {
+                $outputStream.Write($buffer,0,$read)
+                $downloaded += $read
+                if ($response.ContentLength -gt 0) {
+                    $percent = [Math]::Min(100,[int]([Math]::Floor(100.0 * $downloaded / $response.ContentLength)))
+                    if ($percent -ne $lastPercent) { Write-Output "ALPR_SETUP_PERCENT:$percent"; $lastPercent = $percent }
+                }
+            }
             $outputStream.Dispose(); $outputStream = $null
             if ((Get-FileHash -LiteralPath $Destination -Algorithm SHA256).Hash.ToLowerInvariant() -ne $Pin.sha256) { throw 'Downloaded component failed verification' }
             return

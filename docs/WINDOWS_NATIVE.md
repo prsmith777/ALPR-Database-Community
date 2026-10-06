@@ -43,10 +43,13 @@ For a clean test computer:
 
 1. Copy the maintainer-provided `ALPR-Community-...-Setup.exe` into Windows.
 2. Double-click it and approve the Windows administrator prompt.
-3. Choose and confirm an ALPR administrator password, then click **Install**.
+3. Choose **Start with an empty database**, or choose **Move an existing ALPR
+   database and images** and select its verified migration backup folder.
+   For migration, pause ingestion on the old installation before continuing.
+4. Choose and confirm an ALPR administrator password, then click **Install**.
    Select **Allow access from other devices on my local network** if cameras
    or another computer will connect to ALPR.
-4. Wait for setup to finish. Click **Finish** to open ALPR in the browser.
+5. Wait for setup to finish. Click **Finish** to open ALPR in the browser.
    Sign in with that password; leave the username blank on the initial login.
 
 An internet connection is required. Setup downloads PostgreSQL 17.10 and FFmpeg
@@ -60,6 +63,9 @@ Setup checks the OS, package inventory, ports, and all three recognition models
 before creating ALPR services or its database. Download/extraction scratch space
 is private to the installer and removed when it exits. The chosen password is
 passed through a private temporary file rather than a command-line argument.
+Downloads show their actual percentage when the server supplies a size.
+Extraction, database restore, service startup, and removal show animated progress
+with the current operation because those steps have no reliable percentage.
 
 An **ALPR Database Community** shortcut opens the application. Windows **Apps &
 features** can remove the app and its services while preserving plate records,
@@ -317,15 +323,90 @@ protected release destinations, fixed operations, and canonical release checks.
 
 ## Cross-platform import
 
+The graphical setup imports a portable **folder**, containing:
+
+- `postgres.dump` and its source-schema, PostgreSQL-version, row-count, and
+  SHA-256 verification manifest;
+- `storage/images`, `storage/thumbnails`, and `storage/derived`, where present;
+- optional `config/settings.yaml` and `auth/auth.json`;
+- `migration-backup.json`, sealing the exact file inventory and checksums.
+
+Supported sources match the Linux wizard: Original ALPR v0.1.9-compatible or
+Community v0.1.20 and later, on PostgreSQL 13 or 17. Unknown schemas, links,
+Windows-invalid filenames, changed backups, and existing destination data are
+refused. Copy the entire completed folder to Windows, including the manifests.
 Do not copy PostgreSQL's physical data directory between operating systems.
-Use a logical custom-format dump from an acknowledged stopped source, its
-checksum, and an independent image/configuration/authentication export.
-Restore into an isolated Windows PostgreSQL 17 installation first, migrate the
-schema, and compare exact table counts and image manifests before activation.
-Stored image references use forward slashes; legacy backslash references are
-resolved safely on either OS. Credentials and NTFS ACLs must be recreated for
-the destination. The existing guided Linux migration wizard does not install
-Windows services.
+
+### Create the backup on Linux
+
+This step is performed by the source administrator. Keep the original database
+and storage, stop its ALPR app, ingestion, jobs, and other writers, and leave
+PostgreSQL running. Use a separate current Community checkout with Node.js 24
+and PostgreSQL 17 client tools. Confirm the actual source endpoint and mounted
+storage/config/auth paths before running the export. The database password
+must be supplied privately through the environment, never in a command argument.
+
+~~~bash
+export ALPR_MIGRATION_SOURCE_HOST='SOURCE_DATABASE_HOST'
+export ALPR_MIGRATION_SOURCE_PORT='SOURCE_DATABASE_PORT'
+export ALPR_MIGRATION_SOURCE_DATABASE='postgres'
+export ALPR_MIGRATION_SOURCE_USER='postgres'
+read -rsp 'Source database password: ' ALPR_MIGRATION_SOURCE_PASSWORD; echo
+export ALPR_MIGRATION_SOURCE_PASSWORD
+export ALPR_MIGRATION_SOURCE_SSLMODE='prefer'
+export ALPR_MIGRATION_SOURCE_QUIESCED='ALPR_SOURCE_QUIESCED'
+export ALPR_MIGRATION_DUMP_PATH='/PRIVATE_BACKUP_PARENT/postgres.dump'
+node scripts/postgres-major-migration.mjs dump
+node scripts/community-migration-bundle.mjs create \
+  --dump "$ALPR_MIGRATION_DUMP_PATH" \
+  --storage '/ABSOLUTE_SOURCE_STORAGE' \
+  --config '/ABSOLUTE_SOURCE_CONFIG/settings.yaml' \
+  --auth '/ABSOLUTE_SOURCE_AUTH/auth.json' \
+  --output '/PRIVATE_BACKUP_PARENT/alpr-windows-migration'
+unset ALPR_MIGRATION_SOURCE_PASSWORD
+~~~
+
+Use a new, private backup parent outside the checkout. Replace the endpoint and
+absolute path placeholders; omit `--config` or `--auth` only when that file does
+not exist. If the Linux app uses `BLUEIRIS_*` environment overrides, supply those
+same effective values privately to the bundle command so its connection and
+password are preserved. Supply the source's IANA `TZ` value to preserve its
+installation time zone. The Linux `.env` and old database credentials are not
+copied into the Windows installation. Treat the completed backup as private:
+it contains plate data, credentials, integration keys, and password hashes.
+
+### Create the backup on Windows
+
+On a native installation that includes this feature, open **ALPR Migration
+Backup** from Start, approve elevation, choose the backup location, and confirm
+the brief ingestion pause. The tool stops the owned ALPR service, creates and
+verifies the dump and file bundle under the shared maintenance lock, and restarts
+the source service. Before importing elsewhere, pause source ingestion again.
+Never run both targets as live ingestion destinations during the move.
+
+### Restore and cut over
+
+Run Setup on a fresh Windows target. Select **Move an existing ALPR database and
+images**, choose the completed backup folder, and confirm source ingestion is
+paused. Choose the destination administrator password and network access.
+Setup stages and re-verifies the folder before creating its local database.
+
+Import restores the dump transactionally, checks exact table inventories/counts
+and source schema before upgrading, applies current migrations, and validates
+record preservation using the normal native ReID retirement policy. It copies
+and checks image hashes, normalizes legacy display paths, and refuses missing
+referenced image files. Stored integration keys and named accounts are preserved;
+the setup administrator password becomes the one chosen in Setup. Old browser
+sessions are invalidated. Windows owns fresh database credentials and NTFS ACLs.
+ALPR starts only after validation. A failed import preserves target data and its
+private `management/migration-state.json` diagnostic without starting the app.
+
+Check sign-in, representative images, reads/tags, camera settings, and a controlled
+new ingestion on Windows. Review integration destinations before permitting
+notifications. Switch Blue Iris's ALPR destination only after those checks;
+keep the Linux source and backup until you have accepted the Windows installation.
+The Windows import does not change the Linux system or switch camera traffic.
+Records written to Windows after cutover are not present in the old Linux source.
 
 ## Release acceptance gates
 
