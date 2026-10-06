@@ -11,12 +11,14 @@ param(
     [switch]$CheckOnly,
     [switch]$ListenOnNetwork,
     [switch]$CopyPrerequisites,
+    [switch]$ReuseRetainedData,
     [string]$AdministratorPasswordFile,
     [string]$MigrationBackup
 )
 $ErrorActionPreference = 'Stop'
 $packageRoot = $PSScriptRoot
 . (Join-Path $packageRoot 'host\Network-Helpers.ps1')
+. (Join-Path $packageRoot 'host\Setup-Helpers.ps1')
 function Invoke-Native([string]$Executable, [string[]]$Arguments) {
     & $Executable @Arguments
     if ($LASTEXITCODE -ne 0) { throw "$Executable failed (exit $LASTEXITCODE)" }
@@ -98,8 +100,17 @@ $PgBin = Assert-LocalPath $PgBin
 $FfmpegBin = Assert-LocalPath $FfmpegBin
 if ($installPath -eq $dataPath -or $dataPath.StartsWith("$installPath\",[StringComparison]::OrdinalIgnoreCase) -or
     $installPath.StartsWith("$dataPath\",[StringComparison]::OrdinalIgnoreCase)) { throw 'Release and data roots must be separate' }
-foreach ($directory in @($installPath,$dataPath)) {
-    if (Test-Path -LiteralPath $directory) { throw "Fresh install requires unused directory: $directory" }
+$retained = $null
+if ($ReuseRetainedData) {
+    if ($MigrationBackup -or $AdministratorPasswordFile) { throw 'Retained recovery keeps the existing password; do not select a migration backup or new password' }
+    $retained = Get-RetainedSetup $installPath $dataPath
+    $AppPort = [int]$retained.environment.PORT
+    $DatabasePort = [int]($retained.environment.DB_HOST.Split(':')[-1])
+    $ListenOnNetwork = $retained.environment.HOSTNAME -eq '0.0.0.0'
+} else {
+    foreach ($directory in @($installPath,$dataPath)) {
+        if (Test-Path -LiteralPath $directory) { throw "Fresh install requires unused directory: $directory" }
+    }
 }
 foreach ($service in @('ALPRCommunityApp','ALPRCommunityDatabase')) {
     if (Get-Service -Name $service -ErrorAction SilentlyContinue) { throw "ALPR service already exists: $service" }
@@ -144,23 +155,31 @@ try { Invoke-Native $node @('openvino-runtime-probe.cjs') } finally { Pop-Locati
 if ($MigrationBackup) {
     Invoke-Native $node @((Join-Path $packageRoot 'host\community-migration-bundle.mjs'),'verify','--source',([IO.Path]::GetFullPath($MigrationBackup)))
 }
+if ($retained -and [Version]$manifest.version -lt [Version]($retained.current.Split('-')[0])) { throw 'Reinstall cannot downgrade a retained database. Use this version or a newer ALPR installer.' }
 if ($CheckOnly) { Write-Output 'Native Windows prerequisites and package checks passed. No changes made.'; return }
 $principal = New-Object Security.Principal.WindowsPrincipal([Security.Principal.WindowsIdentity]::GetCurrent())
 if (-not $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) { throw 'Run the installer in an elevated 64-bit PowerShell window' }
 if ($ListenOnNetwork -and (Get-AlprNetworkRule $AppPort)) { throw 'An ALPR network rule already exists. Preserve it and contact the maintainer.' }
 # All checks above precede creation, service registration, and database initialization.
-New-Item -ItemType Directory -Path $installPath,$dataPath | Out-Null
+$retainedBackup = $null
+if ($retained) {
+    Write-Output 'ALPR_SETUP_PROGRESS:Verifying a recovery backup of your retained database and settings...'
+    $clusterControl = & (Join-Path $PgBin 'pg_controldata.exe') (Join-Path $dataPath 'management\postgres')
+    if ($LASTEXITCODE -ne 0 -or ($clusterControl -join "`n") -notmatch 'Database cluster state:\s+shut down(?:\r?\n|$)') { throw 'The retained database must be cleanly shut down before reinstalling' }
+    $retainedBackup = Backup-RetainedSetup $dataPath
+    New-Item -ItemType Directory -Path $installPath | Out-Null
+} else { New-Item -ItemType Directory -Path $installPath,$dataPath | Out-Null }
 $installerSid = [Security.Principal.WindowsIdentity]::GetCurrent().User.Value
 # PostgreSQL drops the Administrator group while initializing. Its packaged
 # executables/share files need the installing user's explicit read grant too.
 Set-PrivateAcl $installPath $installerSid 'ReadAndExecute'
 # initdb drops Administrator group privileges on Windows. Grant the installing
 # user's SID during initialization, then replace it with service-specific ACLs.
-Set-PrivateAcl $dataPath $installerSid 'FullControl'
+if (-not $retained) { Set-PrivateAcl $dataPath $installerSid 'FullControl' }
 $management = Join-Path $dataPath 'management'
 $database = Join-Path $management 'postgres'
-New-Item -ItemType Directory -Path $management | Out-Null
-foreach ($name in @('auth','config','logs','storage','update-control')) { New-Item -ItemType Directory -Path (Join-Path $dataPath $name) | Out-Null }
+if (-not $retained) { New-Item -ItemType Directory -Path $management | Out-Null }
+foreach ($name in @('auth','config','logs','storage','update-control')) { if (-not (Test-Path -LiteralPath (Join-Path $dataPath $name))) { New-Item -ItemType Directory -Path (Join-Path $dataPath $name) | Out-Null } }
 $releaseName = "$($manifest.version)-$($manifest.commit.Substring(0,12))"
 $releasePath = Join-Path $installPath "releases\$releaseName"
 New-Item -ItemType Directory -Path (Split-Path -Parent $releasePath) | Out-Null
@@ -179,6 +198,7 @@ Copy-Item -Path (Join-Path $releasePath 'runtime\*') -Destination (Join-Path $in
 $dbPassword = New-Secret
 $adminPassword = New-Secret
 if ($null -ne $selectedAdminPassword) { $adminPassword = $selectedAdminPassword }
+if ($retained) { $dbPassword = $retained.environment.DB_PASSWORD; $adminPassword = $retained.environment.ADMIN_PASSWORD }
 $hostAddress = '127.0.0.1'
 if ($ListenOnNetwork) { $hostAddress = '0.0.0.0' }
 $environment = @{
@@ -188,6 +208,7 @@ $environment = @{
     ALPR_LOG_DIR=(Join-Path $dataPath 'logs'); ALPR_UPDATE_CONTROL_DIR=(Join-Path $dataPath 'update-control');
     SESSION_COOKIE_SECURE='false'; PATH="$FfmpegBin;$env:PATH"
 }
+if ($retained -and $retained.environment.TZ) { $environment.TZ = [string]$retained.environment.TZ }
 $installation = @{
     formatVersion=1; profile='windows-native'; installRoot=$installPath; dataRoot=$dataPath;
     pgBin=([IO.Path]::GetFullPath($PgBin)); current=$releaseName; environment=$environment
@@ -200,16 +221,18 @@ $appRegistered = $false
 $networkRuleCreated = $false
 $originalPgPassword = $env:PGPASSWORD
 try {
-    Invoke-Native (Join-Path $PgBin 'initdb.exe') @('-D',$database,'-U','postgres','--encoding=UTF8','--auth-host=scram-sha-256','--auth-local=scram-sha-256',"--pwfile=$pwfile")
-    Add-Content -LiteralPath (Join-Path $database 'postgresql.conf') -Value "listen_addresses = '127.0.0.1'`nport = $DatabasePort`nlogging_collector = on`nlog_directory = 'log'`nlog_rotation_age = '1d'`nlog_rotation_size = '10MB'`nlog_truncate_on_rotation = on`nlog_filename = 'postgresql-%a.log'"
+    if (-not $retained) {
+        Invoke-Native (Join-Path $PgBin 'initdb.exe') @('-D',$database,'-U','postgres','--encoding=UTF8','--auth-host=scram-sha-256','--auth-local=scram-sha-256',"--pwfile=$pwfile")
+        Add-Content -LiteralPath (Join-Path $database 'postgresql.conf') -Value "listen_addresses = '127.0.0.1'`nport = $DatabasePort`nlogging_collector = on`nlog_directory = 'log'`nlog_rotation_age = '1d'`nlog_rotation_size = '10MB'`nlog_truncate_on_rotation = on`nlog_filename = 'postgresql-%a.log'"
+    }
     Invoke-Native (Join-Path $PgBin 'pg_ctl.exe') @('register','-N','ALPRCommunityDatabase','-D',$database,'-S','auto','-U','NT AUTHORITY\NetworkService')
     $dbRegistered = $true
     Invoke-Native "$env:SystemRoot\System32\sc.exe" @('sidtype','ALPRCommunityDatabase','unrestricted')
     $dbSid = Resolve-ServiceSid 'ALPRCommunityDatabase'
     if ($CopyPrerequisites) { Set-PrivateAcl $installPath $installerSid 'ReadAndExecute' $true $dbSid }
     Set-PrivateAcl $management $dbSid 'ReadAndExecute' $false
-    # Reset inherited/initializer ACLs only inside this newly created cluster,
-    # then propagate the database service SID from its protected directory.
+    # The verified installer-owned cluster receives the same database service
+    # SID for both fresh setup and retained-data recovery.
     if ([IO.Path]::GetFullPath($database) -ne [IO.Path]::GetFullPath((Join-Path $management 'postgres'))) { throw 'Unexpected database ACL target' }
     Invoke-Native "$env:SystemRoot\System32\icacls.exe" @($database,'/reset','/T','/Q')
     Set-PrivateAcl $database $dbSid 'Modify'
@@ -222,7 +245,10 @@ try {
         Start-Sleep -Seconds 1
     }
     if (-not $ready) { throw 'PostgreSQL did not become ready' }
-    if ($MigrationBackup) {
+    if ($retained) {
+        Write-Output 'ALPR_SETUP_PROGRESS:Reconnecting your retained database, images and settings...'
+        Invoke-Native (Join-Path $PgBin 'psql.exe') @('-X','-h','127.0.0.1','-p',[string]$DatabasePort,'-U','postgres','-d','postgres','--set','ON_ERROR_STOP=1','--single-transaction','--file',(Join-Path $releasePath 'migrations.sql'))
+    } elseif ($MigrationBackup) {
         Write-Output 'ALPR_SETUP_PROGRESS:Restoring and validating your database, images and settings...'
         $env:ALPR_WINDOWS_INSTALLATION = Join-Path $installPath 'installation.json'
         $env:ALPR_WINDOWS_MIGRATION = 'ALPR_EMPTY_WINDOWS_TARGET'
@@ -273,7 +299,9 @@ try {
         $networkRuleCreated = $true
         New-AlprNetworkRule $AppPort
     }
-    if (-not $AdministratorPasswordFile) {
+    if ($retained) {
+        Write-Output "ALPR is available at http://localhost:$AppPort. Your existing passwords, API key, images and settings are preserved. Recovery backup: $retainedBackup"
+    } elseif (-not $AdministratorPasswordFile) {
         Write-Utf8 (Join-Path $management 'initial-login.txt') ("Administrator password: $adminPassword" + [Environment]::NewLine)
         Write-Output "ALPR is available at http://localhost:$AppPort. Initial sign-in is saved in $management\initial-login.txt (Administrators only). Store the password and delete that file after first sign-in."
     } else {

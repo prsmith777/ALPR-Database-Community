@@ -77,7 +77,7 @@ ${code}
     const build = run(compiler, ["/Q", sourceFile], scratch);
     if (build.status !== 0) throw new Error("Uninstall probe compilation failed: " + build.stdout + build.stderr);
     const setup = run(path.join(scratch, "uninstall-test.exe"), [...args, "/LOG=" + path.join(scratch, "setup.log")], scratch);
-    if (setup.status !== 0 || !existsSync(uninstaller)) throw new Error("Disposable fixture installation failed");
+    if (setup.status !== 0 || !existsSync(uninstaller)) throw new Error("Disposable fixture installation failed: " + (setup.error?.message || "exit " + setup.status) + "\n" + await readFile(path.join(scratch, "setup.log"), "utf8").catch(() => setup.stdout + setup.stderr));
     const logFile = path.join(scratch, "uninstall.log");
     const uninstall = run(uninstaller, [...args, "/LOG=" + logFile], scratch);
     // Inno's first phase can exit while its temporary second-phase executable

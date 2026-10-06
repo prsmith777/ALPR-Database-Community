@@ -44,18 +44,98 @@ function Assert-SetupHost {
         throw 'ALPR requires Windows 10 22H2 or Windows 11 on an x64 computer'
     }
 }
-function Assert-FreshSetup {
-    foreach ($directory in @("$env:ProgramFiles\ALPR Community", "$env:ProgramData\ALPR Community")) {
-        [void](Assert-SetupDirectory $directory)
-        if (Test-Path -LiteralPath $directory) { throw 'ALPR or retained ALPR data already exists. This fresh-install preview preserves it; contact the maintainer for upgrade or recovery.' }
-    }
+function Assert-SetupServicesAbsent {
     foreach ($name in @('ALPRCommunityApp','ALPRCommunityDatabase')) {
-        if (Get-Service -Name $name -ErrorAction SilentlyContinue) { throw 'An ALPR service already exists. Contact the maintainer for upgrade or recovery.' }
+        if (Get-Service -Name $name -ErrorAction SilentlyContinue) { throw 'An ALPR service already exists. Use the ALPR update or repair installer instead of reinstalling.' }
     }
-    foreach ($port in @(3000,5433)) {
+}
+function Get-RetainedSetup([string]$InstallRoot, [string]$DataRoot) {
+    $root = Assert-SetupDirectory $InstallRoot
+    $data = Assert-SetupDirectory $DataRoot
+    if (Test-Path -LiteralPath $root) { throw 'ALPR program files already exist. Use the update or repair installer.' }
+    $metadata = Join-Path $data 'management\uninstalled-installation.json'
+    [void](Assert-SetupDirectory $metadata)
+    if (-not (Test-Path -LiteralPath $metadata -PathType Leaf)) { throw 'Retained ALPR recovery metadata is missing. Existing data was preserved.' }
+    # A writable metadata file or parent could substitute credentials/paths
+    # while Setup is elevated. Do not adopt data owned by an unrelated user.
+    $trusted = @('S-1-5-18','S-1-5-32-544',[Security.Principal.WindowsIdentity]::GetCurrent().User.Value)
+    foreach ($item in @($data,(Join-Path $data 'management'),$metadata)) {
+        $acl = Get-Acl -LiteralPath $item
+        if ($acl.GetOwner([Security.Principal.SecurityIdentifier]).Value -notin $trusted) { throw 'Retained ALPR data has an unexpected owner' }
+        foreach ($rule in $acl.GetAccessRules($true,$true,[Security.Principal.SecurityIdentifier])) {
+            if ($rule.AccessControlType -eq 'Allow' -and $rule.IdentityReference.Value -notin $trusted -and
+                ([int]$rule.FileSystemRights -band 0xD0156)) { throw 'Retained ALPR recovery metadata is writable by another account' }
+        }
+    }
+    $record = Get-Content -Raw -LiteralPath $metadata | ConvertFrom-Json
+    if ($record.formatVersion -ne 1 -or $record.profile -ne 'windows-native' -or
+        $record.installRoot -ne $root -or $record.dataRoot -ne $data -or
+        $record.pgBin -ne (Join-Path $root 'prerequisites\postgresql\bin') -or
+        $record.current -notmatch '^\d+\.\d+\.\d+-[0-9a-f]{12}$') { throw 'Retained ALPR installation identity is invalid' }
+    $e = $record.environment
+    if ($e.ALPR_DATA_DIR -ne $data -or $e.DB_NAME -ne 'postgres' -or $e.DB_USER -ne 'postgres' -or
+        $e.DB_HOST -notmatch '^127\.0\.0\.1:(\d{4,5})$' -or
+        [int]$Matches[1] -lt 1024 -or [int]$Matches[1] -gt 65535 -or
+        [string]$e.PORT -notmatch '^\d{4,5}$' -or [int]$e.PORT -lt 1024 -or [int]$e.PORT -gt 65535 -or
+        $e.HOSTNAME -notin @('127.0.0.1','0.0.0.0') -or -not $e.DB_PASSWORD -or -not $e.ADMIN_PASSWORD -or
+        $e.DB_PASSWORD -match '[\x00-\x1f]' -or $e.ADMIN_PASSWORD -match '[\x00-\x1f]') { throw 'Retained ALPR connection settings are invalid' }
+    $database = Join-Path $data 'management\postgres'
+    if ((Get-Content -Raw -LiteralPath (Join-Path $database 'PG_VERSION')).Trim() -ne '17') { throw 'Retained recovery requires PostgreSQL 17' }
+    # Reject links before walking/copying the cluster or private files.
+    $pending = New-Object 'Collections.Generic.Stack[string]'
+    $pending.Push($data)
+    while ($pending.Count) {
+        foreach ($child in Get-ChildItem -LiteralPath $pending.Pop() -Force) {
+            if ($child.Attributes -band [IO.FileAttributes]::ReparsePoint) { throw 'Retained ALPR data contains a link or junction' }
+            if ($child.PSIsContainer) { $pending.Push($child.FullName) }
+        }
+    }
+    if (Test-Path -LiteralPath (Join-Path $database 'postmaster.pid')) { throw 'The retained database was not cleanly stopped. Preserve the data and contact the maintainer.' }
+    return $record
+}
+function Assert-FreshSetup([switch]$ReuseRetainedData) {
+    Assert-SetupServicesAbsent
+    $ports = @(3000,5433)
+    if ($ReuseRetainedData) {
+        $retained = Get-RetainedSetup "$env:ProgramFiles\ALPR Community" "$env:ProgramData\ALPR Community"
+        $ports = @([int]$retained.environment.PORT,[int]($retained.environment.DB_HOST.Split(':')[-1]))
+    } else {
+        foreach ($directory in @("$env:ProgramFiles\ALPR Community", "$env:ProgramData\ALPR Community")) {
+            [void](Assert-SetupDirectory $directory)
+            if (Test-Path -LiteralPath $directory) { throw 'ALPR or retained ALPR data already exists. Choose Restore the ALPR data already on this computer, or use the update/repair installer.' }
+        }
+    }
+    foreach ($port in $ports) {
         $listener = New-Object Net.Sockets.TcpListener([Net.IPAddress]::Any, $port)
         try { $listener.Start() } catch { throw "Port $port is in use. Close the conflicting program and run Setup again." } finally { $listener.Stop() }
     }
+}
+function Backup-RetainedSetup([string]$DataRoot) {
+    $data = Assert-SetupDirectory $DataRoot
+    $backup = Join-Path $data ('management\reinstall-backups\' + [Guid]::NewGuid().ToString('N'))
+    $bytes = [long]0
+    foreach ($name in @('management\postgres','auth','config')) {
+        foreach ($file in Get-ChildItem -LiteralPath (Join-Path $data $name) -File -Recurse -Force) { $bytes += $file.Length }
+    }
+    $volume = Get-Volume -DriveLetter $data.Substring(0,1)
+    if ($volume.SizeRemaining -lt ($bytes + 512MB)) { throw 'Not enough free space to verify a retained database backup. Free disk space and run Setup again.' }
+    Protect-SetupDirectory $backup
+    foreach ($name in @('management\postgres','auth','config')) {
+        $source = Join-Path $data $name
+        $target = Join-Path $backup $name
+        [void][IO.Directory]::CreateDirectory((Split-Path -Parent $target))
+        Copy-Item -LiteralPath $source -Destination $target -Recurse
+        $files = @(Get-ChildItem -LiteralPath $source -File -Recurse -Force)
+        $copies = @(Get-ChildItem -LiteralPath $target -File -Recurse -Force)
+        if ($files.Count -ne $copies.Count) { throw 'Retained data backup inventory is incomplete' }
+        foreach ($file in $files) {
+            $copy = Join-Path $target $file.FullName.Substring($source.Length + 1)
+            if ((Get-FileHash -LiteralPath $file.FullName).Hash -ne (Get-FileHash -LiteralPath $copy).Hash) { throw 'Retained data backup checksum mismatch' }
+        }
+    }
+    Copy-Item -LiteralPath (Join-Path $data 'management\uninstalled-installation.json') -Destination (Join-Path $backup 'installation.json')
+    [IO.File]::WriteAllText((Join-Path $backup 'verified.json'),('{"formatVersion":1,"status":"verified","createdAt":"' + [DateTime]::UtcNow.ToString('o') + '"}'))
+    return $backup
 }
 function Test-SetupPayload([string]$PackageRoot, [string]$ManifestSha256) {
     $root = Assert-SetupDirectory $PackageRoot

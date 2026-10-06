@@ -58,12 +58,12 @@ export async function buildWindowsSetup(args = process.argv.slice(2)) {
   console.log("Verified compiled installer startup and actual uninstall lifecycle before packaging");
   const outputRoot = path.join(root, "dist", "setup");
   await mkdir(outputRoot, { recursive: true });
-  const name = `ALPR-Community-${manifest.version}-${manifest.commit.slice(0,12)}-${manifest.channel}-Setup`;
+  const name = manifest.channel === "stable" ? `ALPR-Community-${manifest.version}-Windows-x64-Setup` : `ALPR-Community-${manifest.version}-${manifest.commit.slice(0,12)}-preview-Setup`;
   const output = path.join(outputRoot, name + ".exe");
   if (existsSync(output)) throw new Error("Installer output already exists; preserve it or choose a new source commit");
   run(compiler, [
     "/DPackageRoot=" + packageRoot, "/DManifestSha256=" + manifestSha256,
-    "/DPackageVersion=" + manifest.version, "/DOutputRoot=" + outputRoot, "/DOutputName=" + name,
+    "/DPackageVersion=" + manifest.version, "/DPackageChannel=" + manifest.channel, "/DOutputRoot=" + outputRoot, "/DOutputName=" + name,
     path.join(root, "scripts", "windows", "CommunitySetup.iss"),
   ]);
   const checksum = await hashFile(output);

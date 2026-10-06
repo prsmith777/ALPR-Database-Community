@@ -168,3 +168,28 @@ test("graphical setup pins each prerequisite and its build compiler", async () =
   assert.match(pins.ffmpeg.url,/\/packages\/ffmpeg-8\.1\.2-/);
   assert.match(pins.visualCpp.url,/^https:\/\/download\.visualstudio\.microsoft\.com\//);
 });
+
+
+test("retained reinstall validates protected metadata and rejects substituted roots and unclean clusters", {skip:!powershell}, async (t) => {
+  const fixture=await mkdtemp(path.join(os.tmpdir(),"alpr-retained-data-"));
+  t.after(()=>rm(fixture,{recursive:true,force:true}));
+  const result=ps(`. ./scripts/windows/Setup-Helpers.ps1;
+    $root=Join-Path $env:ALPR_TEST_ROOT 'code'; $data=Join-Path $env:ALPR_TEST_ROOT 'data';
+    Protect-SetupDirectory $data; Protect-SetupDirectory (Join-Path $data 'management');
+    [void][IO.Directory]::CreateDirectory((Join-Path $data 'management/postgres'));
+    [IO.File]::WriteAllText((Join-Path $data 'management/postgres/PG_VERSION'),'17');
+    $record=@{formatVersion=1;profile='windows-native';installRoot=$root;dataRoot=$data;pgBin=(Join-Path $root 'prerequisites/postgresql/bin');current='0.1.47-aaaaaaaaaaaa';environment=@{ALPR_DATA_DIR=$data;DB_NAME='postgres';DB_USER='postgres';DB_HOST='127.0.0.1:5433';PORT='3000';HOSTNAME='127.0.0.1';DB_PASSWORD='fixture';ADMIN_PASSWORD='fixture'}};
+    $metadata=Join-Path $data 'management/uninstalled-installation.json';
+    [IO.File]::WriteAllText($metadata,($record|ConvertTo-Json)); [void](Get-RetainedSetup $root $data);
+    $record.dataRoot='C:/UnrelatedData';[IO.File]::WriteAllText($metadata,($record|ConvertTo-Json));
+    try {[void](Get-RetainedSetup $root $data);throw 'Expected identity refusal'}catch{if($_.Exception.Message -notmatch 'identity is invalid'){throw}};
+    $record.dataRoot=$data;[IO.File]::WriteAllText($metadata,($record|ConvertTo-Json));
+    [IO.File]::WriteAllText((Join-Path $data 'management/postgres/postmaster.pid'),'123');
+    try {[void](Get-RetainedSetup $root $data);throw 'Expected running database refusal'}catch{if($_.Exception.Message -notmatch 'cleanly stopped'){throw}};
+    Remove-Item -LiteralPath (Join-Path $data 'management/postgres/postmaster.pid');
+    $acl=Get-Acl -LiteralPath $metadata;$acl.AddAccessRule((New-Object Security.AccessControl.FileSystemAccessRule((New-Object Security.Principal.SecurityIdentifier('S-1-1-0')),'Write','Allow')));Set-Acl -LiteralPath $metadata -AclObject $acl;
+    try {[void](Get-RetainedSetup $root $data);throw 'Expected writable metadata refusal'}catch{if($_.Exception.Message -notmatch 'writable by another account'){throw}};
+    Write-Output 'Retained data ownership, identity and running-cluster refusals passed'`,{ALPR_TEST_ROOT:fixture});
+  assert.equal(result.status,0,result.stdout+result.stderr);
+  assert.match(result.stdout,/refusals passed/);
+});

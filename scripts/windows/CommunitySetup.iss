@@ -16,6 +16,15 @@
   #error OutputName is required
 #endif
 
+#ifndef PackageChannel
+  #define PackageChannel "preview"
+#endif
+#if PackageChannel == "preview"
+  #define ChannelNotice "This is a development preview for testing."
+#else
+  #define ChannelNotice "Setup keeps your ALPR data separate from the program files."
+#endif
+
 [Setup]
 AppId={{0E2897C1-7F04-4670-A216-664A0B5DA3A3}
 AppName=ALPR Database Community
@@ -122,13 +131,21 @@ begin
 #endif
 end;
 
+function ShouldSkipPage(PageID: Integer): Boolean; forward;
+
 procedure InitializeWizard;
 begin
   InstallModePage := CreateInputOptionPage(wpWelcome, 'Set up ALPR', 'Choose how to start',
-    'Create a new installation, or move a verified ALPR backup from Linux or Windows.', True, False);
+    'Create a new installation, move a verified backup, or restore data kept after uninstalling ALPR.', True, False);
   InstallModePage.Add('Start with an empty database');
   InstallModePage.Add('Move an existing ALPR database and images');
+  InstallModePage.Add('Restore the ALPR data already on this computer');
   InstallModePage.SelectedValueIndex := 0;
+#ifndef StartupProbe
+  if FileExists(ExpandConstant('{commonappdata}\ALPR Community\management\uninstalled-installation.json')) and
+    not FileExists(ExpandConstant('{autopf}\ALPR Community\installation.json')) then
+    InstallModePage.SelectedValueIndex := 2;
+#endif
   MigrationPage := CreateInputDirPage(InstallModePage.ID, 'Move your ALPR data', 'Choose your migration backup folder',
     'Select the folder containing migration-backup.json. The backup and original computer remain available for recovery.', False, '');
   MigrationPage.Add('ALPR migration backup:');
@@ -143,7 +160,7 @@ begin
     'Choose your administrator password',
     'You will use this password to sign in to ALPR. Setup downloads the required components and starts ALPR automatically. An internet connection is required.'#13#10#13#10 +
     'For migration, this replaces the old setup administrator password. Existing named accounts keep their passwords.'#13#10 +
-    'This is a development preview for testing.');
+    '{#ChannelNotice}');
   PasswordPage.Add('Administrator password (12 to 128 characters):', True);
   PasswordPage.Add('Confirm password:', True);
   NetworkAccessCheck := TNewCheckBox.Create(WizardForm);
@@ -168,6 +185,13 @@ begin
     SourceStoppedCheck.Checked or (InstallModePage.SelectedValueIndex <> 0) or
     (ProgressPage.ProgressBar.Position <> 37) then
     RaiseException('Startup probe did not initialize the password page and workspace.');
+  InstallModePage.SelectedValueIndex := 1;
+  if ShouldSkipPage(MigrationPage.ID) or ShouldSkipPage(PasswordPage.ID) then
+    RaiseException('Migration pages are missing.');
+  InstallModePage.SelectedValueIndex := 2;
+  if not ShouldSkipPage(MigrationPage.ID) or not ShouldSkipPage(PasswordPage.ID) then
+    RaiseException('Retained recovery must keep the existing password and skip migration selection.');
+  InstallModePage.SelectedValueIndex := 0;
   Log('ALPR_STARTUP_PROBE_PASSED');
   Abort;
 #endif
@@ -175,11 +199,14 @@ end;
 
 function ShouldSkipPage(PageID: Integer): Boolean;
 begin
-  Result := (PageID = MigrationPage.ID) and (InstallModePage.SelectedValueIndex = 0);
+  Result := ((PageID = MigrationPage.ID) and (InstallModePage.SelectedValueIndex <> 1)) or
+    ((PageID = PasswordPage.ID) and (InstallModePage.SelectedValueIndex = 2));
 end;
 
 procedure CurPageChanged(CurPageID: Integer);
 begin
+  if (CurPageID = InstallModePage.ID) and (InstallModePage.SelectedValueIndex = 2) then
+    WizardForm.FinishedLabel.Caption := 'ALPR is ready. Your existing records, images, settings, API key and passwords have been kept. Sign in with your existing ALPR password.';
   if CurPageID = PasswordPage.ID then begin
     WizardForm.NextButton.Caption := 'Install';
     if InstallModePage.SelectedValueIndex = 1 then
@@ -217,7 +244,9 @@ begin
     LastError := Copy(S, 18, Length(S));
   if Pos('ALPR_SETUP_PROGRESS:', S) = 1 then begin
     ProgressPage.ProgressBar.Style := npbstMarquee;
-    if InstallModePage.SelectedValueIndex = 1 then
+    if InstallModePage.SelectedValueIndex = 2 then
+      ProgressPage.SetText(Copy(S, 21, Length(S)), 'Keeping your existing passwords, API key, records, images and settings.')
+    else if InstallModePage.SelectedValueIndex = 1 then
       ProgressPage.SetText(Copy(S, 21, Length(S)), 'Your migration backup and original data are preserved.')
     else
       ProgressPage.SetText(Copy(S, 21, Length(S)), 'Starting with an empty database and new settings.');
@@ -242,7 +271,9 @@ begin
   if Operation = 'prepare' then
     Parameters := Parameters + ' -PackageRoot "' + ExpandConstant('{tmp}\payload') +
       '" -ManifestSha256 {#ManifestSha256}';
-  if (Operation = 'prepare') and NetworkAccessCheck.Checked then
+  if InstallModePage.SelectedValueIndex = 2 then
+    Parameters := Parameters + ' -ReuseRetainedData';
+  if (Operation = 'prepare') and NetworkAccessCheck.Checked and (InstallModePage.SelectedValueIndex <> 2) then
     Parameters := Parameters + ' -ListenOnNetwork';
   if (Operation = 'prepare') and (InstallModePage.SelectedValueIndex = 1) then
     Parameters := Parameters + ' -MigrationBackup "' + MigrationPage.Values[0] + '"';
@@ -281,7 +312,8 @@ begin
       Result := Result + #13#10#13#10 + 'Close Setup and try again. Setup log: ' + ExpandConstant('{log}');
       Exit;
     end;
-    if not SaveStringToFile(WorkRoot + '\administrator-password.txt', UTF8Encode(PasswordPage.Values[0]), False) then begin
+    if (InstallModePage.SelectedValueIndex <> 2) and
+      not SaveStringToFile(WorkRoot + '\administrator-password.txt', UTF8Encode(PasswordPage.Values[0]), False) then begin
       Result := 'Setup could not save the administrator password securely.';
       Exit;
     end;

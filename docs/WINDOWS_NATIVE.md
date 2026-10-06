@@ -1,11 +1,12 @@
-# Native Windows preview
+# Native Windows installation
 
 This implementation belongs to ALPR Database Community. Windows and Linux use
 the same application, version, database schema, authentication, integrations,
 and AI models. Their installation and maintenance operations differ.
 
-The native Windows package is a development preview. It requires no Docker or
-WSL. It is not yet a published or certified Windows release.
+The native Windows package requires no Docker or WSL. Tagged Community releases
+produce stable installers; branch builds are marked preview. Download the
+Windows setup executable and its checksum from the matching GitHub release.
 
 ## Targets and current evidence
 
@@ -80,7 +81,7 @@ The shared UI now requires Chrome/Edge 111 or newer or Firefox 128 or newer,
 consistent with Tailwind 4's browser requirements. Current Chrome and Edge
 on both Windows 10 and 11 meet this requirement.
 
-## Graphical setup preview
+## Graphical setup
 
 The Windows setup executable is the user-facing installation path. It includes
 the Community application, Node, WinSW, recognition models, and a graphical
@@ -116,15 +117,28 @@ with the current operation because those steps have no reliable percentage.
 
 An **ALPR Database Community** shortcut opens the application. Windows **Apps &
 features** can remove the app and its services while preserving plate records,
-images, settings, and backups in `C:\ProgramData\ALPR Community`. This fresh-install
-preview refuses existing installations and retained data; guided repair,
-reinstallation, and upgrades are still release work. Use a clean VM for the first
-installer test and retain its pre-installation backup for repeatable testing.
+images, settings, and backups in `C:\ProgramData\ALPR Community`. Run Setup again
+and select **Restore the ALPR data already on this computer** to reconnect data
+kept after uninstall. Setup selects this option automatically when protected
+recovery metadata is present and program files have been removed. Existing
+passwords, API key, image files, settings, ports and network preference are kept.
+The password and migration pages are skipped for this mode.
 
-The current setup executable is unsigned and intended for maintainer-supervised
-testing. Windows may show an unknown-publisher or SmartScreen prompt. Signing,
-public distribution, and the remaining desktop acceptance gates are required
-before recommending it to community users.
+Before recovery, Setup verifies ownership, local paths, PostgreSQL 17, a cleanly
+stopped database and available ports. It refuses an older application version.
+A checksum-verified cold database copy, authentication, settings and installation
+metadata are kept under `management\reinstall-backups` before database migrations
+or service registration. Allow free disk space for this backup. Images stay in
+their existing storage directory. A failed setup preserves the data and backup
+for diagnosis; do not delete either to work around an error.
+
+An installation that still has registered services uses the maintenance updater
+or a matching repair installer. Fresh setup refuses to replace an active
+installation or adopt unrelated data directories.
+
+The setup executable is currently unsigned. Windows may show an unknown-publisher
+or SmartScreen prompt. Verify the download against the published SHA-256 checksum.
+Signing is separate from the preview/stable release channel.
 
 The setup build executes a compiled startup probe before producing the installer.
 It creates the real password controls and temporary workspace name, then exits
@@ -491,3 +505,17 @@ For BOTH a clean Windows 10 22H2 x64 VM and a maintained Windows 11 x64 VM:
 Windows CI provides build/unit/package evidence; its Windows Server runner does
 not replace either desktop VM acceptance target. Do not publish a certified
 Windows installer until these gates have recorded results.
+
+## Isolated Windows service acceptance
+
+Run `scripts/test-windows-scm-runtime.mjs` in an elevated Windows desktop session
+with a new package, an actual prior-version package, PostgreSQL 17 binaries,
+FFmpeg binaries and an output JSON path. The test copies installer scripts into
+a UUID-owned fixture and substitutes only fixed service identifiers. It uses
+actual SCM, WinSW, LocalService and NetworkService accounts, service SID ACLs,
+random loopback ports, protected installation metadata and the production
+controller for start/stop and listener attestation. Working ALPR services and
+data are excluded. It exercises version upgrade, transactional rollback,
+uninstall, retained-data reinstall, password/API-key and settings preservation,
+image checksums and verified recovery backups. Failed fixtures are kept for
+diagnosis; cleanup checks service executable ownership before removing them.

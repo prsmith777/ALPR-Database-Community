@@ -5,6 +5,7 @@ param(
     [string]$ManifestSha256,
     [string]$WorkRoot,
     [switch]$ListenOnNetwork,
+    [switch]$ReuseRetainedData,
     [string]$MigrationBackup
 )
 $ErrorActionPreference = 'Stop'
@@ -38,7 +39,7 @@ try {
         exit 0
     }
     Assert-SetupHost
-    Assert-FreshSetup
+    Assert-FreshSetup -ReuseRetainedData:$ReuseRetainedData
     if ($Operation -eq 'prepare') {
         Progress 'Checking your computer and the application...'
         Test-SetupPayload $PackageRoot $ManifestSha256
@@ -46,7 +47,7 @@ try {
         $parent = Split-Path -Parent $work
         Protect-SetupDirectory $parent
         Protect-SetupDirectory $work
-        $record = @{ formatVersion=1; workRoot=$work; manifestSha256=$ManifestSha256; listenOnNetwork=[bool]$ListenOnNetwork }
+        $record = @{ formatVersion=1; workRoot=$work; manifestSha256=$ManifestSha256; listenOnNetwork=[bool]$ListenOnNetwork; reuseRetainedData=[bool]$ReuseRetainedData }
         [IO.File]::WriteAllText($recordFile, ($record | ConvertTo-Json), (New-Object Text.UTF8Encoding($false)))
         $payload = Join-Path $work 'payload'
         Copy-Item -LiteralPath $PackageRoot -Destination $payload -Recurse
@@ -89,9 +90,11 @@ try {
         $record.pgBin = $pgBin; $record.ffmpegBin = $ffBin
         [IO.File]::WriteAllText($recordFile, ($record | ConvertTo-Json), (New-Object Text.UTF8Encoding($false)))
         Progress 'Checking the application and recognition models...'
-        Native "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe" @(
+        $checkArguments = @(
             '-NoProfile','-NonInteractive','-ExecutionPolicy','Bypass','-File',(Join-Path $payload 'Install.ps1'),
             '-CheckOnly','-AllowPreview','-PgBin',$pgBin,'-FfmpegBin',$ffBin)
+        if ($ReuseRetainedData) { $checkArguments += '-ReuseRetainedData' }
+        Native "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe" $checkArguments
         exit 0
     }
     $record = Get-Content -Raw -LiteralPath $recordFile | ConvertFrom-Json
@@ -101,15 +104,17 @@ try {
     Progress 'Installing ALPR and starting its services...'
     $installArguments = @(
         '-NoProfile','-NonInteractive','-ExecutionPolicy','Bypass','-File',(Join-Path $payload 'Install.ps1'),
-        '-AllowPreview','-CopyPrerequisites','-PgBin',$record.pgBin,'-FfmpegBin',$record.ffmpegBin,
-        '-AdministratorPasswordFile',(Join-Path $work 'administrator-password.txt'))
+        '-AllowPreview','-CopyPrerequisites','-PgBin',$record.pgBin,'-FfmpegBin',$record.ffmpegBin)
+    if ($record.reuseRetainedData) { $installArguments += '-ReuseRetainedData' }
+    else { $installArguments += @('-AdministratorPasswordFile',(Join-Path $work 'administrator-password.txt')) }
     if ($record.listenOnNetwork -eq $true) { $installArguments += '-ListenOnNetwork' }
     if ($record.migrationBackup) { $installArguments += @('-MigrationBackup',$record.migrationBackup) }
     Native "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe" $installArguments
     $controller = "$env:ProgramFiles\ALPR Community\host\Service-Control.ps1"
     Native "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe" @(
         '-NoProfile','-NonInteractive','-ExecutionPolicy','Bypass','-File',$controller,'-Operation','attest')
-    Progress 'ALPR is ready. Sign in with the password you chose.'
+    if ($record.reuseRetainedData) { Progress 'ALPR is ready. Sign in with your existing ALPR password.' }
+    else { Progress 'ALPR is ready. Sign in with the password you chose.' }
     exit 0
 } catch {
     # The wrapper records this in its support log. Never serialize the record
