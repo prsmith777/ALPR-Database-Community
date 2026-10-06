@@ -4,8 +4,10 @@ import { randomUUID, createHash } from "node:crypto";
 import { mkdtemp, mkdir, writeFile, readFile, rm, link, symlink } from "node:fs/promises";
 import path from "node:path";
 import os from "node:os";
+import { EventEmitter } from "node:events";
 import { submitCommunityUpdateRequest, readCommunityUpdateControlSnapshot } from "../lib/community-update-control.mjs";
-import { claimWindowsUpdateRequest, windowsUpdateServiceInternals } from "../scripts/windows-update-service.mjs";
+import { claimWindowsUpdateRequest, runWindowsUpdateService, windowsUpdateServiceInternals } from "../scripts/windows-update-service.mjs";
+import { hashFile } from "../scripts/windows-native-package.mjs";
 import { windowsUpdateSummary, performWindowsUpdateRequest } from "../scripts/windows-update-worker.mjs";
 import { findWindowsUpdate, windowsUpdateAssetNames, windowsUpdateReleaseInternals } from "../scripts/windows-update-release.mjs";
 
@@ -90,4 +92,30 @@ test("app snapshot strips private updater state and uses the Windows heartbeat",
  await windowsUpdateServiceInternals.publication(f.control,"state.json",{phase:"succeeded",operation:"check",targetTag:"v0.1.48",privateSecret:"never expose"});
  const snapshot=await readCommunityUpdateControlSnapshot({directory:f.control,environment:{ALPR_DEPLOYMENT_PROFILE:"windows-native"}});
  assert.equal(snapshot.agent.online,true);assert.equal(snapshot.state.targetTag,"v0.1.48");assert.doesNotMatch(JSON.stringify(snapshot),/never expose/);
+});
+
+test("an abruptly stopped worker triggers recovery without replaying its operation",async t=>{
+ const f=await fixture(t),data=path.join(f.root,"data"),current="0.1.48-"+"a".repeat(12);
+ const release=path.join(f.root,"releases",current),control=path.join(data,"update-control"),privateRoot=path.join(data,"management/updates");
+ await mkdir(control,{recursive:true});await mkdir(privateRoot,{recursive:true});
+ const files={};
+ for(const [name,content] of Object.entries({"app/server.js":"// fixture","app/package.json":'{"version":"0.1.48"}',"runtime/node.exe":"fixture","runtime/winsw.exe":"fixture","host/windows-service.mjs":"// fixture","host/windows-maintenance.mjs":"// fixture","schema.sql":"-- fixture","migrations.sql":"-- fixture","Install.ps1":"# fixture"})){
+  const file=path.join(release,...name.split("/"));await mkdir(path.dirname(file),{recursive:true});await writeFile(file,content);files[name]=await hashFile(file);
+ }
+ await writeFile(path.join(release,"windows-package.json"),JSON.stringify({formatVersion:1,source:"https://github.com/prsmith777/ALPR-Database-Community",version:"0.1.48",commit:"a".repeat(40),channel:"stable",platform:"win32",arch:"x64",files}));
+ const installationFile=path.join(f.root,"installation.json");
+ await writeFile(installationFile,JSON.stringify({profile:"windows-native",installRoot:f.root,dataRoot:data,current}));
+ const queued=request();await writeFile(path.join(control,"request.json"),JSON.stringify(queued));
+ const controller=new AbortController(),calls=[];
+ const deadline=setTimeout(()=>controller.abort(),5000);t.after(()=>clearTimeout(deadline));
+ await runWindowsUpdateService(installationFile,{signal:controller.signal,fork:(_file,args)=>{
+  calls.push(args);const child=new EventEmitter();child.pid=process.pid;child.send=()=>{};
+  setImmediate(()=>{
+   if(calls.length === 1)child.emit("exit",9);
+   else {child.emit("message",{kind:"result",result:{updaterStatus:"rolled-back",message:"Recovered"}});child.emit("exit",0);controller.abort();}
+  });return child;
+ }});
+ assert.equal(calls.length,2);assert.equal(calls[0].includes("--recover"),false);assert.equal(calls[1].at(-1),"--recover");
+ assert.equal(JSON.parse(await readFile(path.join(control,"state.json"),"utf8")).updaterStatus,"rolled-back");
+ await assert.rejects(readFile(path.join(privateRoot,"active.json")),{code:"ENOENT"});
 });

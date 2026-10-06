@@ -8,6 +8,7 @@ import { fileURLToPath } from "node:url";
 import { nativeRunner, loadWindowsDeployment, fileInventory } from "./windows-deployment.mjs";
 import { hashFile, listPackageFiles, verifyWindowsPackage } from "./windows-native-package.mjs";
 import { runWindowsUpdater } from "./windows-maintenance.mjs";
+import { enableWindowsUpdates } from "./windows-enable-updates.mjs";
 
 // Actual SCM integration test, deliberately isolated from the product service
 // namespace. Only fixed service identifiers are substituted in copied scripts;
@@ -143,18 +144,14 @@ try {
   await fetch("http://127.0.0.1:" + appPort + "/api/verify-session", { method: "POST", headers: { "content-type": "application/json" }, body: '{"sessionId":"invalid"}' });
   const authFile = path.join(dataRoot, "auth/auth.json"), settingsFile = path.join(dataRoot, "config/settings.yaml");
   const auth = JSON.parse(await readFile(authFile, "utf8")), settings = await hashFile(settingsFile), images = await fileInventory(path.join(dataRoot, "storage"));
-  console.log("Upgrading the running isolated SCM installation...");
-  const releaseEvidence=await installFixtureReleaseSource(candidate);
-  const action=await signedInActions(deployment);
-  const checked=await action({operation:"check"});assert.equal(checked.targetTag,"v"+newer.version);
-  const updated=await action({operation:"update",target:"v"+newer.version,confirmation:"INSTALL v"+newer.version});
-  assert.equal(updated.updaterStatus,"ready-for-acceptance");
+  console.log("Enabling UI updates in place on the real prior-version installation...");
+  await enableWindowsUpdates(candidate,await hashFile(path.join(candidate,"windows-package.json")),{...process.env,ALPR_WINDOWS_INSTALLATION:installationFile});
   deployment = await loadWindowsDeployment(installationFile, { allowPreview: true });
   assert.equal((await deployment.attest()).commit, newer.commit);
   const updatedActions=await signedInActions(deployment);
   const accepted=await updatedActions({operation:"accept",confirmation:"I COMPLETED THE MANUAL CHECKS"});
   assert.equal(accepted.updaterStatus,"accepted");
-  report.browserUpdate={status:"passed",realHttpAdminActions:true,separateUpdaterService:true,automaticBackup:true,technicalValidation:true,acceptance:true,...releaseEvidence};
+  report.inPlaceBridge={status:"passed",realPriorApplication:true,noUninstall:true,technicalValidation:true,acceptanceThroughHttp:true};
   deployment.sql("UPDATE public.plate_reads SET camera_name='Changed after update' WHERE plate_number='SCMTEST1'; INSERT INTO public.plates(plate_number,occurrence_count) VALUES ('POSTUPDATE',0);");
   await writeFile(settingsFile, "general:\n  maxRecords: 111\n");
   console.log("Rolling back through real SCM stop/start and PostgreSQL restore...");
@@ -190,6 +187,30 @@ try {
   assert.equal(deployment.sql("SELECT count(*) FROM public.plate_reads WHERE plate_number='SCMTEST1';"), "1");
   assert.equal(ps("@(Get-ChildItem -LiteralPath " + q(path.join(dataRoot, "management/reinstall-backups")) + " -Filter verified.json -Recurse).Count"), "1");
   report.retainedReinstall = { status: "passed", databaseRowPreserved: true, passwordAndApiKeyPreserved: true, settingsAndImageChecksumsPreserved: true, coldClusterBackupVerified: true, networkPreferenceAndPortsPreserved: true };
+  // No published older application understands the new Windows UI protocol.
+  // Exercise the browser download path with a higher-version package fixture
+  // using the exact target application and modules. Only package.json/version
+  // and the private fixture manifest change; this is not a published release.
+  const uiCandidate=await installerPackage(target,path.join(root,"ui-target-package"));
+  const uiManifest=JSON.parse(await readFile(path.join(uiCandidate,"windows-package.json"),"utf8"));
+  const parts=newer.version.split(".").map(Number);parts[2]++;
+  uiManifest.version=parts.join(".");uiManifest.channel="stable";
+  const appMetadataFile=path.join(uiCandidate,"app/package.json");
+  const appMetadata=JSON.parse(await readFile(appMetadataFile,"utf8"));appMetadata.version=uiManifest.version;
+  await writeFile(appMetadataFile,JSON.stringify(appMetadata));uiManifest.files["app/package.json"]=await hashFile(appMetadataFile);
+  await writeFile(path.join(uiCandidate,"windows-package.json"),JSON.stringify(uiManifest));
+  await verifyWindowsPackage(uiCandidate);
+  const releaseEvidence=await installFixtureReleaseSource(uiCandidate);
+  const action=await signedInActions(deployment);
+  const checked=await action({operation:"check"});assert.equal(checked.targetTag,"v"+uiManifest.version);
+  const updated=await action({operation:"update",target:"v"+uiManifest.version,confirmation:"INSTALL v"+uiManifest.version});
+  assert.equal(updated.updaterStatus,"ready-for-acceptance");
+  deployment=await loadWindowsDeployment(installationFile,{allowPreview:true});
+  assert.equal((await deployment.attest()).commit,newer.commit);
+  const uiActions=await signedInActions(deployment);
+  assert.equal((await uiActions({operation:"accept",confirmation:"I COMPLETED THE MANUAL CHECKS"})).updaterStatus,"accepted");
+  report.browserUpdate={status:"passed",realHttpAdminActions:true,separateUpdaterService:true,automaticBackup:true,technicalValidation:true,acceptance:true,syntheticFutureVersion:uiManifest.version,applicationSourceCommit:newer.commit,...releaseEvidence};
+  assert.equal((await uiActions({operation:"rollback",confirmation:"ROLL BACK AND DISCARD NEW WRITES"})).updaterStatus,"rolled-back");
   report.status = "passed"; console.log("Uninstall and retained-data reinstall passed actual SCM and protected service accounts.");
 } catch (error) {
   report.status = "failed"; report.error = error.stack?.slice(-12000); console.error(report.error); process.exitCode = 1;

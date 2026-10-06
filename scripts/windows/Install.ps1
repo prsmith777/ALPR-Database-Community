@@ -287,8 +287,8 @@ try {
     Set-PrivateAcl $management $dbSid 'ReadAndExecute' $false
     Set-PrivateAcl $database $dbSid 'Modify'
     foreach ($name in @('auth','config','logs','storage','update-control')) { Set-PrivateAcl (Join-Path $dataPath $name) $appSid 'Modify' }
-    Install-WindowsUpdateService $installPath $dataPath
     $updaterRegistered = $true
+    Install-WindowsUpdateService $installPath $dataPath
     Start-Service -Name ALPRCommunityApp
     Write-Output 'ALPR_SETUP_PROGRESS:Starting ALPR and checking that it is ready...'
     $healthy = $false

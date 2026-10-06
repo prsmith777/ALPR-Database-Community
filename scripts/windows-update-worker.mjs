@@ -79,6 +79,13 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
   const send=(value)=>{if(process.connected)process.send(value,()=>{});};
   try {
     if ((extra.length && !recovering) || !installationFile || !requestFile || !process.send) throw new Error("Run Windows updates through the installed update service");
+    // The parent must persist this worker's recovery record before maintenance
+    // begins. Disconnecting before that handshake must never stop ALPR.
+    await new Promise((resolve,reject)=>{
+      const disconnected=()=>{process.off("message",started);reject(new Error("Updater disconnected before recording recovery ownership"));};
+      const started=(message)=>{process.off("disconnect",disconnected);if(message?.kind !== "start")reject(new Error("Invalid updater start handshake"));else resolve();};
+      process.once("message",started);process.once("disconnect",disconnected);
+    });
     const installation = JSON.parse(await readFile(installationFile,"utf8"));
     const privateRoot = path.join(installation.dataRoot,"management","updates");
     if (path.dirname(requestFile) !== privateRoot || !/^request-[a-f0-9-]{36}\.json$/.test(path.basename(requestFile))) throw new Error("Invalid private update request location");

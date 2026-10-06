@@ -79,7 +79,7 @@ async function validate(deployment, state) {
 async function update(deployment, state, packageRoot, expectedManifestSha, options = {}) {
   if (state && !["accepted","rolled-back"].includes(state.status)) throw new Error("An update is already " + state.status + "; validate or roll back first");
   if (state?.backup && !state.backup.cleanedAt) {
-    if (!options.retainPrevious) throw new Error("Clean the previous rollback generation before installing another preview update");
+    if (!options.retainPrevious) throw new Error("Clean the previous rollback generation before installing another update");
     await verifyBackup(deployment, state);
     // Keep accepted generations intact when another release arrives during
     // their retention window. Only the latest generation is offered as rollback.
@@ -89,7 +89,7 @@ async function update(deployment, state, packageRoot, expectedManifestSha, optio
       if (error.code !== "EEXIST" || JSON.stringify(JSON.parse(await readFile(history,"utf8"))) !== JSON.stringify(state)) throw error;
     }
   }
-  if (!packageRoot || !/^[0-9a-f]{64}$/.test(expectedManifestSha || "")) throw new Error("Native preview updates require --package and its trusted --manifest-sha256");
+  if (!packageRoot || !/^[0-9a-f]{64}$/.test(expectedManifestSha || "")) throw new Error("Native updates require --package and its trusted --manifest-sha256");
   if (await hashFile(path.join(packageRoot, "windows-package.json")) !== expectedManifestSha) throw new Error("Update manifest does not match the trusted checksum");
   const manifest = await verifyWindowsPackage(packageRoot, { allowPreview: options.allowPreview });
   if (compareVersions("v" + manifest.version, "v" + deployment.current.version) <= 0) throw new Error("Update target must be a newer version");
@@ -267,7 +267,7 @@ export async function runWindowsUpdater(argumentsList = process.argv.slice(2), e
       await saveState(deployment,state);return state;
     }
     if (command === "status") return state || { status: "no-update-recorded" };
-    if (command === "check") return { current: { tag: "v" + deployment.current.version, commit: deployment.current.commit }, target: null, message: "Native preview updates require an operator-verified Windows package. Browser update installation is not enabled." };
+    if (command === "check") return { current: { tag: "v" + deployment.current.version, commit: deployment.current.commit }, target: null, message: "Use Settings > Software Updates to check published Windows releases. Local maintenance requires a verified package and its manifest checksum." };
     if (command === "update") return await update(deployment, state, packageRoot, manifestSha, options);
     if (command === "validate") return await validate(deployment, state);
     if (command === "rollback") return await rollback(deployment, state);

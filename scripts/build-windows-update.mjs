@@ -11,6 +11,9 @@ export async function buildWindowsUpdate(args=process.argv.slice(2)) {
   if(index < 0 || !args[index+1] || process.platform !== "win32")throw new Error("Build on Windows with --package VERIFIED_PACKAGE [--preview]");
   const packageRoot=path.resolve(args[index+1]);
   const manifest=await verifyWindowsPackage(packageRoot,{allowPreview:args.includes("--preview")});
+  const source=spawnSync("git",["rev-parse","HEAD"],{cwd:root,encoding:"utf8",windowsHide:true});
+  const state=spawnSync("git",["status","--porcelain","--untracked-files=normal"],{cwd:root,encoding:"utf8",windowsHide:true});
+  if(source.status !== 0 || state.status !== 0 || source.stdout.trim() !== manifest.commit || state.stdout.trim())throw new Error("Build Windows update assets from the same clean source commit as their native package");
   const names=windowsUpdateAssetNames(`v${manifest.version}`);
   const output=path.join(root,"dist","updates",manifest.channel === "stable"?"stable":manifest.commit.slice(0,12));
   await mkdir(output,{recursive:true});

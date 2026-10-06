@@ -339,7 +339,7 @@ export default function SoftwareUpdatesPanel({ initialSnapshot, release }) {
 
       {canValidate && !canAccept ? (
         <Card>
-          <CardHeader><CardTitle>Technical system checks</CardTitle><CardDescription>Check database readiness, the exact running image, application health, row counts, and storage inventory. Passing these checks does not accept the release.</CardDescription></CardHeader>
+          <CardHeader><CardTitle>Technical system checks</CardTitle><CardDescription>Check database readiness, the exact running release, application health, row counts, and storage inventory. Passing these checks does not accept the release.</CardDescription></CardHeader>
           <CardContent><Button type="button" variant="outline" disabled={disabled} onClick={() => submit({ operation: "validate" })}><ShieldCheck /> Run Technical system checks again</Button></CardContent>
         </Card>
       ) : null}
@@ -380,7 +380,7 @@ export default function SoftwareUpdatesPanel({ initialSnapshot, release }) {
 
       {canRollback ? (
         <Card className="border-amber-500/40">
-          <CardHeader><CardTitle>Rollback</CardTitle><CardDescription>Restore the pre-update database, configuration, source release, and application image. Records written after the update snapshot will be discarded.</CardDescription></CardHeader>
+          <CardHeader><CardTitle>Rollback</CardTitle><CardDescription>Restore the previous application release, database and configuration. Records written after the update snapshot will be discarded.</CardDescription></CardHeader>
           <CardContent><ConfirmationAction title="Restore the previous release" description="Use this if validation or real-use checks reveal a problem." operation="rollback" buttonLabel="Roll back" variant="destructive" disabled={disabled} onSubmit={submit} /></CardContent>
         </Card>
       ) : null}

@@ -69,10 +69,11 @@ export async function runWindowsUpdateService(installationFile, options = {}) {
     await rm(lockFile); lock = await open(lockFile,"wx");
   }
   await lock.writeFile(JSON.stringify({pid:process.pid,startedAt:new Date().toISOString()}));
-  let stopping = false, child = null;
+  let stopping = Boolean(options.signal?.aborted), child = null;
   let pendingRecovery=null;
   const stop = () => { stopping = true; };
   process.on("SIGTERM",stop); process.on("SIGINT",stop);
+  options.signal?.addEventListener("abort",stop,{once:true});
   const heartbeat = () => publication(control,"heartbeat.json",{formatVersion:1,observedAt:new Date().toISOString()});
   let heartbeatWrite = Promise.resolve();
   const timer = setInterval(() => { heartbeatWrite = heartbeatWrite.then(heartbeat).catch((error)=>console.error(error.message)); },5_000);
@@ -113,7 +114,7 @@ export async function runWindowsUpdateService(installationFile, options = {}) {
         startedAt:new Date().toISOString(),targetTag:request.target,message:"Starting the requested Windows update operation."};
       await publication(control,"request-active.json",{requestId:request.id});
       await publication(control,"state.json",state);
-      let result = null, success = false, updates = Promise.resolve();
+      let result = null, success = false, workerStarted=false, updates = Promise.resolve();
       try {
         const selected = JSON.parse(await readFile(installationFile,"utf8"));
         if (!/^\d+\.\d+\.\d+-[a-f0-9]{12}$/.test(selected.current || "")) throw new Error("Invalid selected Windows release");
@@ -121,7 +122,7 @@ export async function runWindowsUpdateService(installationFile, options = {}) {
         await verifyWindowsPackage(release,{allowPreview:true});
         child = (options.fork || fork)(path.join(root,"host","windows-update-worker.mjs"),[installationFile,requestFile,...(claimed.recover?["--recover"]:[])],
           {execPath:path.join(release,"runtime","node.exe"),windowsHide:true,stdio:["ignore","inherit","inherit","ipc"],env:{...process.env}});
-        await atomicJson(path.join(privateRoot,"active.json"),{requestId:request.id,workerPid:child.pid,requestFile,startedAt:state.startedAt});
+        const completion=new Promise((resolve,reject)=>{child.once("error",reject);child.once("exit",(code)=>resolve(code));});
         child.on("message",(message)=>{
           if (message?.kind === "progress" && typeof message.message === "string") {
             updates=updates.then(()=>publication(control,"state.json",{...state,message:message.message.slice(0,300)}));
@@ -129,7 +130,10 @@ export async function runWindowsUpdateService(installationFile, options = {}) {
             result=message.result; success=message.kind === "result";
           }
         });
-        const code = await new Promise((resolve,reject)=>{child.once("error",reject);child.once("exit",(code)=>resolve(code));});
+        await atomicJson(path.join(privateRoot,"active.json"),{requestId:request.id,workerPid:child.pid,requestFile,startedAt:state.startedAt});
+        workerStarted=true;
+        child.send({kind:"start"},()=>{});
+        const code = await completion;
         success = success && code === 0;
         await updates;
         if(success && request.operation === "update" && !claimed.recover)await refreshWindowsUpdateHost(installationFile);
@@ -140,9 +144,12 @@ export async function runWindowsUpdateService(installationFile, options = {}) {
         await updates.catch(()=>{});
         await publication(control,"state.json",{...state,...result,phase:"failed",message:"The Windows update operation could not complete. Preserve all ALPR data and check the updater log.",completedAt:new Date().toISOString()});
       } finally {
+        if(child && !workerStarted)child.kill();
         child=null;
         await rm(path.join(control,"request-active.json"),{force:true});
-        if(success || !claimed.recover)await rm(path.join(privateRoot,"active.json"),{force:true});
+        const interrupted=workerStarted && !success && !result && !claimed.recover;
+        if(interrupted)pendingRecovery={request,requestFile,recover:true};
+        else if(success || !claimed.recover)await rm(path.join(privateRoot,"active.json"),{force:true});
         // Keep the small validated request as an audit/replay-prevention record.
       }
     }
@@ -150,6 +157,7 @@ export async function runWindowsUpdateService(installationFile, options = {}) {
     clearInterval(timer); await heartbeatWrite;
     await lock.close(); await rm(lockFile,{force:true});
     process.off("SIGTERM",stop); process.off("SIGINT",stop);
+    options.signal?.removeEventListener("abort",stop);
   }
 }
 export const windowsUpdateServiceInternals = Object.freeze({readRegularJson,checkedRequest,publication});
