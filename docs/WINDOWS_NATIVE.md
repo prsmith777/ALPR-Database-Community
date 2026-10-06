@@ -87,6 +87,14 @@ changing the desktop OS requirements of the delivered installer. This catches
 script runtime errors that successful Inno compilation alone cannot detect;
 actual VM installation, service, reboot, and uninstall acceptance remain separate.
 
+The setup build also installs and removes a disposable, non-elevated fixture
+using the actual uninstall event handlers. It waits for Inno's second phase and
+checks the log for runtime errors as well as checking file removal and retained
+data. Regression coverage reproduces the former progress-window error after
+removal, and checks that failed ownership or service-removal checks preserve
+program files. Uninstall returns to normal file-removal progress before Inno
+destroys the window; post-uninstall events do not access its controls.
+
 The runtime test signs in with the chosen password and requests every Settings
 page with the build checkout made unavailable. Release metadata uses a static
 JSON import so the standalone bundle carries its version rather than resolving

@@ -7,10 +7,33 @@ import path from "node:path";
 import os from "node:os";
 import { existsSync } from "node:fs";
 import { verifyWindowsSetupStartup } from "../scripts/test-windows-setup-startup.mjs";
+import { verifyWindowsSetupUninstall } from "../scripts/test-windows-setup-uninstall.mjs";
 
 const powershell = process.platform === "win32" ? path.join(process.env.SystemRoot, "System32", "WindowsPowerShell", "v1.0", "powershell.exe") : null;
 const root = path.resolve(import.meta.dirname, "..");
 const compiler = process.env.ALPR_ISCC_PATH || path.join(root, ".native-dependencies/inno-6.7.3/ISCC.exe");
+
+test("actual uninstall completes without accessing the destroyed progress window", {
+  skip: process.platform !== "win32" || !existsSync(compiler),
+}, async () => {
+  assert.equal((await verifyWindowsSetupUninstall({ compiler })).verified, true);
+  const source = await readFile(path.join(root, "scripts/windows/CommunitySetup.iss"), "utf8");
+  const broken = source.replace("  if CurUninstallStep = usDone then", `  if CurUninstallStep = usPostUninstall then begin
+    UninstallProgressForm.ProgressBar.Style := npbstNormal;
+    UninstallProgressForm.ProgressBar.Position := UninstallProgressForm.ProgressBar.Max;
+  end;
+  if CurUninstallStep = usDone then`);
+  assert.notEqual(broken, source);
+  await assert.rejects(verifyWindowsSetupUninstall({ compiler, sourceText: broken }), /Could not call proc/);
+});
+
+test("actual uninstall preserves program files when ownership or service removal fails", {
+  skip: process.platform !== "win32" || !existsSync(compiler),
+}, async () => {
+  for (const failure of ["check", "remove"]) {
+    assert.equal((await verifyWindowsSetupUninstall({ compiler, failure })).verified, true);
+  }
+});
 test("compiled wizard startup passes and catches the original date separator type mismatch", {
   skip: process.platform !== "win32" || !existsSync(compiler),
 }, async (t) => {

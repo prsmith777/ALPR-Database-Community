@@ -348,7 +348,7 @@ begin
   Result := ExecAndLogOutput(Powershell, '-NoProfile -NonInteractive -ExecutionPolicy Bypass -File "' +
     Script + '" -CheckOnly', '', SW_HIDE, ewWaitUntilTerminated, ResultCode, nil) and (ResultCode = 0);
   if not Result then
-    MsgBox('ALPR could not be removed safely. Application files and data have been preserved. Contact the maintainer with the uninstall log.', mbError, MB_OK);
+    SuppressibleMsgBox('ALPR could not be removed safely. Application files and data have been preserved. Contact the maintainer with the uninstall log.', mbError, MB_OK, IDOK);
 end;
 
 procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
@@ -361,12 +361,11 @@ begin
     if not ExecAndLogOutput(Powershell, '-NoProfile -NonInteractive -ExecutionPolicy Bypass -File "' +
       ExpandConstant('{app}\Uninstall.ps1') + '"', '', SW_HIDE, ewWaitUntilTerminated, ResultCode, @UninstallOutput) or (ResultCode <> 0) then
       RaiseException('ALPR services could not be removed. Application files and data have been preserved.');
+    // Inno destroys UninstallProgressForm before usPostUninstall. Restore
+    // normal file-removal progress while the window still exists.
+    UninstallProgressForm.ProgressBar.Style := npbstNormal;
     UninstallProgressForm.StatusLabel.Caption := 'Removing program files. Your plate records and images are preserved…';
   end;
-  if CurUninstallStep = usPostUninstall then begin
-    UninstallProgressForm.ProgressBar.Style := npbstNormal;
-    UninstallProgressForm.ProgressBar.Position := UninstallProgressForm.ProgressBar.Max;
-  end;
   if CurUninstallStep = usDone then
-    MsgBox('ALPR has been removed. Your plate records, images, settings and backups are kept in ProgramData for recovery.', mbInformation, MB_OK);
+    SuppressibleMsgBox('ALPR has been removed. Your plate records, images, settings and backups are kept in ProgramData for recovery.', mbInformation, MB_OK, IDOK);
 end;

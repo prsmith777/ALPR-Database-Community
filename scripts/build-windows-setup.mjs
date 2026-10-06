@@ -5,6 +5,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { assertWindowsHost, hashFile, verifyWindowsPackage } from "./windows-native-package.mjs";
 import { verifyWindowsSetupStartup } from "./test-windows-setup-startup.mjs";
+import { verifyWindowsSetupUninstall } from "./test-windows-setup-uninstall.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 function run(command, args) {
@@ -53,7 +54,8 @@ export async function buildWindowsSetup(args = process.argv.slice(2)) {
   const { compiler, pins } = await ensureInstallerCompiler();
   await verifyWindowsSetupStartup({ compiler });
   await verifyWindowsSetupStartup({ compiler, sourceFile: path.join(root, "scripts/windows/CommunityNetwork.iss") });
-  console.log("Verified compiled installer wizard startup before packaging");
+  await verifyWindowsSetupUninstall({ compiler });
+  console.log("Verified compiled installer startup and actual uninstall lifecycle before packaging");
   const outputRoot = path.join(root, "dist", "setup");
   await mkdir(outputRoot, { recursive: true });
   const name = `ALPR-Community-${manifest.version}-${manifest.commit.slice(0,12)}-${manifest.channel}-Setup`;
@@ -69,7 +71,7 @@ export async function buildWindowsSetup(args = process.argv.slice(2)) {
   await writeFile(output + ".json", JSON.stringify({ formatVersion: 1, source: manifest.source,
     version: manifest.version, commit: manifest.commit, channel: manifest.channel,
     payloadManifestSha256: manifestSha256, setupSha256: checksum, prerequisites: pins,
-    signed: false, wizardStartup: "verified", networkWizardStartup: "verified",
+    signed: false, wizardStartup: "verified", networkWizardStartup: "verified", uninstallLifecycle: "verified",
     startupMode: "Automatic", startupReadiness: "authenticated-postgresql-query", desktopAcceptance: "pending" }, null, 2) + "\n", { flag: "wx" });
   console.log("Built graphical Windows setup: " + output);
   return output;
