@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+## 0.1.49 — Reliable Windows update retries (2026-10-06)
+
+- Retry Windows updates when an earlier attempt already copied the target release: verify and reuse complete copies, stage new copies privately, and preserve incomplete copies for diagnosis. Never replace the active release during staging.
+- Stop graphical Setup when the update engine reports a failure, even if its process returns zero. Require the expected installed release and owned running listener before showing completion.
+- Exercise successful, failed and unverified application installs through compiled disposable installer fixtures.
+
 ## 0.1.48 — Windows updates from Settings (2026-10-06)
 
 - Enable native Windows updates in Settings → Software Updates through a separate Windows service, with stable release discovery, verified downloads, visible progress, recovery backup, restart, technical checks, acceptance and rollback.

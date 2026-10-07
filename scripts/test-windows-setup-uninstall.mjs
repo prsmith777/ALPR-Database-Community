@@ -8,7 +8,7 @@ import { fileURLToPath } from "node:url";
 
 const root = path.resolve(import.meta.dirname, "..");
 function run(command, args, cwd) {
-  const result = spawnSync(command, args, { cwd, encoding: "utf8", windowsHide: true, timeout: 45_000 });
+  const result = spawnSync(command, args, { cwd, encoding: "utf8", windowsHide: true, timeout: 120_000 });
   if (result.error) throw result.error;
   return result;
 }

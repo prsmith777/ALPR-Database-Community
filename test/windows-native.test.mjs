@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { mkdtemp, mkdir, cp, readFile, writeFile, rm, symlink } from "node:fs/promises";
+import { mkdtemp, mkdir, cp, readFile, writeFile, rm, symlink, readdir } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
@@ -253,4 +253,45 @@ test("Windows installer parses with inbox PowerShell 5.1", {skip:process.platfor
     const result = spawnSync(path.join(process.env.SystemRoot,"System32/WindowsPowerShell/v1.0/powershell.exe"),["-NoProfile","-NonInteractive","-Command",command],{encoding:"utf8",windowsHide:true,env:{...process.env,ALPR_TEST_INSTALLER:path.resolve("scripts/windows",file)}});
     assert.equal(result.status,0,result.stderr);
   }
+});
+
+async function stagingFixture(t, runner = () => "") {
+  const f = await fixture(t);
+  await writeFile(f.deployment.installationFile, JSON.stringify({...f.deployment.installation,formatVersion:1,profile:"windows-native",environment:{DB_HOST:"127.0.0.1:5432",DB_USER:"postgres",DB_NAME:"postgres",DB_PASSWORD:"fixture"}}));
+  const deployment = await loadWindowsDeployment(f.deployment.installationFile,{skipHostCheck:true,runner});
+  return {...f,deployment,destination:path.join(deployment.releaseRoot,"0.1.47-"+"b".repeat(12))};
+}
+test("native staging reuses a fully verified release after an interrupted update",async t=>{
+  const probes=[];const f=await stagingFixture(t,(exe,args)=>{probes.push({exe,args});return "";});
+  await cp(f.target,f.destination,{recursive:true});
+  const first=await f.deployment.stage(f.target);const second=await f.deployment.stage(f.target);
+  assert.equal(first.reused,true);assert.equal(second.reused,true);assert.equal(probes.length,2);
+  assert.deepEqual(await readdir(f.deployment.releaseRoot),[f.deployment.installation.current,path.basename(f.destination)]);
+  assert.equal(JSON.parse(await readFile(f.deployment.installationFile,"utf8")).current,f.deployment.installation.current);
+});
+test("native staging preserves an incomplete old copy and publishes only a verified replacement",async t=>{
+  const f=await stagingFixture(t);await mkdir(f.destination);await writeFile(path.join(f.destination,"interrupted.txt"),"preserve this old copy");
+  const result=await f.deployment.stage(f.target);assert.equal(result.path,f.destination);
+  assert.equal(await readFile(path.join(result.preserved,"interrupted.txt"),"utf8"),"preserve this old copy");
+  assert.equal((await verifyWindowsPackage(f.destination)).commit,"b".repeat(40));
+  assert.equal(path.dirname(result.preserved),f.deployment.releaseRoot);
+  assert.equal(JSON.parse(await readFile(f.deployment.installationFile,"utf8")).current,f.deployment.installation.current);
+});
+test("a failed native probe leaves the selected release unchanged and a later retry can succeed",async t=>{
+  let fail=true;const f=await stagingFixture(t,()=>{if(fail)throw new Error("fixture CPU probe failed");return "";});
+  await assert.rejects(f.deployment.stage(f.target),/CPU probe failed/);
+  await assert.rejects(readFile(path.join(f.destination,"windows-package.json")),{code:"ENOENT"});
+  fail=false;await f.deployment.stage(f.target);
+  assert.equal((await verifyWindowsPackage(f.destination)).commit,"b".repeat(40));
+  assert.equal(JSON.parse(await readFile(f.deployment.installationFile,"utf8")).current,f.deployment.installation.current);
+});
+test("native staging refuses to replace an active release or a linked target",async t=>{
+  const f=await stagingFixture(t);await cp(f.target,f.destination,{recursive:true});
+  const installation=JSON.parse(await readFile(f.deployment.installationFile,"utf8"));
+  await writeFile(f.deployment.installationFile,JSON.stringify({...installation,current:path.basename(f.destination)}));
+  await assert.rejects(f.deployment.stage(f.target),/active Windows release/);
+  await writeFile(f.deployment.installationFile,JSON.stringify(installation));await rm(f.destination,{recursive:true});
+  await symlink(f.target,f.destination,process.platform==="win32"?"junction":"dir");
+  await assert.rejects(f.deployment.stage(f.target),/links|junctions/);
+  assert.equal((await verifyWindowsPackage(f.target)).commit,"b".repeat(40));
 });

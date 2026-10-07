@@ -278,3 +278,16 @@ function Assert-SetupWorkRoot([string]$WorkRoot) {
     }
     return $root
 }
+
+function Test-InstalledSetupPayload([string]$PackageRoot, [string]$InstallRoot = "$env:ProgramFiles\ALPR Community") {
+    $root = Assert-SetupDirectory $InstallRoot
+    $expected = Get-Content -LiteralPath (Join-Path $PackageRoot 'windows-package.json') -Raw | ConvertFrom-Json
+    $installed = Get-Content -LiteralPath (Join-Path $root 'installation.json') -Raw | ConvertFrom-Json
+    $name = "$($expected.version)-$($expected.commit.Substring(0,12))"
+    if ($installed.current -ne $name -or $installed.installRoot -ne $root) { throw 'The installed application is still on a different release. Setup has stopped.' }
+    $ps = "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe"
+    $output = & $ps -NoProfile -NonInteractive -ExecutionPolicy Bypass -File (Join-Path $root 'host\Service-Control.ps1') -Operation attest
+    if ($LASTEXITCODE -ne 0) { throw 'The installed application could not attest its running release' }
+    $running = ($output -join [Environment]::NewLine) | ConvertFrom-Json
+    if ($running.current -ne $name -or $running.commit -ne $expected.commit -or $running.status -ne 'Running' -or $running.listenerOwned -ne $true) { throw 'The running application does not own the expected release listener' }
+}

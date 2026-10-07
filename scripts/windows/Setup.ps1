@@ -113,6 +113,8 @@ try {
         Progress 'Creating a recovery backup and updating your existing ALPR installation...'
         $env:ALPR_WINDOWS_INSTALLATION="$env:ProgramFiles\ALPR Community\installation.json"
         Native (Join-Path $payload 'runtime\node.exe') @((Join-Path $payload 'host\windows-enable-updates.mjs'),$payload,$record.manifestSha256)
+        Test-InstalledSetupPayload $payload
+        Write-Output 'ALPR_SETUP_COMPLETE:verified'
         exit 0
     }
     Progress 'Installing ALPR and starting its services...'
@@ -124,11 +126,10 @@ try {
     if ($record.listenOnNetwork -eq $true) { $installArguments += '-ListenOnNetwork' }
     if ($record.migrationBackup) { $installArguments += @('-MigrationBackup',$record.migrationBackup) }
     Native "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe" $installArguments
-    $controller = "$env:ProgramFiles\ALPR Community\host\Service-Control.ps1"
-    Native "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe" @(
-        '-NoProfile','-NonInteractive','-ExecutionPolicy','Bypass','-File',$controller,'-Operation','attest')
+    Test-InstalledSetupPayload $payload
     if ($record.reuseRetainedData) { Progress 'ALPR is ready. Sign in with your existing ALPR password.' }
     else { Progress 'ALPR is ready. Sign in with the password you chose.' }
+    Write-Output 'ALPR_SETUP_COMPLETE:verified'
     exit 0
 } catch {
     # The wrapper records this in its support log. Never serialize the record
