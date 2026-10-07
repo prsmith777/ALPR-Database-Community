@@ -23,8 +23,8 @@ test("release information resolves a commit-pinned deployment image", () => {
     ALPR_RELEASE_CHANNEL: "staging",
   });
 
-  assert.equal(release.version, "0.1.50");
-  assert.equal(release.manualVersion, "3.18");
+  assert.equal(release.version, "0.1.51");
+  assert.equal(release.manualVersion, "3.19");
   assert.equal(release.manualUpdatedAt, "October 7, 2026");
   assert.equal(release.gitSha, "8cd2fa8");
   assert.equal(release.channel, "staging");
@@ -32,7 +32,7 @@ test("release information resolves a commit-pinned deployment image", () => {
   assert.equal(release.readOnly, true);
   assert.equal(
     release.notes.title,
-    "Windows update file-lock recovery"
+    "Windows update database validation"
   );
   assert.equal(release.notes.publishedAt, "2026-10-07");
   assert.ok(release.notes.items.length >= 3);
