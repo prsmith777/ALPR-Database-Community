@@ -8,6 +8,15 @@ fixture_home="$(mktemp -d /tmp/alpr-helper-ci.XXXXXXXX)"
 sudoers_file="/etc/sudoers.d/alpr-helper-ci"
 [[ ! -e "$sudoers_file" ]] && ! id "$fixture_owner" >/dev/null 2>&1
 cleanup() {
+  local result=$?
+  if [[ "$result" != 0 ]]; then
+    fixture_uid="$(id -u "$fixture_owner" 2>/dev/null || true)"
+    if [[ -n "$fixture_uid" ]]; then
+      systemctl status "user@${fixture_uid}.service" --no-pager || true
+      journalctl --no-pager --unit="user@${fixture_uid}.service" --lines=60 || true
+      journalctl --no-pager "_UID=$fixture_uid" --lines=60 || true
+    fi
+  fi
   loginctl disable-linger "$fixture_owner" || true
   fixture_uid="$(id -u "$fixture_owner" 2>/dev/null || true)"
   if [[ -n "$fixture_uid" ]]; then systemctl stop "user@${fixture_uid}.service" || true; fi
@@ -29,9 +38,13 @@ visudo -cf "$sudoers_file"
 run_owner() {
   sudo -u "$fixture_owner" -H env -u XDG_RUNTIME_DIR -u DBUS_SESSION_BUS_ADDRESS "$node_binary" "$fixture_home/app/verify.mjs" "$@"
 }
+echo "Installing and verifying helper for the account without a login session"
 run_owner install
+echo "Verified initial helper heartbeat and persistent enablement"
 fixture_uid="$(id -u "$fixture_owner")"
+echo "Restarting the isolated account user manager"
 systemctl restart "user@${fixture_uid}.service"
+echo "User manager restarted; checking its automatic helper startup"
 run_owner verify-startup
 run_owner preserve
 echo 'Real Linux helper installation, no-login user-manager restart, fresh heartbeat and idempotency passed.'
