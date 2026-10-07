@@ -55,9 +55,6 @@ function formatDate(value) {
 }
 
 function StatusBadge({ snapshot, workflow }) {
-  if (snapshot.deploymentProfile === "windows-native") {
-    return <span className="rounded-full bg-amber-500/15 px-2.5 py-1 text-xs font-medium text-amber-700 dark:text-amber-300">Native Windows</span>;
-  }
   if (!snapshot.agent.online) {
     return <span className="rounded-full bg-amber-500/15 px-2.5 py-1 text-xs font-medium text-amber-700 dark:text-amber-300">Agent offline</span>;
   }
@@ -71,11 +68,11 @@ function StatusBadge({ snapshot, workflow }) {
 }
 
 function WorkflowBanner({ snapshot, state, workflow, activeUpdateTag }) {
-  if (snapshot.deploymentProfile === "windows-native") {
+  if (snapshot.deploymentProfile === "windows-native" && !snapshot.agent.online) {
     return (
       <div role="status" className="rounded-lg border border-amber-500/40 bg-amber-500/10 p-4">
-        <p className="font-semibold">Windows updates require administrator access</p>
-        <p className="mt-2 text-sm text-muted-foreground">Follow the <a href={WINDOWS_UPDATE_GUIDE_URL} target="_blank" rel="noreferrer" className="underline">Windows update instructions</a> to preserve your database and settings. Windows updates are installed locally by an administrator.</p>
+        <p className="font-semibold">Windows update service is offline</p>
+        <p className="mt-2 text-sm text-muted-foreground">Run the latest Community Windows installer once to enable updates on an older installation. It preserves your database, images and settings. If updates were already enabled, check the ALPR Community Updater service. <a href={WINDOWS_UPDATE_GUIDE_URL} target="_blank" rel="noreferrer" className="underline">Windows update instructions</a></p>
       </div>
     );
   }
@@ -294,7 +291,9 @@ export default function SoftwareUpdatesPanel({ initialSnapshot, release }) {
             <StatusBadge snapshot={snapshot} workflow={workflow} />
           </div>
           <CardDescription>
-            The web application can request only fixed update operations. A restricted worker on the Linux host owns Git, Docker, backups, migrations, and service restarts.
+            {snapshot.deploymentProfile === "windows-native"
+              ? "Install stable Community updates here. ALPR downloads and verifies the Windows package, creates a recovery backup, then restarts and checks the application."
+              : "The web application can request only fixed update operations. A restricted worker on the Linux host owns Git, Docker, backups, migrations, and service restarts."}
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
@@ -311,7 +310,7 @@ export default function SoftwareUpdatesPanel({ initialSnapshot, release }) {
               <a className="font-medium text-primary underline-offset-4 hover:underline" href={COMMUNITY_UPDATE_GUIDE_URL} target="_blank" rel="noreferrer">Open the Community update guide</a>
             </div>
           </div>
-          {!snapshot.agent.online ? <p className="text-sm text-muted-foreground">On the ALPR host, run <code className="font-mono">./alpr-community agent install</code>. For unattended startup after reboot, enable lingering as described in the update guide.</p> : null}
+          {!snapshot.agent.online && snapshot.deploymentProfile !== "windows-native" ? <p className="text-sm text-muted-foreground">On the ALPR host, run <code className="font-mono">./alpr-community agent install</code>. For unattended startup after reboot, enable lingering as described in the update guide.</p> : null}
           {reconnecting ? (
             <div className="rounded-md border border-blue-500/30 bg-blue-500/10 p-3 text-sm text-blue-700 dark:text-blue-300">ALPR may be restarting. This page will reconnect automatically.</div>
           ) : null}
@@ -340,14 +339,16 @@ export default function SoftwareUpdatesPanel({ initialSnapshot, release }) {
 
       {canValidate && !canAccept ? (
         <Card>
-          <CardHeader><CardTitle>Technical system checks</CardTitle><CardDescription>Check database readiness, the exact running image, application health, row counts, and storage inventory. Passing these checks does not accept the release.</CardDescription></CardHeader>
+          <CardHeader><CardTitle>Technical system checks</CardTitle><CardDescription>Check database readiness, the exact running release, application health, row counts, and storage inventory. Passing these checks does not accept the release.</CardDescription></CardHeader>
           <CardContent><Button type="button" variant="outline" disabled={disabled} onClick={() => submit({ operation: "validate" })}><ShieldCheck /> Run Technical system checks again</Button></CardContent>
         </Card>
       ) : null}
 
       {workflow.canInstall ? (
         <Card>
-          <CardHeader><CardTitle>Install {target}</CardTitle><CardDescription>A verified database/configuration backup is created before the exact tagged image is built, installed, restarted, and checked. When installation finishes, return to this page and accept the update after completing the five real-use checks. After acceptance, one rollback generation is retained for the configured retention period.</CardDescription></CardHeader>
+          <CardHeader><CardTitle>Install {target}</CardTitle><CardDescription>{snapshot.deploymentProfile === "windows-native"
+            ? "ALPR creates a verified recovery backup before installing the selected Windows release. If installation or technical checks fail, ALPR restores the previous release and pre-update database automatically. Writes during an unsuccessful update may be discarded. Complete the real-use checks after installation, then accept the update."
+            : "A verified database/configuration backup is created before the exact tagged image is built, installed, restarted, and checked. When installation finishes, return to this page and accept the update after completing the five real-use checks. After acceptance, one rollback generation is retained for the configured retention period."}</CardDescription></CardHeader>
           <CardContent>
             <ConfirmationAction title="Install available update" description="ALPR will be briefly unavailable while the host backs up, migrates, restarts, and runs Technical system checks." operation="update" target={target} buttonLabel={`Install ${target}`} disabled={disabled} onSubmit={submit} />
           </CardContent>
@@ -379,7 +380,7 @@ export default function SoftwareUpdatesPanel({ initialSnapshot, release }) {
 
       {canRollback ? (
         <Card className="border-amber-500/40">
-          <CardHeader><CardTitle>Rollback</CardTitle><CardDescription>Restore the pre-update database, configuration, source release, and application image. Records written after the update snapshot will be discarded.</CardDescription></CardHeader>
+          <CardHeader><CardTitle>Rollback</CardTitle><CardDescription>Restore the previous application release, database and configuration. Records written after the update snapshot will be discarded.</CardDescription></CardHeader>
           <CardContent><ConfirmationAction title="Restore the previous release" description="Use this if validation or real-use checks reveal a problem." operation="rollback" buttonLabel="Roll back" variant="destructive" disabled={disabled} onSubmit={submit} /></CardContent>
         </Card>
       ) : null}

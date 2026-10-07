@@ -24,6 +24,7 @@ async function readState(deployment) {
 }
 async function saveState(deployment, state) {
   await atomicJson(path.join(deployment.backupRoot, "updater-state.json"), state);
+  deployment.updateProgress?.(state.status);
 }
 function ownedBackup(deployment, state) {
   const name = state?.backup?.id;
@@ -59,10 +60,10 @@ async function validate(deployment, state) {
     if (installed.current !== state.target.name) throw new Error("Active release differs from update target");
     const manifest = await verifyWindowsPackage(path.join(deployment.releaseRoot, installed.current), { allowPreview: state.target.channel === "preview" });
     if (manifest.commit !== state.target.commit) throw new Error("Active release commit differs from update target");
+    const { health, running } = await verifyRunningRelease(deployment, state.target.name, state.target.commit);
     const counts = await deployment.counts();
     if (compareMinimumCounts(state.backup.counts, counts).length) throw new Error("Database row counts decreased after update");
     assertPreservedFiles(state.backup.storage, await fileInventory(path.join(deployment.data, "storage")));
-    const { health, running } = await verifyRunningRelease(deployment, state.target.name, state.target.commit);
     state.validation = { health, running, completedAt: new Date().toISOString(), counts };
     state.status = "ready-for-acceptance";
     delete state.lastFailure;
@@ -77,12 +78,23 @@ async function validate(deployment, state) {
 }
 async function update(deployment, state, packageRoot, expectedManifestSha, options = {}) {
   if (state && !["accepted","rolled-back"].includes(state.status)) throw new Error("An update is already " + state.status + "; validate or roll back first");
-  if (state?.backup && !state.backup.cleanedAt) throw new Error("Clean the previous rollback generation before installing another preview update");
-  if (!packageRoot || !/^[0-9a-f]{64}$/.test(expectedManifestSha || "")) throw new Error("Native preview updates require --package and its trusted --manifest-sha256");
+  if (state?.backup && !state.backup.cleanedAt) {
+    if (!options.retainPrevious) throw new Error("Clean the previous rollback generation before installing another update");
+    await verifyBackup(deployment, state);
+    // Keep accepted generations intact when another release arrives during
+    // their retention window. Only the latest generation is offered as rollback.
+    const history = path.join(deployment.backupRoot, `history-${state.backup.id}.json`);
+    try { await writeFile(history, JSON.stringify(state, null, 2) + "\n", { flag: "wx" }); }
+    catch (error) {
+      if (error.code !== "EEXIST" || JSON.stringify(JSON.parse(await readFile(history,"utf8"))) !== JSON.stringify(state)) throw error;
+    }
+  }
+  if (!packageRoot || !/^[0-9a-f]{64}$/.test(expectedManifestSha || "")) throw new Error("Native updates require --package and its trusted --manifest-sha256");
   if (await hashFile(path.join(packageRoot, "windows-package.json")) !== expectedManifestSha) throw new Error("Update manifest does not match the trusted checksum");
   const manifest = await verifyWindowsPackage(packageRoot, { allowPreview: options.allowPreview });
   if (compareVersions("v" + manifest.version, "v" + deployment.current.version) <= 0) throw new Error("Update target must be a newer version");
   // Stage and probe native dependencies before stopping the existing application.
+  deployment.updateProgress?.("preparing");
   const staged = await deployment.stage(packageRoot);
   const disk = await statfs(deployment.backupRoot, { bigint: true });
   const databaseBytes = BigInt(deployment.sql("SELECT pg_database_size(current_database());"));
@@ -136,6 +148,16 @@ async function update(deployment, state, packageRoot, expectedManifestSha, optio
       } catch { state.recovery = { previousApplicationRestored: false }; }
     }
     await saveState(deployment, state);
+    if (options.automaticRecovery && backupComplete && migrationStarted) {
+      try {
+        state = await rollback(deployment, state);
+        state.recovery = { previousApplicationRestored: true, automatic: true };
+        await saveState(deployment, state);
+      } catch {
+        state.recovery = { previousApplicationRestored: false, automatic: true };
+        await saveState(deployment, state);
+      }
+    }
     throw error;
   }
 }
@@ -199,7 +221,7 @@ async function writeRestoreTransaction(source, destination) {
 export async function runWindowsUpdater(argumentsList = process.argv.slice(2), environment = process.env, options = {}) {
   options = { ...options, allowPreview: options.allowPreview === true || environment.ALPR_WINDOWS_PREVIEW === "ALPR_WINDOWS_PREVIEW_APPROVED" };
   const [command = "status", ...args] = argumentsList;
-  if (!["check","status","update","validate","accept","rollback","cleanup"].includes(command)) throw new Error("Unsupported native maintenance operation");
+  if (!["check","status","update","validate","accept","rollback","cleanup"].includes(command) && !(command === "recover" && options.internalRecovery)) throw new Error("Unsupported native maintenance operation");
   let packageRoot, manifestSha;
   for (let i = 0; i < args.length; i++) {
     const flag = args[i], value = args[++i];
@@ -210,18 +232,42 @@ export async function runWindowsUpdater(argumentsList = process.argv.slice(2), e
   }
   confirm(command, environment, options.confirmed);
   const deployment = options.deployment || await loadWindowsDeployment(environment.ALPR_WINDOWS_INSTALLATION, options);
+  deployment.updateProgress = options.progress;
   await mkdir(deployment.backupRoot, { recursive: true });
   await assertRealDirectory(deployment.backupRoot);
   const lockPath = path.join(deployment.backupRoot, "maintenance.lock");
-  const lock = await open(lockPath, "wx").catch((error) => {
-    if (error.code === "EEXIST") throw new Error("Native maintenance lock exists; verify no maintenance process is running before removing it");
-    throw error;
-  });
+  let lock;
+  try { lock=await open(lockPath,"wx"); }
+  catch(error) {
+    if(error.code !== "EEXIST")throw error;
+    if(!options.internalRecovery)throw new Error("Native maintenance lock exists; verify no maintenance process is running before removing it");
+    const oldPid=(await readFile(lockPath,"utf8")).trim();
+    if(!/^[1-9]\d{0,9}$/.test(oldPid))throw new Error("An unrecognized maintenance lock requires administrator recovery");
+    try {process.kill(Number(oldPid),0);throw new Error("A native maintenance process is still running");}
+    catch(probe){if(probe.code !== "ESRCH")throw probe;}
+    await rm(lockPath);lock=await open(lockPath,"wx");
+  }
   await lock.writeFile(String(process.pid));
   try {
     const state = await readState(deployment);
+    if(command === "recover") {
+      if(!state || ["accepted","rolled-back","ready-for-acceptance"].includes(state.status)) {
+        deployment.service("start");
+        await verifyRunningRelease(deployment,deployment.installation.current,deployment.current.commit);
+        return state || {status:"no-update-recorded"};
+      }
+      if(["backing-up","backup-failed"].includes(state.status) && !state.backup.dumpSha256) {
+        if(deployment.installation.current !== state.current.name)throw new Error("Interrupted backup selected a different release");
+        deployment.service("start");await verifyRunningRelease(deployment,state.current.name,state.current.commit);
+        await assertRealDirectory(ownedBackup(deployment,state));
+        await rm(ownedBackup(deployment,state),{recursive:true});
+        state.backup.cleanedAt=new Date().toISOString();state.status="rolled-back";
+      } else {await rollback(deployment,state);}
+      state.recovery={previousApplicationRestored:true,automatic:true,interrupted:true};
+      await saveState(deployment,state);return state;
+    }
     if (command === "status") return state || { status: "no-update-recorded" };
-    if (command === "check") return { current: { tag: "v" + deployment.current.version, commit: deployment.current.commit }, target: null, message: "Native preview updates require an operator-verified Windows package. Browser update installation is not enabled." };
+    if (command === "check") return { current: { tag: "v" + deployment.current.version, commit: deployment.current.commit }, target: null, message: "Use Settings > Software Updates to check published Windows releases. Local maintenance requires a verified package and its manifest checksum." };
     if (command === "update") return await update(deployment, state, packageRoot, manifestSha, options);
     if (command === "validate") return await validate(deployment, state);
     if (command === "rollback") return await rollback(deployment, state);

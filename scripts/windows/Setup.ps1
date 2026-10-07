@@ -6,6 +6,7 @@ param(
     [string]$WorkRoot,
     [switch]$ListenOnNetwork,
     [switch]$ReuseRetainedData,
+    [switch]$UpdateExisting,
     [string]$MigrationBackup
 )
 $ErrorActionPreference = 'Stop'
@@ -39,7 +40,8 @@ try {
         exit 0
     }
     Assert-SetupHost
-    Assert-FreshSetup -ReuseRetainedData:$ReuseRetainedData
+    if ($UpdateExisting) { [void](Assert-ExistingSetup); if($ReuseRetainedData -or $MigrationBackup){throw 'Update mode preserves the existing installation; do not select a migration or restore'} }
+    else { Assert-FreshSetup -ReuseRetainedData:$ReuseRetainedData }
     if ($Operation -eq 'prepare') {
         Progress 'Checking your computer and the application...'
         Test-SetupPayload $PackageRoot $ManifestSha256
@@ -47,10 +49,15 @@ try {
         $parent = Split-Path -Parent $work
         Protect-SetupDirectory $parent
         Protect-SetupDirectory $work
-        $record = @{ formatVersion=1; workRoot=$work; manifestSha256=$ManifestSha256; listenOnNetwork=[bool]$ListenOnNetwork; reuseRetainedData=[bool]$ReuseRetainedData }
+        $record = @{ formatVersion=1; workRoot=$work; manifestSha256=$ManifestSha256; listenOnNetwork=[bool]$ListenOnNetwork; reuseRetainedData=[bool]$ReuseRetainedData;updateExisting=[bool]$UpdateExisting }
         [IO.File]::WriteAllText($recordFile, ($record | ConvertTo-Json), (New-Object Text.UTF8Encoding($false)))
         $payload = Join-Path $work 'payload'
         Copy-Item -LiteralPath $PackageRoot -Destination $payload -Recurse
+        if($UpdateExisting){
+            Test-SetupPayload $payload $ManifestSha256
+            Progress 'Your existing ALPR installation will be updated with an automatic recovery backup.'
+            exit 0
+        }
         if ($MigrationBackup) {
             Progress 'Copying and verifying your migration backup...'
             Native (Join-Path $payload 'runtime\node.exe') @((Join-Path $payload 'host\community-migration-bundle.mjs'),'stage','--source',$MigrationBackup,'--output',(Join-Path $work 'migration'))
@@ -101,6 +108,13 @@ try {
     if ($record.workRoot -ne $work -or $record.formatVersion -ne 1 -or $record.manifestSha256 -notmatch '^[0-9a-f]{64}$') { throw 'Setup workspace ownership mismatch' }
     $payload = Join-Path $work 'payload'
     Test-SetupPayload $payload $record.manifestSha256
+    if($record.updateExisting){
+        [void](Assert-ExistingSetup)
+        Progress 'Creating a recovery backup and updating your existing ALPR installation...'
+        $env:ALPR_WINDOWS_INSTALLATION="$env:ProgramFiles\ALPR Community\installation.json"
+        Native (Join-Path $payload 'runtime\node.exe') @((Join-Path $payload 'host\windows-enable-updates.mjs'),$payload,$record.manifestSha256)
+        exit 0
+    }
     Progress 'Installing ALPR and starting its services...'
     $installArguments = @(
         '-NoProfile','-NonInteractive','-ExecutionPolicy','Bypass','-File',(Join-Path $payload 'Install.ps1'),

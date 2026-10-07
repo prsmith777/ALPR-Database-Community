@@ -389,6 +389,13 @@ jobs:
           if ($package.Count -ne 1) { throw 'Expected one freshly built native package' }
           yarn package:windows:setup --package $package[0].FullName --preview
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Build the verified Windows UI update assets
+        shell: pwsh
+        run: |
+          $package = @(Get-ChildItem -LiteralPath dist -Directory -Filter 'alpr-community-*-windows-x64')
+          if ($package.Count -ne 1) { throw 'Expected one freshly built native package' }
+          yarn package:windows:update --package $package[0].FullName --preview
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Verify isolated native PostgreSQL and ingestion
         shell: pwsh
         run: |

@@ -62,8 +62,27 @@ function ps(script, env = {}) {
     cwd:root, env:environment,encoding:"utf8",windowsHide:true,
   });
 }
+test("backup process reports the real success or failure with redirected output on PowerShell 5.1", {skip:!powershell}, async (t) => {
+  const fixture = await mkdtemp(path.join(os.tmpdir(), "alpr-backup-exit-"));
+  t.after(() => rm(fixture, {recursive:true,force:true}));
+  const child = path.join(fixture,"child.ps1");
+  await writeFile(child,"param([int]$Code)\nWrite-Output 'backup child finished'\nStart-Sleep -Milliseconds 400\nexit $Code\n");
+  const result = ps(`. ./scripts/windows/Setup-Helpers.ps1
+    $ErrorActionPreference='Stop'
+    foreach ($expected in @(0,7)) {
+      $p=Start-Process -FilePath $env:ALPR_TEST_POWERSHELL -ArgumentList @('-NoProfile','-File',('"'+$env:ALPR_TEST_CHILD+'"'),'-Code',$expected) -PassThru -WindowStyle Hidden -RedirectStandardOutput ($env:ALPR_TEST_CHILD+'.out') -RedirectStandardError ($env:ALPR_TEST_CHILD+'.err')
+      $script:pumps=0
+      $actual=Wait-SetupChildProcess $p { $script:pumps++ }
+      if ($actual -ne $expected -or $script:pumps -eq 0) { throw 'Child exit status or responsive progress wait failed' }
+      if ((Get-Content -LiteralPath ($env:ALPR_TEST_CHILD+'.out') -Raw).Trim() -ne 'backup child finished') { throw 'Child output was not drained' }
+    }
+    Write-Output 'Success and failure correctly distinguished'`, {ALPR_TEST_CHILD:child,ALPR_TEST_POWERSHELL:powershell});
+  assert.equal(result.status,0,result.stdout+result.stderr);
+  assert.match(result.stdout,/Success and failure correctly distinguished/);
+});
+
 test("graphical setup scripts parse with inbox PowerShell 5.1", {skip:!powershell}, () => {
-  const result = ps("$failures=0; foreach ($name in @('Setup.ps1','Setup-Helpers.ps1','Uninstall.ps1','Install.ps1','ExportMigration.ps1')) { $tokens=$null; $errors=$null; [System.Management.Automation.Language.Parser]::ParseFile((Join-Path $PWD ('scripts/windows/' + $name)),[ref]$tokens,[ref]$errors) | Out-Null; $failures += @($errors).Count; $errors | ForEach-Object { Write-Output $_.Message } }; if($failures){exit 1}");
+  const result = ps("$failures=0; foreach ($file in Get-ChildItem -LiteralPath (Join-Path $PWD 'scripts/windows') -Filter '*.ps1') { $tokens=$null; $errors=$null; [System.Management.Automation.Language.Parser]::ParseFile($file.FullName,[ref]$tokens,[ref]$errors) | Out-Null; $failures += @($errors).Count; $errors | ForEach-Object { Write-Output $_.Message } }; if($failures){exit 1}");
   assert.equal(result.status,0,result.stdout+result.stderr);
 });
 test("setup and native installer validate paths below hidden Windows directories", {skip:!powershell}, async (t) => {
@@ -99,6 +118,31 @@ test("prerequisite archives reject traversal before extracting any file", {skip:
   const result=ps("Add-Type -AssemblyName System.IO.Compression, System.IO.Compression.FileSystem; . ./scripts/windows/Setup-Helpers.ps1; $file=Join-Path $env:ALPR_TEST_ROOT 'bad.zip'; $archive=[IO.Compression.ZipFile]::Open($file,[IO.Compression.ZipArchiveMode]::Create); $stream=$archive.CreateEntry('../outside.txt').Open(); $stream.Dispose(); $archive.Dispose(); try { Expand-SetupArchive $file (Join-Path $env:ALPR_TEST_ROOT 'output') 'ffmpeg'; exit 3 } catch { if($_.Exception.Message -notmatch 'Unsafe'){throw}; if(Test-Path -LiteralPath (Join-Path $env:ALPR_TEST_ROOT 'output')){exit 4}; Write-Output 'Traversal rejected without extraction' }",{ALPR_TEST_ROOT:fixture});
   assert.equal(result.status,0,result.stdout+result.stderr);
   assert.match(result.stdout,/Traversal rejected/);
+});
+test("Windows update extraction includes hidden files and rejects links and case collisions before extraction",{skip:!powershell},async t=>{
+ const fixture=await mkdtemp(path.join(os.tmpdir(),"alpr-update-unzip-"));t.after(()=>rm(fixture,{recursive:true,force:true}));
+ const result=ps(`Add-Type -AssemblyName System.IO.Compression,System.IO.Compression.FileSystem
+ $ErrorActionPreference='Stop'
+ foreach($kind in @('valid','link','collision','traversal')) {
+  $folder=Join-Path $env:ALPR_TEST_ROOT $kind;[void][IO.Directory]::CreateDirectory($folder)
+  $archive=Join-Path $folder 'update.zip';$target=Join-Path $folder 'package'
+  $zip=[IO.Compression.ZipFile]::Open($archive,[IO.Compression.ZipArchiveMode]::Create)
+  $entry=$zip.CreateEntry('app/.next/BUILD_ID');$stream=$entry.Open();$stream.WriteByte(65);$stream.Dispose()
+  if($kind -eq 'link'){$entry.ExternalAttributes=0x400}
+  if($kind -eq 'collision'){$stream=$zip.CreateEntry('APP/.NEXT/build_id').Open();$stream.Dispose()}
+  if($kind -eq 'traversal'){$stream=$zip.CreateEntry('../outside').Open();$stream.Dispose()}
+  $zip.Dispose()
+  if($kind -eq 'valid'){
+   & ./scripts/windows/Expand-Update.ps1 $archive $target
+   if((Get-Content -LiteralPath (Join-Path $target 'app/.next/BUILD_ID') -Raw) -ne 'A'){throw 'Hidden build files were lost'}
+  } else {
+   $rejected=$false
+   try{& ./scripts/windows/Expand-Update.ps1 $archive $target}catch{$rejected=$true}
+   if(!$rejected -or (Test-Path -LiteralPath $target)){throw 'Unsafe archive was extracted'}
+  }
+ }
+ Write-Output 'Update archives verified'`,{ALPR_TEST_ROOT:fixture});
+ assert.equal(result.status,0,result.stdout+result.stderr);assert.match(result.stdout,/Update archives verified/);
 });
 test("PostgreSQL extraction includes runtime files and excludes other applications", {skip:!powershell}, async (t) => {
   const fixture=await mkdtemp(path.join(os.tmpdir(),"alpr-setup-pgzip-"));

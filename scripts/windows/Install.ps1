@@ -19,6 +19,7 @@ $ErrorActionPreference = 'Stop'
 $packageRoot = $PSScriptRoot
 . (Join-Path $packageRoot 'host\Network-Helpers.ps1')
 . (Join-Path $packageRoot 'host\Setup-Helpers.ps1')
+. (Join-Path $packageRoot 'host\Update-Service.ps1')
 function Invoke-Native([string]$Executable, [string[]]$Arguments) {
     & $Executable @Arguments
     if ($LASTEXITCODE -ne 0) { throw "$Executable failed (exit $LASTEXITCODE)" }
@@ -195,6 +196,7 @@ if ($CopyPrerequisites) {
 New-Item -ItemType Directory -Path (Join-Path $installPath 'host'),(Join-Path $installPath 'runtime'),(Join-Path $installPath 'services') | Out-Null
 Copy-Item -Path (Join-Path $releasePath 'host\*') -Destination (Join-Path $installPath 'host') -Recurse
 Copy-Item -Path (Join-Path $releasePath 'runtime\*') -Destination (Join-Path $installPath 'runtime')
+Copy-Item -LiteralPath (Join-Path $releasePath 'lib') -Destination (Join-Path $installPath 'lib') -Recurse
 $dbPassword = New-Secret
 $adminPassword = New-Secret
 if ($null -ne $selectedAdminPassword) { $adminPassword = $selectedAdminPassword }
@@ -218,6 +220,7 @@ $pwfile = Join-Path $management 'initdb-password.tmp'
 Write-Utf8 $pwfile ($dbPassword + [Environment]::NewLine)
 $dbRegistered = $false
 $appRegistered = $false
+$updaterRegistered = $false
 $networkRuleCreated = $false
 $originalPgPassword = $env:PGPASSWORD
 try {
@@ -284,6 +287,8 @@ try {
     Set-PrivateAcl $management $dbSid 'ReadAndExecute' $false
     Set-PrivateAcl $database $dbSid 'Modify'
     foreach ($name in @('auth','config','logs','storage','update-control')) { Set-PrivateAcl (Join-Path $dataPath $name) $appSid 'Modify' }
+    $updaterRegistered = $true
+    Install-WindowsUpdateService $installPath $dataPath
     Start-Service -Name ALPRCommunityApp
     Write-Output 'ALPR_SETUP_PROGRESS:Starting ALPR and checking that it is ready...'
     $healthy = $false
@@ -308,6 +313,7 @@ try {
         Write-Output "ALPR is available at http://localhost:$AppPort. Sign in using the administrator password you chose in Setup."
     }
 } catch {
+    if ($updaterRegistered) { Stop-Service ALPRCommunityUpdater -ErrorAction SilentlyContinue }
     if ($appRegistered) { Stop-Service ALPRCommunityApp -ErrorAction SilentlyContinue }
     if ($dbRegistered) { Stop-Service ALPRCommunityDatabase -ErrorAction SilentlyContinue }
     if ($networkRuleCreated) { Remove-AlprNetworkRule $AppPort }

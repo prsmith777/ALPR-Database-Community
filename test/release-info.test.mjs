@@ -23,8 +23,8 @@ test("release information resolves a commit-pinned deployment image", () => {
     ALPR_RELEASE_CHANNEL: "staging",
   });
 
-  assert.equal(release.version, "0.1.47");
-  assert.equal(release.manualVersion, "3.15");
+  assert.equal(release.version, "0.1.48");
+  assert.equal(release.manualVersion, "3.16");
   assert.equal(release.manualUpdatedAt, "October 6, 2026");
   assert.equal(release.gitSha, "8cd2fa8");
   assert.equal(release.channel, "staging");
@@ -32,7 +32,7 @@ test("release information resolves a commit-pinned deployment image", () => {
   assert.equal(release.readOnly, true);
   assert.equal(
     release.notes.title,
-    "Native Windows installation and portable vehicle images"
+    "Windows updates from Settings"
   );
   assert.equal(release.notes.publishedAt, "2026-10-06");
   assert.ok(release.notes.items.length >= 3);
@@ -40,6 +40,8 @@ test("release information resolves a commit-pinned deployment image", () => {
   assert.match(notes, /LPR camera/i);
   assert.match(notes, /Linux or Windows/i);
   assert.match(notes, /download percentages/i);
+  assert.match(notes, /Software Updates/);
+  assert.match(notes, /PowerShell 5\.1/);
 });
 
 test("an explicit valid SHA overrides the image tag", () => {

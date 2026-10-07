@@ -6,7 +6,7 @@ import path from "node:path";
 import { spawnSync } from "node:child_process";
 import { runtimeDataPath } from "../lib/runtime-paths.mjs";
 import { assertWindowsHost, COMMUNITY_SOURCE, hashFile, listPackageFiles, safePackagePath, verifyWindowsPackage } from "../scripts/windows-native-package.mjs";
-import { assertPreservedFiles } from "../scripts/windows-deployment.mjs";
+import { assertPreservedFiles, loadWindowsDeployment } from "../scripts/windows-deployment.mjs";
 import { runWindowsUpdater } from "../scripts/windows-maintenance.mjs";
 import { openvinoRuntimeInstallerInternals } from "../scripts/install-openvino-runtime.mjs";
 
@@ -100,6 +100,24 @@ test("native data root stays independent of release working directory", () => {
     if (previous === undefined) delete process.env.ALPR_DATA_DIR; else process.env.ALPR_DATA_DIR = previous;
   }
 });
+
+test("Windows row counts use one snapshot and retry only bounded connection observations",async t=>{
+ const f=await fixture(t),installation={...f.deployment.installation,formatVersion:1,profile:"windows-native",environment:{DB_HOST:"127.0.0.1:5432",DB_USER:"postgres",DB_NAME:"postgres",DB_PASSWORD:"fixture"}};
+ await writeFile(f.deployment.installationFile,JSON.stringify(installation));
+ const queries=[];let resets=1;
+ const deployment=await loadWindowsDeployment(f.deployment.installationFile,{skipHostCheck:true,runner:(_exe,args)=>{
+  const query=args.at(-1);queries.push(query);
+  if(query.includes("pg_tables"))return "plate_reads\nplates";
+  if(resets-->0)throw new Error('psql: connection to server failed: server closed the connection unexpectedly');
+  return "plate_reads|2\nplates|1";
+ }});
+ assert.deepEqual(await deployment.counts(),{plate_reads:"2",plates:"1"});
+ assert.equal(queries.length,4);assert.match(queries[1],/UNION ALL/);
+ const refused=await loadWindowsDeployment(f.deployment.installationFile,{skipHostCheck:true,runner:()=>"bad;drop table plates"});
+ await assert.rejects(refused.counts(),/Unexpected public table name/);
+ const unavailable=await loadWindowsDeployment(f.deployment.installationFile,{skipHostCheck:true,runner:()=>{throw new Error("connection to server failed");}});
+ await assert.rejects(unavailable.counts(),/connection to server failed/);
+});
 test("package paths reject traversal, ADS, reserved names, and ambiguous Win32 suffixes", () => {
   for (const name of ["../outside","app/../secret","C:/secret","app\\server.js","app/CON.txt","app/name:stream","app/a.","app/a ","/absolute"]) assert.throws(() => safePackagePath("/fixture",name));
 });
@@ -190,6 +208,44 @@ test("maintenance refuses concurrent operations", async (t) => {
   const f = await fixture(t);
   await writeFile(path.join(f.deployment.backupRoot,"maintenance.lock"),"12345");
   await assert.rejects(runWindowsUpdater(["status"],{},f.options),/lock exists/);
+});
+test("UI updates recover the old database and service automatically when migration fails",async t=>{
+  const f=await fixture(t);
+  f.deployment.migrate=()=>{throw new Error("fixture migration failed");};
+  await assert.rejects(runWindowsUpdater(f.args,{}, {...f.options,automaticRecovery:true}),/fixture migration failed/);
+  const state=await runWindowsUpdater(["status"],{},f.options);
+  assert.equal(state.status,"rolled-back");assert.equal(state.recovery.previousApplicationRestored,true);
+  assert.equal((await f.deployment.attest()).commit,f.deployment.current.commit);
+  assert.ok(f.deployment.operations.includes("restore"));
+});
+test("the next UI update preserves an accepted backup during its retention window",async t=>{
+  const f=await fixture(t);
+  const first=await runWindowsUpdater(f.args,{},f.options);
+  await runWindowsUpdater(["accept"],{},f.options);
+  f.deployment.current=JSON.parse(await readFile(path.join(f.deployment.releaseRoot,first.target.name,"windows-package.json"),"utf8"));
+  f.deployment.installation=JSON.parse(await readFile(f.deployment.installationFile,"utf8"));
+  const target=path.join(f.root,"next");await makePackage(target,"0.1.48","c".repeat(40));
+  const next=await runWindowsUpdater(["update","--package",target,"--manifest-sha256",await hashFile(path.join(target,"windows-package.json"))],{}, {...f.options,retainPrevious:true});
+  assert.equal(next.status,"ready-for-acceptance");
+  assert.equal(await hashFile(path.join(f.deployment.backupRoot,first.backup.id,"postgres.dump")),first.backup.dumpSha256);
+  const history=JSON.parse(await readFile(path.join(f.deployment.backupRoot,`history-${first.backup.id}.json`),"utf8"));
+  assert.equal(history.status,"accepted");assert.equal(history.backup.id,first.backup.id);
+});
+test("interrupted migration recovery uses a dead process lock and never replays installation",async t=>{
+  const f=await fixture(t);
+  f.deployment.migrate=()=>{throw new Error("interrupted migration");};
+  await assert.rejects(runWindowsUpdater(f.args,{},f.options),/interrupted migration/);
+  const dead=spawnSync(process.execPath,["-e","process.exit(0)"],{windowsHide:true});
+  await writeFile(path.join(f.deployment.backupRoot,"maintenance.lock"),String(dead.pid));
+  await assert.rejects(runWindowsUpdater(["recover"],{},f.options),/Unsupported/);
+  const state=await runWindowsUpdater(["recover"],{}, {...f.options,internalRecovery:true});
+  assert.equal(state.status,"rolled-back");assert.equal(state.recovery.interrupted,true);
+  assert.equal((await f.deployment.attest()).commit,"a".repeat(40));
+});
+test("interrupted recovery refuses to steal a live maintenance process lock",async t=>{
+ const f=await fixture(t);await writeFile(path.join(f.deployment.backupRoot,"maintenance.lock"),String(process.pid));
+ await assert.rejects(runWindowsUpdater(["recover"],{}, {...f.options,internalRecovery:true}),/still running/);
+ assert.deepEqual(f.deployment.operations,[]);
 });
 test("Windows installer parses with inbox PowerShell 5.1", {skip:process.platform !== "win32"}, () => {
   const command = "$tokens=$null;$errors=$null;[System.Management.Automation.Language.Parser]::ParseFile($env:ALPR_TEST_INSTALLER,[ref]$tokens,[ref]$errors)|Out-Null;if($errors.Count){$errors|Out-String|Write-Error;exit 1}";

@@ -2,7 +2,14 @@
 
 ## Unreleased
 
-## 0.1.47 � Native Windows installation and portable vehicle images (2026-10-06)
+## 0.1.48 — Windows updates from Settings (2026-10-06)
+
+- Enable native Windows updates in Settings → Software Updates through a separate Windows service, with stable release discovery, verified downloads, visible progress, recovery backup, restart, technical checks, acceptance and rollback.
+- Update existing Windows installations in place using graphical Setup, preserving data and credentials and enabling future UI updates without uninstalling.
+- Attempt automatic recovery after update failure or interruption, and preserve accepted recovery copies when another release arrives during the retention window.
+- Fix a PowerShell 5.1 process exit-code bug that falsely reported successful migration backups as failed.
+
+## 0.1.47 — Native Windows installation and portable vehicle images (2026-10-06)
 
 - Add guided recovery of data retained after uninstall: preserve passwords, API key, settings, records, images and network preference, and verify a protected recovery backup before reconnecting the database.
 - Exercise native version upgrade, transactional rollback and retained-data reinstall through isolated real Windows services.

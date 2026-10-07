@@ -1,6 +1,6 @@
 {
   "name": "blueiris-alpr-database",
-  "version": "0.1.47",
+  "version": "0.1.48",
   "private": true,
   "engines": {
     "node": ">=24.0.0 <25"
@@ -10,6 +10,7 @@
     "build": "next build",
     "package:windows": "node scripts/build-windows-native.mjs",
     "package:windows:setup": "node scripts/build-windows-setup.mjs",
+    "package:windows:update": "node scripts/build-windows-update.mjs",
     "maintain:windows": "node scripts/windows-maintenance.mjs",
     "start": "next start",
     "lint": "eslint .",

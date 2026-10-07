@@ -12,10 +12,11 @@ if ($installation.installRoot -ne $root -or $installation.dataRoot -ne $data -or
     $installation.pgBin -ne (Join-Path $root 'prerequisites\postgresql\bin')) { throw 'This uninstaller does not own the recorded installation' }
 [void](Assert-SetupDirectory $installation.pgBin)
 $services = @()
-foreach ($name in @('ALPRCommunityApp','ALPRCommunityDatabase')) {
+foreach ($name in @('ALPRCommunityUpdater','ALPRCommunityApp','ALPRCommunityDatabase')) {
     $service = Get-CimInstance Win32_Service -Filter "Name='$name'"
     if (-not $service) { continue }
-    if ($name -eq 'ALPRCommunityApp') { $expected = Join-Path $root 'services\ALPRCommunityApp.exe' }
+    if ($name -eq 'ALPRCommunityUpdater') { $expected = Join-Path $root 'services\ALPRCommunityUpdater.exe' }
+    elseif ($name -eq 'ALPRCommunityApp') { $expected = Join-Path $root 'services\ALPRCommunityApp.exe' }
     else { $expected = Join-Path $installation.pgBin 'pg_ctl.exe' }
     if ($service.PathName -notmatch ('^(?:"' + [regex]::Escape($expected) + '"|' + [regex]::Escape($expected) + ')(?:\s|$)')) {
         throw 'An ALPR service points to a different installation; no services were changed'
@@ -26,6 +27,7 @@ foreach ($name in @('ALPRCommunityApp','ALPRCommunityDatabase')) {
     $services += $name
 }
 [void](Get-AlprNetworkRule ([int]$installation.environment.PORT))
+if (Test-Path -LiteralPath (Join-Path $data 'management\updates\active.json')) { throw 'Wait for the Windows update operation to finish before uninstalling ALPR' }
 if ($CheckOnly) { Write-Output 'ALPR uninstall ownership checks passed.'; exit 0 }
 foreach ($name in $services) {
     Write-Output "ALPR_SETUP_PROGRESS:Stopping and removing $name..."
