@@ -64,7 +64,7 @@ Clone the canonical repository and detach at the exact stable release tag:
 ```bash
 git clone https://github.com/prsmith777/ALPR-Database-Community.git
 cd ALPR-Database-Community
-git checkout --detach v0.1.53
+git checkout --detach v0.1.54
 ./alpr-community install
 ```
 
@@ -146,7 +146,7 @@ Leave the username blank and enter the administrator password chosen during
 installation. The generated database password in `.env` is not an application
 login password. Create a named administrator under Settings after sign-in.
 
-From v0.1.53, a successful fresh installation sets up browser-managed updates
+From v0.1.54, a successful fresh installation sets up browser-managed updates
 automatically on a systemd Linux host. It preserves a matching existing helper,
 enables startup after reboot, and verifies a fresh heartbeat from the running
 service. Setup may request sudo permission once to enable startup for the

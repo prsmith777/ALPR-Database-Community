@@ -50,6 +50,13 @@ Linux-to-Windows migration. After installation, use **Settings → Software Upda
 for later releases. [Native Windows maintenance](docs/WINDOWS_NATIVE.md) covers
 technical details and recovery.
 
+
+For Docker-to-native migration on the same Windows computer, keep Docker on
+port 3000 and choose an unused application port such as 3001 in Windows Setup.
+Native Community uses a separate PostgreSQL 17 database, normally on loopback
+port 5433. The [Windows migration and port guide](docs/WINDOWS_INSTALL.md#keep-docker-alpr-while-verifying-native-windows)
+explains backup, verification and changing the application port later in Settings.
+
 ### Linux
 
 For the simplest Linux path, start with Ubuntu Server 24.04 LTS x86-64,

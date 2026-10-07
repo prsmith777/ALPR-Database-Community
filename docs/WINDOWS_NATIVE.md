@@ -560,3 +560,24 @@ allowed only after the stopped-application checkpoint passed; all other table
 counts and all stored-file hashes remain protected. A missing working table
 still fails validation. Failed before/after counts and affected table names are
 kept in the protected updater state even after automatic rollback.
+
+## Application and database port selection
+
+The graphical installer provides Connection ports for fresh installations and
+migrations. Defaults are application 3000 and loopback PostgreSQL 5433; both
+must be different unused ports between 1024 and 65535. To keep Docker ALPR on
+3000 during verification, choose 3001 for native Community. The database is a
+separate PostgreSQL 17 cluster under `C:\ProgramData\ALPR Community\management\postgres`;
+a logical import does not modify Docker PostgreSQL or its published ports.
+Records are independent after import. Setup does not automatically renumber ports.
+
+Settings → General → Windows connection port changes the application port later
+through the privileged updater. It checks ownership and port availability, uses
+the shared maintenance lock, retains a private recovery journal, preserves the
+network preference, updates the owned firewall rule and shortcuts, and attests
+the restarted listener. Failed or interrupted changes restore the previous port.
+Blue Iris destinations must be changed to the new application port; the API key
+and database port are unchanged. Updates, retained-data recovery and application
+rollback preserve the current application port and network preference. When
+upgrading through the UI from a release whose updater does not advertise this
+capability, restart Windows once to activate it.

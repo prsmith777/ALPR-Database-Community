@@ -117,3 +117,18 @@ test("compiled network wizard creates its actual access choices without installa
   const result=await verifyWindowsSetupStartup({compiler,sourceFile:path.join(root,"scripts/windows/CommunityNetwork.iss")});
   assert.equal(result.verified,true);
 });
+
+
+test("shortcut replacement never overwrites another file through an NTFS hard link",{skip:!windows},async t=>{
+ const f=await fixture(t);
+ const target=path.join(f.directory,"protected.txt"),shortcut=path.join(f.directory,"ALPR Database Community.url");
+ await writeFile(target,"preserve this unrelated file");
+ const result=ps(`. ./scripts/windows/Setup-Helpers.ps1
+. ./scripts/windows/Network-Helpers.ps1
+New-Item -ItemType HardLink -Path (Join-Path $env:ALPR_TEST_ROOT 'ALPR Database Community.url') -Target (Join-Path $env:ALPR_TEST_ROOT 'protected.txt') | Out-Null
+Write-AlprShortcut $env:ALPR_TEST_ROOT (Join-Path $env:ALPR_TEST_ROOT 'ALPR Database Community.url') 3001
+`,f.env);
+ assert.equal(result.status,0,result.stdout+result.stderr);
+ assert.equal(await readFile(target,"utf8"),"preserve this unrelated file");
+ assert.match(await readFile(shortcut,"utf8"),/URL=http:\/\/localhost:3001/);
+});

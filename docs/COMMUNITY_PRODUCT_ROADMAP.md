@@ -9,7 +9,10 @@ x64 installer alongside the Linux application. The same application, database
 schema, authentication, integrations and models run on both platforms.
 Windows Setup installs verified prerequisites and automatic services, supports
 fresh installation, portable Linux/Windows migration and retained-data recovery,
-and updates existing installations without uninstalling.
+and updates existing installations without uninstalling. Windows Setup offers
+application and local database port selection for side-by-side Docker migration.
+Settings → General can change the native application port later, with conflict
+checks, verified restart, preserved network access and interrupted-change recovery.
 
 Settings → Software Updates provides stable release discovery, verified
 downloads, recovery backups, progress, restart, validation, acceptance and

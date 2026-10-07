@@ -25,7 +25,7 @@ export async function verifyWindowsSetupUninstall({ compiler, sourceText, failur
   if (process.platform !== "win32") throw new Error("Uninstall verification requires Windows");
   if (!["none", "check", "remove"].includes(failure)) throw new Error("Unknown uninstall fixture");
   const source = sourceText ?? await readFile(path.join(root, "scripts/windows/CommunitySetup.iss"), "utf8");
-  const code = section(source, "function Powershell: String;", "function InitializeSetup:") +
+  const code = "var InstalledAppPort: Integer;\n" + section(source, "function Powershell: String;", "function InitializeSetup:") +
     section(source, "procedure UninstallOutput(", "procedure CancelButtonClick(") +
     section(source, "function InitializeUninstall:");
   const scratch = await mkdtemp(path.join(os.tmpdir(), "alpr-inno-uninstall-"));

@@ -242,9 +242,9 @@ test("retained reinstall validates protected metadata and rejects substituted ro
 test("compiled setup cannot finish after a failed or unverified application installation",{
   skip:process.platform!=="win32"||!existsSync(compiler),
 },async()=>{
-  for(const failure of ["none","exit","error-zero","missing-completion"])assert.equal((await verifyWindowsSetupInstall({compiler,failure})).verified,true);
+  for(const failure of ["none","exit","error-zero","missing-completion","missing-port"])assert.equal((await verifyWindowsSetupInstall({compiler,failure})).verified,true);
   const source=await readFile(path.join(root,"scripts/windows/CommunitySetup.iss"),"utf8");
-  const broken=source.replace(" or (LastError <> '') or (not OperationComplete)","");assert.notEqual(broken,source);
+  const broken=source.replace(" or (LastError <> '') or (not OperationComplete) or (InstalledAppPort < 1024)","");assert.notEqual(broken,source);
   await assert.rejects(verifyWindowsSetupInstall({compiler,failure:"error-zero",sourceText:broken}),/incorrectly reported success/);
 });
 test("setup completion requires the expected selected release and its owned running listener",{skip:!powershell},async t=>{
@@ -252,7 +252,7 @@ test("setup completion requires the expected selected release and its owned runn
  const payload=path.join(fixture,"payload"),installed=path.join(fixture,"installed");await mkdir(payload);await mkdir(path.join(installed,"host"),{recursive:true});
  const commit="b".repeat(40),current="0.1.49-"+commit.slice(0,12);
  await writeFile(path.join(payload,"windows-package.json"),JSON.stringify({version:"0.1.49",commit}));
- const record={installRoot:installed,current:"0.1.47-aaaaaaaaaaaa"};await writeFile(path.join(installed,"installation.json"),JSON.stringify(record));
+ const record={installRoot:installed,current:"0.1.47-aaaaaaaaaaaa",environment:{PORT:"3001",DB_HOST:"127.0.0.1:5434"}};await writeFile(path.join(installed,"installation.json"),JSON.stringify(record));
  const controller=path.join(installed,"host/Service-Control.ps1");
  const check=()=>ps('. ./scripts/windows/Setup-Helpers.ps1; Test-InstalledSetupPayload $env:ALPR_TEST_PAYLOAD $env:ALPR_TEST_INSTALL',{ALPR_TEST_PAYLOAD:payload,ALPR_TEST_INSTALL:installed});
  assert.notEqual(check().status,0);
@@ -260,5 +260,5 @@ test("setup completion requires the expected selected release and its owned runn
  await writeFile(controller,"param([string]$Operation)\nWrite-Output '"+JSON.stringify({current,commit,status:"Running",listenerOwned:false})+"'\n");
  assert.notEqual(check().status,0);
  await writeFile(controller,"param([string]$Operation)\nWrite-Output '"+JSON.stringify({current,commit,status:"Running",listenerOwned:true})+"'\n");
- const result=check();assert.equal(result.status,0,result.stdout+result.stderr);
+ const result=check();assert.equal(result.status,0,result.stdout+result.stderr);assert.match(result.stdout,/ALPR_SETUP_PORT:3001/);
 });

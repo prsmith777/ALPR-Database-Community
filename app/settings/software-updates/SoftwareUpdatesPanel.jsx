@@ -268,7 +268,9 @@ export default function SoftwareUpdatesPanel({ initialSnapshot, release }) {
   const canCleanup = state?.rollbackPresent && (state?.updaterStatus === "accepted" || state?.updaterStatus === "rolled-back");
   const checksComplete = useMemo(() => manualChecks.every(Boolean), [manualChecks]);
   const acceptDisabledReason = !snapshot.agent.online
-    ? "The host update agent is offline. Start it before accepting the update."
+    ? snapshot.deploymentProfile === "windows-native"
+      ? "The Windows updater service is offline. Start it before accepting the update."
+      : "The host update agent is offline. Start it before accepting the update."
     : snapshot.busy || pending
       ? "Wait for the current update operation to finish."
       : !checksComplete
@@ -307,7 +309,7 @@ export default function SoftwareUpdatesPanel({ initialSnapshot, release }) {
             <p>Updates run only when an administrator starts them. Checking for updates does not install or restart anything.</p>
             <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1">
               <a className="font-medium text-primary underline-offset-4 hover:underline" href={`${COMMUNITY_RELEASE_BASE_URL}${releaseTag}`} target="_blank" rel="noreferrer">View {releaseTag} release notes</a>
-              <a className="font-medium text-primary underline-offset-4 hover:underline" href={COMMUNITY_UPDATE_GUIDE_URL} target="_blank" rel="noreferrer">Open the Community update guide</a>
+              <a className="font-medium text-primary underline-offset-4 hover:underline" href={snapshot.deploymentProfile === "windows-native" ? WINDOWS_UPDATE_GUIDE_URL : COMMUNITY_UPDATE_GUIDE_URL} target="_blank" rel="noreferrer">Open the Community update guide</a>
             </div>
           </div>
           {!snapshot.agent.online && snapshot.deploymentProfile !== "windows-native" ? <p className="text-sm text-muted-foreground">On the ALPR host, run <code className="font-mono">./alpr-community agent install</code>. This recovery command also enables startup after reboot and verifies the helper. See the update guide if setup needs attention.</p> : null}

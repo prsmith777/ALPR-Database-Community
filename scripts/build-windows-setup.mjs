@@ -56,7 +56,7 @@ export async function buildWindowsSetup(args = process.argv.slice(2)) {
   await verifyWindowsSetupStartup({ compiler });
   await verifyWindowsSetupStartup({ compiler, sourceFile: path.join(root, "scripts/windows/CommunityNetwork.iss") });
   await verifyWindowsSetupUninstall({ compiler });
-  for (const failure of ["none", "exit", "error-zero", "missing-completion"]) await verifyWindowsSetupInstall({ compiler, failure });
+  for (const failure of ["none", "exit", "error-zero", "missing-completion", "missing-port"]) await verifyWindowsSetupInstall({ compiler, failure });
   console.log("Verified compiled installer startup, application completion gate and actual uninstall lifecycle before packaging");
   const outputRoot = path.join(root, "dist", "setup");
   await mkdir(outputRoot, { recursive: true });

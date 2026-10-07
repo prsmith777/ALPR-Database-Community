@@ -78,12 +78,12 @@ Source: "Network-Helpers.ps1"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#PackageRoot}\LICENSE"; DestDir: "{app}"; Flags: ignoreversion
 
 [Icons]
-Name: "{commonprograms}\ALPR Database Community"; Filename: "http://localhost:3000"; Comment: "Open ALPR Database Community"
+Name: "{commonprograms}\ALPR Database Community"; Filename: "{code:GetOpenAlprUrl}"; Comment: "Open ALPR Database Community"
 Name: "{commonprograms}\ALPR Migration Backup"; Filename: "{sys}\WindowsPowerShell\v1.0\powershell.exe"; Parameters: "-NoProfile -STA -ExecutionPolicy Bypass -WindowStyle Hidden -File ""{autopf}\ALPR Community\host\ExportMigration.ps1"""; Comment: "Make a verified ALPR backup for another computer"
-Name: "{commondesktop}\ALPR Database Community"; Filename: "http://localhost:3000"; Comment: "Open ALPR Database Community"
+Name: "{commondesktop}\ALPR Database Community"; Filename: "{code:GetOpenAlprUrl}"; Comment: "Open ALPR Database Community"
 
 [Run]
-Filename: "http://localhost:3000"; Description: "Open ALPR"; Flags: postinstall shellexec runasoriginaluser skipifsilent
+Filename: "{code:GetOpenAlprUrl}"; Description: "Open ALPR"; Flags: postinstall shellexec runasoriginaluser skipifsilent
 
 [UninstallDelete]
 ; InitializeUninstall verifies fixed roots and service ownership, then stops
@@ -96,6 +96,8 @@ var
   PasswordPage: TInputQueryWizardPage;
   InstallModePage: TInputOptionWizardPage;
   MigrationPage: TInputDirWizardPage;
+  PortsPage: TInputQueryWizardPage;
+  InstalledAppPort: Integer;
   SourceStoppedCheck: TNewCheckBox;
   ProgressPage: TOutputProgressWizardPage;
   NetworkAccessCheck: TNewCheckBox;
@@ -112,6 +114,24 @@ function GetTickCount: Cardinal;
 function Powershell: String;
 begin
   Result := ExpandConstant('{sys}\WindowsPowerShell\v1.0\powershell.exe');
+end;
+
+function ParseSetupPort(Value: String): Integer;
+var
+  I: Integer;
+begin
+  Result := -1;
+  if (Length(Value) < 4) or (Length(Value) > 5) then Exit;
+  for I := 1 to Length(Value) do
+    if (Value[I] < '0') or (Value[I] > '9') then Exit;
+  I := StrToIntDef(Value, -1);
+  if (I >= 1024) and (I <= 65535) then Result := I;
+end;
+
+function GetOpenAlprUrl(Param: String): String;
+begin
+  if InstalledAppPort < 1024 then RaiseException('The installed ALPR address has not been verified.');
+  Result := 'http://localhost:' + IntToStr(InstalledAppPort);
 end;
 
 function InitializeSetup: Boolean;
@@ -161,7 +181,15 @@ begin
   SourceStoppedCheck.Height := ScaleY(36);
   SourceStoppedCheck.Caption := 'I have paused ingestion on the old ALPR installation';
   ProgressPage := CreateOutputProgressPage('Setting up ALPR', 'Please wait while Setup completes the current step');
-  PasswordPage := CreateInputQueryPage(MigrationPage.ID, 'Install ALPR Database Community',
+  PortsPage := CreateInputQueryPage(MigrationPage.ID, 'Connection ports',
+    'Choose how to connect to this installation',
+    'If the old ALPR uses port 3000 on this computer, use 3001 below to keep it running. Browser access and Blue Iris use the application port.'#13#10#13#10 +
+    'Community creates its own PostgreSQL 17 database. The local database port is separate from your Docker database; normally keep 5433. Setup checks both ports before installing.');
+  PortsPage.Add('Application port (browser and Blue Iris):', False);
+  PortsPage.Add('Local database port (normally 5433):', False);
+  PortsPage.Values[0] := '3000';
+  PortsPage.Values[1] := '5433';
+  PasswordPage := CreateInputQueryPage(PortsPage.ID, 'Install ALPR Database Community',
     'Choose your administrator password',
     'You will use this password to sign in to ALPR. Setup downloads the required components and starts ALPR automatically. An internet connection is required.'#13#10#13#10 +
     'For migration, this replaces the old setup administrator password. Existing named accounts keep their passwords.'#13#10 +
@@ -183,6 +211,15 @@ begin
   ProgressPage.ProgressBar.Style := npbstMarquee;
   ProgressPage.ProgressBar.Style := npbstNormal;
   ProgressPage.SetProgress(37, 100);
+  if (ParseSetupPort('3001') <> 3001) or (ParseSetupPort('65535') <> 65535) or
+    (ParseSetupPort('1023') <> -1) or (ParseSetupPort('65536') <> -1) or
+    (ParseSetupPort('3e03') <> -1) or (ParseSetupPort('+3000') <> -1) or
+    (PortsPage.Values[0] <> '3000') or (PortsPage.Values[1] <> '5433') or
+    (PortsPage.Edits[1].Top + PortsPage.Edits[1].Height > PortsPage.SurfaceHeight) then
+    RaiseException('Connection port controls or validation failed.');
+  InstalledAppPort := 3001;
+  if GetOpenAlprUrl('') <> 'http://localhost:3001' then RaiseException('Custom port URL was lost.');
+  InstalledAppPort := 0;
   if (PasswordPage.Values[0] <> '') or
     (PasswordPage.Values[1] <> '') or (WorkRoot = '') or NetworkAccessCheck.Checked or
     (NetworkAccessCheck.Top + NetworkAccessCheck.Height > PasswordPage.SurfaceHeight) or
@@ -191,13 +228,13 @@ begin
     (ProgressPage.ProgressBar.Position <> 37) then
     RaiseException('Startup probe did not initialize the password page and workspace.');
   InstallModePage.SelectedValueIndex := 1;
-  if ShouldSkipPage(MigrationPage.ID) or ShouldSkipPage(PasswordPage.ID) then
+  if ShouldSkipPage(MigrationPage.ID) or ShouldSkipPage(PortsPage.ID) or ShouldSkipPage(PasswordPage.ID) then
     RaiseException('Migration pages are missing.');
   InstallModePage.SelectedValueIndex := 2;
-  if not ShouldSkipPage(MigrationPage.ID) or not ShouldSkipPage(PasswordPage.ID) then
+  if not ShouldSkipPage(MigrationPage.ID) or not ShouldSkipPage(PortsPage.ID) or not ShouldSkipPage(PasswordPage.ID) then
     RaiseException('Retained recovery must keep the existing password and skip migration selection.');
   InstallModePage.SelectedValueIndex := 3;
-  if not ShouldSkipPage(MigrationPage.ID) or not ShouldSkipPage(PasswordPage.ID) then
+  if not ShouldSkipPage(MigrationPage.ID) or not ShouldSkipPage(PortsPage.ID) or not ShouldSkipPage(PasswordPage.ID) then
     RaiseException('An existing installation update must preserve its password and skip migration selection.');
   InstallModePage.SelectedValueIndex := 0;
   Log('ALPR_STARTUP_PROBE_PASSED');
@@ -208,7 +245,7 @@ end;
 function ShouldSkipPage(PageID: Integer): Boolean;
 begin
   Result := ((PageID = MigrationPage.ID) and (InstallModePage.SelectedValueIndex <> 1)) or
-    ((PageID = PasswordPage.ID) and ((InstallModePage.SelectedValueIndex = 2) or (InstallModePage.SelectedValueIndex = 3)));
+    (((PageID = PortsPage.ID) or (PageID = PasswordPage.ID)) and ((InstallModePage.SelectedValueIndex = 2) or (InstallModePage.SelectedValueIndex = 3)));
 end;
 
 procedure CurPageChanged(CurPageID: Integer);
@@ -226,15 +263,34 @@ begin
   end;
 end;
 
+function RunSetupOperation(Operation: String; var ResultCode: Integer): Boolean; forward;
+
 function NextButtonClick(CurPageID: Integer): Boolean;
 var
   Password: String;
-  I: Integer;
+  I, ResultCode: Integer;
 begin
   Result := True;
   if CurPageID = MigrationPage.ID then begin
     Result := SourceStoppedCheck.Checked and FileExists(MigrationPage.Values[0] + '\migration-backup.json');
     if not Result then MsgBox('Choose a completed ALPR migration backup and pause ingestion on the old installation.', mbError, MB_OK);
+    Exit;
+  end;
+  if CurPageID = PortsPage.ID then begin
+    Result := (ParseSetupPort(PortsPage.Values[0]) > 0) and
+      (ParseSetupPort(PortsPage.Values[1]) > 0) and
+      (StrToIntDef(PortsPage.Values[0], -1) <> StrToIntDef(PortsPage.Values[1], -1));
+    if not Result then begin
+      MsgBox('Enter different whole-number ports between 1024 and 65535.', mbError, MB_OK);
+      Exit;
+    end;
+    ExtractTemporaryFile('Setup.ps1');
+    ExtractTemporaryFile('Setup-Helpers.ps1');
+    Result := RunSetupOperation('check-ports', ResultCode) and (ResultCode = 0) and (LastError = '');
+    if not Result then begin
+      if LastError = '' then LastError := 'Setup could not check the connection ports. Keep the setup log for support.';
+      MsgBox(LastError, mbError, MB_OK);
+    end;
     Exit;
   end;
   if CurPageID <> PasswordPage.ID then Exit;
@@ -252,6 +308,8 @@ begin
   Log(S);
   if Error then LastError := 'Setup could not read the maintenance result.';
   if S = 'ALPR_SETUP_COMPLETE:verified' then OperationComplete := True;
+  if Pos('ALPR_SETUP_PORT:', S) = 1 then
+    InstalledAppPort := ParseSetupPort(Copy(S, 17, Length(S)));
   if Pos('ALPR_SETUP_ERROR:', S) = 1 then
     LastError := Copy(S, 18, Length(S));
   if Pos('ALPR_SETUP_PROGRESS:', S) = 1 then begin
@@ -278,12 +336,17 @@ var
 begin
   LastError := '';
   OperationComplete := False;
+  if Operation = 'install' then InstalledAppPort := 0;
   Parameters := '-NoProfile -NonInteractive -ExecutionPolicy Bypass -File "' +
     ExpandConstant('{tmp}\Setup.ps1') + '" -Operation ' + Operation +
     ' -WorkRoot "' + WorkRoot + '"';
   if Operation = 'prepare' then
     Parameters := Parameters + ' -PackageRoot "' + ExpandConstant('{tmp}\payload') +
       '" -ManifestSha256 {#ManifestSha256}';
+  if ((Operation = 'prepare') or (Operation = 'check-ports')) and
+    (InstallModePage.SelectedValueIndex < 2) then
+    Parameters := Parameters + ' -AppPort ' + IntToStr(ParseSetupPort(PortsPage.Values[0])) +
+      ' -DatabasePort ' + IntToStr(ParseSetupPort(PortsPage.Values[1]));
   if InstallModePage.SelectedValueIndex = 2 then
     Parameters := Parameters + ' -ReuseRetainedData';
   if InstallModePage.SelectedValueIndex = 3 then
@@ -338,10 +401,12 @@ begin
       PasswordPage.Values[0] := '';
       PasswordPage.Values[1] := '';
       Prepared := True;
+      PortsPage.Edits[0].Enabled := False;
+      PortsPage.Edits[1].Enabled := False;
     end;
     ProgressPage.SetText('Installing and verifying ALPR…', '');
     Launched := RunSetupOperation('install', ResultCode);
-    if (not Launched) or (ResultCode <> 0) or (LastError <> '') or (not OperationComplete) then begin
+    if (not Launched) or (ResultCode <> 0) or (LastError <> '') or (not OperationComplete) or (InstalledAppPort < 1024) then begin
       Result := LastError;
       if Result = '' then Result := 'ALPR could not verify the installed application. Setup has stopped.';
       Result := Result + #13#10 + 'Your data has been preserved. Close Setup and keep this log: ' + ExpandConstant('{log}');

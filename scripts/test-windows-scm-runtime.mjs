@@ -8,6 +8,7 @@ import { fileURLToPath } from "node:url";
 import { nativeRunner, loadWindowsDeployment, fileInventory } from "./windows-deployment.mjs";
 import { hashFile, listPackageFiles, verifyWindowsPackage } from "./windows-native-package.mjs";
 import { runWindowsUpdater } from "./windows-maintenance.mjs";
+import {changeWindowsApplicationPort} from "./windows-application-port.mjs";
 import { enableWindowsUpdates } from "./windows-enable-updates.mjs";
 
 // Actual SCM integration test, deliberately isolated from the product service
@@ -39,11 +40,17 @@ async function freePort() {
 }
 async function installerPackage(source, folder) {
   await cp(source, folder, { recursive: true, errorOnExist: true, force: false });
-  for (const name of ["Install.ps1", "Setup-Helpers.ps1", "Network-Helpers.ps1", "Service-Control.ps1","Update-Service.ps1","Pause-Updates.ps1","Enable-Updates.ps1","Expand-Update.ps1"]) {
+  for (const name of ["Application-Port.ps1","Install.ps1", "Setup-Helpers.ps1", "Network-Helpers.ps1", "Service-Control.ps1","Update-Service.ps1","Pause-Updates.ps1","Enable-Updates.ps1","Expand-Update.ps1"]) {
     const destination = name === "Install.ps1" ? path.join(folder, name) : path.join(folder, "host", name);
-    await writeFile(destination, substitute(await readFile(path.join(checkout, "scripts/windows", name), "utf8")));
+    let script=substitute(await readFile(path.join(checkout, "scripts/windows", name), "utf8"));
+    if(name === "Application-Port.ps1") {
+      script=script.replace('"$env:ProgramData\\ALPR Community"',q(dataRoot));
+      script=script.replace("[Environment]::GetFolderPath('CommonDesktopDirectory')",q(path.join(root,"shortcuts/desktop")));
+      script=script.replace("[Environment]::GetFolderPath('CommonPrograms')",q(path.join(root,"shortcuts/programs")));
+    }
+    await writeFile(destination,script);
   }
-  for(const name of ["windows-update-service.mjs","windows-update-worker.mjs","windows-update-release.mjs","windows-update-host.mjs","windows-enable-updates.mjs","windows-maintenance.mjs","windows-deployment.mjs","windows-native-package.mjs","native-reid-upgrade-policy.mjs"]){await cp(path.join(checkout,"scripts",name),path.join(folder,"host",name));}
+  for(const name of ["windows-application-port.mjs","windows-update-service.mjs","windows-update-worker.mjs","windows-update-release.mjs","windows-update-host.mjs","windows-enable-updates.mjs","windows-maintenance.mjs","windows-deployment.mjs","windows-native-package.mjs","native-reid-upgrade-policy.mjs"]){await cp(path.join(checkout,"scripts",name),path.join(folder,"host",name));}
   await mkdir(path.join(folder,"lib"),{recursive:true});
   for(const name of ["community-update-control.mjs","community-update-shape.mjs"]){await cp(path.join(checkout,"lib",name),path.join(folder,"lib",name));}
   const manifest = JSON.parse(await readFile(path.join(folder, "windows-package.json"), "utf8"));
@@ -59,7 +66,7 @@ function install(folder, reuse = false) {
 }
 const appPort = await freePort(), dbPort = await freePort();
 async function signedInActions(deployment) {
-  const base="http://127.0.0.1:"+appPort;
+  const base="http://127.0.0.1:"+deployment.installation.environment.PORT;
   const selected=path.join(deployment.releaseRoot,deployment.installation.current,"app");
   const actions=JSON.parse(await readFile(path.join(selected,".next/server/server-reference-manifest.json"),"utf8"));
   const actionId=name=>Object.entries(actions.node).find(([,value])=>value.exportedName === name)?.[0];
@@ -67,9 +74,10 @@ async function signedInActions(deployment) {
   const response=await fetch(base+"/login",{method:"POST",headers:{origin:base},body:login});
   const cookie=response.headers.getSetCookie().find(value=>value.startsWith("session="))?.split(";")[0];
   assert.ok(cookie,"Isolated installation must accept its existing administrator password");
-  return async(input)=>{
+  return async(input,expectedPhase="succeeded")=>{
     console.log("Windows Settings operation: "+input.operation);
-    const result=await fetch(base+"/settings/software-updates",{method:"POST",headers:{origin:base,cookie,"next-action":actionId("requestSoftwareUpdate"),"content-type":"text/plain;charset=UTF-8",accept:"text/x-component"},body:JSON.stringify([input])});
+    const isPort=input.operation === "app-port";
+    const result=await fetch(base+(isPort?"/settings/general":"/settings/software-updates"),{method:"POST",headers:{origin:base,cookie,"next-action":actionId(isPort?"requestWindowsApplicationPort":"requestSoftwareUpdate"),"content-type":"text/plain;charset=UTF-8",accept:"text/x-component"},body:JSON.stringify([isPort?input.appPort:input])});
     const text=await result.text();assert.equal(result.status,200);
     const value=text.split("\n").filter(line=>/^\d+:\{/.test(line)).map(line=>{try{return JSON.parse(line.slice(line.indexOf(":")+1));}catch{return null;}}).find(value=>typeof value?.success === "boolean");
     assert.ok(value,"Real HTTP server action must return its result");assert.equal(value.success,true,value.error);
@@ -77,7 +85,7 @@ async function signedInActions(deployment) {
     for(let attempt=0;attempt<1200;attempt++){
       const state=JSON.parse(await readFile(path.join(dataRoot,"update-control/state.json"),"utf8"));
       if(state.requestId === value.request.requestId && state.message !== lastMessage){console.log(state.message);lastMessage=state.message;}
-      if(state.requestId === value.request.requestId && ["succeeded","failed"].includes(state.phase)){assert.equal(state.phase,"succeeded",state.message);return state;}
+      if(state.requestId === value.request.requestId && ["succeeded","failed"].includes(state.phase)){assert.equal(state.phase,expectedPhase,state.message);return state;}
       await new Promise(resolve=>setTimeout(resolve,500));
     }
     throw new Error("Windows UI operation did not finish within its acceptance deadline");
@@ -188,6 +196,28 @@ try {
   const updatedActions=await signedInActions(deployment);
   const accepted=await updatedActions({operation:"accept",confirmation:"I COMPLETED THE MANUAL CHECKS"});
   assert.equal(accepted.updaterStatus,"accepted");
+  // Exercise the real authenticated browser action, updater IPC, PowerShell,
+  // firewall, SCM, shortcuts and listener attestation on an unused custom port.
+  const nextPort=await freePort();
+  const shortcutFolders=[path.join(root,"shortcuts/desktop"),path.join(root,"shortcuts/programs")];
+  for(const folder of shortcutFolders){await mkdir(folder,{recursive:true});await writeFile(path.join(folder,"ALPR Database Community.url"),"[InternetShortcut]\r\nURL=http://localhost:"+appPort+"\r\n");}
+  const portState=await updatedActions({operation:"app-port",appPort:nextPort});assert.equal(portState.currentAppPort,nextPort);
+  deployment=await loadWindowsDeployment(installationFile,{allowPreview:true});await deployment.health();await deployment.attest();
+  assert.equal(deployment.installation.environment.PORT,String(nextPort));assert.equal(deployment.installation.environment.DB_HOST,"127.0.0.1:"+dbPort);
+  assert.equal(deployment.installation.environment.HOSTNAME,"0.0.0.0");const portAuth=JSON.parse(await readFile(authFile,"utf8"));assert.equal(portAuth.apiKey,auth.apiKey);assert.equal(portAuth.password,auth.password);
+  for(const folder of shortcutFolders)assert.match(await readFile(path.join(folder,"ALPR Database Community.url"),"utf8"),new RegExp("URL=http://localhost:"+nextPort));
+  const newActions=await signedInActions(deployment);
+  const portConflictSocket=net.createServer();portConflictSocket.listen(0,"0.0.0.0");await once(portConflictSocket,"listening");
+  try{const refused=await newActions({operation:"app-port",appPort:portConflictSocket.address().port},"failed");assert.match(refused.message,/port is in use/);await deployment.health();await deployment.attest();}finally{await new Promise(resolve=>portConflictSocket.close(resolve));}
+  // Simulate interruption after apply, before journal commit. Recovery must
+  // restore the previous port without applying the same change a second time.
+  const journalFile=path.join(dataRoot,"management/updates/application-port.json");const portJournal=JSON.parse(await readFile(journalFile,"utf8"));portJournal.phase="pending";await writeFile(journalFile,JSON.stringify(portJournal));
+  const recoveredPort=await changeWindowsApplicationPort({id:portJournal.requestId},{...process.env},{deployment,recover:true});assert.equal(recoveredPort.currentAppPort,appPort);
+  deployment=await loadWindowsDeployment(installationFile,{allowPreview:true});await deployment.health();await deployment.attest();
+  for(const folder of shortcutFolders)assert.match(await readFile(path.join(folder,"ALPR Database Community.url"),"utf8"),new RegExp("URL=http://localhost:"+appPort));
+  await (await signedInActions(deployment))({operation:"app-port",appPort:nextPort});
+  deployment=await loadWindowsDeployment(installationFile,{allowPreview:true});await deployment.health();
+  report.applicationPort={status:"passed",realHttpAdminAction:true,conflictPreservedActiveApplication:true,networkPreferencePreserved:true,databaseAndApiKeyPreserved:true,shortcutsUpdated:true,interruptedChangeRecovered:true};
   report.inPlaceBridge={status:"passed",realPriorApplication:true,noUninstall:true,technicalValidation:true,acceptanceThroughHttp:true};
   deployment.sql("UPDATE public.plate_reads SET camera_name='Changed after update' WHERE plate_number='SCMTEST1'; INSERT INTO public.plates(plate_number,occurrence_count) VALUES ('POSTUPDATE',0);");
   await writeFile(settingsFile, "general:\n  maxRecords: 111\n");
@@ -196,6 +226,9 @@ try {
   assert.equal(rolledBack.status, "rolled-back");
   deployment = await loadWindowsDeployment(installationFile, { allowPreview: true });
   assert.equal((await deployment.attest()).commit, older.commit);
+  assert.equal(deployment.installation.environment.PORT,String(nextPort));
+  ps(". "+q(path.join(root,"target-package/host/Network-Helpers.ps1"))+";[void](Get-AlprNetworkRule "+nextPort+")");
+  report.applicationPort.portAndFirewallPreservedOnSoftwareRollback=true;
   assert.equal(deployment.sql("SELECT camera_name FROM public.plate_reads WHERE plate_number='SCMTEST1';"), "Isolated SCM fixture");
   assert.equal(deployment.sql("SELECT count(*) FROM public.plates WHERE plate_number='POSTUPDATE';"), "0");
   assert.equal(await hashFile(settingsFile), settings);
@@ -216,7 +249,7 @@ try {
   deployment = await loadWindowsDeployment(installationFile, { allowPreview: true });
   await deployment.health(); assert.equal((await deployment.attest()).commit, newer.commit);
   assert.equal(deployment.installation.environment.HOSTNAME, "0.0.0.0");
-  assert.equal(deployment.installation.environment.PORT, String(appPort));
+  assert.equal(deployment.installation.environment.PORT, String(nextPort));
   const afterAuth = JSON.parse(await readFile(authFile, "utf8"));
   assert.equal(afterAuth.apiKey, auth.apiKey); assert.equal(afterAuth.password, auth.password);
   assert.equal(await hashFile(settingsFile), settings);
@@ -265,7 +298,9 @@ try {
     // Never target an arbitrary service by name alone. Both exact executable
     // roots must belong to the UUID fixture before stopping or deleting it.
     ps("foreach($name in @(" + q(names.updater)+","+q(names.app) + "," + q(names.database) + ")){$s=Get-CimInstance Win32_Service -Filter (\"Name='\"+$name+\"'\");if($s){if($s.PathName -notlike " + q('*' + installRoot + '*') + "){throw 'Foreign service ownership; refusing cleanup'};Stop-Service -Name $name -ErrorAction Stop;& $env:SystemRoot\\System32\\sc.exe delete $name;if($LASTEXITCODE){throw 'SCM cleanup failed'}}}");
-    ps(". " + q(path.join(root, "initial-package/host/Network-Helpers.ps1")) + ";Remove-AlprNetworkRule " + appPort);
+    const record=JSON.parse(await readFile(installationFile,"utf8"));
+    const cleanupPort=Number(record.environment.PORT);assert.ok(Number.isInteger(cleanupPort)&&cleanupPort>=1024&&cleanupPort<=65535);
+    ps(". " + q(path.join(root, "initial-package/host/Network-Helpers.ps1")) + ";Remove-AlprNetworkRule " + cleanupPort);
     report.cleanup = "owned test services removed";
   } catch (error) { report.cleanup = "preserved for diagnosis: " + error.message; process.exitCode = 1; }
   report.completedAt = new Date().toISOString(); await writeFile(reportFile, JSON.stringify(report, null, 2) + "\n");

@@ -1381,6 +1381,18 @@ export async function getSoftwareUpdateStatus() {
   return await readCommunityUpdateControlSnapshot();
 }
 
+export async function requestWindowsApplicationPort(appPort) {
+  const principal = await requirePermission("maintenance.manage");
+  if (process.env.ALPR_DEPLOYMENT_PROFILE !== "windows-native") return {success:false,error:"This setting is available on native Windows installations."};
+  if (!Number.isInteger(appPort) || appPort < 1024 || appPort > 65535) return {success:false,error:"Enter a whole-number port between 1024 and 65535."};
+  try {
+    const snapshot = await readCommunityUpdateControlSnapshot();
+    if (!snapshot.agent.applicationPort) return {success:false,error:"Restart Windows once to activate this setting after updating from an older release."};
+    const request = await submitCommunityUpdateRequest({operation:"app-port",appPort,confirmation:"CHANGE APPLICATION PORT"},{actor:{id:principal.id,username:principal.username}});
+    return {success:true,request};
+  } catch { return {success:false,error:"The Windows updater is offline or another operation is in progress. Wait and try again."}; }
+}
+
 export async function requestSoftwareUpdate(input = {}) {
   const principal = await requirePermission("maintenance.manage");
   try {
@@ -2742,7 +2754,9 @@ export async function updateSettings(formData) {
     ];
     if (managedFormFields.some(([field, managed]) => managed && formData.get(field) !== null)) {
       throw new Error(
-        "One or more submitted settings are managed in .env. Change them on the host and restart ALPR."
+        process.env.ALPR_DEPLOYMENT_PROFILE === "windows-native"
+          ? "One or more submitted settings are managed by Windows Setup and are read-only here. The application port can be changed under Settings > General."
+          : "One or more submitted settings are managed in .env. Change them on the host and restart ALPR."
       );
     }
 

@@ -117,22 +117,33 @@ function Get-RetainedSetup([string]$InstallRoot, [string]$DataRoot) {
     if (Test-Path -LiteralPath (Join-Path $database 'postmaster.pid')) { throw 'The retained database was not cleanly stopped. Preserve the data and contact the maintainer.' }
     return $record
 }
-function Assert-FreshSetup([switch]$ReuseRetainedData) {
+function Assert-SetupPortValues([ValidateRange(1024,65535)][int]$AppPort, [ValidateRange(1024,65535)][int]$DatabasePort) {
+    if ($AppPort -eq $DatabasePort) { throw 'Application and database ports must differ.' }
+}
+function Assert-SetupPorts([ValidateRange(1024,65535)][int]$AppPort, [ValidateRange(1024,65535)][int]$DatabasePort) {
+    Assert-SetupPortValues $AppPort $DatabasePort
+    foreach ($port in @($AppPort,$DatabasePort)) {
+        $listener = New-Object Net.Sockets.TcpListener([Net.IPAddress]::Any, $port)
+        $listener.Server.ExclusiveAddressUse = $true
+        try { $listener.Start() }
+        catch { throw "Port $port is in use. Choose an unused port on the Connection ports page. Your existing application can keep running." }
+        finally { $listener.Stop() }
+    }
+}
+function Assert-FreshSetup([switch]$ReuseRetainedData, [ValidateRange(1024,65535)][int]$AppPort = 3000, [ValidateRange(1024,65535)][int]$DatabasePort = 5433) {
     Assert-SetupServicesAbsent
-    $ports = @(3000,5433)
     if ($ReuseRetainedData) {
         $retained = Get-RetainedSetup "$env:ProgramFiles\ALPR Community" "$env:ProgramData\ALPR Community"
-        $ports = @([int]$retained.environment.PORT,[int]($retained.environment.DB_HOST.Split(':')[-1]))
+        $AppPort = [int]$retained.environment.PORT
+        $DatabasePort = [int]($retained.environment.DB_HOST.Split(':')[-1])
     } else {
         foreach ($directory in @("$env:ProgramFiles\ALPR Community", "$env:ProgramData\ALPR Community")) {
             [void](Assert-SetupDirectory $directory)
             if (Test-Path -LiteralPath $directory) { throw 'ALPR or retained ALPR data already exists. Choose Restore the ALPR data already on this computer, or use the update/repair installer.' }
         }
     }
-    foreach ($port in $ports) {
-        $listener = New-Object Net.Sockets.TcpListener([Net.IPAddress]::Any, $port)
-        try { $listener.Start() } catch { throw "Port $port is in use. Close the conflicting program and run Setup again." } finally { $listener.Stop() }
-    }
+    Assert-SetupPorts $AppPort $DatabasePort
+    return @{ appPort=$AppPort; databasePort=$DatabasePort }
 }
 function Backup-RetainedSetup([string]$DataRoot) {
     $data = Assert-SetupDirectory $DataRoot
@@ -290,4 +301,6 @@ function Test-InstalledSetupPayload([string]$PackageRoot, [string]$InstallRoot =
     if ($LASTEXITCODE -ne 0) { throw 'The installed application could not attest its running release' }
     $running = ($output -join [Environment]::NewLine) | ConvertFrom-Json
     if ($running.current -ne $name -or $running.commit -ne $expected.commit -or $running.status -ne 'Running' -or $running.listenerOwned -ne $true) { throw 'The running application does not own the expected release listener' }
+    Assert-SetupPortValues ([int]$installed.environment.PORT) ([int]($installed.environment.DB_HOST.Split(':')[-1]))
+    Write-Output "ALPR_SETUP_PORT:$($installed.environment.PORT)"
 }

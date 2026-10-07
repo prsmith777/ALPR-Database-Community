@@ -235,6 +235,10 @@ async function rollback(deployment, state) {
     const restoredInstallation = JSON.parse(await readFile(path.join(backup, "installation.json"), "utf8"));
     if (restoredInstallation.installRoot !== deployment.root || restoredInstallation.dataRoot !== deployment.data ||
         restoredInstallation.current !== state.current.name) throw new Error("Rollback installation belongs to a different native instance");
+    // Listener changes made after acceptance must survive application rollback.
+    // Keep the current network preference and port aligned with its firewall rule.
+    restoredInstallation.environment.PORT = deployment.installation.environment.PORT;
+    restoredInstallation.environment.HOSTNAME = deployment.installation.environment.HOSTNAME;
     await atomicJson(deployment.installationFile, restoredInstallation);
     const counts = await deployment.counts();
     if (JSON.stringify(Object.entries(counts).sort()) !== JSON.stringify(Object.entries(state.backup.counts).sort())) throw new Error("Restored row counts differ from rollback snapshot");

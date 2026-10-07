@@ -10,7 +10,7 @@ import { fileURLToPath } from "node:url";
 import { nativeRunner } from "./windows-deployment.mjs";
 import { assertWindowsHost, verifyWindowsPackage } from "./windows-native-package.mjs";
 
-const [packageArgument, pgArgument] = process.argv.slice(2);
+const [packageArgument, pgArgument, auditReportFile] = process.argv.slice(2);
 if (!packageArgument || !pgArgument) throw new Error("Usage: node scripts/test-windows-native-runtime.mjs ABSOLUTE_PACKAGE_DIR ABSOLUTE_PG17_BIN");
 const packageRoot = path.resolve(packageArgument), pgBin = path.resolve(pgArgument);
 assertWindowsHost();
@@ -157,14 +157,37 @@ Module._resolveFilename=function(request,parent,...rest){
     "integrations/email/test", "integrations/webhook", "integrations/webhook/safety",
     "integrations/webhook/test",
   ];
+  const uiAudit = {packageVersion:manifest.version,packageCommit:manifest.commit,scope:"Isolated native Windows runtime with synthetic data",routes:[]};
   for (const section of settingsRoutes) {
     const route = "/settings/" + section;
     const page = await fetch(base + route,{headers:{cookie},redirect:"manual"});
-    await page.text();
+    const html=await page.text();
+    uiAudit.routes.push({route,status:page.status});
+    if(section==="database") {
+      assert.match(html,/Managed by Windows Setup/);
+      assert.doesNotMatch(html,/Managed in \.env|host.{0,20}private \.env file/);
+    }
+    if(section==="release") {
+      assert.match(html,/ALPR Community Updater service automatically/);
+      assert.doesNotMatch(html,/commit-pinned deployment image|exposing the Docker socket to this application/);
+    }
+    if(section==="general") assert.match(html,/Windows connection port/);
+    if(section==="software-updates") assert.match(html,/WINDOWS_NATIVE\.md#native-maintenance/);
+    if(section==="data-privacy/cleanup") assert.doesNotMatch(html,/Whole-container|Docker objects/);
     if (page.status !== 200) {
       throw new Error("Signed-in " + route + " failed: HTTP " + page.status + "\n" + output.replaceAll(secret,"[test credential]"));
     }
   }
+  const mainRoutes=["/dashboard","/live_feed","/live_feed/viewer","/database","/database/tags","/download","/known_plates","/known_plates/monitored","/notifications","/notifications/activity","/visual_search","/visual_search/profiles","/visual_search/review","/logs","/logs/receipts","/logs/retention","/help"];
+  for(const route of mainRoutes) {
+    const response=await fetch(base+route,{headers:{cookie},redirect:"manual"});
+    const html=await response.text();
+    assert.equal(response.status,200,"Packaged Windows UI route failed: "+route);
+    assert.doesNotMatch(html,/NEXT_HTTP_ERROR_FALLBACK;500|<title>500:/,"Route rendered an error: "+route);
+    uiAudit.routes.push({route,status:response.status});
+  }
+  if(auditReportFile)await writeFile(auditReportFile,JSON.stringify({...uiAudit,status:"passed",completedAt:new Date().toISOString()},null,2)+"\n");
+  console.log("Packaged Windows UI audit passed "+uiAudit.routes.length+" Settings and application routes, including platform-specific wording.");
   const { default:sharp } = await import("sharp");
   const image = await sharp({create:{width:320,height:240,channels:3,background:{r:40,g:80,b:120}}}).jpeg().toBuffer();
   const response = await fetch(base + "/api/plate-reads",{
