@@ -123,7 +123,8 @@ export default function ReleaseInformationCard({ release }) {
         </p>
         <p className="mt-1 text-muted-foreground">
           Release information remains read only. Administrators can use Settings →
-          Software Updates after installing the restricted host agent, or run
+          Software Updates with the restricted host agent, which new Linux installs
+          and activated migrations set up automatically, or run
           <code className="font-mono"> ./alpr-community</code> from the installation
           directory. The host-side updater performs the documented backup,
           exact-release installation, verification, and rollback process without

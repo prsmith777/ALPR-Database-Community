@@ -91,6 +91,27 @@ const CONFIGURATION = Object.freeze({
   projectName: "alpr-community-test",
 });
 
+test("helper setup failure preserves the healthy fresh installation and its database", async () => {
+  const root = await makeReleaseRoot();
+  const fake = fakeDockerRunner();
+  const logger = memoryLogger();
+  try {
+    const state = await runInstallerCommand([], {}, {
+      root, runner: fake.runner, logger, platform: "linux", arch: "x64", nodeVersion: "24.21.0",
+      releaseIdentity: RELEASE, configuration: CONFIGURATION, confirmed: true,
+      freeBytes: async () => internals.MINIMUM_FREE_BYTES + 1, portAvailable: async () => true,
+      healthCheck: async () => ({ status: "ok" }),
+      ensureUpdateAgent: async () => { throw new Error("sudo permission denied"); },
+    });
+    assert.equal(state.status, "installed");
+    assert.equal(state.updateAgent.status, "manual");
+    assert.equal(JSON.parse(await readFile(internals.statePath(root), "utf8")).status, "installed");
+    assert.ok(await readFile(join(root, ".env"), "utf8"));
+    assert.ok(!fake.commands.some(command => command.includes("down") || command.includes("rm") && command.includes("image")));
+    assert.match(logger.messages.join("\n"), /agent install/);
+  } finally { await rm(root, { recursive: true, force: true }); }
+});
+
 test("fresh-install values are strictly validated and serialized", () => {
   assert.equal(internals.normalizeProjectName(" ALPR Database Community "), "alpr-database-community");
   assert.equal(internals.validatePort("3000", "port"), 3000);
@@ -134,10 +155,16 @@ test("fresh install builds a pinned image, proves an empty database, and stores 
       healthAttempts: 1,
       healthCheck: async () => ({ status: "ok" }),
       serverAddresses: ["192.0.2.25"],
+      ensureUpdateAgent: async ({ root: helperRoot }) => {
+        assert.equal(helperRoot, root);
+        assert.equal(JSON.parse(await readFile(internals.statePath(root), "utf8")).status, "installed");
+        return { status: "ready", startupAfterReboot: true, preserved: false };
+      },
     });
     assert.equal(state.status, "installed");
     assert.equal(state.release.tag, "v0.1.24");
     assert.equal(state.validation.freshDatabase, true);
+    assert.equal(state.updateAgent.status, "ready");
     const envSource = await readFile(join(root, ".env"), "utf8");
     assert.match(envSource, /^ADMIN_PASSWORD='Long\$Admin#Pass123'$/m);
     assert.match(envSource, /^DB_PASSWORD='[A-Za-z0-9_-]{43}'$/m);

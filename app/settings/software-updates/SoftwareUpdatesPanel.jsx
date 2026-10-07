@@ -310,7 +310,7 @@ export default function SoftwareUpdatesPanel({ initialSnapshot, release }) {
               <a className="font-medium text-primary underline-offset-4 hover:underline" href={COMMUNITY_UPDATE_GUIDE_URL} target="_blank" rel="noreferrer">Open the Community update guide</a>
             </div>
           </div>
-          {!snapshot.agent.online && snapshot.deploymentProfile !== "windows-native" ? <p className="text-sm text-muted-foreground">On the ALPR host, run <code className="font-mono">./alpr-community agent install</code>. For unattended startup after reboot, enable lingering as described in the update guide.</p> : null}
+          {!snapshot.agent.online && snapshot.deploymentProfile !== "windows-native" ? <p className="text-sm text-muted-foreground">On the ALPR host, run <code className="font-mono">./alpr-community agent install</code>. This recovery command also enables startup after reboot and verifies the helper. See the update guide if setup needs attention.</p> : null}
           {reconnecting ? (
             <div className="rounded-md border border-blue-500/30 bg-blue-500/10 p-3 text-sm text-blue-700 dark:text-blue-300">ALPR may be restarting. This page will reconnect automatically.</div>
           ) : null}

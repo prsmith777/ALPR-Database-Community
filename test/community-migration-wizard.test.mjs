@@ -82,6 +82,7 @@ async function fixture() {
 function testOptions(context, operations = {}) {
   const commands = [];
   const migrationCommands = [];
+  const helperCalls = [];
   const runner = (command, args = []) => {
     commands.push([command, ...args]);
     if (args.some((argument) => String(argument).startsWith("SELECT concat_ws('|',"))) {
@@ -117,6 +118,12 @@ function testOptions(context, operations = {}) {
     healthCheck: async () => ({ status: "ok" }),
     commands,
     migrationCommands,
+    helperCalls,
+    ensureUpdateAgent: async ({ root }) => {
+      helperCalls.push(root);
+      assert.equal(JSON.parse(await readFile(context.statePath, "utf8")).status, "activated");
+      return { status: "ready", startupAfterReboot: true, preserved: false };
+    },
     ...operations,
   };
 }
@@ -315,6 +322,7 @@ test("acceptance is explicit, records rollback verification, and leaves target i
     assert.equal(accepted.status, "accepted-isolated");
     assert.equal(accepted.acceptance.status, "completed");
     assert.equal(accepted.activation.status, "pending");
+    assert.equal(options.helperCalls.length, 0);
     assert.equal(options.migrationCommands.at(-1), "rollback-check");
 
     await assert.rejects(
@@ -331,11 +339,37 @@ test("acceptance is explicit, records rollback verification, and leaves target i
     );
     assert.equal(activated.status, "activated");
     assert.equal(activated.activation.status, "completed");
+    assert.equal(activated.updateAgent.status, "ready");
+    assert.deepEqual(options.helperCalls, [context.repositoryRoot]);
+    const commandCount = options.commands.length;
+    options.ensureUpdateAgent = async () => { throw new Error("helper unavailable"); };
+    const retried = await runMigrationWizardCommand(["activate"], context.environment, options);
+    assert.equal(retried.status, "activated");
+    assert.equal(retried.activation.status, "completed");
+    assert.equal(retried.updateAgent.status, "manual");
+    assert.equal(options.commands.length, commandCount);
     assert.ok(options.commands.some((command) => command.includes("down")));
     assert.ok(options.commands.some((command) => command.includes("migrate")));
   } finally {
     await context.cleanup();
   }
+});
+
+test("helper failure after initial activation keeps the healthy target on its activated network", async () => {
+  const context = await fixture();
+  const options = testOptions(context, {
+    ensureUpdateAgent: async () => { throw new Error("helper permission denied"); },
+  });
+  try {
+    await runMigrationWizardCommand(["start"], { ...context.environment, ALPR_MIGRATION_SOURCE_QUIESCED: internals.SOURCE_QUIESCED_ACKNOWLEDGEMENT }, options);
+    await runMigrationWizardCommand(["accept"], { ...context.environment, ALPR_MIGRATION_ACCEPTANCE: internals.ACCEPTANCE_ACKNOWLEDGEMENT }, options);
+    const state = await runMigrationWizardCommand(["activate"], { ...context.environment, ALPR_MIGRATION_ACTIVATION: internals.ACTIVATION_ACKNOWLEDGEMENT }, options);
+    assert.equal(state.status, "activated");
+    assert.equal(state.activation.status, "completed");
+    assert.equal(state.updateAgent.status, "manual");
+    assert.equal(state.activation.isolationRecovery, undefined);
+    assert.equal(JSON.parse(await readFile(context.statePath, "utf8")).status, "activated");
+  } finally { await context.cleanup(); }
 });
 
 test("a failed activation returns the accepted target to the isolated network", async () => {

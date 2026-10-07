@@ -64,7 +64,7 @@ Clone the canonical repository and detach at the exact stable release tag:
 ```bash
 git clone https://github.com/prsmith777/ALPR-Database-Community.git
 cd ALPR-Database-Community
-git checkout --detach v0.1.52
+git checkout --detach v0.1.53
 ./alpr-community install
 ```
 
@@ -146,17 +146,25 @@ Leave the username blank and enter the administrator password chosen during
 installation. The generated database password in `.env` is not an application
 login password. Create a named administrator under Settings after sign-in.
 
-To enable browser-managed updates on a systemd-based Linux host, run this once
-from the installation directory as the same normal account:
+From v0.1.53, a successful fresh installation sets up browser-managed updates
+automatically on a systemd Linux host. It preserves a matching existing helper,
+enables startup after reboot, and verifies a fresh heartbeat from the running
+service. Setup may request sudo permission once to enable startup for the
+installation owner's account.
+
+For an older installation or if automatic setup reports that it needs attention,
+run this from the installation directory as the same normal account:
 
 ```bash
 ./alpr-community agent install
-sudo loginctl enable-linger "$USER"
 ```
 
-The second command allows the per-user agent to start after a reboot without
-an interactive login. Open **Settings → Software Updates** and confirm the
-agent is shown as ready. Hosts without systemd can run
+The recovery command also enables startup after reboot and verifies the helper.
+Open **Settings → Software Updates** and confirm the agent is shown as ready.
+If helper setup fails, the successful ALPR installation and its data are kept;
+correct the reported permission, user-bus or service-binding issue and retry
+the command. A helper belonging to another installation is never overwritten.
+Hosts without systemd can run
 `./alpr-community agent run` under their existing service supervisor; the
 terminal updater remains available through `./alpr-community`.
 

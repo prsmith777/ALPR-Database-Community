@@ -14,6 +14,22 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  linux-update-helper:
+    name: Linux helper and unattended startup
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+      - name: Verify a real per-user service with no login session
+        run: sudo --preserve-env=CI bash test/community-update-agent-systemd.sh "$(command -v node)"
+
   bootstrap-package-adapters:
     name: Bootstrap packages (${{ matrix.image }})
     runs-on: ubuntu-latest

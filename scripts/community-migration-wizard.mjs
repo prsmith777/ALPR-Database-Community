@@ -17,6 +17,7 @@ import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { buildRuntimeImage } from "./community-image-builder.mjs";
+import { setupCommunityUpdateAgent } from "./community-update-agent-setup.mjs";
 import {
   communityInstallerInternals as installer,
 } from "./community-installer.mjs";
@@ -796,7 +797,11 @@ async function activate(environment = process.env, options = {}) {
   const state = await readState(statePath, root);
   if (!state || state.acceptance.status !== "completed") throw new Error("accept the isolated migration before activation");
   await assertTargetIdentity(state, options);
-  if (state.activation.status === "completed") return state;
+  if (state.activation.status === "completed") {
+    state.updateAgent = await setupCommunityUpdateAgent({ ...options, root, environment, ensureAgent: options.ensureUpdateAgent });
+    await saveState(statePath, state, options.clock);
+    return state;
+  }
   if (value(environment, "ALPR_MIGRATION_ACTIVATION") !== ACTIVATION_ACKNOWLEDGEMENT) {
     throw new Error(`activation requires ALPR_MIGRATION_ACTIVATION=${ACTIVATION_ACKNOWLEDGEMENT}`);
   }
@@ -873,6 +878,8 @@ async function activate(environment = process.env, options = {}) {
     throw error;
   }
   (options.logger || console).log("Target networking activated. This command did not change DNS, reverse proxy, router, or source services.");
+  state.updateAgent = await setupCommunityUpdateAgent({ ...options, root, environment, ensureAgent: options.ensureUpdateAgent });
+  await saveState(statePath, state, options.clock);
   return state;
 }
 
