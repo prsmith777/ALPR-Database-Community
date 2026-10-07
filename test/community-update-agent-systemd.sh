@@ -19,7 +19,7 @@ trap cleanup EXIT
 useradd --user-group --home-dir "$fixture_home" --shell /bin/bash "$fixture_owner"
 mkdir -p "$fixture_home/app/scripts" "$fixture_home/app/lib"
 cp scripts/community-update-agent{,-setup}.mjs scripts/community-updater-process.mjs "$fixture_home/app/scripts/"
-cp lib/community-update-control.mjs "$fixture_home/app/lib/"
+cp lib/community-update-{control,shape}.mjs "$fixture_home/app/lib/"
 cp test/community-update-agent-systemd.mjs "$fixture_home/app/verify.mjs"
 chown -R "$fixture_owner:$fixture_owner" "$fixture_home"
 chmod 700 "$fixture_home"
