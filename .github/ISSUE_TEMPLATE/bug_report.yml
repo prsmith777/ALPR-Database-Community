@@ -15,8 +15,8 @@ body:
     id: version
     attributes:
       label: ALPR Community version
-      description: Find this under Settings → Software Updates or in the release used to install or update the system.
-      placeholder: v0.1.51
+      description: Find this under Settings → Release. Include the source revision there when reporting an installation or update problem.
+      placeholder: v0.1.52
     validations:
       required: true
 
@@ -37,13 +37,15 @@ body:
     id: platform
     attributes:
       label: Host environment
-      description: Choose the closest match. Add distribution and hypervisor details below if relevant.
+      description: Choose the closest match. For Windows, include the edition, version/build and whether it is a VM. For Linux, add distribution and hypervisor details below.
       options:
         - Supported Ubuntu x86-64 release
         - Supported Debian x86-64 release
         - Supported RHEL, Rocky Linux, or AlmaLinux x86-64 release
         - Supported CentOS Stream or Fedora x86-64 release
         - Other Linux x86-64
+        - Native Windows 10 22H2 x64
+        - Native Windows 11 x64
         - Linux virtual machine
         - Unraid-hosted Linux virtual machine
         - Unsupported or experimental platform
@@ -55,7 +57,7 @@ body:
     id: environment
     attributes:
       label: Environment details
-      description: Linux distribution/version, browser, and hypervisor or server platform. Do not include hostnames or private addresses.
+      description: Windows edition/version/build or Linux distribution/version, browser, and hypervisor or server platform. Do not include hostnames or private addresses.
       placeholder: Debian 13 VM on Proxmox; current Chrome stable
 
   - type: textarea

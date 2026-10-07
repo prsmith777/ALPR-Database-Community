@@ -1,6 +1,8 @@
 # Automated existing-system migration
 
-For a native Windows destination, use the graphical installer's **Move an
+For a native Windows destination, start with the
+[Windows installation guide](WINDOWS_INSTALL.md), then use the graphical
+installer's **Move an
 existing ALPR database and images** option and the verified portable backup
 described in [Linux-to-Windows migration](WINDOWS_NATIVE.md#cross-platform-import).
 The workflow below creates a separate Linux Docker target.

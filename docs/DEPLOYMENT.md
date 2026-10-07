@@ -1,12 +1,13 @@
 # Community deployment
 
-The shared Community application also has a native Windows 10/11 development
-preview. Its installer, native services, data ACLs, runtime bundle, and
-maintenance workflow are documented in [Native Windows preview](WINDOWS_NATIVE.md).
-Desktop acceptance is required before publishing a certified Windows release.
+The shared Community application supports native Windows 10 22H2 x64 and
+Windows 11 x64 as well as x86-64 Linux systems and Linux virtual machines.
+For Windows, use the [graphical installation guide](WINDOWS_INSTALL.md) and
+[native maintenance guide](WINDOWS_NATIVE.md). Stable installers include native
+application, PostgreSQL and updater services; Windows requires no Docker or WSL.
 
-The Community edition is intended for self-hosted x86-64 Linux systems and
-Linux virtual machines. The verified release bootstrap supports an explicit
+The following deployment instructions cover Linux. The verified release
+bootstrap supports an explicit
 matrix of maintained Ubuntu, Debian, RHEL, Rocky Linux, AlmaLinux, CentOS
 Stream, and Fedora releases. It installs Git, Docker Engine, Compose, Buildx,
 and private Node.js 24, then runs `./alpr-community install` for a
