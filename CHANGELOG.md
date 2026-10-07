@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+## 0.1.51 — Windows update database validation (2026-10-07)
+
+- Skip replaying byte-identical verified Windows schema/migration files on existing installations, preserving predictions generated since the original migration.
+- Check all database table counts before restarting workers; distinguish consumed direction work and expired authentication state from record loss afterward. Retain failed counts and affected table names through automatic rollback.
+- Exercise populated native database updates with 119 reads, 99 distinct plates and 105 direction observations, including 15 unbound predictions, through isolated real Windows services.
+
 ## 0.1.50 — Windows update file-lock recovery (2026-10-07)
 
 - Retry temporary Windows sharing and access failures for up to 30 seconds when moving verified release folders. Recheck the selected release and real directories before every attempt. Persistent failures preserve the active release and all staged copies.

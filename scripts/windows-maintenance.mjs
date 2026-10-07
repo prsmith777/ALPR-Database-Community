@@ -52,6 +52,35 @@ async function verifyRunningRelease(deployment, name, commit) {
   }
   return { health, running };
 }
+// These rows are consumed or pruned by normal workers/authentication. Every
+// table, including these, must first pass the stopped-application checkpoint.
+// Missing tables never qualify as normal background processing.
+const WORKING_TABLES = new Set([
+  "vehicle_direction_reevaluation_queue", "vehicle_direction_backfill_failures",
+  "login_attempt_limits", "user_sessions",
+]);
+function countValidation(before, after, { workersRunning = false } = {}) {
+  const decreases = compareMinimumCounts(before, after);
+  return {
+    losses: decreases.filter(loss => !(workersRunning && WORKING_TABLES.has(loss.table) && loss.target !== "missing")),
+    completedWorkingRows: decreases.filter(loss => workersRunning && WORKING_TABLES.has(loss.table) && loss.target !== "missing"),
+  };
+}
+function rejectCountLoss(losses, phase) {
+  if (!losses.length) return;
+  const detail = losses.slice(0, 20).map(loss => `${loss.table}: ${loss.source} -> ${loss.target}`).join(", ");
+  const error = new Error(`Database row counts decreased after update (${phase}): ${detail}`);
+  error.code = "database-count-loss";
+  throw error;
+}
+async function migrationPlan(deployment, target) {
+  // Both manifests are verified. If the SQL is byte-for-byte identical, the
+  // running installation already has this migration; replaying historic cleanup
+  // statements can remove predictions generated since its original installation.
+  const previous = await verifyWindowsPackage(path.join(deployment.releaseRoot, deployment.installation.current), { allowPreview: true });
+  const unchanged = ["schema.sql", "migrations.sql"].every(name => previous.files[name] === target.files[name]);
+  return { mode: unchanged ? "unchanged" : "required", previousSqlSha256: previous.files["migrations.sql"], targetSqlSha256: target.files["migrations.sql"] };
+}
 async function validate(deployment, state) {
   if (!["validating","validation-failed","ready-for-acceptance"].includes(state?.status)) throw new Error("No update is ready to validate");
   try {
@@ -62,16 +91,20 @@ async function validate(deployment, state) {
     if (manifest.commit !== state.target.commit) throw new Error("Active release commit differs from update target");
     const { health, running } = await verifyRunningRelease(deployment, state.target.name, state.target.commit);
     const counts = await deployment.counts();
-    if (compareMinimumCounts(state.backup.counts, counts).length) throw new Error("Database row counts decreased after update");
+    const comparison = countValidation(state.backup.counts, counts, { workersRunning: state.migration?.validation?.passed === true });
+    // Persist failed counts before throwing, so automatic rollback retains the
+    // table-specific evidence. No row contents or credentials enter this record.
+    state.validation = { health, running, completedAt: new Date().toISOString(), counts, ...comparison };
+    await saveState(deployment, state);
+    rejectCountLoss(comparison.losses, "running application");
     assertPreservedFiles(state.backup.storage, await fileInventory(path.join(deployment.data, "storage")));
-    state.validation = { health, running, completedAt: new Date().toISOString(), counts };
     state.status = "ready-for-acceptance";
     delete state.lastFailure;
     await saveState(deployment, state);
     return state;
   } catch (error) {
     state.status = "validation-failed";
-    state.lastFailure = { phase: "validation", code: "validation-failed" };
+    state.lastFailure = { phase: "validation", code: error.code === "database-count-loss" ? error.code : "validation-failed" };
     await saveState(deployment, state);
     throw error;
   }
@@ -130,8 +163,16 @@ async function update(deployment, state, packageRoot, expectedManifestSha, optio
     await saveState(deployment, state);
     state.status = "applying";
     await saveState(deployment, state);
+    state.migration = await migrationPlan(deployment, manifest);
+    // Recovery is required even when no SQL ran: the selected release or its
+    // startup workers may change after this point.
     migrationStarted = true;
-    deployment.migrate(staged.path);
+    if (state.migration.mode === "required") deployment.migrate(staged.path);
+    const counts = await deployment.counts();
+    const comparison = countValidation(state.backup.counts, counts);
+    state.migration.validation = { completedAt: new Date().toISOString(), counts, ...comparison, passed: comparison.losses.length === 0 };
+    await saveState(deployment, state);
+    rejectCountLoss(comparison.losses, "stopped application");
     await deployment.switchRelease(staged.name);
     deployment.service("start");
     state.status = "validating";
@@ -139,7 +180,9 @@ async function update(deployment, state, packageRoot, expectedManifestSha, optio
     return await validate(deployment, state);
   } catch (error) {
     if (state.status !== "validation-failed") state.status = backupComplete ? "apply-failed" : "backup-failed";
-    state.lastFailure = { phase: backupComplete ? "apply" : "backup", code: "native-update-failed" };
+    if (state.status !== "validation-failed") {
+      state.lastFailure = { phase: backupComplete ? "apply" : "backup", code: error.code === "database-count-loss" ? error.code : "native-update-failed" };
+    }
     if (!migrationStarted) {
       try {
         deployment.service("start");
@@ -299,7 +342,7 @@ export async function runWindowsUpdater(argumentsList = process.argv.slice(2), e
     await rm(lockPath, { force: true });
   }
 }
-export const windowsMaintenanceInternals = Object.freeze({ compareVersions, confirm, ownedBackup, update, validate, rollback });
+export const windowsMaintenanceInternals = Object.freeze({ compareVersions, confirm, ownedBackup, update, validate, rollback, countValidation, migrationPlan });
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   runWindowsUpdater().then((result) => console.log(JSON.stringify(result, null, 2))).catch((error) => {
     console.error("Native maintenance stopped: " + error.message); process.exitCode = 1;
