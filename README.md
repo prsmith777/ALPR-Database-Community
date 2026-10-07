@@ -18,7 +18,7 @@ operator-specific infrastructure configuration.
 - Blue Iris playback links and optional image retrieval
 - Native ReID V2 vehicle similarity search, evidence-backed profiles, and automatic image analysis
 - Configurable application storage monitoring and guarded cleanup
-- PostgreSQL 17 database with persistent Docker volumes
+- PostgreSQL 17 with persistent data on native Windows or Docker Compose on Linux
 
 For slow Recognition Feed records after an import, see
 [feed performance and troubleshooting](docs/REID_FEED_PERFORMANCE.md).
@@ -32,14 +32,27 @@ and prototype TPMS screens are intentionally not included.
 
 ## Quick start
 
-For **Windows 10 22H2 x64 or Windows 11 x64**, download the Windows Setup
-executable from [Community releases](https://github.com/prsmith777/ALPR-Database-Community/releases).
-Setup installs the required components and starts ALPR automatically; Docker and
-WSL are not required. You can start empty, import a verified Linux/Windows backup,
-or reconnect data kept after uninstalling. See [Native Windows installation](docs/WINDOWS_NATIVE.md)
-for installation, backups and maintenance.
+### Windows 10 and Windows 11
 
-For the simplest supported path, start with Ubuntu Server 24.04 LTS x86-64,
+Native Windows is available in stable Community releases. On **Windows 10 22H2
+x64 (build 19045)** or **Windows 11 x64**, open the
+[latest stable release](https://github.com/prsmith777/ALPR-Database-Community/releases/latest)
+on the computer or VM where ALPR will run. Under **Assets**, download
+`ALPR-Community-VERSION-Windows-x64-Setup.exe`, run it, and choose the fresh-install,
+migration, retained-data recovery, or existing-installation update option.
+Setup installs prerequisites and starts ALPR automatically; Docker, WSL and
+developer tools are not required. An existing installation keeps its password,
+API key, records, images and settings.
+
+Follow the **[step-by-step Windows installation guide](docs/WINDOWS_INSTALL.md)**
+for setup choices, first sign-in, access from another computer, backups and
+Linux-to-Windows migration. After installation, use **Settings → Software Updates**
+for later releases. [Native Windows maintenance](docs/WINDOWS_NATIVE.md) covers
+technical details and recovery.
+
+### Linux
+
+For the simplest Linux path, start with Ubuntu Server 24.04 LTS x86-64,
 internet access, and a normal account with `sudo`. The automatic bootstrap also
 supports selected maintained Ubuntu, Debian, RHEL, Rocky Linux, AlmaLinux,
 CentOS Stream, and Fedora releases listed in
@@ -186,6 +199,10 @@ roadmap, install and migration guidance, GitHub forms, and release assets stay
 synchronized.
 
 ## Support and feedback
+
+Start with the [documentation wiki](https://github.com/prsmith777/ALPR-Database-Community/wiki)
+for installation, backups, migration and troubleshooting links. Detailed guides
+remain versioned in this repository and in the in-app Help Center.
 
 - [Ask a question or leave general feedback](https://github.com/prsmith777/ALPR-Database-Community/discussions)
   in GitHub Discussions.

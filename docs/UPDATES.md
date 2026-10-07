@@ -15,7 +15,7 @@ The updater evaluates the Linux guest and its Docker Compose installation; it
 does not depend on or control the underlying VM host.
 
 Windows Docker installations are not supported by the Linux updater. The
-[native Windows installation](WINDOWS_NATIVE.md#native-maintenance) uses Settings
+[native Windows update workflow](WINDOWS_INSTALL.md#update-an-existing-windows-installation) uses Settings
 → Software Updates starting with v0.1.48, backed by a separate Windows update
 service. Older native installations run the latest graphical Setup once to enable
 it, preserving their database and settings. Do not run the Linux updater through WSL against
@@ -47,7 +47,7 @@ shown on the GitHub Releases page, rather than deploying moving `main`:
 ```bash
 git clone https://github.com/prsmith777/ALPR-Database-Community.git
 cd ALPR-Database-Community
-git checkout --detach v0.1.51
+git checkout --detach v0.1.52
 ./alpr-community install
 ```
 
@@ -88,7 +88,7 @@ alpr_native_update() (
   set -Eeuo pipefail
   download_dir="$(mktemp -d /tmp/alpr-maintenance-download.XXXXXX)"
   trap 'rm -rf -- "$download_dir"' EXIT
-  asset_base="https://github.com/prsmith777/ALPR-Database-Community/releases/download/v0.1.51"
+  asset_base="https://github.com/prsmith777/ALPR-Database-Community/releases/download/v0.1.52"
   curl -fLsS --retry 3 "$asset_base/community-maintenance.sh" -o "$download_dir/community-maintenance.sh"
   curl -fLsS --retry 3 "$asset_base/community-maintenance.sh.sha256" -o "$download_dir/community-maintenance.sh.sha256"
   (cd "$download_dir" && sha256sum --check --strict community-maintenance.sh.sha256)
@@ -99,7 +99,7 @@ unset -f alpr_native_update
 ```
 
 The launcher verifies the canonical repository and exact released tag, loads the
-fixed tools outside your checkout, and asks for **INSTALL v0.1.51**. It uses the
+fixed tools outside your checkout, and asks for **INSTALL v0.1.52**. It uses the
 same guarded backup/install workflow and does not reset or reinstall your system.
 It temporarily stops only this installation's matching per-user systemd update
 agent, then restarts it with the installed code. Keep the terminal open and do

@@ -8,90 +8,47 @@ The native Windows package requires no Docker or WSL. Tagged Community releases
 produce stable installers; branch builds are marked preview. Download the
 Windows setup executable and its checksum from the matching GitHub release.
 
+For installation without a terminal, start with the
+[step-by-step Windows guide](WINDOWS_INSTALL.md). This document contains the
+administrator, architecture, migration and maintainer details.
+
 ## Targets and current evidence
 
-| Target | Build/model evidence | Additional coverage |
+Native Windows is a stable Community installation path. Release 0.1.51 updates
+were confirmed by operators on Windows 10 Pro 22H2 and Windows 11 Home on
+October 7, 2026. Those confirmations are distinct from independent attestation
+of an exact running commit on each desktop.
+
+| Target | Coverage | Scope |
 | --- | --- | --- |
-| Windows 10 22H2 x64, build 19045 | Supervised Pro VM installation, sign-in, Settings, LAN access and Blue Iris ingestion across reboot; corrected build `03fd2c65a7e7` independently observed on Release; new post-repair reads, overview crops, embeddings and a repeat-sighting comparison verified | Service ACL review, LAN disable check and other integrations |
-| Windows 11 x64 | Supervised Home installation and reboot; protected service accounts, directory ACLs, owned application listener and loopback-only database verified; same-version repair, credential preservation, normal automatic startup and installed portable backup verified | Camera integration |
+| Windows 10 22H2 x64, build 19045 | Pro VM installation, sign-in, Settings, LAN access, Blue Iris ingestion and earlier-build restart checks; operator-confirmed 0.1.51 upgrade | Other desktop editions and integration combinations require further coverage |
+| Windows 11 x64 | Home installation, earlier-build reboot and repair, protected service accounts/ACLs, loopback database, portable backup and operator-confirmed 0.1.51 upgrade | Broader real-camera integration coverage continues |
 | Home, Pro, Enterprise, Education | Same desktop installer; no edition-specific feature dependency | Enterprise and Education have not been separately tested |
 
-Windows Server, ARM64, 32-bit Windows, and LTSC certification are outside this
-initial target. The installer rejects Server, ARM64, 32-bit PowerShell, older
-Windows 10 builds, network shares, reparse-point roots, and non-NTFS volumes.
-Windows 10 compatibility does not extend Microsoft's Windows 10 support period.
+The exact final 0.1.51 package passed all three CPU model probes, chosen-password
+sign-in, all 28 Settings routes, ingestion/images, direction/timing persistence
+and graceful Live Feed shutdown. Compiled Setup, rollback, retained-data
+reinstall and the public update download/complete manifest were verified.
+Populated actual Windows SCM tests used prior 0.1.47 and target 0.1.50 application
+packages with the corrected updater scripts whose hashes matched 0.1.51.
+All 105 synthetic direction observations were preserved by that corrected update.
+Security/platform CI passed; its Windows Server runner supplements desktop
+checks and is not an additional supported installation target.
 
-New installers use normal automatic startup with a PostgreSQL readiness check
-and verify the actual Windows service configuration. WinSW 2.12 treats the
-presence of its `delayedAutoStart` XML element as enabled, including text
-`false`; new installers omit that element. Preview repairs clear the delayed
-startup flag on the existing owned application service. The corrected build
-`03fd2c65a7e7` passed supervised restarts on Windows 10 and Windows 11; both
-HTTP health endpoints responded afterward. Windows 11 also had a newer boot
-time and both services running. No fixed two-minute startup delay is required.
+Earlier Windows 10 checks exercised overview crops, embeddings and one
+repeat-vehicle comparison. That demonstrates the workflow, not general ReID
+accuracy. Overnight availability observation is optional and cannot establish
+absence of memory leaks. Long-running resource checks and wider integration
+coverage remain ongoing work, not unfinished publication gates.
 
-### Acceptance recorded October 6, 2026
+Windows Server, ARM64, 32-bit Windows and LTSC are outside the supported target.
+The installer rejects Server, ARM64, 32-bit PowerShell, older Windows 10 builds,
+network shares, reparse-point roots and non-NTFS volumes. Windows 10 compatibility
+does not extend Microsoft's Windows 10 support period.
 
-For application source `03fd2c65a7e7`, all application/platform CI jobs passed,
-including native model probes, packaged startup, sign-in, all 28 Settings
-routes, synthetic ingestion/images and authenticated Live Feed shutdown.
-The graphical installer build also passed compiled wizard-startup and
-disposable uninstall-event probes. CI uses Windows Server and does not replace
-the desktop checks above.
-
-A supervised Windows 11 repair selected the corrected release, preserved
-settings, administrator credentials and the API key, and refreshed the
-installed backup launcher. The application service stopped in 0.27 seconds
-and returned healthy in 3.39 seconds while PostgreSQL stayed running.
-
-A portable backup exported by that installed build was restored into an empty,
-disposable PostgreSQL 17 database. Source schema/count validation, 141 restored
-tables, API-key preservation, session invalidation, unchanged source backup,
-and refusal of an occupied target passed. That laptop backup contained no
-images; separate logical migration fixtures covered image checksums.
-
-A disposable installation using real packages was updated from
-`0.1.46-fa4799b7d1fd` to `0.1.47-03fd2c65a7e7`, then rolled back. Real PostgreSQL,
-application health and owned listeners passed. Rollback reverted a changed row
-and settings, removed a row added after updating, and preserved password/API
-key and image checksums. That earlier test used an owned-process adapter. A later isolated Windows 11
-acceptance run used actual Windows SCM, WinSW, LocalService/NetworkService
-accounts and service SID ACLs with the `0.1.47-68adb715bfcd` application. It
-verified selected-release listener ownership through version upgrade and
-transactional rollback, including restoration of changed rows and settings.
-The same run removed both temporary services and reinstalled against retained
-data. Password/API key, the original read, settings and image checksums, custom
-ports and the network preference survived; a cold-cluster recovery backup was
-verified before reinstall. Fixed service names were substituted in copied test
-scripts so existing ALPR services were excluded; SCM itself was not mocked.
-
-Windows 10 also received new post-repair Blue Iris reads with saved direction
-labels and produced canonical overview crops, embeddings and review attributes.
-One visually consistent vehicle seen in opposite directions ranked first at
-69.6% cosine similarity, with a 40.15 percentage-point margin. This is one
-functional comparison, not a general ReID accuracy benchmark or an automatic
-identity decision.
-
-An overnight availability check is optional and is not a release gate. It
-cannot by itself establish memory stability or image-matching accuracy.
-
-The release branch replaces Tailwind 3 with Tailwind 4 and resolves the
-Next.js lint plugin's directory globbing to tinyglobby 0.2.17, removing
-`braces` and `micromatch` from the dependency graph without disabling lint
-rules or adding security exceptions. A compatibility test exercises the
-plugin's actual root-directory discovery API. Next.js is updated to 15.5.27.
-The build-only compiled NFT tracer is excluded from both standalone runtimes;
-Windows packaging and the Linux runtime-image check reject its presence.
-The dependency security gate passed after these changes. The same application
-build was reported working on both Windows 10 and Windows 11. A subsequent
-PostgreSQL concurrency gate found an image registration race between its two
-unique constraints; untargeted conflict handling retains complete content and
-metadata validation, and passed three guarded runs with eight simultaneous
-duplicate registrations each.
-
-The shared UI now requires Chrome/Edge 111 or newer or Firefox 128 or newer,
-consistent with Tailwind 4's browser requirements. Current Chrome and Edge
-on both Windows 10 and 11 meet this requirement.
+Services use normal automatic startup with a PostgreSQL readiness check. There
+is no fixed two-minute delay. The shared UI requires Chrome/Edge 111 or newer
+or Firefox 128 or newer; use a current supported browser.
 
 ## Graphical setup
 
@@ -99,9 +56,11 @@ The Windows setup executable is the user-facing installation path. It includes
 the Community application, Node, WinSW, recognition models, and a graphical
 password screen. Users do not need a terminal, Docker, WSL, or developer tools.
 
-For a clean test computer:
+For a new installation:
 
-1. Copy the maintainer-provided `ALPR-Community-...-Setup.exe` into Windows.
+1. Open the [latest stable release](https://github.com/prsmith777/ALPR-Database-Community/releases/latest)
+   on the target Windows computer or VM and download
+   `ALPR-Community-VERSION-Windows-x64-Setup.exe` from **Assets**.
 2. Double-click it and approve the Windows administrator prompt.
 3. Choose **Start with an empty database**, or choose **Move an existing ALPR
    database and images** and select its verified migration backup folder.
@@ -532,9 +491,12 @@ keep the Linux source and backup until you have accepted the Windows installatio
 The Windows import does not change the Linux system or switch camera traffic.
 Records written to Windows after cutover are not present in the old Linux source.
 
-## Release acceptance gates
+## Maintainer validation checklist
 
-For BOTH a clean Windows 10 22H2 x64 VM and a maintained Windows 11 x64 VM:
+For packaging, service, migration or integration changes, use the applicable
+checks below on Windows 10 22H2 x64 and Windows 11 x64. Record the exact package,
+test boundary and outcome; do not imply that isolated or earlier-build checks
+cover every desktop edition and real integration.
 
 1. Install with unused paths, including paths containing spaces. Confirm
    non-admin prerequisite checking, invalid-platform refusal, dependency
@@ -557,9 +519,10 @@ For BOTH a clean Windows 10 22H2 x64 VM and a maintained Windows 11 x64 VM:
    transactional rollback, and preservation of protected data.
 7. Pass the unchanged Linux CI and Docker runtime gates.
 
-Windows CI provides build/unit/package evidence; its Windows Server runner does
-not replace either desktop VM acceptance target. Do not publish a certified
-Windows installer until these gates have recorded results.
+Windows CI provides build/unit/package evidence; its Windows Server runner
+does not establish desktop behavior. Record applicable checks for each relevant
+release and distinguish isolated automated tests from operator desktop reports.
+Current stable-release evidence is summarized at the top of this document.
 
 ## Isolated Windows service acceptance
 

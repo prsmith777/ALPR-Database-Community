@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.1.52 — Windows installation and help documentation (2026-10-07)
+
+- Expand User Guide 3.20 and its downloadable PDF with native Windows setup choices, first sign-in, LAN access, camera setup order, portable backup, migration and UI-update acceptance.
+- Add a step-by-step Windows installation guide and synchronize README, compatibility, deployment, migration and update links with the stable Windows release.
+- Move shipped Windows installer and browser updates into the roadmap's available capabilities; retain explicit scope for edition coverage, unsigned distribution, long-running resource tests and ReID accuracy work.
+- Add a GitHub documentation wiki, Windows 10/11 issue-form options and installation help, and extend the release documentation checklist to prevent stale platform guidance.
+
 ## Unreleased
 
 ## 0.1.51 — Windows update database validation (2026-10-07)

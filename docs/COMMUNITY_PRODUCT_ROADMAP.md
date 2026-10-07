@@ -1,21 +1,25 @@
 # Community product roadmap
 
-Last reviewed: October 6, 2026
+Last reviewed: October 7, 2026
 
-## Native Windows implementation preview
+## Native Windows is available
 
-Windows 10 22H2 x64 and maintained Windows 11 x64 share the existing Community
-application and version. The native preview adds checksum-pinned Windows
-OpenVINO packaging, a standalone runtime bundle, persistent data paths, portable
-image references, a PowerShell installer, NTFS/service SID permissions, native
-app/database services, and operator-verified backup/update/rollback maintenance.
-Final-package CPU inference and Windows builds are verified locally.
+Stable Community releases include a native Windows 10 22H2 x64 and Windows 11
+x64 installer alongside the Linux application. The same application, database
+schema, authentication, integrations and models run on both platforms.
+Windows Setup installs verified prerequisites and automatic services, supports
+fresh installation, portable Linux/Windows migration and retained-data recovery,
+and updates existing installations without uninstalling.
 
-Clean desktop VM service/ACL/reboot and real-integration acceptance, prerequisite
-acquisition, signed distribution, release asset publishing, and the restricted
-Windows browser update agent remain release gates. Linux installation and
-updater behavior remain the existing supported path. See
-[Native Windows preview](WINDOWS_NATIVE.md).
+Settings → Software Updates provides stable release discovery, verified
+downloads, recovery backups, progress, restart, validation, acceptance and
+rollback through a separate restricted Windows service. Release 0.1.51 updates
+were confirmed by operators on Windows 10 Pro and Windows 11 Home on October 7,
+2026. Packaged runtime/model tests, populated service update/rollback/reinstall
+tests and security/platform CI passed. The affected desktops' exact running
+commits were not independently re-attested after those operator confirmations.
+See [Windows installation](WINDOWS_INSTALL.md) and
+[validation scope](WINDOWS_NATIVE.md#targets-and-current-evidence).
 
 This roadmap distinguishes capabilities that are available now from work that
 may be considered later. It is not a promise of dates. GitHub Releases and the
@@ -104,6 +108,13 @@ credentials and enables them. They do not require extra ALPR host packages.
 
 ### Installation, migration, and updates
 
+- native Windows 10 22H2 x64 and Windows 11 x64 graphical Setup with verified
+  PostgreSQL/FFmpeg prerequisites, bundled models and automatic application,
+  database and restricted updater services;
+- native Windows fresh install, portable Linux/Windows backup import,
+  retained-data recovery, in-place updates and browser-managed acceptance and
+  rollback, with protected persistent data, preserved credentials/settings,
+  recovery backups and optional local-network access;
 - Docker Compose deployment on x86-64 Linux with PostgreSQL 17;
 - fail-closed APT and RPM bootstrap adapters for selected maintained Ubuntu,
   Debian, RHEL, Rocky Linux, AlmaLinux, CentOS Stream, and Fedora x86-64
@@ -176,9 +187,11 @@ downloaded into a new user's database or image library.
    PostgreSQL repositories add or retire distribution releases. Unsupported
    hosts will continue to receive read-only compatibility results and manual
    prerequisite guidance.
-5. Complete the native Windows preview's desktop service/ACL/reboot, migration,
-   integration, update, and rollback acceptance gates, then certify the shared
-   Windows 10/11 installer and restricted update agent.
+5. Expand native Windows coverage across more desktop editions, clean-machine
+   migrations and real integrations. Improve installer signing/reputation and
+   support-report collection; the current stable installer is unsigned.
+   Continue long-running resource and ReID accuracy evaluation separately from
+   functional release checks.
 6. Consider advanced visual-search or ReID administration only after it is
    portable, documented, default-off, privacy-reviewed, and recoverable.
 

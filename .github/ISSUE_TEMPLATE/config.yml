@@ -1,5 +1,11 @@
 blank_issues_enabled: false
 contact_links:
+  - name: Documentation wiki
+    url: https://github.com/prsmith777/ALPR-Database-Community/wiki
+    about: Installation, backups, migration, updates, and troubleshooting links.
+  - name: Install on Windows 10 or Windows 11
+    url: https://github.com/prsmith777/ALPR-Database-Community/blob/main/docs/WINDOWS_INSTALL.md
+    about: Step-by-step native Windows setup, updates, backups, migration, and troubleshooting.
   - name: Questions, setup help, and general feedback
     url: https://github.com/prsmith777/ALPR-Database-Community/discussions
     about: Use GitHub Discussions for support questions, ideas that are not yet feature requests, and Community feedback.

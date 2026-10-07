@@ -59,6 +59,11 @@ shipped**, and **Prioritized later work** sections against the actual release.
 - Confirm Discussions, Issues, and private vulnerability reporting are
   available and that all links in README, the Help Center, `CONTRIBUTING.md`,
   `SECURITY.md`, and the issue chooser reach the intended destination.
+- Review Windows and Linux quick-start links, setup choices, backup/migration
+  instructions, supported platform labels and issue-form options. When a feature
+  ships, remove obsolete preview and unfinished-gate claims from current guides.
+- If a GitHub wiki or Pages site exists, update its navigation to the versioned
+  guides; keep detailed instructions in the repository to avoid divergent copies.
 - Keep public examples synthetic and remove credentials, real plates, private
   addresses, camera imagery, database content, and operator-specific paths.
 

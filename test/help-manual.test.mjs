@@ -18,7 +18,7 @@ async function source(path) {
 }
 
 test("the user guide is structured, searchable, and role-aware", () => {
-  assert.equal(HELP_MANUAL.manualVersion, "3.19");
+  assert.equal(HELP_MANUAL.manualVersion, "3.20");
   assert.ok(HELP_MANUAL.sections.length >= 24);
 
   const ids = HELP_MANUAL.sections.map((section) => section.id);
@@ -354,4 +354,37 @@ test("PDF block headings reserve room for following content", async () => {
   assert.ok(blockStart >= 0 && noteStart > blockStart);
   assert.match(pdfSource.slice(blockStart, noteStart), /ensureSpace\(54\)/);
   assert.match(pdfSource, /section heading, summary, role line, and first block together[\s\S]*ensureSpace\(130\)/);
+});
+
+test("Windows installation guidance matches Setup choices and shipped platform status", async () => {
+  const [guide, native, compatibility, deployment, roadmap, issueForm, setup] = await Promise.all([
+    source("docs/WINDOWS_INSTALL.md"),
+    source("docs/WINDOWS_NATIVE.md"),
+    source("docs/COMPATIBILITY.md"),
+    source("docs/DEPLOYMENT.md"),
+    source("docs/COMMUNITY_PRODUCT_ROADMAP.md"),
+    source(".github/ISSUE_TEMPLATE/bug_report.yml"),
+    source("scripts/windows/CommunitySetup.iss"),
+  ]);
+  const manual = HELP_MANUAL.sections.find((section) => section.id === "windows-installation");
+  assert.ok(manual, "Windows setup must have its own searchable manual section");
+  const manualText = manualSearchText(manual);
+  const choices = [...setup.matchAll(/InstallModePage\.Add\('([^']+)'\)/g)].map((match) => match[1]);
+  assert.equal(choices.length, 4);
+  for (const choice of choices) {
+    assert.ok(guide.includes(choice), `Windows guide omits Setup option: ${choice}`);
+    assert.ok(manualText.includes(choice.toLowerCase()), `manual omits Setup option: ${choice}`);
+  }
+  for (const term of ["22H2", "19045", "Settings → Software Updates", "Accept update", "ALPR Migration Backup", "migration-backup.json", "localhost:3000"]) {
+    assert.ok(guide.includes(term), `Windows guide omits ${term}`);
+  }
+  for (const doc of [native, compatibility, deployment, roadmap]) {
+    assert.match(doc, /WINDOWS_INSTALL\.md/);
+    assert.doesNotMatch(doc, /native Windows (?:development|implementation) preview|Native Windows preview|Desktop service\/reboot acceptance is pending/i);
+  }
+  assert.match(issueForm, /Native Windows 10 22H2 x64/);
+  assert.match(issueForm, /Native Windows 11 x64/);
+  assert.match(issueForm, /Settings → Release/);
+  assert.ok(manualText.includes("create a portable windows backup"));
+  assert.ok(manualText.includes("localhost refers to the computer"));
 });
