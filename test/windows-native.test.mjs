@@ -15,7 +15,7 @@ async function makePackage(root, version, commit) {
     "app/server.js": "// fixture", "app/package.json": JSON.stringify({ version }),
     "runtime/node.exe": "fixture", "runtime/winsw.exe": "fixture",
     "host/windows-service.mjs": "// fixture", "host/windows-maintenance.mjs": "// fixture",
-    "schema.sql": "-- fixture", "migrations.sql": "-- fixture", "Install.ps1": "# fixture",
+    "schema.sql": "-- fixture", "migrations.sql": "-- fixture " + version, "Install.ps1": "# fixture",
   };
   for (const [name, content] of Object.entries(contents)) {
     const file = safePackagePath(root, name);
@@ -158,6 +158,77 @@ test("native update stops, backs up, migrates, validates, accepts, and restores 
   state = await runWindowsUpdater(["cleanup"],{},f.options);
   assert.ok(state.backup.cleanedAt);
 });
+async function identicalMigrationFixture(t) {
+  const f = await fixture(t);
+  const old = path.join(f.deployment.releaseRoot, f.deployment.installation.current, "migrations.sql");
+  await cp(old, path.join(f.target, "migrations.sql"));
+  const manifestFile = path.join(f.target, "windows-package.json");
+  const manifest = JSON.parse(await readFile(manifestFile, "utf8"));
+  manifest.files["migrations.sql"] = await hashFile(old);
+  await writeFile(manifestFile, JSON.stringify(manifest));
+  f.args[f.args.length - 1] = await hashFile(manifestFile);
+  return f;
+}
+test("identical verified SQL is not replayed on a populated native installation", async t => {
+  const f = await identicalMigrationFixture(t);
+  f.deployment.counts = async () => ({plate_reads:"119", plates:"99", vehicle_direction_observations:"105"});
+  f.deployment.migrate = () => { throw new Error("Identical migration must not run"); };
+  const state = await runWindowsUpdater(f.args, {}, f.options);
+  assert.equal(state.status, "ready-for-acceptance");
+  assert.equal(state.migration.mode, "unchanged");
+  assert.equal(state.migration.validation.passed, true);
+  assert.equal(state.validation.counts.vehicle_direction_observations, "105");
+});
+test("migration row loss is recorded before target startup and survives automatic rollback", async t => {
+  const f = await fixture(t); let migrated = false;
+  f.deployment.migrate = () => { migrated = true; };
+  f.deployment.counts = async () => ({plate_reads:"119", plates:"99", vehicle_direction_observations: migrated ? "90" : "105"});
+  const pg = f.deployment.pg;
+  f.deployment.pg = (command, args) => { pg(command, args); if(command === "psql") migrated = false; };
+  await assert.rejects(runWindowsUpdater(f.args, {}, {...f.options, automaticRecovery:true}), /stopped application.*vehicle_direction_observations: 105 -> 90/);
+  const state = await runWindowsUpdater(["status"], {}, f.options);
+  assert.equal(state.status, "rolled-back");
+  assert.equal(state.recovery.previousApplicationRestored, true);
+  assert.equal(state.migration.validation.passed, false);
+  assert.deepEqual(state.migration.validation.losses, [{table:"vehicle_direction_observations",source:"105",target:"90"}]);
+  assert.equal(f.deployment.operations.filter(value => value === "start").length, 1, "Only the restored old application starts");
+});
+test("completed background rows are allowed only after all stopped counts pass", async t => {
+  const f = await fixture(t); let queue = "1";
+  const service = f.deployment.service;
+  f.deployment.service = command => { service(command); if(command === "start") queue = "0"; };
+  f.deployment.counts = async () => ({plate_reads:"119",plates:"99",vehicle_direction_reevaluation_queue:queue});
+  const state = await runWindowsUpdater(f.args, {}, f.options);
+  assert.equal(state.status, "ready-for-acceptance");
+  assert.equal(state.migration.validation.counts.vehicle_direction_reevaluation_queue, "1");
+  assert.deepEqual(state.validation.completedWorkingRows, [{table:"vehicle_direction_reevaluation_queue",source:"1",target:"0"}]);
+  f.deployment.counts = async () => ({plate_reads:"118",plates:"99",vehicle_direction_reevaluation_queue:"0"});
+  await assert.rejects(runWindowsUpdater(["validate"], {}, f.options), /plate_reads: 119 -> 118/);
+  const failed = await runWindowsUpdater(["status"], {}, f.options);
+  assert.deepEqual(failed.validation.losses, [{table:"plate_reads",source:"119",target:"118"}]);
+  assert.equal(failed.lastFailure.phase, "validation");
+});
+test("working-table loss during migration and missing working tables remain blocked", async t => {
+  const f = await fixture(t); let migrated = false;
+  f.deployment.migrate = () => { migrated = true; };
+  f.deployment.counts = async () => ({plate_reads:"1",plates:"1",user_sessions: migrated ? "0" : "1"});
+  await assert.rejects(runWindowsUpdater(f.args, {}, f.options), /stopped application.*user_sessions/);
+  const g = await fixture(t); let started = false;
+  const service = g.deployment.service;
+  g.deployment.service = command => { service(command); if(command === "start") started = true; };
+  g.deployment.counts = async () => ({plate_reads:"1",plates:"1",...(!started ? {user_sessions:"0"} : {})});
+  await assert.rejects(runWindowsUpdater(g.args, {}, g.options), /user_sessions: 0 -> missing/);
+});
+test("validation without a stopped checkpoint keeps the strict legacy count guard", async t => {
+  const f = await fixture(t);
+  const state = await runWindowsUpdater(f.args, {}, f.options);
+  delete state.migration;
+  state.backup.counts.user_sessions = "1";
+  await writeFile(path.join(f.deployment.backupRoot,"updater-state.json"), JSON.stringify(state));
+  f.deployment.counts = async () => ({plate_reads:"1",plates:"1",user_sessions:"0"});
+  await assert.rejects(runWindowsUpdater(["validate"], {}, f.options), /user_sessions: 1 -> 0/);
+});
+
 test("untrusted package checksum refuses before stopping services", async (t) => {
   const f = await fixture(t);
   f.args[f.args.length-1] = "0".repeat(64);

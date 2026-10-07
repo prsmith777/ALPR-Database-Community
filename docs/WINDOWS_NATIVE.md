@@ -582,3 +582,18 @@ Use graphical Setup v0.1.49 or newer and keep the existing installation and data
 ### Windows refuses to move a staged release folder
 
 If the support log shows `EPERM`, `EACCES` or `EBUSY` while renaming a release folder, Windows has blocked that filesystem operation. The error alone does not identify a locking process or distinguish a temporary lock from a persistent permission denial. Use graphical Setup v0.1.50 or newer: it retries sharing/access failures for up to 30 seconds while rechecking the selected release and refusing links, then stops safely if access remains blocked. This preparation occurs before stopping the application or modifying the database. Keep the support log and existing release copies for diagnosis. Do not delete your database, uninstall ALPR, or disable antivirus to work around this error.
+
+### Row-count validation during updates
+
+The updater compares verified source and target SQL files. When both schema and
+migrations are identical, it keeps the existing database schema instead of
+replaying historical cleanup statements. Before starting the new application,
+it checks every table against the stopped-source snapshot. Missing tables and
+decreased counts stop the update and trigger recovery.
+
+After startup, completed direction reevaluation/failure work and expired login
+limits/sessions may legitimately reduce those four working tables. This is
+allowed only after the stopped-application checkpoint passed; all other table
+counts and all stored-file hashes remain protected. A missing working table
+still fails validation. Failed before/after counts and affected table names are
+kept in the protected updater state even after automatic rollback.

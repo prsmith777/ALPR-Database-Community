@@ -144,6 +144,24 @@ try {
   await mkdir(path.join(dataRoot, "storage/images"), { recursive: true });
   await writeFile(path.join(dataRoot, "storage/images/recovery.jpg"), "synthetic SCM recovery image");
   deployment.sql("INSERT INTO public.plates(plate_number,occurrence_count) VALUES ('SCMTEST1',1); INSERT INTO public.plate_reads(plate_number,camera_name,image_path,\"timestamp\") VALUES ('SCMTEST1','Isolated SCM fixture','images/recovery.jpg',CURRENT_TIMESTAMP);");
+  // A populated native database can retain unbound historical direction
+  // predictions. Replaying identical SQL used to delete them and roll back.
+  deployment.service("stop");
+  deployment.sql(`INSERT INTO public.plate_reads(plate_number,camera_name,timestamp)
+    SELECT 'CNT'||(1+((n-1)%99)), 'Count validation fixture', CURRENT_TIMESTAMP+n*interval '1 second'
+    FROM generate_series(1,119) n;
+    INSERT INTO public.vehicle_direction_observations
+      (read_id,camera_key,embedding_model,classifier_version,profile_version,status,orientation)
+    SELECT id,'count validation fixture','canonical-crop-direction-v2','canonical-crop-orientation-knn-v2',1,'collecting','unknown'
+    FROM public.plate_reads WHERE camera_name='Count validation fixture' ORDER BY id LIMIT 15;
+    INSERT INTO public.vehicle_direction_observations
+      (read_id,camera_key,embedding_model,classifier_version,profile_version,status,orientation,orientation_confidence,direction_label)
+    SELECT id,'count validation fixture','blue-iris-zone-crossing','blue-iris-zone-crossing-v1',1,'ready','front',1,'toward'
+    FROM public.plate_reads WHERE camera_name='Count validation fixture'
+      AND id NOT IN (SELECT read_id FROM public.vehicle_direction_observations) ORDER BY id LIMIT 90;`);
+  const directionsBefore = deployment.sql("SELECT json_agg(row_to_json(observation) ORDER BY read_id)::text FROM public.vehicle_direction_observations observation;");
+  assert.equal(deployment.sql("SELECT count(*) FROM public.vehicle_direction_observations;"), "105");
+  deployment.service("start"); await deployment.health();
   await fetch("http://127.0.0.1:" + appPort + "/api/verify-session", { method: "POST", headers: { "content-type": "application/json" }, body: '{"sessionId":"invalid"}' });
   const authFile = path.join(dataRoot, "auth/auth.json"), settingsFile = path.join(dataRoot, "config/settings.yaml");
   const auth = JSON.parse(await readFile(authFile, "utf8")), settings = await hashFile(settingsFile), images = await fileInventory(path.join(dataRoot, "storage"));
@@ -161,6 +179,12 @@ try {
   assert.equal((await deployment.attest()).commit, newer.commit);
   ps(". "+q(path.join(candidate,"host/Setup-Helpers.ps1"))+";Test-InstalledSetupPayload "+q(candidate)+" "+q(installRoot));
   report.stagingRetry.expectedRunningReleaseVerified=true;
+  const nativeState = await runWindowsUpdater(["status"], {}, {deployment, confirmed:true, allowPreview:true});
+  assert.equal(nativeState.migration.mode, "unchanged", "Unchanged verified SQL must not replay historical cleanup");
+  assert.equal(nativeState.migration.validation.passed, true);
+  assert.equal(nativeState.validation.counts.vehicle_direction_observations, "105");
+  assert.equal(deployment.sql("SELECT json_agg(row_to_json(observation) ORDER BY read_id)::text FROM public.vehicle_direction_observations observation;"), directionsBefore);
+  report.populatedCountValidation = {status:"passed",plateReads:119,distinctPlates:99,directionObservations:105,unboundPredictions:15,blueIrisObservations:90,identicalSqlNotReplayed:true,allDirectionValuesPreserved:true};
   const updatedActions=await signedInActions(deployment);
   const accepted=await updatedActions({operation:"accept",confirmation:"I COMPLETED THE MANUAL CHECKS"});
   assert.equal(accepted.updaterStatus,"accepted");

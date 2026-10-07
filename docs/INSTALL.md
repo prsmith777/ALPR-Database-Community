@@ -1,7 +1,7 @@
 # Fresh Community installation
 
-For the native Windows 10/11 development preview, follow
-[Native Windows preview](WINDOWS_NATIVE.md). The instructions below describe
+For the native Windows 10/11 installation, follow
+[Native Windows installation](WINDOWS_NATIVE.md). The instructions below describe
 the supported Linux Docker installation.
 
 This guide creates a new, empty ALPR Database Community installation. It does
@@ -64,7 +64,7 @@ Clone the canonical repository and detach at the exact stable release tag:
 ```bash
 git clone https://github.com/prsmith777/ALPR-Database-Community.git
 cd ALPR-Database-Community
-git checkout --detach v0.1.50
+git checkout --detach v0.1.51
 ./alpr-community install
 ```
 
