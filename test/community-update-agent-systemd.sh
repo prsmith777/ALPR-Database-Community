@@ -21,11 +21,24 @@ cleanup() {
   fixture_uid="$(id -u "$fixture_owner" 2>/dev/null || true)"
   if [[ -n "$fixture_uid" ]]; then systemctl stop "user@${fixture_uid}.service" || true; fi
   userdel "$fixture_owner" || true
+  if [[ -n "${fixture_dropin:-}" ]]; then
+    rm -f -- "$fixture_dropin/environment.conf"
+    rmdir -- "$fixture_dropin" || true
+    systemctl daemon-reload
+  fi
   rm -f -- "$sudoers_file"
   [[ "$fixture_home" == /tmp/alpr-helper-ci.* ]] && rm -rf -- "$fixture_home"
 }
 trap cleanup EXIT
 useradd --user-group --home-dir "$fixture_home" --shell /bin/bash "$fixture_owner"
+fixture_uid="$(id -u "$fixture_owner")"
+fixture_dropin="/run/systemd/system/user@${fixture_uid}.service.d"
+[[ ! -e "$fixture_dropin" ]]
+mkdir "$fixture_dropin"
+# Hosted runners export runner-specific XDG and bus variables. Give only this
+# disposable account a clean manager environment, including after restart.
+printf '[Service]\nEnvironment=HOME=%s XDG_RUNTIME_DIR=/run/user/%s\nUnsetEnvironment=XDG_CONFIG_HOME XDG_DATA_HOME XDG_CACHE_HOME DBUS_SESSION_BUS_ADDRESS SSH_AUTH_SOCK\n' "$fixture_home" "$fixture_uid" > "$fixture_dropin/environment.conf"
+systemctl daemon-reload
 mkdir -p "$fixture_home/app/scripts" "$fixture_home/app/lib"
 cp scripts/community-update-agent{,-setup}.mjs scripts/community-updater-process.mjs "$fixture_home/app/scripts/"
 cp lib/community-update-{control,shape}.mjs "$fixture_home/app/lib/"
