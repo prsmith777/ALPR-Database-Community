@@ -101,6 +101,8 @@ var
   NetworkAccessCheck: TNewCheckBox;
   WorkRoot: String;
   Prepared: Boolean;
+  InstallationVerified: Boolean;
+  OperationComplete: Boolean;
   InstallationRunning: Boolean;
   LastError: String;
 
@@ -248,6 +250,8 @@ end;
 procedure SetupOutput(const S: String; const Error, FirstLine: Boolean);
 begin
   Log(S);
+  if Error then LastError := 'Setup could not read the maintenance result.';
+  if S = 'ALPR_SETUP_COMPLETE:verified' then OperationComplete := True;
   if Pos('ALPR_SETUP_ERROR:', S) = 1 then
     LastError := Copy(S, 18, Length(S));
   if Pos('ALPR_SETUP_PROGRESS:', S) = 1 then begin
@@ -273,6 +277,7 @@ var
   Parameters: String;
 begin
   LastError := '';
+  OperationComplete := False;
   Parameters := '-NoProfile -NonInteractive -ExecutionPolicy Bypass -File "' +
     ExpandConstant('{tmp}\Setup.ps1') + '" -Operation ' + Operation +
     ' -WorkRoot "' + WorkRoot + '"';
@@ -294,63 +299,55 @@ end;
 function PrepareToInstall(var NeedsRestart: Boolean): String;
 var
   ResultCode: Integer;
+  Launched: Boolean;
 begin
   Result := '';
-  if Prepared then Exit;
+  if InstallationVerified then Exit;
   InstallationRunning := True;
   ProgressPage.SetProgress(0, 100);
   ProgressPage.ProgressBar.Style := npbstMarquee;
-  ProgressPage.SetText('Preparing the application files…', '');
+  ProgressPage.SetText('Preparing ALPR…', '');
   ProgressPage.Show;
   try
-    ExtractTemporaryFile('Setup.ps1');
-    ExtractTemporaryFile('Setup-Helpers.ps1');
-    ExtractTemporaryFile('setup-prerequisites.json');
-    ExtractTemporaryFiles('{tmp}\payload\*');
-    if not RunSetupOperation('prepare', ResultCode) then begin
-      Result := 'Setup could not start. Close Setup and try again.';
-      Exit;
+    if not Prepared then begin
+      ExtractTemporaryFile('Setup.ps1');
+      ExtractTemporaryFile('Setup-Helpers.ps1');
+      ExtractTemporaryFile('setup-prerequisites.json');
+      ExtractTemporaryFiles('{tmp}\payload\*');
+      Launched := RunSetupOperation('prepare', ResultCode);
+      if not Launched then begin
+        Result := 'Setup could not start. Close Setup and try again.';
+        Exit;
+      end;
+      if ResultCode = 3010 then begin
+        NeedsRestart := True;
+        Result := 'Windows needs to restart to finish installing a required component. Run this installer again after restarting.';
+        Exit;
+      end;
+      if (ResultCode <> 0) or (LastError <> '') then begin
+        Result := LastError;
+        if Result = '' then Result := 'Setup could not finish its checks.';
+        Result := Result + #13#10 + 'Setup log: ' + ExpandConstant('{log}');
+        Exit;
+      end;
+      if (InstallModePage.SelectedValueIndex <> 2) and (InstallModePage.SelectedValueIndex <> 3) and
+        not SaveStringToFile(WorkRoot + '\administrator-password.txt', UTF8Encode(PasswordPage.Values[0]), False) then begin
+        Result := 'Setup could not save the administrator password securely.';
+        Exit;
+      end;
+      PasswordPage.Values[0] := '';
+      PasswordPage.Values[1] := '';
+      Prepared := True;
     end;
-    if ResultCode = 3010 then begin
-      NeedsRestart := True;
-      Result := 'Windows needs to restart to finish installing a required component. Run this installer again after restarting.';
-      Exit;
-    end;
-    if ResultCode <> 0 then begin
+    ProgressPage.SetText('Installing and verifying ALPR…', '');
+    Launched := RunSetupOperation('install', ResultCode);
+    if (not Launched) or (ResultCode <> 0) or (LastError <> '') or (not OperationComplete) then begin
       Result := LastError;
-      if Result = '' then Result := 'Setup could not finish its checks.';
-      Result := Result + #13#10#13#10 + 'Close Setup and try again. Setup log: ' + ExpandConstant('{log}');
+      if Result = '' then Result := 'ALPR could not verify the installed application. Setup has stopped.';
+      Result := Result + #13#10 + 'Your data has been preserved. Close Setup and keep this log: ' + ExpandConstant('{log}');
       Exit;
     end;
-    if (InstallModePage.SelectedValueIndex <> 2) and (InstallModePage.SelectedValueIndex <> 3) and
-      not SaveStringToFile(WorkRoot + '\administrator-password.txt', UTF8Encode(PasswordPage.Values[0]), False) then begin
-      Result := 'Setup could not save the administrator password securely.';
-      Exit;
-    end;
-    PasswordPage.Values[0] := '';
-    PasswordPage.Values[1] := '';
-    Prepared := True;
-  finally
-    ProgressPage.Hide;
-    InstallationRunning := False;
-  end;
-end;
-
-procedure CurStepChanged(CurStep: TSetupStep);
-var
-  ResultCode: Integer;
-begin
-  if CurStep <> ssInstall then Exit;
-  InstallationRunning := True;
-  ProgressPage.SetProgress(0, 100);
-  ProgressPage.ProgressBar.Style := npbstMarquee;
-  ProgressPage.SetText('Installing ALPR…', '');
-  ProgressPage.Show;
-  try
-    if not Prepared or not RunSetupOperation('install', ResultCode) or (ResultCode <> 0) then begin
-      if LastError = '' then LastError := 'ALPR could not finish installing.';
-      RaiseException(LastError + #13#10 + 'Its data has been preserved. Setup log: ' + ExpandConstant('{log}'));
-    end;
+    InstallationVerified := True;
   finally
     ProgressPage.Hide;
     InstallationRunning := False;

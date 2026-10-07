@@ -4,6 +4,7 @@ import { spawnSync } from "node:child_process";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { assertWindowsHost, hashFile, verifyWindowsPackage } from "./windows-native-package.mjs";
+import { verifyWindowsSetupInstall } from "./test-windows-setup-install.mjs";
 import { verifyWindowsSetupStartup } from "./test-windows-setup-startup.mjs";
 import { verifyWindowsSetupUninstall } from "./test-windows-setup-uninstall.mjs";
 
@@ -55,7 +56,8 @@ export async function buildWindowsSetup(args = process.argv.slice(2)) {
   await verifyWindowsSetupStartup({ compiler });
   await verifyWindowsSetupStartup({ compiler, sourceFile: path.join(root, "scripts/windows/CommunityNetwork.iss") });
   await verifyWindowsSetupUninstall({ compiler });
-  console.log("Verified compiled installer startup and actual uninstall lifecycle before packaging");
+  for (const failure of ["none", "exit", "error-zero", "missing-completion"]) await verifyWindowsSetupInstall({ compiler, failure });
+  console.log("Verified compiled installer startup, application completion gate and actual uninstall lifecycle before packaging");
   const outputRoot = path.join(root, "dist", "setup");
   await mkdir(outputRoot, { recursive: true });
   const name = manifest.channel === "stable" ? `ALPR-Community-${manifest.version}-Windows-x64-Setup` : `ALPR-Community-${manifest.version}-${manifest.commit.slice(0,12)}-preview-Setup`;
@@ -71,7 +73,7 @@ export async function buildWindowsSetup(args = process.argv.slice(2)) {
   await writeFile(output + ".json", JSON.stringify({ formatVersion: 1, source: manifest.source,
     version: manifest.version, commit: manifest.commit, channel: manifest.channel,
     payloadManifestSha256: manifestSha256, setupSha256: checksum, prerequisites: pins,
-    signed: false, wizardStartup: "verified", networkWizardStartup: "verified", uninstallLifecycle: "verified",
+    signed: false, wizardStartup: "verified", networkWizardStartup: "verified", uninstallLifecycle: "verified", applicationCompletionGate: "verified",
     startupMode: "Automatic", startupReadiness: "authenticated-postgresql-query", desktopAcceptance: "recorded-separately" }, null, 2) + "\n", { flag: "wx" });
   console.log("Built graphical Windows setup: " + output);
   return output;

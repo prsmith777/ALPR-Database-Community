@@ -6,6 +6,7 @@ import { spawnSync } from "node:child_process";
 import path from "node:path";
 import os from "node:os";
 import { existsSync } from "node:fs";
+import { verifyWindowsSetupInstall } from "../scripts/test-windows-setup-install.mjs";
 import { verifyWindowsSetupStartup } from "../scripts/test-windows-setup-startup.mjs";
 import { verifyWindowsSetupUninstall } from "../scripts/test-windows-setup-uninstall.mjs";
 
@@ -236,4 +237,28 @@ test("retained reinstall validates protected metadata and rejects substituted ro
     Write-Output 'Retained data ownership, identity and running-cluster refusals passed'`,{ALPR_TEST_ROOT:fixture});
   assert.equal(result.status,0,result.stdout+result.stderr);
   assert.match(result.stdout,/refusals passed/);
+});
+
+test("compiled setup cannot finish after a failed or unverified application installation",{
+  skip:process.platform!=="win32"||!existsSync(compiler),
+},async()=>{
+  for(const failure of ["none","exit","error-zero","missing-completion"])assert.equal((await verifyWindowsSetupInstall({compiler,failure})).verified,true);
+  const source=await readFile(path.join(root,"scripts/windows/CommunitySetup.iss"),"utf8");
+  const broken=source.replace(" or (LastError <> '') or (not OperationComplete)","");assert.notEqual(broken,source);
+  await assert.rejects(verifyWindowsSetupInstall({compiler,failure:"error-zero",sourceText:broken}),/incorrectly reported success/);
+});
+test("setup completion requires the expected selected release and its owned running listener",{skip:!powershell},async t=>{
+ const fixture=await mkdtemp(path.join(os.tmpdir(),"alpr-completion-"));t.after(()=>rm(fixture,{recursive:true,force:true}));
+ const payload=path.join(fixture,"payload"),installed=path.join(fixture,"installed");await mkdir(payload);await mkdir(path.join(installed,"host"),{recursive:true});
+ const commit="b".repeat(40),current="0.1.49-"+commit.slice(0,12);
+ await writeFile(path.join(payload,"windows-package.json"),JSON.stringify({version:"0.1.49",commit}));
+ const record={installRoot:installed,current:"0.1.47-aaaaaaaaaaaa"};await writeFile(path.join(installed,"installation.json"),JSON.stringify(record));
+ const controller=path.join(installed,"host/Service-Control.ps1");
+ const check=()=>ps('. ./scripts/windows/Setup-Helpers.ps1; Test-InstalledSetupPayload $env:ALPR_TEST_PAYLOAD $env:ALPR_TEST_INSTALL',{ALPR_TEST_PAYLOAD:payload,ALPR_TEST_INSTALL:installed});
+ assert.notEqual(check().status,0);
+ await writeFile(path.join(installed,"installation.json"),JSON.stringify({...record,current}));
+ await writeFile(controller,"param([string]$Operation)\nWrite-Output '"+JSON.stringify({current,commit,status:"Running",listenerOwned:false})+"'\n");
+ assert.notEqual(check().status,0);
+ await writeFile(controller,"param([string]$Operation)\nWrite-Output '"+JSON.stringify({current,commit,status:"Running",listenerOwned:true})+"'\n");
+ const result=check();assert.equal(result.status,0,result.stdout+result.stderr);
 });

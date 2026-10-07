@@ -347,7 +347,7 @@ workflow:
    and select **Accept update**. Rollback remains available with an explicit
    warning that it discards writes made after the backup.
 
-Older installations need to run the v0.1.48-or-newer graphical installer once
+Older installations need to run the latest graphical installer (v0.1.49 or newer) once
 using its existing-installation update option. Fresh installs include the updater.
 An offline updater is reported on the page, with Windows-specific instructions.
 
@@ -574,3 +574,7 @@ data are excluded. It exercises version upgrade, transactional rollback,
 uninstall, retained-data reinstall, password/API-key and settings preservation,
 image checksums and verified recovery backups. Failed fixtures are kept for
 diagnosis; cleanup checks service executable ownership before removing them.
+
+### Retrying an interrupted Windows update
+
+Use graphical Setup v0.1.49 or newer and keep the existing installation and data. A verified complete release copy is reused; an incomplete copy is preserved in the private releases directory before a replacement is prepared. Setup stops on reported update errors and requires the expected release and its owned running listener before showing completion. Do not treat the version in the setup window title alone as proof that the application was updated; verify Settings → Release afterward.

@@ -1,5 +1,6 @@
 import { cp, lstat, readFile, readdir, realpath, writeFile, rename } from "node:fs/promises";
 import path from "node:path";
+import { randomUUID } from "node:crypto";
 import { spawnSync } from "node:child_process";
 import { assertWindowsHost, hashFile, verifyWindowsPackage } from "./windows-native-package.mjs";
 
@@ -113,10 +114,47 @@ export async function loadWindowsDeployment(installationFile, options = {}) {
       const manifest = await verifyWindowsPackage(packageRoot, { allowPreview: options.allowPreview });
       const name = manifest.version + "-" + manifest.commit.slice(0,12);
       const destination = path.join(releaseRoot, name);
-      await cp(packageRoot, destination, { recursive: true, force: false, errorOnExist: true });
-      await verifyWindowsPackage(destination, { allowPreview: options.allowPreview });
-      run(path.join(destination, "runtime", "node.exe"), ["openvino-runtime-probe.cjs"], { cwd: path.join(destination, "app") });
-      return { manifest, name, path: destination };
+      const manifestHash = await hashFile(path.join(packageRoot, "windows-package.json"));
+      const ensureInactive = async () => {
+        const selected = JSON.parse(await readFile(installationFile, "utf8"));
+        if (selected.current === name) throw new Error("Cannot stage over the active Windows release");
+      };
+      await assertRealDirectory(releaseRoot);
+      await ensureInactive();
+      let exists = false;
+      try { await lstat(destination); exists = true; }
+      catch (error) { if (error.code !== "ENOENT") throw error; }
+      if (exists) {
+        await assertRealDirectory(destination);
+        let verified = false;
+        try {
+          await verifyWindowsPackage(destination, { allowPreview: options.allowPreview });
+          verified = await hashFile(path.join(destination, "windows-package.json")) === manifestHash;
+        } catch { /* Preserve an incomplete prior copy after verifying its replacement. */ }
+        if (verified) {
+          run(path.join(destination, "runtime", "node.exe"), ["openvino-runtime-probe.cjs"], { cwd: path.join(destination, "app") });
+          return { manifest, name, path: destination, reused: true };
+        }
+      }
+      // Copy and probe privately before publishing a release directory. A
+      // failed copy cannot occupy the name used by the next retry.
+      const pending = path.join(releaseRoot, ".staging-" + name + "-" + randomUUID());
+      await cp(packageRoot, pending, { recursive: true, force: false, errorOnExist: true });
+      await verifyWindowsPackage(pending, { allowPreview: options.allowPreview });
+      if (await hashFile(path.join(pending, "windows-package.json")) !== manifestHash) throw new Error("Staged manifest differs from the verified source");
+      run(path.join(pending, "runtime", "node.exe"), ["openvino-runtime-probe.cjs"], { cwd: path.join(pending, "app") });
+      await ensureInactive();
+      let preserved;
+      if (exists) {
+        await assertRealDirectory(destination);
+        preserved = path.join(releaseRoot, ".failed-stage-" + name + "-" + randomUUID());
+        // Both exact paths are immediate children of the already verified
+        // private releases root. Keep the old files for diagnosis; never delete them.
+        if (path.dirname(destination) !== releaseRoot || path.dirname(preserved) !== releaseRoot) throw new Error("Invalid staging preservation path");
+        await rename(destination, preserved);
+      }
+      await rename(pending, destination);
+      return { manifest, name, path: destination, preserved };
     },
     async switchRelease(name) {
       if (!/^\d+\.\d+\.\d+-[0-9a-f]{12}$/.test(name)) throw new Error("Invalid native release name");
