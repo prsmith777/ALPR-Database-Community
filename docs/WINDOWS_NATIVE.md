@@ -578,3 +578,7 @@ diagnosis; cleanup checks service executable ownership before removing them.
 ### Retrying an interrupted Windows update
 
 Use graphical Setup v0.1.49 or newer and keep the existing installation and data. A verified complete release copy is reused; an incomplete copy is preserved in the private releases directory before a replacement is prepared. Setup stops on reported update errors and requires the expected release and its owned running listener before showing completion. Do not treat the version in the setup window title alone as proof that the application was updated; verify Settings → Release afterward.
+
+### Windows refuses to move a staged release folder
+
+If the support log shows `EPERM`, `EACCES` or `EBUSY` while renaming a release folder, Windows has blocked that filesystem operation. The error alone does not identify a locking process or distinguish a temporary lock from a persistent permission denial. Use graphical Setup v0.1.50 or newer: it retries sharing/access failures for up to 30 seconds while rechecking the selected release and refusing links, then stops safely if access remains blocked. This preparation occurs before stopping the application or modifying the database. Keep the support log and existing release copies for diagnosis. Do not delete your database, uninstall ALPR, or disable antivirus to work around this error.

@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+## 0.1.50 — Windows update file-lock recovery (2026-10-07)
+
+- Retry temporary Windows sharing and access failures for up to 30 seconds when moving verified release folders. Recheck the selected release and real directories before every attempt. Persistent failures preserve the active release and all staged copies.
+- Exercise the failure and recovery using a real Windows file handle that denies delete sharing, as well as bounded permanent-denial and selected-release race fixtures.
+
 ## 0.1.49 — Reliable Windows update retries (2026-10-06)
 
 - Retry Windows updates when an earlier attempt already copied the target release: verify and reuse complete copies, stage new copies privately, and preserve incomplete copies for diagnosis. Never replace the active release during staging.

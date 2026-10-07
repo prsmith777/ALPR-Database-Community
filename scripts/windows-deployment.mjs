@@ -10,6 +10,35 @@ export function nativeRunner(command, args, options = {}) {
   if (result.status !== 0) throw new Error(String(result.stderr || path.basename(command) + " failed").trim());
   return String(result.stdout || "").trim();
 }
+// Windows scanners and other readers may briefly hold a child without
+// FILE_SHARE_DELETE after package verification or a native dependency probe.
+// Retry only sharing/access failures, with a bounded wait and fresh ownership
+// checks. Persistent failures retain both copies and leave the active app alone.
+export async function renameWindowsReleaseDirectory(source, destination, options = {}) {
+  const move = options.renameDirectory || rename;
+  const sleep = options.sleep || ((ms) => new Promise(resolve => setTimeout(resolve, ms)));
+  const delays = [100, 200, 400, 800, 1500, 2500, 4000, 5000, 5000, 5000, 5000];
+  const parent = path.dirname(source);
+  if (parent !== path.dirname(destination) || source === destination) throw new Error("Release moves must stay within their verified releases root");
+  for (let attempt = 0; ; attempt++) {
+    await assertRealDirectory(parent);
+    await assertRealDirectory(source);
+    await options.beforeAttempt?.();
+    // Never merge with or overwrite a directory that appeared during a wait.
+    try { await lstat(destination); throw new Error("Release move destination already exists"); }
+    catch (error) { if (error.code !== "ENOENT") throw error; }
+    try { await move(source, destination); return; }
+    catch (error) {
+      if (!["EPERM", "EACCES", "EBUSY"].includes(error.code)) throw error;
+      if (attempt === delays.length) {
+        const failure = new Error("Windows kept the release folder locked or inaccessible. The update stopped before changing the active release; all release copies are preserved. " + error.message, { cause: error });
+        failure.code = error.code;
+        throw failure;
+      }
+      await sleep(delays[attempt]);
+    }
+  }
+}
 export async function atomicJson(file, value) {
   const temporary = file + "." + process.pid + ".tmp";
   await writeFile(temporary, JSON.stringify(value, null, 2) + "\n", { flag: "wx" });
@@ -151,9 +180,9 @@ export async function loadWindowsDeployment(installationFile, options = {}) {
         // Both exact paths are immediate children of the already verified
         // private releases root. Keep the old files for diagnosis; never delete them.
         if (path.dirname(destination) !== releaseRoot || path.dirname(preserved) !== releaseRoot) throw new Error("Invalid staging preservation path");
-        await rename(destination, preserved);
+        await renameWindowsReleaseDirectory(destination, preserved, { ...options.releaseMoveOptions, beforeAttempt: ensureInactive });
       }
-      await rename(pending, destination);
+      await renameWindowsReleaseDirectory(pending, destination, { ...options.releaseMoveOptions, beforeAttempt: ensureInactive });
       return { manifest, name, path: destination, preserved };
     },
     async switchRelease(name) {
