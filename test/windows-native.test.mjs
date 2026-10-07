@@ -3,10 +3,10 @@ import test from "node:test";
 import { mkdtemp, mkdir, cp, readFile, writeFile, rm, symlink, readdir } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { spawnSync } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { runtimeDataPath } from "../lib/runtime-paths.mjs";
 import { assertWindowsHost, COMMUNITY_SOURCE, hashFile, listPackageFiles, safePackagePath, verifyWindowsPackage } from "../scripts/windows-native-package.mjs";
-import { assertPreservedFiles, loadWindowsDeployment } from "../scripts/windows-deployment.mjs";
+import { assertPreservedFiles, loadWindowsDeployment, renameWindowsReleaseDirectory } from "../scripts/windows-deployment.mjs";
 import { runWindowsUpdater } from "../scripts/windows-maintenance.mjs";
 import { openvinoRuntimeInstallerInternals } from "../scripts/install-openvino-runtime.mjs";
 
@@ -255,10 +255,10 @@ test("Windows installer parses with inbox PowerShell 5.1", {skip:process.platfor
   }
 });
 
-async function stagingFixture(t, runner = () => "") {
+async function stagingFixture(t, runner = () => "", options = {}) {
   const f = await fixture(t);
   await writeFile(f.deployment.installationFile, JSON.stringify({...f.deployment.installation,formatVersion:1,profile:"windows-native",environment:{DB_HOST:"127.0.0.1:5432",DB_USER:"postgres",DB_NAME:"postgres",DB_PASSWORD:"fixture"}}));
-  const deployment = await loadWindowsDeployment(f.deployment.installationFile,{skipHostCheck:true,runner});
+  const deployment = await loadWindowsDeployment(f.deployment.installationFile,{skipHostCheck:true,runner,...options});
   return {...f,deployment,destination:path.join(deployment.releaseRoot,"0.1.47-"+"b".repeat(12))};
 }
 test("native staging reuses a fully verified release after an interrupted update",async t=>{
@@ -294,4 +294,61 @@ test("native staging refuses to replace an active release or a linked target",as
   await symlink(f.target,f.destination,process.platform==="win32"?"junction":"dir");
   await assert.rejects(f.deployment.stage(f.target),/links|junctions/);
   assert.equal((await verifyWindowsPackage(f.target)).commit,"b".repeat(40));
+});
+
+test("native staging waits for temporary Windows sharing failures without stopping the app", async t => {
+  let attempts=0;const delays=[];
+  const {rename}=await import("node:fs/promises");
+  const f=await stagingFixture(t,()=>"",{releaseMoveOptions:{
+    renameDirectory:async(from,to)=>{if(++attempts<=2)throw Object.assign(new Error("fixture sharing violation"),{code:"EPERM"});await rename(from,to);},
+    sleep:async ms=>delays.push(ms),
+  }});
+  const result=await f.deployment.stage(f.target);
+  assert.equal(attempts,3);assert.deepEqual(delays,[100,200]);
+  assert.equal((await verifyWindowsPackage(result.path)).commit,"b".repeat(40));
+  assert.equal(JSON.parse(await readFile(f.deployment.installationFile,"utf8")).current,f.deployment.installation.current);
+
+});
+
+test("persistent Windows access failure is bounded and preserves the active release and staged copy", async t => {
+  let attempts=0;const delays=[];
+  const f=await stagingFixture(t,()=>"",{releaseMoveOptions:{
+    renameDirectory:async()=>{attempts++;throw Object.assign(new Error("fixture permanent access denial"),{code:"EACCES"});},
+    sleep:async ms=>delays.push(ms),
+  }});
+  await assert.rejects(f.deployment.stage(f.target),error=>error.code==="EACCES"&&/locked or inaccessible/.test(error.message)&&error.cause.message==="fixture permanent access denial");
+  assert.equal(attempts,12);assert.equal(delays.reduce((a,b)=>a+b,0),29500);
+  const staged=(await readdir(f.deployment.releaseRoot)).filter(name=>name.startsWith(".staging-"));assert.equal(staged.length,1);
+  assert.equal((await verifyWindowsPackage(path.join(f.deployment.releaseRoot,staged[0]))).commit,"b".repeat(40));
+  assert.equal(JSON.parse(await readFile(f.deployment.installationFile,"utf8")).current,f.deployment.installation.current);
+
+});
+
+test("a retry rechecks the selected release before moving a directory", async t => {
+  let moves=0;let f;
+  f=await stagingFixture(t,()=>"",{releaseMoveOptions:{
+    renameDirectory:async()=>{moves++;throw Object.assign(new Error("fixture lock"),{code:"EPERM"});},
+    sleep:async()=>{const installation=JSON.parse(await readFile(f.deployment.installationFile,"utf8"));await writeFile(f.deployment.installationFile,JSON.stringify({...installation,current:path.basename(f.destination)}));},
+  }});
+  await assert.rejects(f.deployment.stage(f.target),/active Windows release/);assert.equal(moves,1);
+});
+
+test("Windows release move recovers from a real child file handle denying delete sharing", {skip:process.platform!=="win32"}, async t => {
+  const root=await mkdtemp(path.join(os.tmpdir(),"alpr-sharing-"));
+  const source=path.join(root,"pending"),destination=path.join(root,"release"),signal=path.join(root,"release-lock");
+  await mkdir(source);const file=path.join(source,"locked.dll");await writeFile(file,"synthetic native library");
+  const script="$ErrorActionPreference='Stop';$h=[IO.File]::Open($env:ALPR_LOCK_FILE,[IO.FileMode]::Open,[IO.FileAccess]::Read,[IO.FileShare]::ReadWrite);try{[Console]::Out.WriteLine('ready');while(-not [IO.File]::Exists($env:ALPR_LOCK_SIGNAL)){Start-Sleep -Milliseconds 25}}finally{$h.Dispose()}";
+  const child=spawn(path.join(process.env.SystemRoot,"System32/WindowsPowerShell/v1.0/powershell.exe"),["-NoProfile","-NonInteractive","-Command",script],{windowsHide:true,env:{...process.env,ALPR_LOCK_FILE:file,ALPR_LOCK_SIGNAL:signal},stdio:["ignore","pipe","pipe"]});
+  try {
+    await new Promise((resolve,reject)=>{let output="",errors="";const deadline=setTimeout(()=>reject(new Error("Windows lock fixture timed out: "+errors)),10000);child.stdout.on("data",chunk=>{output+=chunk;if(output.includes("ready")){clearTimeout(deadline);resolve();}});child.stderr.on("data",chunk=>errors+=chunk);child.once("error",reject);child.once("exit",code=>{clearTimeout(deadline);if(!output.includes("ready"))reject(new Error("Windows lock fixture failed: "+code+errors));});});
+    const {rename}=await import("node:fs/promises");
+    await assert.rejects(rename(source,destination),error=>["EPERM","EACCES","EBUSY"].includes(error.code));
+    let waits=0;
+    await renameWindowsReleaseDirectory(source,destination,{sleep:async ms=>{waits++;await writeFile(signal,"release");await new Promise(resolve=>setTimeout(resolve,ms));}});
+    assert.ok(waits>=1);assert.equal(await readFile(path.join(destination,"locked.dll"),"utf8"),"synthetic native library");
+  } finally {
+    await writeFile(signal,"release");
+    if(child.exitCode===null)await new Promise(resolve=>{child.once("exit",resolve);setTimeout(()=>child.kill(),2000).unref();});
+    assert.equal(path.dirname(root),os.tmpdir());await rm(root,{recursive:true,force:true});
+  }
 });
