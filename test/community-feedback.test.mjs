@@ -20,8 +20,12 @@ test("Community feedback uses structured issues and routes questions and securit
   ]);
 
   assert.equal(config.blank_issues_enabled, false);
-  assert.match(config.contact_links[0].url, /\/discussions$/);
-  assert.match(config.contact_links[1].url, /\/security\/advisories\/new$/);
+  const contacts = new Map(config.contact_links.map((link) => [link.name, link.url]));
+  assert.equal(contacts.size, config.contact_links.length);
+  assert.equal(contacts.get("Documentation wiki"), "https://github.com/prsmith777/ALPR-Database-Community/wiki");
+  assert.equal(contacts.get("Install on Windows 10 or Windows 11"), "https://github.com/prsmith777/ALPR-Database-Community/blob/main/docs/WINDOWS_INSTALL.md");
+  assert.equal(contacts.get("Questions, setup help, and general feedback"), "https://github.com/prsmith777/ALPR-Database-Community/discussions");
+  assert.equal(contacts.get("Report a security vulnerability privately"), "https://github.com/prsmith777/ALPR-Database-Community/security/advisories/new");
   assert.deepEqual(bug.labels, ["bug"]);
   assert.deepEqual(feature.labels, ["enhancement"]);
 
