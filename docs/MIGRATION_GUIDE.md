@@ -173,6 +173,15 @@ If activation validation fails, the wizard attempts to return the target to
 its outbound-isolated network and records whether that safety recovery
 succeeded. Do not cut over when the wizard reports an activation failure.
 
+On systemd Linux hosts, successful activation from v0.1.53 also sets up the
+restricted update helper, enables startup after reboot and verifies its fresh
+heartbeat. The isolated review and acceptance steps do not start a helper.
+An existing matching helper is preserved. If setup needs attention, the target
+remains activated and healthy; run `./alpr-community agent install` as its
+normal owner after correcting the reported issue. Running `wizard activate`
+again retries helper setup without repeating network activation. Hosts without
+systemd keep the terminal updater or an existing service supervisor.
+
 ## Resume, status, and recovery
 
 Successful stages are not repeated:

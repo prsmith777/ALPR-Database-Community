@@ -135,7 +135,10 @@ credentials and enables them. They do not require extra ALPR host packages.
   checksums local or SSH image storage, and starts an outbound-isolated review
   target without deleting the source;
 - exact-tag updates on standard Linux hosts and Linux VMs, available through
-  both `./alpr-community` and an optional restricted browser-to-host service;
+  both `./alpr-community` and a restricted browser-to-host service;
+- automatic per-user Linux helper setup for fresh installations and activated
+  migrations on systemd hosts, including startup after reboot, verified service
+  heartbeats, preservation of matching helpers and a manual recovery path;
 - bounded transient OpenVINO download retries plus automatic restoration of
   the exact previous application when an apply failure occurs before database
   migration, without replacing the unchanged database;

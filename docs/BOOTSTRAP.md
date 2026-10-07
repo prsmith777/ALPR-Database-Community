@@ -162,6 +162,18 @@ For unsupported distributions and existing systems, use the
 [INSTALL.md](INSTALL.md); migrations continue in
 [MIGRATION_GUIDE.md](MIGRATION_GUIDE.md).
 
+## Browser update helper
+
+After a healthy fresh installation, v0.1.53 and later automatically install and
+verify the restricted per-user update helper on a systemd Linux host. Setup
+enables startup after reboot for the installation owner and may request sudo
+permission for that one-time setting. Migration preparation leaves the helper
+alone; the migration wizard sets it up after explicit acceptance and activation.
+Existing matching services are preserved. If setup needs attention, ALPR keeps
+running and prints `./alpr-community agent install` as the recovery command.
+See [Community updates](UPDATES.md#browser-update-page) for recovery and hosts
+without systemd.
+
 ## Vehicle identity
 
 Community initializes ReID V2 automatically. Models run inside the application

@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.1.53 — Automatic Linux update helper setup (2026-10-07)
+
+- Set up the restricted per-user updater automatically after a healthy fresh Linux installation and after an explicitly accepted migration target is activated. Isolated migration review never starts an updater.
+- Enable startup after reboot for the actual installation owner, restore the systemd user-bus environment for SSH/group-refresh sessions, and verify the service's own fresh heartbeat before reporting Software Updates ready.
+- Preserve matching existing service configuration and refuse to overwrite another installation's helper. A helper setup failure keeps the healthy application and data, records an incomplete status, and prints the manual recovery command.
+- Keep manual helper installation for older installations and recovery. Hosts without systemd retain the terminal updater or their own agent supervisor.
+- Update User Guide 3.21, installation, migration, bootstrap, update guidance and the roadmap. Add real Linux service and unattended-startup CI coverage.
+
 ## 0.1.52 — Windows installation and help documentation (2026-10-07)
 
 - Expand User Guide 3.20 and its downloadable PDF with native Windows setup choices, first sign-in, LAN access, camera setup order, portable backup, migration and UI-update acceptance.

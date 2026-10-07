@@ -22,6 +22,7 @@ import { createServer } from "node:net";
 import { networkInterfaces } from "node:os";
 
 import { buildRuntimeImage } from "./community-image-builder.mjs";
+import { setupCommunityUpdateAgent } from "./community-update-agent-setup.mjs";
 
 const scriptPath = fileURLToPath(import.meta.url);
 const repositoryRoot = resolve(dirname(scriptPath), "..");
@@ -781,11 +782,6 @@ async function installCommunity(environment = process.env, options = {}) {
     logger.log("2. Leave the username blank and use the administrator password you chose.");
     logger.log("The generated database password is stored only in the private .env file; you do not need to enter it.");
     logger.log("3. Create a named administrator from Settings after signing in.");
-    logger.log("4. To enable Settings > Software Updates on a systemd host, run:");
-    logger.log(`   cd ${JSON.stringify(context.root)}`);
-    logger.log("   ./alpr-community agent install");
-    logger.log('   sudo loginctl enable-linger "$USER"');
-    return state;
   } catch (error) {
     state.status = "failed";
     state.failure = { phase: "installation", code: "installation-failed", at: timestamp(options.clock) };
@@ -805,6 +801,11 @@ async function installCommunity(environment = process.env, options = {}) {
     }
     throw error;
   }
+  state.updateAgent = await setupCommunityUpdateAgent({
+    ...options, root: context.root, environment, ensureAgent: options.ensureUpdateAgent,
+  });
+  await saveState(context.root, state, options.clock);
+  return state;
 }
 
 function parseArguments(argumentsList) {

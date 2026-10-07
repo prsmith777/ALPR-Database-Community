@@ -6,6 +6,7 @@ import {
   access,
   chmod,
   mkdir,
+  lstat,
   open,
   readFile,
   rename,
@@ -322,6 +323,25 @@ export async function installCommunityUpdateAgent(options = {}) {
     throw new Error("Automatic agent service installation is available only on Linux systemd hosts");
   }
   const root = resolve(options.root || repositoryRoot);
+  const serviceDirectory = resolve(options.serviceDirectory || join(homedir(), ".config", "systemd", "user"));
+  const servicePath = join(serviceDirectory, SERVICE_NAME);
+  let existing = false;
+  try {
+    const metadata = await lstat(servicePath);
+    if (!metadata.isFile() || metadata.isSymbolicLink() || metadata.size > 64 * 1024) {
+      throw new Error("The existing update service is not a regular unit file; it was preserved");
+    }
+    const source = await readFile(servicePath, "utf8");
+    const workingDirectories = source.match(/^WorkingDirectory=.*$/gm) || [];
+    const commands = source.match(/^ExecStart=.*$/gm) || [];
+    if (workingDirectories.length !== 1 || workingDirectories[0] !== `WorkingDirectory=${systemdDirectivePath(root)}` ||
+        commands.length !== 1 || !commands[0].endsWith(` ${systemdQuote(posix.join(root, "scripts", "community-update-agent.mjs"))} run`)) {
+      throw new Error("An update service already belongs to another installation or has an unrecognized binding; it was preserved");
+    }
+    existing = true;
+  } catch (error) {
+    if (error?.code !== "ENOENT") throw error;
+  }
   const controlDirectory = hostControlDirectory({ ...options, root });
   const probePath = join(controlDirectory, `.agent-install-probe-${randomUUID()}`);
   try {
@@ -337,15 +357,15 @@ export async function installCommunityUpdateAgent(options = {}) {
     }
     throw error;
   }
-  const serviceDirectory = resolve(options.serviceDirectory || join(homedir(), ".config", "systemd", "user"));
-  const servicePath = join(serviceDirectory, SERVICE_NAME);
   await mkdir(serviceDirectory, { recursive: true, mode: 0o700 });
-  await writeFile(servicePath, serviceFile(root, options.nodePath), { mode: 0o600 });
-  await chmod(servicePath, 0o600);
+  if (!existing) {
+    await writeFile(servicePath, serviceFile(root, options.nodePath), { mode: 0o600, flag: "wx" });
+  }
   const runner = options.runner || defaultRunner;
-  runner("systemctl", ["--user", "daemon-reload"]);
-  runner("systemctl", ["--user", "enable", "--now", SERVICE_NAME]);
-  return { servicePath, serviceName: SERVICE_NAME, controlDirectory };
+  const commandOptions = { env: options.environment || process.env };
+  runner("systemctl", ["--user", "daemon-reload"], commandOptions);
+  runner("systemctl", ["--user", "enable", "--now", SERVICE_NAME], commandOptions);
+  return { servicePath, serviceName: SERVICE_NAME, controlDirectory, preserved: existing };
 }
 
 export async function uninstallCommunityUpdateAgent(options = {}) {
@@ -359,14 +379,19 @@ export async function uninstallCommunityUpdateAgent(options = {}) {
 }
 
 function printHelp(logger = console) {
-  logger.log(`Usage: ./alpr-community agent <command>\n\nCommands:\n  run       Run the restricted update agent in the foreground.\n  install   Install and start a per-user systemd service.\n  status    Show the per-user systemd service status.\n  uninstall Stop and remove the per-user systemd service.\n\nFor unattended startup, enable lingering once for this Linux account:\n  sudo loginctl enable-linger "$USER"`);
+  logger.log(`Usage: ./alpr-community agent <command>\n\nCommands:\n  run       Run the restricted update agent in the foreground.\n  install   Install, enable startup after reboot, and verify the per-user service.\n  status    Show the per-user systemd service status.\n  uninstall Stop and remove the per-user systemd service.\n\nNew installations and activated migrations set up this helper automatically.\nFor an older installation or recovery, run ./alpr-community agent install.\nIt may request sudo permission to enable startup after reboot.`);
 }
 
 export async function runCommunityUpdateAgentCommand(argumentsList = process.argv.slice(2), environment = process.env, options = {}) {
   const command = argumentsList[0] || "help";
   if (argumentsList.length > 1) throw new Error("The update agent command does not accept extra arguments");
   if (command === "run") return runCommunityUpdateAgent({ ...options, environment });
-  if (command === "install") return installCommunityUpdateAgent(options);
+  if (command === "install") {
+    const { ensureCommunityUpdateAgent } = await import("./community-update-agent-setup.mjs");
+    const result = await ensureCommunityUpdateAgent({ ...options, environment });
+    (options.logger || console).log("Settings > Software Updates is ready, including startup after reboot.");
+    return result;
+  }
   if (command === "uninstall") return uninstallCommunityUpdateAgent(options);
   if (command === "status") return (options.runner || defaultRunner)("systemctl", ["--user", "status", "--no-pager", SERVICE_NAME], { stdio: "inherit" });
   if (["help", "--help", "-h"].includes(command)) return printHelp(options.logger);

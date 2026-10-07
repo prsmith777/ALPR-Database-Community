@@ -105,8 +105,11 @@ Migrating an existing ALPR system is a separate workflow. Start with the
 command above for an existing database.
 
 Install a stable release tag rather than deploying moving `main`. Starting
-with v0.1.29, administrators can use **Settings → Software Updates** after a
-one-time restricted host-agent setup:
+with v0.1.29, administrators can use **Settings → Software Updates**. Fresh
+Linux installations and activated migration targets from v0.1.53 set up the
+restricted helper automatically on systemd hosts, including startup after reboot.
+Existing matching helpers are preserved. For an older installation or recovery,
+run this as the installation owner:
 
 ```bash
 ./alpr-community agent install

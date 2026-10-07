@@ -47,7 +47,7 @@ shown on the GitHub Releases page, rather than deploying moving `main`:
 ```bash
 git clone https://github.com/prsmith777/ALPR-Database-Community.git
 cd ALPR-Database-Community
-git checkout --detach v0.1.52
+git checkout --detach v0.1.53
 ./alpr-community install
 ```
 
@@ -88,7 +88,7 @@ alpr_native_update() (
   set -Eeuo pipefail
   download_dir="$(mktemp -d /tmp/alpr-maintenance-download.XXXXXX)"
   trap 'rm -rf -- "$download_dir"' EXIT
-  asset_base="https://github.com/prsmith777/ALPR-Database-Community/releases/download/v0.1.52"
+  asset_base="https://github.com/prsmith777/ALPR-Database-Community/releases/download/v0.1.53"
   curl -fLsS --retry 3 "$asset_base/community-maintenance.sh" -o "$download_dir/community-maintenance.sh"
   curl -fLsS --retry 3 "$asset_base/community-maintenance.sh.sha256" -o "$download_dir/community-maintenance.sh.sha256"
   (cd "$download_dir" && sha256sum --check --strict community-maintenance.sh.sha256)
@@ -99,7 +99,7 @@ unset -f alpr_native_update
 ```
 
 The launcher verifies the canonical repository and exact released tag, loads the
-fixed tools outside your checkout, and asks for **INSTALL v0.1.52**. It uses the
+fixed tools outside your checkout, and asks for **INSTALL v0.1.53**. It uses the
 same guarded backup/install workflow and does not reset or reinstall your system.
 It temporarily stops only this installation's matching per-user systemd update
 agent, then restarts it with the installed code. Keep the terminal open and do
@@ -129,17 +129,29 @@ container. Instead, it places a versioned, fixed-operation request in the
 private `update-control/` bind mount for a restricted worker running as the
 normal installation owner on the Linux host.
 
-On a systemd-based Linux host, install that worker once:
+From v0.1.53, fresh Linux installations and activated migration wizard targets
+set up that worker automatically on systemd hosts. Migration review stays
+isolated until explicit acceptance and activation. Setup preserves a matching
+existing unit, enables startup after reboot for the installation owner, and
+checks a fresh heartbeat against the running service's PID. An SSH session or
+bootstrap group refresh does not need to supply the systemd user-bus variables.
+
+For older installations or recovery, run as the same normal installation owner:
 
 ```bash
 cd /path/to/ALPR-Database-Community
 ./alpr-community agent install
-sudo loginctl enable-linger "$USER"
 ./alpr-community agent status
 ```
 
-The linger setting lets the per-user service start after a reboot without an
-interactive login. On a Linux host without systemd, run
+The install command may request sudo permission to enable startup after reboot;
+non-interactive setup uses non-interactive sudo and reports a recovery command
+if permission is unavailable. An existing matching helper is kept, including its
+custom configuration. A unit bound to another installation is preserved and
+requires an owner decision. Helper setup failure does not remove a healthy
+installation or undo a successful migration activation.
+
+On a Linux host without systemd, run
 `./alpr-community agent run` under the host's existing service supervisor.
 The page stays disabled while the agent heartbeat is absent. Requests expire
 after five minutes so an abandoned request cannot unexpectedly run after a
