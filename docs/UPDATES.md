@@ -129,7 +129,7 @@ container. Instead, it places a versioned, fixed-operation request in the
 private `update-control/` bind mount for a restricted worker running as the
 normal installation owner on the Linux host.
 
-From v0.1.55, fresh Linux installations and activated migration wizard targets
+From v0.1.53, fresh Linux installations and activated migration wizard targets
 set up that worker automatically on systemd hosts. Migration review stays
 isolated until explicit acceptance and activation. Setup preserves a matching
 existing unit, enables startup after reboot for the installation owner, and

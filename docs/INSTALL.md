@@ -146,7 +146,7 @@ Leave the username blank and enter the administrator password chosen during
 installation. The generated database password in `.env` is not an application
 login password. Create a named administrator under Settings after sign-in.
 
-From v0.1.55, a successful fresh installation sets up browser-managed updates
+From v0.1.53, a successful fresh installation sets up browser-managed updates
 automatically on a systemd Linux host. It preserves a matching existing helper,
 enables startup after reboot, and verifies a fresh heartbeat from the running
 service. Setup may request sudo permission once to enable startup for the
