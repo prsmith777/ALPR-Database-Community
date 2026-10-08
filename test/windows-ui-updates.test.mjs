@@ -106,16 +106,19 @@ test("an abruptly stopped worker triggers recovery without replaying its operati
  const installationFile=path.join(f.root,"installation.json");
  await writeFile(installationFile,JSON.stringify({profile:"windows-native",installRoot:f.root,dataRoot:data,current}));
  const queued=request();await writeFile(path.join(control,"request.json"),JSON.stringify(queued));
- const controller=new AbortController(),calls=[];
+ const controller=new AbortController(),calls=[];let progressFailure=false;
  const deadline=setTimeout(()=>controller.abort(),5000);t.after(()=>clearTimeout(deadline));
- await runWindowsUpdateService(installationFile,{signal:controller.signal,fork:(_file,args)=>{
+ await runWindowsUpdateService(installationFile,{signal:controller.signal,publish:async(directory,name,value)=>{
+  if(value.message === "Fixture progress sharing failure"){progressFailure=true;throw Object.assign(new Error("fixture sharing failure"),{code:"EPERM"});}
+  return windowsUpdateServiceInternals.publication(directory,name,value);
+ },fork:(_file,args)=>{
   calls.push(args);const child=new EventEmitter();child.pid=process.pid;child.send=()=>{};
   setImmediate(()=>{
    if(calls.length === 1)child.emit("exit",9);
-   else {child.emit("message",{kind:"result",result:{updaterStatus:"rolled-back",message:"Recovered"}});child.emit("exit",0);controller.abort();}
+   else {child.emit("message",{kind:"progress",message:"Fixture progress sharing failure"});setTimeout(()=>{child.emit("message",{kind:"result",result:{updaterStatus:"rolled-back",message:"Recovered"}});child.emit("exit",0);controller.abort();},25);}
   });return child;
  }});
- assert.equal(calls.length,2);assert.equal(calls[0].includes("--recover"),false);assert.equal(calls[1].at(-1),"--recover");
+ assert.equal(progressFailure,true);assert.equal(calls.length,2);assert.equal(calls[0].includes("--recover"),false);assert.equal(calls[1].at(-1),"--recover");
  assert.equal(JSON.parse(await readFile(path.join(control,"state.json"),"utf8")).updaterStatus,"rolled-back");
  await assert.rejects(readFile(path.join(privateRoot,"active.json")),{code:"ENOENT"});
 });

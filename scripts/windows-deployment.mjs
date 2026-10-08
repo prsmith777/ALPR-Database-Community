@@ -1,4 +1,4 @@
-import { cp, lstat, readFile, readdir, realpath, writeFile, rename } from "node:fs/promises";
+import { cp, lstat, readFile, readdir, realpath, writeFile, rename, rm } from "node:fs/promises";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
 import { spawnSync } from "node:child_process";
@@ -39,10 +39,32 @@ export async function renameWindowsReleaseDirectory(source, destination, options
     }
   }
 }
-export async function atomicJson(file, value) {
-  const temporary = file + "." + process.pid + ".tmp";
+export async function atomicJson(file, value, options = {}) {
+  const temporary = file + "." + process.pid + "." + randomUUID() + ".tmp";
+  const move = options.renameFile || rename;
+  const sleep = options.sleep || ((ms) => new Promise(resolve => setTimeout(resolve, ms)));
+  const delays = [25,50,100,200,400,800,1600,2500];
+  await assertRealDirectory(path.dirname(file));
   await writeFile(temporary, JSON.stringify(value, null, 2) + "\n", { flag: "wx" });
-  await rename(temporary, file);
+  try {
+    for (let attempt = 0; ; attempt++) {
+      await assertRealDirectory(path.dirname(file));
+      for (const entry of [temporary,file]) {
+        try {
+          const stat = await lstat(entry);
+          if (!stat.isFile() || stat.isSymbolicLink() || stat.nlink !== 1) throw new Error("Native state files must be unlinked regular files");
+        } catch(error) { if(error.code !== "ENOENT" || entry === temporary)throw error; }
+      }
+      try { await move(temporary,file); return; }
+      catch(error) {
+        if(!["EPERM","EACCES","EBUSY"].includes(error.code) || attempt === delays.length)throw error;
+        await sleep(delays[attempt]);
+      }
+    }
+  } finally {
+    // Only this call's exclusively created staging file is eligible for removal.
+    await rm(temporary,{force:true});
+  }
 }
 export async function assertRealDirectory(directory) {
   const info = await lstat(directory);

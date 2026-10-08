@@ -154,10 +154,11 @@ test("native update stops, backs up, migrates, validates, accepts, and restores 
   await assert.rejects(runWindowsUpdater(["cleanup"],{},f.options), /retention/);
   f.deployment.installation.environment.PORT="3001";
   f.deployment.installation.environment.HOSTNAME="127.0.0.1";
+  f.deployment.installation.environment.DB_HOST="127.0.0.1:5434";
   state = await runWindowsUpdater(["rollback"],{},f.options);
   const restored=JSON.parse(await readFile(f.deployment.installationFile,"utf8"));
   assert.equal(restored.environment.PORT,"3001");assert.equal(restored.environment.HOSTNAME,"127.0.0.1");
-  assert.equal(restored.environment.DB_HOST,"127.0.0.1:5433");
+  assert.equal(restored.environment.DB_HOST,"127.0.0.1:5434");
   assert.equal(state.status,"rolled-back");
   assert.equal(JSON.parse(await readFile(f.deployment.installationFile,"utf8")).current,f.deployment.installation.current);
   state = await runWindowsUpdater(["cleanup"],{},f.options);
@@ -427,4 +428,13 @@ test("Windows release move recovers from a real child file handle denying delete
     if(child.exitCode===null)await new Promise(resolve=>{child.once("exit",resolve);setTimeout(()=>child.kill(),2000).unref();});
     assert.equal(path.dirname(root),os.tmpdir());await rm(root,{recursive:true,force:true});
   }
+});
+
+
+test('pending database port recovery blocks software mutation but leaves status readable',async t=>{
+ const f=await fixture(t);const privateRoot=path.join(f.deployment.data,'management/updates');await mkdir(privateRoot,{recursive:true});
+ await writeFile(path.join(privateRoot,'database-port.json'),JSON.stringify({phase:'pending'}));
+ await assert.rejects(runWindowsUpdater(['rollback'],{}, {deployment:f.deployment,confirmed:true}),/maintenance recovery/);
+ assert.deepEqual(f.deployment.operations,[]);
+ assert.equal((await runWindowsUpdater(['status'],{}, {deployment:f.deployment})).status,'no-update-recorded');
 });

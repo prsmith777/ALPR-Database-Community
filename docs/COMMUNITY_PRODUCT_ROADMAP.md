@@ -11,8 +11,10 @@ Windows Setup installs verified prerequisites and automatic services, supports
 fresh installation, portable Linux/Windows migration and retained-data recovery,
 and updates existing installations without uninstalling. Windows Setup offers
 application and local database port selection for side-by-side Docker migration.
-Settings → General can change the native application port later, with conflict
-checks, verified restart, preserved network access and interrupted-change recovery.
+Settings → General can change the native application and private PostgreSQL
+ports later, with conflict checks, verified service restart and interrupted-change
+recovery. Database port changes keep browser and Blue Iris addresses unchanged;
+updates, software rollback and retained-data reinstall preserve both ports.
 
 Settings → Software Updates provides stable release discovery, verified
 downloads, recovery backups, progress, restart, validation, acceptance and

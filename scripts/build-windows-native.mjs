@@ -98,14 +98,14 @@ async function main() {
     await writeFile(path.join(destination, "runtime", name), await license.text());
   }
   await mkdir(path.join(destination, "host"));
-  for (const file of ["windows-application-port.mjs","windows-update-host.mjs","windows-enable-updates.mjs","windows-update-service.mjs","windows-update-worker.mjs","windows-update-release.mjs","windows-native-package.mjs", "windows-service.mjs", "windows-service-startup.mjs", "windows-maintenance.mjs", "windows-code-repair.mjs", "windows-deployment.mjs", "native-reid-upgrade-policy.mjs", "windows-migration.mjs", "community-migration-bundle.mjs", "postgres-major-migration.mjs"]) {
+  for (const file of ["windows-database-port.mjs","windows-application-port.mjs","windows-update-host.mjs","windows-enable-updates.mjs","windows-update-service.mjs","windows-update-worker.mjs","windows-update-release.mjs","windows-native-package.mjs", "windows-service.mjs", "windows-service-startup.mjs", "windows-maintenance.mjs", "windows-code-repair.mjs", "windows-deployment.mjs", "native-reid-upgrade-policy.mjs", "windows-migration.mjs", "community-migration-bundle.mjs", "postgres-major-migration.mjs"]) {
     await cp(path.join(root, "scripts", file), path.join(destination, "host", file));
   }
   for (const file of ["schema.sql", "migrations.sql", "LICENSE"]) await cp(path.join(root, file), path.join(destination, file));
   await cp(path.join(root, "scripts", "windows", "Install.ps1"), path.join(destination, "Install.ps1"));
   await cp(path.join(root, "docs", "WINDOWS_NATIVE.md"), path.join(destination, "README-WINDOWS.md"));
   await cp(path.join(root, "scripts", "windows", "Service-Control.ps1"), path.join(destination, "host", "Service-Control.ps1"));
-  for (const file of ["Application-Port.ps1","Pause-Updates.ps1","Enable-Updates.ps1","Update-Service.ps1","Expand-Update.ps1","Network.ps1","Network-Helpers.ps1","Setup-Helpers.ps1","ExportMigration.ps1"]) {
+  for (const file of ["Database-Port.ps1","Application-Port.ps1","Pause-Updates.ps1","Enable-Updates.ps1","Update-Service.ps1","Expand-Update.ps1","Network.ps1","Network-Helpers.ps1","Setup-Helpers.ps1","ExportMigration.ps1"]) {
     await cp(path.join(root,"scripts/windows",file),path.join(destination,"host",file));
   }
   await mkdir(path.join(destination,"lib"));

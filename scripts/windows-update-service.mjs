@@ -69,22 +69,23 @@ export async function runWindowsUpdateService(installationFile, options = {}) {
     await rm(lockFile); lock = await open(lockFile,"wx");
   }
   await lock.writeFile(JSON.stringify({pid:process.pid,startedAt:new Date().toISOString()}));
+  const publish = (name,value) => (options.publish || publication)(control,name,value);
   let stopping = Boolean(options.signal?.aborted), child = null;
   let pendingRecovery=null;
   const stop = () => { stopping = true; };
   process.on("SIGTERM",stop); process.on("SIGINT",stop);
   options.signal?.addEventListener("abort",stop,{once:true});
-  const heartbeat = () => publication(control,"heartbeat.json",{formatVersion:1,observedAt:new Date().toISOString(),capabilities:["application-port"]});
+  const heartbeat = () => publish("heartbeat.json",{formatVersion:1,observedAt:new Date().toISOString(),capabilities:["application-port","database-port"]});
   let heartbeatWrite = Promise.resolve();
   const timer = setInterval(() => { heartbeatWrite = heartbeatWrite.then(heartbeat).catch((error)=>console.error(error.message)); },5_000);
   try {
     await heartbeat();
     try {
       const recorded=JSON.parse(await readFile(path.join(data,"management","backups","updater-state.json"),"utf8"));
-      await publication(control,"state.json",{formatVersion:1,operation:"update",phase:"succeeded",...windowsUpdateSummary("update",recorded),completedAt:new Date().toISOString()});
+      await publish("state.json",{formatVersion:1,operation:"update",phase:"succeeded",...windowsUpdateSummary("update",recorded),completedAt:new Date().toISOString()});
     } catch(error) {
       if(error.code !== "ENOENT")throw error;
-      await publication(control,"state.json",{formatVersion:1,phase:"idle",updaterStatus:"current",message:"Ready to check for stable Community updates."});
+      await publish("state.json",{formatVersion:1,phase:"idle",updaterStatus:"current",message:"Ready to check for stable Community updates."});
     }
     try {
       const active=await readRegularJson(path.join(privateRoot,"active.json"));
@@ -103,7 +104,7 @@ export async function runWindowsUpdateService(installationFile, options = {}) {
       try { claimed = pendingRecovery || await claimWindowsUpdateRequest({control,privateRoot}); pendingRecovery=null; }
       catch (error) {
         console.error(error.message);
-        await publication(control,"state.json",{formatVersion:1,phase:"failed",message:"The update request was invalid or already processed. Check the updater log before retrying.",completedAt:new Date().toISOString()});
+        await publish("state.json",{formatVersion:1,phase:"failed",message:"The update request was invalid or already processed. Check the updater log before retrying.",completedAt:new Date().toISOString()});
         // Remove only the invalid fixed inbox entry, never follow a junction.
         const queued = path.join(control,"request.json");
         try { const info = await lstat(queued); if (info.isFile() && !info.isSymbolicLink()) await rm(queued); } catch (failure) { if (failure.code !== "ENOENT") throw failure; }
@@ -112,8 +113,8 @@ export async function runWindowsUpdateService(installationFile, options = {}) {
       const {request,requestFile} = claimed;
       const state = {formatVersion:1,requestId:request.id,operation:request.operation,phase:"running",createdAt:request.createdAt,
         startedAt:new Date().toISOString(),targetTag:request.target,message:"Starting the requested Windows update operation."};
-      await publication(control,"request-active.json",{requestId:request.id});
-      await publication(control,"state.json",state);
+      await publish("request-active.json",{requestId:request.id});
+      await publish("state.json",state);
       let result = null, success = false, workerStarted=false, updates = Promise.resolve();
       try {
         const selected = JSON.parse(await readFile(installationFile,"utf8"));
@@ -125,7 +126,11 @@ export async function runWindowsUpdateService(installationFile, options = {}) {
         const completion=new Promise((resolve,reject)=>{child.once("error",reject);child.once("exit",(code)=>resolve(code));});
         child.on("message",(message)=>{
           if (message?.kind === "progress" && typeof message.message === "string") {
-            updates=updates.then(()=>publication(control,"state.json",{...state,message:message.message.slice(0,300)}));
+            updates=updates.then(()=>publish("state.json",{...state,message:message.message.slice(0,300)})).catch(error=>{
+              // Advisory progress must never terminate an active maintenance worker.
+              // Final results and recovery ownership still use their checked paths.
+              console.error("Unable to publish Windows updater progress: " + error.message);
+            });
           } else if (["result","error"].includes(message?.kind) && message.result && typeof message.result === "object") {
             result=message.result; success=message.kind === "result";
           }
@@ -137,12 +142,12 @@ export async function runWindowsUpdateService(installationFile, options = {}) {
         success = success && code === 0;
         await updates;
         if(success && request.operation === "update" && !claimed.recover)await refreshWindowsUpdateHost(installationFile);
-        await publication(control,"state.json",{...state,...result,phase:success?"succeeded":"failed",completedAt:new Date().toISOString(),
+        await publish("state.json",{...state,...result,phase:success?"succeeded":"failed",completedAt:new Date().toISOString(),
           message:result?.message || "The Windows update worker stopped unexpectedly. Preserve all ALPR data and check the updater log."});
       } catch (error) {
         console.error(error.stack || error.message);
         await updates.catch(()=>{});
-        await publication(control,"state.json",{...state,...result,phase:"failed",message:"The Windows update operation could not complete. Preserve all ALPR data and check the updater log.",completedAt:new Date().toISOString()});
+        await publish("state.json",{...state,...result,phase:"failed",message:"The Windows update operation could not complete. Preserve all ALPR data and check the updater log.",completedAt:new Date().toISOString()});
       } finally {
         if(child && !workerStarted)child.kill();
         child=null;

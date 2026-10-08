@@ -8,6 +8,7 @@ import { fileURLToPath } from "node:url";
 import { nativeRunner, loadWindowsDeployment, fileInventory } from "./windows-deployment.mjs";
 import { hashFile, listPackageFiles, verifyWindowsPackage } from "./windows-native-package.mjs";
 import { runWindowsUpdater } from "./windows-maintenance.mjs";
+import {changeWindowsDatabasePort} from "./windows-database-port.mjs";
 import {changeWindowsApplicationPort} from "./windows-application-port.mjs";
 import { enableWindowsUpdates } from "./windows-enable-updates.mjs";
 
@@ -40,17 +41,17 @@ async function freePort() {
 }
 async function installerPackage(source, folder) {
   await cp(source, folder, { recursive: true, errorOnExist: true, force: false });
-  for (const name of ["Application-Port.ps1","Install.ps1", "Setup-Helpers.ps1", "Network-Helpers.ps1", "Service-Control.ps1","Update-Service.ps1","Pause-Updates.ps1","Enable-Updates.ps1","Expand-Update.ps1"]) {
+  for (const name of ["Database-Port.ps1","Application-Port.ps1","Install.ps1", "Setup-Helpers.ps1", "Network-Helpers.ps1", "Service-Control.ps1","Update-Service.ps1","Pause-Updates.ps1","Enable-Updates.ps1","Expand-Update.ps1"]) {
     const destination = name === "Install.ps1" ? path.join(folder, name) : path.join(folder, "host", name);
     let script=substitute(await readFile(path.join(checkout, "scripts/windows", name), "utf8"));
-    if(name === "Application-Port.ps1") {
+    if(["Application-Port.ps1","Database-Port.ps1"].includes(name)) {
       script=script.replace('"$env:ProgramData\\ALPR Community"',q(dataRoot));
       script=script.replace("[Environment]::GetFolderPath('CommonDesktopDirectory')",q(path.join(root,"shortcuts/desktop")));
       script=script.replace("[Environment]::GetFolderPath('CommonPrograms')",q(path.join(root,"shortcuts/programs")));
     }
     await writeFile(destination,script);
   }
-  for(const name of ["windows-application-port.mjs","windows-update-service.mjs","windows-update-worker.mjs","windows-update-release.mjs","windows-update-host.mjs","windows-enable-updates.mjs","windows-maintenance.mjs","windows-deployment.mjs","windows-native-package.mjs","native-reid-upgrade-policy.mjs"]){await cp(path.join(checkout,"scripts",name),path.join(folder,"host",name));}
+  for(const name of ["windows-database-port.mjs","windows-application-port.mjs","windows-update-service.mjs","windows-update-worker.mjs","windows-update-release.mjs","windows-update-host.mjs","windows-enable-updates.mjs","windows-maintenance.mjs","windows-deployment.mjs","windows-native-package.mjs","native-reid-upgrade-policy.mjs"]){await cp(path.join(checkout,"scripts",name),path.join(folder,"host",name));}
   await mkdir(path.join(folder,"lib"),{recursive:true});
   for(const name of ["community-update-control.mjs","community-update-shape.mjs"]){await cp(path.join(checkout,"lib",name),path.join(folder,"lib",name));}
   const manifest = JSON.parse(await readFile(path.join(folder, "windows-package.json"), "utf8"));
@@ -76,8 +77,9 @@ async function signedInActions(deployment) {
   assert.ok(cookie,"Isolated installation must accept its existing administrator password");
   return async(input,expectedPhase="succeeded")=>{
     console.log("Windows Settings operation: "+input.operation);
-    const isPort=input.operation === "app-port";
-    const result=await fetch(base+(isPort?"/settings/general":"/settings/software-updates"),{method:"POST",headers:{origin:base,cookie,"next-action":actionId(isPort?"requestWindowsApplicationPort":"requestSoftwareUpdate"),"content-type":"text/plain;charset=UTF-8",accept:"text/x-component"},body:JSON.stringify([isPort?input.appPort:input])});
+    const isPort=["app-port","database-port"].includes(input.operation);
+    const portAction=input.operation === "database-port" ? "requestWindowsDatabasePort" : "requestWindowsApplicationPort";
+    const result=await fetch(base+(isPort?"/settings/general":"/settings/software-updates"),{method:"POST",headers:{origin:base,cookie,"next-action":actionId(isPort?portAction:"requestSoftwareUpdate"),"content-type":"text/plain;charset=UTF-8",accept:"text/x-component"},body:JSON.stringify([isPort?(input.operation === "database-port"?input.databasePort:input.appPort):input])});
     const text=await result.text();assert.equal(result.status,200);
     const value=text.split("\n").filter(line=>/^\d+:\{/.test(line)).map(line=>{try{return JSON.parse(line.slice(line.indexOf(":")+1));}catch{return null;}}).find(value=>typeof value?.success === "boolean");
     assert.ok(value,"Real HTTP server action must return its result");assert.equal(value.success,true,value.error);
@@ -130,7 +132,11 @@ try {
   // read access. Grant directory-only access; product roots retain their own
   // service-SID ACLs and private files do not inherit these account grants.
   ps("foreach($p in @(" + [root, programs, commonData].map(q).join(",") + ")){[void][IO.Directory]::CreateDirectory($p);$acl=Get-Acl -LiteralPath $p;foreach($sid in @('S-1-5-19','S-1-5-20')){$acl.AddAccessRule((New-Object Security.AccessControl.FileSystemAccessRule((New-Object Security.Principal.SecurityIdentifier($sid)),'ReadAndExecute','None','None','Allow')))};Set-Acl -LiteralPath $p -AclObject $acl}");
+  report.publicationHelperSourceSha256 = await hashFile(path.join(checkout,"scripts/windows-deployment.mjs"));
+  report.updateServiceSourceSha256 = await hashFile(path.join(checkout,"scripts/windows-update-service.mjs"));
   report.installerSourceSha256 = await hashFile(path.join(checkout, "scripts/windows/Install.ps1"));
+  report.databasePortHelperSourceSha256 = await hashFile(path.join(checkout,"scripts/windows/Database-Port.ps1"));
+  report.databasePortControllerSourceSha256 = await hashFile(path.join(checkout,"scripts/windows-database-port.mjs"));
   report.recoveryHelperSourceSha256 = await hashFile(path.join(checkout, "scripts/windows/Setup-Helpers.ps1"));
   const older = await verifyWindowsPackage(previous, { allowPreview: true });
   const newer = await verifyWindowsPackage(target, { allowPreview: true });
@@ -218,6 +224,36 @@ try {
   await (await signedInActions(deployment))({operation:"app-port",appPort:nextPort});
   deployment=await loadWindowsDeployment(installationFile,{allowPreview:true});await deployment.health();
   report.applicationPort={status:"passed",realHttpAdminAction:true,conflictPreservedActiveApplication:true,networkPreferencePreserved:true,databaseAndApiKeyPreserved:true,shortcutsUpdated:true,interruptedChangeRecovered:true};
+  const nextDatabasePort=await freePort();
+  const autoFile=path.join(dataRoot,'management/postgres/postgresql.auto.conf'),originalAutoHash=await hashFile(autoFile);
+  const databaseState=await (await signedInActions(deployment))({operation:'database-port',databasePort:nextDatabasePort});
+  assert.equal(databaseState.currentDatabasePort,nextDatabasePort);
+  deployment=await loadWindowsDeployment(installationFile,{allowPreview:true});await deployment.health();await deployment.attest();
+  assert.equal(deployment.sql("SHOW port"),String(nextDatabasePort));assert.equal(deployment.sql("SHOW listen_addresses"),'127.0.0.1');
+  assert.equal(deployment.installation.environment.PORT,String(nextPort));assert.equal(await hashFile(settingsFile),settings);
+  assert.deepEqual(await fileInventory(path.join(dataRoot,'storage')),images);
+  const databaseAuth=JSON.parse(await readFile(authFile,'utf8'));assert.equal(databaseAuth.apiKey,auth.apiKey);assert.equal(databaseAuth.password,auth.password);
+  assert.equal(deployment.sql("SELECT count(*) FROM public.plate_reads WHERE plate_number='SCMTEST1'"),'1');
+  const occupiedDatabase=net.createServer();occupiedDatabase.listen(0,'0.0.0.0');await once(occupiedDatabase,'listening');
+  try{const refused=await (await signedInActions(deployment))({operation:'database-port',databasePort:occupiedDatabase.address().port},'failed');assert.match(refused.message,/port is in use/);await deployment.health();}finally{await new Promise(resolve=>occupiedDatabase.close(resolve));}
+  const databaseJournalFile=path.join(dataRoot,'management/updates/database-port.json');
+  const databaseJournal=JSON.parse(await readFile(databaseJournalFile,'utf8'));databaseJournal.phase='pending';await writeFile(databaseJournalFile,JSON.stringify(databaseJournal));
+  assert.equal((await changeWindowsDatabasePort({id:databaseJournal.requestId},process.env,{deployment,recover:true})).currentDatabasePort,dbPort);
+  deployment=await loadWindowsDeployment(installationFile,{allowPreview:true});await deployment.health();
+  assert.equal(deployment.sql('SHOW port'),String(dbPort));assert.equal(await hashFile(autoFile),originalAutoHash);
+  // Occupy a port after preflight but before apply to force an actual PostgreSQL
+  // startup failure. The recovery path must restore configuration and both services.
+  const lateConflict=net.createServer(),latePort=await freePort();
+  try{
+    await assert.rejects(changeWindowsDatabasePort({id:randomUUID(),databasePort:latePort},process.env,{deployment,progress:async()=>{
+      lateConflict.listen(latePort,'127.0.0.1');await once(lateConflict,'listening');
+    }}),/previous PostgreSQL port was restored/);
+  }finally{if(lateConflict.listening)await new Promise(resolve=>lateConflict.close(resolve));}
+  deployment=await loadWindowsDeployment(installationFile,{allowPreview:true});await deployment.health();await deployment.attest();
+  assert.equal(deployment.sql('SHOW port'),String(dbPort));assert.equal(await hashFile(autoFile),originalAutoHash);
+  await (await signedInActions(deployment))({operation:'database-port',databasePort:nextDatabasePort});
+  deployment=await loadWindowsDeployment(installationFile,{allowPreview:true});await deployment.health();
+  report.databasePort={status:'passed',realHttpAdminAction:true,realPostgreSqlListener:true,loopbackOnly:true,conflictPreservedApplication:true,credentialsRecordsSettingsImagesPreserved:true,interruptedChangeRestoredExactConfiguration:true,failedDatabaseStartupRecovered:true};
   report.inPlaceBridge={status:"passed",realPriorApplication:true,noUninstall:true,technicalValidation:true,acceptanceThroughHttp:true};
   deployment.sql("UPDATE public.plate_reads SET camera_name='Changed after update' WHERE plate_number='SCMTEST1'; INSERT INTO public.plates(plate_number,occurrence_count) VALUES ('POSTUPDATE',0);");
   await writeFile(settingsFile, "general:\n  maxRecords: 111\n");
@@ -229,6 +265,8 @@ try {
   assert.equal(deployment.installation.environment.PORT,String(nextPort));
   ps(". "+q(path.join(root,"target-package/host/Network-Helpers.ps1"))+";[void](Get-AlprNetworkRule "+nextPort+")");
   report.applicationPort.portAndFirewallPreservedOnSoftwareRollback=true;
+  assert.equal(deployment.installation.environment.DB_HOST,"127.0.0.1:"+nextDatabasePort);assert.equal(deployment.sql("SHOW port"),String(nextDatabasePort));
+  report.databasePort.preservedOnSoftwareRollback=true;
   assert.equal(deployment.sql("SELECT camera_name FROM public.plate_reads WHERE plate_number='SCMTEST1';"), "Isolated SCM fixture");
   assert.equal(deployment.sql("SELECT count(*) FROM public.plates WHERE plate_number='POSTUPDATE';"), "0");
   assert.equal(await hashFile(settingsFile), settings);
@@ -250,6 +288,8 @@ try {
   await deployment.health(); assert.equal((await deployment.attest()).commit, newer.commit);
   assert.equal(deployment.installation.environment.HOSTNAME, "0.0.0.0");
   assert.equal(deployment.installation.environment.PORT, String(nextPort));
+  assert.equal(deployment.installation.environment.DB_HOST,"127.0.0.1:"+nextDatabasePort);assert.equal(deployment.sql("SHOW port"),String(nextDatabasePort));
+  report.databasePort.preservedOnRetainedReinstall=true;
   const afterAuth = JSON.parse(await readFile(authFile, "utf8"));
   assert.equal(afterAuth.apiKey, auth.apiKey); assert.equal(afterAuth.password, auth.password);
   assert.equal(await hashFile(settingsFile), settings);
@@ -281,6 +321,9 @@ try {
   assert.equal((await uiActions({operation:"accept",confirmation:"I COMPLETED THE MANUAL CHECKS"})).updaterStatus,"accepted");
   report.browserUpdate={status:"passed",realHttpAdminActions:true,separateUpdaterService:true,automaticBackup:true,technicalValidation:true,acceptance:true,syntheticFutureVersion:uiManifest.version,applicationSourceCommit:newer.commit,...releaseEvidence};
   assert.equal((await uiActions({operation:"rollback",confirmation:"ROLL BACK AND DISCARD NEW WRITES"})).updaterStatus,"rolled-back");
+  deployment=await loadWindowsDeployment(installationFile,{allowPreview:true});
+  assert.equal(deployment.installation.environment.DB_HOST,"127.0.0.1:"+nextDatabasePort);assert.equal(deployment.sql("SHOW port"),String(nextDatabasePort));
+  report.databasePort.preservedOnBrowserUpdateAndRollback=true;
   report.status = "passed"; console.log("Uninstall and retained-data reinstall passed actual SCM and protected service accounts.");
 } catch (error) {
   report.status = "failed"; report.error = error.stack?.slice(-12000); console.error(report.error); process.exitCode = 1;

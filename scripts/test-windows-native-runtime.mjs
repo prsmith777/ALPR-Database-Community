@@ -171,7 +171,12 @@ Module._resolveFilename=function(request,parent,...rest){
       assert.match(html,/ALPR Community Updater service automatically/);
       assert.doesNotMatch(html,/commit-pinned deployment image|exposing the Docker socket to this application/);
     }
-    if(section==="general") assert.match(html,/Windows connection port/);
+    if(section==="general") {
+      assert.match(html,/Windows connection ports/);
+      assert.match(html,/Local PostgreSQL port/);
+      assert.match(html,/id="windows-database-port"/);
+      assert.match(html,/Change PostgreSQL port and restart/);
+    }
     if(section==="software-updates") assert.match(html,/WINDOWS_NATIVE\.md#native-maintenance/);
     if(section==="data-privacy/cleanup") assert.doesNotMatch(html,/Whole-container|Docker objects/);
     if (page.status !== 200) {

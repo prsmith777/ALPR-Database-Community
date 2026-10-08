@@ -1,3 +1,4 @@
+import { changeWindowsDatabasePort } from "./windows-database-port.mjs";
 import { changeWindowsApplicationPort } from "./windows-application-port.mjs";
 import { mkdir, readFile, rm } from "node:fs/promises";
 import path from "node:path";
@@ -39,8 +40,9 @@ export async function performWindowsUpdateRequest(input, environment = process.e
   if (input.formatVersion !== 1 || age < -30_000 || age > 5 * 60_000) throw new Error("Windows update request is unsupported or expired");
   const deployment = options.deployment || await loadWindowsDeployment(environment.ALPR_WINDOWS_INSTALLATION, {allowPreview:true});
   const current = { tag: `v${deployment.current.version}`, commit: deployment.current.commit };
-  if (request.operation === "app-port") {
-    const result=await (options.changePort || changeWindowsApplicationPort)(request,environment,{deployment,progress:options.progress});
+  if (["app-port","database-port"].includes(request.operation)) {
+    const change = request.operation === "database-port" ? (options.changeDatabasePort || changeWindowsDatabasePort) : (options.changePort || changeWindowsApplicationPort);
+    const result=await change(request,environment,{deployment,progress:options.progress});
     const state=await (options.runUpdater || runWindowsUpdater)(["status"],environment,{confirmed:true,allowPreview:true,deployment});
     return {...windowsUpdateSummary("status",state,null,current),...result};
   }
@@ -101,8 +103,9 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
     const environment={...process.env,ALPR_WINDOWS_INSTALLATION:installationFile};
     const progress=(message)=>send({kind:"progress",message});
     let result;
-    if(recovering && request.operation === "app-port") {
-      const portResult=await changeWindowsApplicationPort(request,environment,{recover:true,progress});
+    if(recovering && ["app-port","database-port"].includes(request.operation)) {
+      const change=request.operation === "database-port" ? changeWindowsDatabasePort : changeWindowsApplicationPort;
+      const portResult=await change(request,environment,{recover:true,progress});
       result={...windowsUpdateSummary("status",await runWindowsUpdater(["status"],environment,{allowPreview:true})),...portResult};
     }else if(recovering) {
       const deployment=await loadWindowsDeployment(installationFile,{allowPreview:true});
@@ -119,8 +122,8 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
       summary = windowsUpdateSummary("update",result);
     } catch { /* Keep the original failure authoritative. */ }
     let operation;try{operation=JSON.parse(await readFile(requestFile,"utf8")).operation;}catch{}
-    if(operation === "app-port") {
-      const safe=/^(?:The selected application port is in use|The port change failed\.|The port change needs administrator|Finish the pending software update|Application and database ports|Finish the current maintenance)/.test(error.message);
+    if(["app-port","database-port"].includes(operation)) {
+      const safe=/^(?:The selected (?:application|database) port is in use|The (?:database )?port change failed\.|The (?:database )?port change needs administrator|Finish the pending software update|Application and database ports|Finish the current maintenance)/.test(error.message);
       send({kind:"error",result:{...summary,message:safe?error.message:"The port change could not complete. Check the updater log before retrying."}});
     } else send({kind:"error",result:{...summary,message:summary.updaterStatus === "rolled-back"
       ? "The update failed. ALPR restored the previous release automatically. Your recovery copy is preserved."
