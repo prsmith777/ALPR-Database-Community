@@ -1,5 +1,26 @@
 # Changelog
 
+## 0.1.54 — 2026-10-07
+
+- Choose application and local database ports in Windows Setup. Detect occupied
+  ports before installation so an existing Docker ALPR can keep port 3000 while
+  native Community uses an unused port such as 3001 and its separate PostgreSQL
+  17 cluster, normally on loopback port 5433.
+- Change the native Windows application port later under Settings → General.
+  The restricted Windows updater checks conflicts, preserves network access,
+  updates shortcuts, restarts and verifies ALPR, and restores the previous port
+  on failure or interrupted maintenance. Update Blue Iris destination URLs after
+  a successful change; the API key is preserved.
+- Preserve selected ports through installation, migration, updates, retained-data
+  recovery and application rollback. Setup shortcuts and Finish open the verified
+  installed port.
+- Correct Windows database and environment-managed setting labels so they refer
+  to protected Windows service settings rather than a Linux .env file. Use
+  native Windows update instructions and guide links on Release and Software
+  Updates, and platform-neutral storage/maintenance explanations.
+- Update User Guide 3.22, Windows installation, side-by-side Docker migration,
+  backup, update, roadmap and public documentation guidance.
+
 ## 0.1.53 — Automatic Linux update helper setup (2026-10-07)
 
 - Set up the restricted per-user updater automatically after a healthy fresh Linux installation and after an explicitly accepted migration target is activated. Isolated migration review never starts an updater.

@@ -9,14 +9,14 @@ function section(source,start,end){const a=source.indexOf(start),b=end?source.in
 export async function verifyWindowsSetupInstall({compiler,sourceText,failure='none'}) {
  compiler=path.resolve(compiler);
  if(process.platform!=='win32')throw new Error('Installer execution requires Windows');
- if(!['none','exit','error-zero','missing-completion'].includes(failure))throw new Error('Unknown fixture failure');
+ if(!['none','exit','error-zero','missing-completion','missing-port'].includes(failure))throw new Error('Unknown fixture failure');
  const source=sourceText??await readFile(path.join(root,'scripts/windows/CommunitySetup.iss'),'utf8');
  const scratch=await mkdtemp(path.join(os.tmpdir(),'alpr-install-gate-'));
  const installed=path.join(scratch,'installed');
  try {
   await mkdir(path.join(scratch,'payload'));await writeFile(path.join(scratch,'payload/probe.txt'),'disposable fixture');
   await writeFile(path.join(scratch,'Setup-Helpers.ps1'),'# Fixture only');await writeFile(path.join(scratch,'setup-prerequisites.json'),'{}');
-  await writeFile(path.join(scratch,'Setup.ps1'),`param([string]$Operation,[string]$WorkRoot,[string]$PackageRoot,[string]$ManifestSha256,[switch]$UpdateExisting)\n$ErrorActionPreference='Stop'\nif($Operation -eq 'prepare'){Write-Output 'ALPR_SETUP_PROGRESS:fixture prepared';exit 0}\nif($Operation -eq 'install'){\n if('${failure}' -in @('exit','error-zero')){Write-Output 'ALPR_SETUP_ERROR:Fixture installation refused';if('${failure}' -eq 'exit'){exit 7};exit 0}\n if('${failure}' -ne 'missing-completion'){Write-Output 'ALPR_SETUP_COMPLETE:verified'}\n exit 0\n}\nexit 0\n`);
+  await writeFile(path.join(scratch,'Setup.ps1'),`param([string]$Operation,[string]$WorkRoot,[string]$PackageRoot,[string]$ManifestSha256,[switch]$UpdateExisting)\n$ErrorActionPreference='Stop'\nif($Operation -eq 'prepare'){Write-Output 'ALPR_SETUP_PROGRESS:fixture prepared';exit 0}\nif($Operation -eq 'install'){\n if('${failure}' -in @('exit','error-zero')){Write-Output 'ALPR_SETUP_ERROR:Fixture installation refused';if('${failure}' -eq 'exit'){exit 7};exit 0}\n if('${failure}' -ne 'missing-port'){Write-Output 'ALPR_SETUP_PORT:3001'}\n if('${failure}' -ne 'missing-completion'){Write-Output 'ALPR_SETUP_COMPLETE:verified'}\n exit 0\n}\nexit 0\n`);
   const code=section(source,'function Powershell: String;','function InitializeSetup:')+section(source,'procedure SetupOutput(','procedure UninstallOutput(');
   const fixture=`#define ManifestSha256 "${'0'.repeat(64)}"
 [Setup]
@@ -42,11 +42,12 @@ Source: "setup-prerequisites.json"; Flags: dontcopy
 Source: "payload\\probe.txt"; DestDir: "{tmp}\\payload"; Flags: dontcopy
 Source: "payload\\probe.txt"; DestDir: "{app}"
 [Code]
-var PasswordPage:TInputQueryWizardPage; InstallModePage:TInputOptionWizardPage; MigrationPage:TInputDirWizardPage; ProgressPage:TOutputProgressWizardPage; NetworkAccessCheck:TNewCheckBox; WorkRoot:String; Prepared,InstallationRunning,InstallationVerified,OperationComplete:Boolean; LastError:String;
+var PortsPage:TInputQueryWizardPage;InstalledAppPort:Integer;PasswordPage:TInputQueryWizardPage; InstallModePage:TInputOptionWizardPage; MigrationPage:TInputDirWizardPage; ProgressPage:TOutputProgressWizardPage; NetworkAccessCheck:TNewCheckBox; WorkRoot:String; Prepared,InstallationRunning,InstallationVerified,OperationComplete:Boolean; LastError:String;
 procedure InitializeWizard;
 begin
  InstallModePage:=CreateInputOptionPage(wpWelcome,'Fixture','Fixture','Disposable test only',True,False);
  InstallModePage.Add('Empty');InstallModePage.Add('Move');InstallModePage.Add('Restore');InstallModePage.Add('Update');InstallModePage.SelectedValueIndex:=3;
+ PortsPage:=CreateInputQueryPage(InstallModePage.ID,'Ports','Ports','Ports');PortsPage.Add('App',False);PortsPage.Add('DB',False);PortsPage.Values[0]:='3001';PortsPage.Values[1]:='5434';
  PasswordPage:=CreateInputQueryPage(InstallModePage.ID,'Fixture','Fixture','Fixture');PasswordPage.Add('One',True);PasswordPage.Add('Two',True);
  NetworkAccessCheck:=TNewCheckBox.Create(WizardForm);NetworkAccessCheck.Checked:=False;
  MigrationPage:=CreateInputDirPage(PasswordPage.ID,'Fixture','Fixture','Fixture',False,'');MigrationPage.Add('Fixture');MigrationPage.Values[0]:='${scratch.replaceAll("'","''")}';

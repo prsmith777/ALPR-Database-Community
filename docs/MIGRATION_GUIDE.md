@@ -280,3 +280,14 @@ npm run test:community-upgrades
 The harness uses disposable containers on random loopback ports and removes
 its private temporary dumps and containers after success or failure. It never
 discovers or changes an installed ALPR system.
+
+### Docker on Windows alongside native Community
+
+Use the native [Windows installation guide](WINDOWS_INSTALL.md#keep-docker-alpr-while-verifying-native-windows).
+Keep the old Docker application on 3000 and select an unused native application
+port such as 3001 on Connection ports. Native Community owns a separate local
+PostgreSQL 17 cluster, normally on 5433; a logical backup import leaves Docker
+PostgreSQL 13, volumes and published ports unchanged. Pause source ingestion
+for backup/import and retain the source until verification. The databases do not
+synchronize subsequent records. Change Blue Iris URLs only for the intended
+cutover or controlled test.

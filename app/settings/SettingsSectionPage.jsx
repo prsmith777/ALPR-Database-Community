@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 
 import SettingsForm from "./SettingsForm";
+import {readCommunityUpdateControlSnapshot} from "@/lib/community-update-control.mjs";
 import {
   getCurrentAccess,
   getIdentityAdminState,
@@ -65,8 +66,13 @@ export default async function SettingsSectionPage({ sectionId, privacyView = "st
     throw new Error("Failed to load settings");
   }
 
+  const windows = process.env.ALPR_DEPLOYMENT_PROFILE === "windows-native";
+  const connection = windows && sectionId === "general" && canManageMaintenance
+    ? {port:Number(process.env.PORT),snapshot:await readCommunityUpdateControlSnapshot()} : null;
   return (
     <SettingsForm
+      initialWindowsConnection={connection}
+      deploymentProfile={windows ? "windows-native" : "linux-docker"}
       initialSettings={settings}
       initialApiKey={authConfig.apiKey || ""}
       initialIdentityState={identityState}

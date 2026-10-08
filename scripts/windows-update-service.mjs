@@ -21,7 +21,7 @@ async function readRegularJson(file) {
   } finally { await handle.close(); }
 }
 function checkedRequest(input, clock = Date.now) {
-  const result = validateCommunityUpdateRequest(input,{requireIdentity:true});
+  const result = validateCommunityUpdateRequest(input,{requireIdentity:true,allowWindowsPort:true});
   const age = clock() - Date.parse(result.createdAt);
   if (input.formatVersion !== 1 || age < -30_000 || age > 5 * 60_000) throw new Error("Windows update request is unsupported or expired");
   return result;
@@ -74,7 +74,7 @@ export async function runWindowsUpdateService(installationFile, options = {}) {
   const stop = () => { stopping = true; };
   process.on("SIGTERM",stop); process.on("SIGINT",stop);
   options.signal?.addEventListener("abort",stop,{once:true});
-  const heartbeat = () => publication(control,"heartbeat.json",{formatVersion:1,observedAt:new Date().toISOString()});
+  const heartbeat = () => publication(control,"heartbeat.json",{formatVersion:1,observedAt:new Date().toISOString(),capabilities:["application-port"]});
   let heartbeatWrite = Promise.resolve();
   const timer = setInterval(() => { heartbeatWrite = heartbeatWrite.then(heartbeat).catch((error)=>console.error(error.message)); },5_000);
   try {
@@ -94,7 +94,7 @@ export async function runWindowsUpdateService(installationFile, options = {}) {
         await new Promise(resolve=>setTimeout(resolve,1_000));
       }
       const request=await readRegularJson(active.requestFile);
-      validateCommunityUpdateRequest(request,{requireIdentity:true});
+      validateCommunityUpdateRequest(request,{requireIdentity:true,allowWindowsPort:true});
       if(request.id !== active.requestId)throw new Error("Private recovery request differs");
       pendingRecovery={request,requestFile:active.requestFile,recover:true};
     }catch(error){if(error.code !== "ENOENT")throw error;await rm(path.join(control,"request-active.json"),{force:true});}

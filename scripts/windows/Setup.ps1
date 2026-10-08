@@ -1,13 +1,15 @@
 #requires -Version 5.1
 param(
-    [Parameter(Mandatory = $true)][ValidateSet('prepare','install','verify','cleanup')][string]$Operation,
+    [Parameter(Mandatory = $true)][ValidateSet('check-ports','prepare','install','verify','cleanup')][string]$Operation,
     [string]$PackageRoot,
     [string]$ManifestSha256,
     [string]$WorkRoot,
     [switch]$ListenOnNetwork,
     [switch]$ReuseRetainedData,
     [switch]$UpdateExisting,
-    [string]$MigrationBackup
+    [string]$MigrationBackup,
+    [ValidateRange(1024,65535)][int]$AppPort = 3000,
+    [ValidateRange(1024,65535)][int]$DatabasePort = 5433
 )
 $ErrorActionPreference = 'Stop'
 . (Join-Path $PSScriptRoot 'Setup-Helpers.ps1')
@@ -19,6 +21,11 @@ function Native([string]$Executable, [string[]]$Arguments) {
 }
 
 try {
+    if ($Operation -eq 'check-ports') {
+        Assert-SetupPorts $AppPort $DatabasePort
+        Write-Output 'Connection ports are available.'
+        exit 0
+    }
     if ($Operation -eq 'verify') {
         Test-SetupPayload $PackageRoot $ManifestSha256
         if ($MigrationBackup) {
@@ -40,8 +47,25 @@ try {
         exit 0
     }
     Assert-SetupHost
-    if ($UpdateExisting) { [void](Assert-ExistingSetup); if($ReuseRetainedData -or $MigrationBackup){throw 'Update mode preserves the existing installation; do not select a migration or restore'} }
-    else { Assert-FreshSetup -ReuseRetainedData:$ReuseRetainedData }
+    if ($Operation -eq 'install') {
+        # Install only the recorded selection; later command-line defaults must
+        # not replace a previously checked custom port or installation mode.
+        $record = Get-Content -Raw -LiteralPath $recordFile | ConvertFrom-Json
+        if ($record.workRoot -ne $work -or $record.formatVersion -ne 1 -or $record.manifestSha256 -notmatch '^[0-9a-f]{64}$') { throw 'Setup workspace ownership mismatch' }
+        Assert-SetupPortValues $record.appPort $record.databasePort
+        $AppPort = [int]$record.appPort; $DatabasePort = [int]$record.databasePort
+        $ReuseRetainedData = [bool]$record.reuseRetainedData; $UpdateExisting = [bool]$record.updateExisting
+    }
+    if ($UpdateExisting) {
+        $existing = Assert-ExistingSetup
+        if($ReuseRetainedData -or $MigrationBackup){throw 'Update mode preserves the existing installation; do not select a migration or restore'}
+        $AppPort = [int]$existing.environment.PORT
+        $DatabasePort = [int]($existing.environment.DB_HOST.Split(':')[-1])
+        Assert-SetupPortValues $AppPort $DatabasePort
+    } else {
+        $ports = Assert-FreshSetup -ReuseRetainedData:$ReuseRetainedData -AppPort $AppPort -DatabasePort $DatabasePort
+        $AppPort = $ports.appPort; $DatabasePort = $ports.databasePort
+    }
     if ($Operation -eq 'prepare') {
         Progress 'Checking your computer and the application...'
         Test-SetupPayload $PackageRoot $ManifestSha256
@@ -49,7 +73,7 @@ try {
         $parent = Split-Path -Parent $work
         Protect-SetupDirectory $parent
         Protect-SetupDirectory $work
-        $record = @{ formatVersion=1; workRoot=$work; manifestSha256=$ManifestSha256; listenOnNetwork=[bool]$ListenOnNetwork; reuseRetainedData=[bool]$ReuseRetainedData;updateExisting=[bool]$UpdateExisting }
+        $record = @{ formatVersion=1; workRoot=$work; manifestSha256=$ManifestSha256; listenOnNetwork=[bool]$ListenOnNetwork; reuseRetainedData=[bool]$ReuseRetainedData;updateExisting=[bool]$UpdateExisting; appPort=$AppPort; databasePort=$DatabasePort }
         [IO.File]::WriteAllText($recordFile, ($record | ConvertTo-Json), (New-Object Text.UTF8Encoding($false)))
         $payload = Join-Path $work 'payload'
         Copy-Item -LiteralPath $PackageRoot -Destination $payload -Recurse
@@ -99,7 +123,8 @@ try {
         Progress 'Checking the application and recognition models...'
         $checkArguments = @(
             '-NoProfile','-NonInteractive','-ExecutionPolicy','Bypass','-File',(Join-Path $payload 'Install.ps1'),
-            '-CheckOnly','-AllowPreview','-PgBin',$pgBin,'-FfmpegBin',$ffBin)
+            '-CheckOnly','-AllowPreview','-PgBin',$pgBin,'-FfmpegBin',$ffBin,
+            '-AppPort',[string]$AppPort,'-DatabasePort',[string]$DatabasePort)
         if ($ReuseRetainedData) { $checkArguments += '-ReuseRetainedData' }
         Native "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe" $checkArguments
         exit 0
@@ -120,7 +145,8 @@ try {
     Progress 'Installing ALPR and starting its services...'
     $installArguments = @(
         '-NoProfile','-NonInteractive','-ExecutionPolicy','Bypass','-File',(Join-Path $payload 'Install.ps1'),
-        '-AllowPreview','-CopyPrerequisites','-PgBin',$record.pgBin,'-FfmpegBin',$record.ffmpegBin)
+        '-AllowPreview','-CopyPrerequisites','-PgBin',$record.pgBin,'-FfmpegBin',$record.ffmpegBin,
+        '-AppPort',[string]$AppPort,'-DatabasePort',[string]$DatabasePort)
     if ($record.reuseRetainedData) { $installArguments += '-ReuseRetainedData' }
     else { $installArguments += @('-AdministratorPasswordFile',(Join-Path $work 'administrator-password.txt')) }
     if ($record.listenOnNetwork -eq $true) { $installArguments += '-ListenOnNetwork' }

@@ -1,3 +1,4 @@
+import { changeWindowsApplicationPort } from "./windows-application-port.mjs";
 import { mkdir, readFile, rm } from "node:fs/promises";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
@@ -33,11 +34,16 @@ export function windowsUpdateSummary(operation, state, candidate = null, current
   };
 }
 export async function performWindowsUpdateRequest(input, environment = process.env, options = {}) {
-  const request = validateCommunityUpdateRequest(input, { requireIdentity: true });
+  const request = validateCommunityUpdateRequest(input, { requireIdentity: true, allowWindowsPort: true });
   const age = Date.now() - Date.parse(request.createdAt);
   if (input.formatVersion !== 1 || age < -30_000 || age > 5 * 60_000) throw new Error("Windows update request is unsupported or expired");
   const deployment = options.deployment || await loadWindowsDeployment(environment.ALPR_WINDOWS_INSTALLATION, {allowPreview:true});
   const current = { tag: `v${deployment.current.version}`, commit: deployment.current.commit };
+  if (request.operation === "app-port") {
+    const result=await (options.changePort || changeWindowsApplicationPort)(request,environment,{deployment,progress:options.progress});
+    const state=await (options.runUpdater || runWindowsUpdater)(["status"],environment,{confirmed:true,allowPreview:true,deployment});
+    return {...windowsUpdateSummary("status",state,null,current),...result};
+  }
   const progress = (value) => options.progress?.(PHASES[value] || value);
   const run = (args, extra = {}) => (options.runUpdater || runWindowsUpdater)(args, environment,
     { confirmed:true, allowPreview:true, deployment, progress, ...extra });
@@ -95,7 +101,10 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
     const environment={...process.env,ALPR_WINDOWS_INSTALLATION:installationFile};
     const progress=(message)=>send({kind:"progress",message});
     let result;
-    if(recovering) {
+    if(recovering && request.operation === "app-port") {
+      const portResult=await changeWindowsApplicationPort(request,environment,{recover:true,progress});
+      result={...windowsUpdateSummary("status",await runWindowsUpdater(["status"],environment,{allowPreview:true})),...portResult};
+    }else if(recovering) {
       const deployment=await loadWindowsDeployment(installationFile,{allowPreview:true});
       await waitForWindowsDatabase(deployment.installation,path.join(deployment.currentPath,"app"));
       result=windowsUpdateSummary("update",await runWindowsUpdater(["recover"],environment,{allowPreview:true,internalRecovery:true,deployment,progress}));
@@ -109,7 +118,11 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
       const result = await runWindowsUpdater(["status"],{...process.env,ALPR_WINDOWS_INSTALLATION:installationFile},{allowPreview:true});
       summary = windowsUpdateSummary("update",result);
     } catch { /* Keep the original failure authoritative. */ }
-    send({kind:"error",result:{...summary,message:summary.updaterStatus === "rolled-back"
+    let operation;try{operation=JSON.parse(await readFile(requestFile,"utf8")).operation;}catch{}
+    if(operation === "app-port") {
+      const safe=/^(?:The selected application port is in use|The port change failed\.|The port change needs administrator|Finish the pending software update|Application and database ports|Finish the current maintenance)/.test(error.message);
+      send({kind:"error",result:{...summary,message:safe?error.message:"The port change could not complete. Check the updater log before retrying."}});
+    } else send({kind:"error",result:{...summary,message:summary.updaterStatus === "rolled-back"
       ? "The update failed. ALPR restored the previous release automatically. Your recovery copy is preserved."
       : "The operation could not complete. Your data and recovery copies are preserved. Check the protected updater log or contact support."}});
     process.exitCode=1;

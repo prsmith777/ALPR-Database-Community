@@ -42,24 +42,71 @@ Windows 10 compatibility does not extend Microsoft's Windows 10 support period.
    | ALPR was uninstalled and its data remains on this computer | **Restore the ALPR data already on this computer** |
    | ALPR is already installed on this computer | **Update ALPR already installed on this computer** |
 
-5. For a fresh installation or migration, choose an ALPR administrator password
+5. On **Connection ports**, normally keep **Application port: 3000** and
+   **Local database port: 5433**. If an existing Docker ALPR uses 3000 on this
+   computer, choose an unused application port such as **3001**. Choose another
+   unused database port if 5433 is occupied. Setup checks both before installing;
+   it does not automatically renumber them. Updates and retained-data recovery
+   preserve their saved ports and skip this page.
+6. For a fresh installation or migration, choose an ALPR administrator password
    of **12–128 characters** and confirm it. Save it in your password manager.
    Updates and retained-data recovery keep the existing ALPR password and skip
    this page.
-6. For a fresh installation or migration, select **Allow access from other
+7. For a fresh installation or migration, select **Allow access from other
    devices on my local network** if Blue Iris, a camera, or another computer
    will connect. Leave it off for use only on this computer. An update or
    retained-data recovery preserves the previous network preference.
-7. Continue through Setup and wait until it reaches **Finish**. It downloads
+8. Continue through Setup and wait until it reaches **Finish**. It downloads
    verified prerequisites, checks the recognition models, creates the services,
    and verifies the running application. If a prerequisite requests a Windows
    restart, restart Windows and run Setup again.
-8. Leave **Open ALPR** selected and click **Finish**. The desktop shortcut also
-   opens ALPR. The default local address is `http://localhost:3000`.
+9. Leave **Open ALPR** selected and click **Finish**. The desktop shortcut also
+   opens ALPR at your selected application port. The default local address is
+   `http://localhost:3000`; a selection of 3001 opens `http://localhost:3001`.
 
 The current installer is unsigned, so Windows may identify an unknown publisher.
 Use the official release and its checksum. If antivirus blocks a file, retain
 the product's warning and the exact filename for support; keep antivirus enabled.
+
+## Keep Docker ALPR while verifying native Windows
+
+On the same Windows computer, keep Docker's web/API mapping at 3000 and choose
+3001 (or another unused port) for native Community in Setup. Keep the new local
+database port at 5433 unless it is occupied. Community creates a separate
+PostgreSQL 17 cluster at
+`C:\ProgramData\ALPR Community\management\postgres`; the application code
+is under `C:\Program Files\ALPR Community` and private data is under
+`C:\ProgramData\ALPR Community`.
+
+Import a **verified logical migration backup**, including images and manifests,
+using **Move an existing ALPR database and images**. Do not copy a PostgreSQL
+13 physical data directory into PostgreSQL 17. Pause source ingestion for the
+backup and migration as directed by the backup guide. Importing does not change
+the source Docker database, containers, volumes, ports or Blue Iris URLs.
+
+After import the databases are independent; later records are not synchronized.
+Verify the native installation at `http://localhost:3001` (or the computer's
+LAN address with that port) before changing camera traffic. For a controlled
+ingestion test, point only the intended Blue Iris destination at the new
+application port and use the native installation's API key. Keep the old
+installation and backup until you accept the migration. See the
+[migration guide](MIGRATION_GUIDE.md) for supported source versions and export.
+
+## Change the application port later
+
+On native Windows, open **Settings → General → Windows connection port**.
+Enter an unused port from 1024 through 65535 and select **Change port and
+restart**. Finish any pending software update first. ALPR checks for conflicts,
+keeps the existing local-network preference, adjusts its owned firewall rule
+and shortcuts, restarts and verifies the listener. A failure or interrupted
+change restores the previous port.
+
+Use **Open ALPR at the new address** after the restart and update every Blue
+Iris destination URL to the new port. The API key and local database connection
+stay the same. If the setting says it needs activation after an update from an
+older release, restart Windows once; graphical Setup starts the new updater
+automatically. Database fields marked **Managed by Windows Setup** are
+read-only protected service settings, not a request to edit a Linux .env file.
 
 ## First sign-in and camera setup
 

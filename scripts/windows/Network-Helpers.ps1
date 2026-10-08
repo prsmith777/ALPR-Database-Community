@@ -129,3 +129,31 @@ function Wait-AlprNetworkHealth([int]$Port) {
     }
     throw 'ALPR did not become ready after the network change'
 }
+
+# Stage URL contents inside the protected install root. MoveFileEx replaces the
+# destination entry rather than writing through a hard link or symbolic link.
+function Write-AlprShortcut([string]$InstallRoot,[string]$Shortcut,[int]$Port) {
+    [void](Assert-SetupDirectory $InstallRoot)
+    [void](Assert-SetupDirectory (Split-Path -Parent $Shortcut))
+    if (-not ('AlprShortcutMove' -as [type])) {
+        Add-Type -TypeDefinition @'
+using System.Runtime.InteropServices;
+public static class AlprShortcutMove {
+ [DllImport("kernel32.dll", CharSet=CharSet.Unicode, SetLastError=true)]
+ [return: MarshalAs(UnmanagedType.Bool)]
+ public static extern bool MoveFileEx(string source,string destination,uint flags);
+}
+'@
+    }
+    $temporary=Join-Path $InstallRoot ('shortcut-'+[Guid]::NewGuid().ToString('N')+'.tmp')
+    try {
+        $stream=[IO.File]::Open($temporary,[IO.FileMode]::CreateNew,[IO.FileAccess]::Write,[IO.FileShare]::None)
+        try {$bytes=(New-Object Text.UTF8Encoding($false)).GetBytes("[InternetShortcut]`r`nURL=http://localhost:$Port`r`n");$stream.Write($bytes,0,$bytes.Length);$stream.Flush($true)}finally{$stream.Dispose()}
+        $acl=New-Object Security.AccessControl.FileSecurity
+        $acl.SetAccessRuleProtection($true,$false)
+        foreach($sid in @('S-1-5-18','S-1-5-32-544',[Security.Principal.WindowsIdentity]::GetCurrent().User.Value) | Select-Object -Unique){$acl.AddAccessRule((New-Object Security.AccessControl.FileSystemAccessRule((New-Object Security.Principal.SecurityIdentifier($sid)),'FullControl','Allow')))}
+        $acl.AddAccessRule((New-Object Security.AccessControl.FileSystemAccessRule((New-Object Security.Principal.SecurityIdentifier('S-1-5-32-545')),'ReadAndExecute','Allow')))
+        Set-Acl -LiteralPath $temporary -AclObject $acl
+        if(-not [AlprShortcutMove]::MoveFileEx($temporary,$Shortcut,9)){throw 'The ALPR shortcut could not be updated safely'}
+    }finally{if(Test-Path -LiteralPath $temporary){Remove-Item -LiteralPath $temporary -Force}}
+}

@@ -32,7 +32,7 @@ function ReleaseMetric({ icon: Icon, label, value, detail }) {
   );
 }
 
-export default function ReleaseInformationCard({ release }) {
+export default function ReleaseInformationCard({ release, deploymentProfile }) {
   const commitUrl = release.gitSha
     ? `${PROJECT_REPOSITORY_URL}/commit/${release.gitSha}`
     : null;
@@ -49,7 +49,7 @@ export default function ReleaseInformationCard({ release }) {
             <Badge variant="secondary">Read only</Badge>
           </div>
           <CardDescription>
-            Build identity supplied by this application and its commit-pinned deployment image.
+            Build identity supplied by the installed application and its verified release package.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-5">
@@ -122,13 +122,19 @@ export default function ReleaseInformationCard({ release }) {
           Updates use a restricted host agent
         </p>
         <p className="mt-1 text-muted-foreground">
-          Release information remains read only. Administrators can use Settings →
+          {deploymentProfile === "windows-native" ? (
+            <>Use Settings → Software Updates to check, install, verify, and accept
+            a Windows update. Windows Setup installs the separate ALPR Community
+            Updater service automatically. If that service needs repair, run the
+            latest official Windows installer and update the existing installation.
+            Your data and settings are preserved. Release information remains read only.</>
+          ) : <>Release information remains read only. Administrators can use Settings →
           Software Updates with the restricted host agent, which new Linux installs
           and activated migrations set up automatically, or run
           <code className="font-mono"> ./alpr-community</code> from the installation
           directory. The host-side updater performs the documented backup,
           exact-release installation, verification, and rollback process without
-          exposing the Docker socket to this application.
+          exposing the Docker socket to this application.</>}
         </p>
       </div>
     </div>

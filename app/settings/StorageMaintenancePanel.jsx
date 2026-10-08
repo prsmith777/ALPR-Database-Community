@@ -556,7 +556,7 @@ export default function StorageMaintenancePanel({ overview, canManage, canApprov
             {scheduler.lastError && <p className="rounded-md border border-destructive/40 p-3 text-destructive">{scheduler.lastError}</p>}
             {failedAlert?.lastError && <p className="rounded-md border border-destructive/40 p-3 text-destructive">Alert delivery failed: {failedAlert.lastError}</p>}
             <p className="text-xs text-muted-foreground">
-              A stale loop can be detected while the application is alive. Whole-container or host outages still need an external uptime monitor.
+              A stale loop can be detected while the application is alive. Application service or computer outages still need an external uptime monitor.
             </p>
           </CardContent>
         </Card>
@@ -603,7 +603,7 @@ export default function StorageMaintenancePanel({ overview, canManage, canApprov
               </div>
             )}
             <p className="text-xs text-muted-foreground">
-              Execution rechecks all five database reference columns, file identity, age, real-path containment, and every ancestor for symbolic links. It never deletes rows, source images, thumbnails, releases, Docker objects, or backups.
+              Execution rechecks all five database reference columns, file identity, age, real-path containment, and every ancestor for symbolic links. It never deletes rows, source images, thumbnails, application releases, or backups.
             </p>
           </CardContent>
         </Card>
