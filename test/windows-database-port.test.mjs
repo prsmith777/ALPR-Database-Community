@@ -82,3 +82,9 @@ test('database port public status retains accepted software update and rollback 
  const f=await fixture(t);const value=await performWindowsUpdateRequest(request(),{}, {deployment:f.deployment,changeDatabasePort:async()=>({currentDatabasePort:5434,message:'Changed'}),runUpdater:async()=>({status:'accepted',current:{tag:'v0.1.55'},backup:{dumpSha256:digest}})});
  assert.equal(value.currentDatabasePort,5434);assert.equal(value.rollbackPresent,true);assert.equal(value.updaterStatus,'accepted');assert.equal(value.message,'Changed');
 });
+
+
+test('recovery after commit verifies the new listener without replay or restoration',async t=>{
+ const f=await fixture(t),input=request();await invoke(f,input);f.calls.length=0;
+ assert.equal((await invoke(f,input,{recover:true})).currentDatabasePort,5434);assert.deepEqual(f.calls,['verify']);
+});

@@ -429,3 +429,12 @@ test("Windows release move recovers from a real child file handle denying delete
     assert.equal(path.dirname(root),os.tmpdir());await rm(root,{recursive:true,force:true});
   }
 });
+
+
+test('pending database port recovery blocks software mutation but leaves status readable',async t=>{
+ const f=await fixture(t);const privateRoot=path.join(f.deployment.data,'management/updates');await mkdir(privateRoot,{recursive:true});
+ await writeFile(path.join(privateRoot,'database-port.json'),JSON.stringify({phase:'pending'}));
+ await assert.rejects(runWindowsUpdater(['rollback'],{}, {deployment:f.deployment,confirmed:true}),/maintenance recovery/);
+ assert.deepEqual(f.deployment.operations,[]);
+ assert.equal((await runWindowsUpdater(['status'],{}, {deployment:f.deployment})).status,'no-update-recorded');
+});
