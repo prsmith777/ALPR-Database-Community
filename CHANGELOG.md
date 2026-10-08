@@ -12,6 +12,9 @@
   interrupted maintenance; block conflicting maintenance until recovery finishes.
 - Preserve the selected database port through browser updates, software rollback
   and retained-data reinstall, alongside the application port and network choice.
+- Retry brief Windows sharing locks while publishing updater state, and keep
+  advisory progress failures from terminating an active update. Preserve private
+  maintenance and recovery records if a lock persists.
 - Update User Guide 3.23, Windows installation and migration guidance, Settings
   help coverage, roadmap and public documentation links for both port controls.
 

@@ -132,6 +132,8 @@ try {
   // read access. Grant directory-only access; product roots retain their own
   // service-SID ACLs and private files do not inherit these account grants.
   ps("foreach($p in @(" + [root, programs, commonData].map(q).join(",") + ")){[void][IO.Directory]::CreateDirectory($p);$acl=Get-Acl -LiteralPath $p;foreach($sid in @('S-1-5-19','S-1-5-20')){$acl.AddAccessRule((New-Object Security.AccessControl.FileSystemAccessRule((New-Object Security.Principal.SecurityIdentifier($sid)),'ReadAndExecute','None','None','Allow')))};Set-Acl -LiteralPath $p -AclObject $acl}");
+  report.publicationHelperSourceSha256 = await hashFile(path.join(checkout,"scripts/windows-deployment.mjs"));
+  report.updateServiceSourceSha256 = await hashFile(path.join(checkout,"scripts/windows-update-service.mjs"));
   report.installerSourceSha256 = await hashFile(path.join(checkout, "scripts/windows/Install.ps1"));
   report.databasePortHelperSourceSha256 = await hashFile(path.join(checkout,"scripts/windows/Database-Port.ps1"));
   report.databasePortControllerSourceSha256 = await hashFile(path.join(checkout,"scripts/windows-database-port.mjs"));
