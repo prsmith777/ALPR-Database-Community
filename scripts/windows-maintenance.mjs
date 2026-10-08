@@ -1,3 +1,4 @@
+import {assertNoPendingPortChange} from "./windows-database-port.mjs";
 import { cp, lstat, mkdir, open, readFile, readdir, rm, statfs, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -239,6 +240,7 @@ async function rollback(deployment, state) {
     // Keep the current network preference and port aligned with its firewall rule.
     restoredInstallation.environment.PORT = deployment.installation.environment.PORT;
     restoredInstallation.environment.HOSTNAME = deployment.installation.environment.HOSTNAME;
+    restoredInstallation.environment.DB_HOST = deployment.installation.environment.DB_HOST;
     await atomicJson(deployment.installationFile, restoredInstallation);
     const counts = await deployment.counts();
     if (JSON.stringify(Object.entries(counts).sort()) !== JSON.stringify(Object.entries(state.backup.counts).sort())) throw new Error("Restored row counts differ from rollback snapshot");
@@ -296,6 +298,7 @@ export async function runWindowsUpdater(argumentsList = process.argv.slice(2), e
   }
   await lock.writeFile(String(process.pid));
   try {
+    if (!["status","check"].includes(command)) await assertNoPendingPortChange(deployment.data);
     const state = await readState(deployment);
     if(command === "recover") {
       if(!state || ["accepted","rolled-back","ready-for-acceptance"].includes(state.status)) {

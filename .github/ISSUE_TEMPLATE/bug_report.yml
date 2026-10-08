@@ -16,7 +16,7 @@ body:
     attributes:
       label: ALPR Community version
       description: Find this under Settings → Release. Include the source revision there when reporting an installation or update problem.
-      placeholder: v0.1.54
+      placeholder: v0.1.55
     validations:
       required: true
 

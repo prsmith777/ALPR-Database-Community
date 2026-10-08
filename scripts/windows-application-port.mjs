@@ -1,3 +1,4 @@
+import {assertNoPendingPortChange} from './windows-database-port.mjs';
 import {open,readFile,rm} from 'node:fs/promises';
 import path from 'node:path';
 import {atomicJson,assertRealDirectory,loadWindowsDeployment} from './windows-deployment.mjs';
@@ -38,6 +39,7 @@ export async function changeWindowsApplicationPort(request,environment=process.e
  const result=record=>({currentAppPort:record.phase==='committed'?record.port:record.previousPort,targetAppPort:record.port,
   message:record.phase==='committed'?'Application port changed. Open the new address and update the Blue Iris destination port.':'The previous application port was restored.'});
  try {
+  await assertNoPendingPortChange(deployment.data,'application-port');
   if(options.recover){
    if(!journal){await deployment.health();await deployment.attest();return {currentAppPort:port(Number(deployment.installation.environment.PORT)),message:'The application port was preserved. No port change was applied.'};}
    port(journal.previousPort);port(journal.port);

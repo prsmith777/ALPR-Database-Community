@@ -364,7 +364,7 @@ export default function SettingsForm({
         </p>
         {Object.values(databaseManaged).some(Boolean) ? (
           <p className="mt-2 max-w-3xl rounded-md border border-amber-500/40 bg-amber-500/10 p-3 text-sm text-amber-900 dark:text-amber-100">
-            {windows ? "Windows Setup manages the local database connection. These protected settings are read-only here. The browser and Blue Iris application port can be changed under General." : "Fields marked Managed in .env are read-only here so ALPR never reports an ignored browser change as saved."}
+            {windows ? "Windows Setup manages the local database connection. These protected settings are read-only here. The application and local PostgreSQL ports can be changed under General." : "Fields marked Managed in .env are read-only here so ALPR never reports an ignored browser change as saved."}
           </p>
         ) : null}
       </div>
@@ -993,7 +993,7 @@ export default function SettingsForm({
                 </div>
               )}
 
-              {activeSection === "general" && initialWindowsConnection ? <WindowsConnectionSettings initialPort={initialWindowsConnection.port} initialSnapshot={initialWindowsConnection.snapshot} /> : null}
+              {activeSection === "general" && initialWindowsConnection ? <WindowsConnectionSettings initialPort={initialWindowsConnection.port} initialDatabasePort={initialWindowsConnection.databasePort} initialSnapshot={initialWindowsConnection.snapshot} /> : null}
 
               {/* Form Content */}
               {!["security", "privacy", "release", "plateReview"].includes(activeSection) ? (

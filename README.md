@@ -55,7 +55,7 @@ For Docker-to-native migration on the same Windows computer, keep Docker on
 port 3000 and choose an unused application port such as 3001 in Windows Setup.
 Native Community uses a separate PostgreSQL 17 database, normally on loopback
 port 5433. The [Windows migration and port guide](docs/WINDOWS_INSTALL.md#keep-docker-alpr-while-verifying-native-windows)
-explains backup, verification and changing the application port later in Settings.
+explains backup, verification and changing either the application or PostgreSQL port later under Settings → General.
 
 ### Linux
 

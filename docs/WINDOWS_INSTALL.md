@@ -6,6 +6,18 @@ Linux. Windows Setup installs the application and required components and
 starts ALPR automatically after Windows boots. You do not need Docker, WSL,
 Python, Node.js, or a terminal to use the installer.
 
+## Changing ports after installation
+
+Administrators can change either port under **Settings → General → Windows
+connection ports**. **Application port** changes your browser and Blue Iris
+destination URLs. **Local PostgreSQL port** changes only the private database;
+your browser address and Blue Iris URLs stay the same. Choose an unused port
+between 1024 and 65535, different from the other port, then select the matching
+restart button. ALPR verifies the restarted services and restores the previous
+connection if the change fails. Finish pending software updates first. When
+updating from an older release, restart Windows once if the new control asks
+for it. Updates and retained-data reinstall preserve your selected ports.
+
 ## Before you start
 
 - Use an x64 Windows computer or VM, a local NTFS drive, an internet connection,

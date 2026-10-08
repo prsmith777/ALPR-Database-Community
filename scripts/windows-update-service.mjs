@@ -74,7 +74,7 @@ export async function runWindowsUpdateService(installationFile, options = {}) {
   const stop = () => { stopping = true; };
   process.on("SIGTERM",stop); process.on("SIGINT",stop);
   options.signal?.addEventListener("abort",stop,{once:true});
-  const heartbeat = () => publication(control,"heartbeat.json",{formatVersion:1,observedAt:new Date().toISOString(),capabilities:["application-port"]});
+  const heartbeat = () => publication(control,"heartbeat.json",{formatVersion:1,observedAt:new Date().toISOString(),capabilities:["application-port","database-port"]});
   let heartbeatWrite = Promise.resolve();
   const timer = setInterval(() => { heartbeatWrite = heartbeatWrite.then(heartbeat).catch((error)=>console.error(error.message)); },5_000);
   try {

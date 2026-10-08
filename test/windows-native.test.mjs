@@ -154,10 +154,11 @@ test("native update stops, backs up, migrates, validates, accepts, and restores 
   await assert.rejects(runWindowsUpdater(["cleanup"],{},f.options), /retention/);
   f.deployment.installation.environment.PORT="3001";
   f.deployment.installation.environment.HOSTNAME="127.0.0.1";
+  f.deployment.installation.environment.DB_HOST="127.0.0.1:5434";
   state = await runWindowsUpdater(["rollback"],{},f.options);
   const restored=JSON.parse(await readFile(f.deployment.installationFile,"utf8"));
   assert.equal(restored.environment.PORT,"3001");assert.equal(restored.environment.HOSTNAME,"127.0.0.1");
-  assert.equal(restored.environment.DB_HOST,"127.0.0.1:5433");
+  assert.equal(restored.environment.DB_HOST,"127.0.0.1:5434");
   assert.equal(state.status,"rolled-back");
   assert.equal(JSON.parse(await readFile(f.deployment.installationFile,"utf8")).current,f.deployment.installation.current);
   state = await runWindowsUpdater(["cleanup"],{},f.options);

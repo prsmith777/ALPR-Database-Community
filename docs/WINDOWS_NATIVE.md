@@ -571,7 +571,7 @@ separate PostgreSQL 17 cluster under `C:\ProgramData\ALPR Community\management\p
 a logical import does not modify Docker PostgreSQL or its published ports.
 Records are independent after import. Setup does not automatically renumber ports.
 
-Settings → General → Windows connection port changes the application port later
+Settings → General → Windows connection ports changes the application port later
 through the privileged updater. It checks ownership and port availability, uses
 the shared maintenance lock, retains a private recovery journal, preserves the
 network preference, updates the owned firewall rule and shortcuts, and attests
@@ -581,3 +581,21 @@ and database port are unchanged. Updates, retained-data recovery and application
 rollback preserve the current application port and network preference. When
 upgrading through the UI from a release whose updater does not advertise this
 capability, restart Windows once to activate it.
+
+The same card provides **Local PostgreSQL port** for the private native database.
+Enter an unused whole-number port between 1024 and 65535, different from the
+application port, then select **Change PostgreSQL port and restart**. Finish or
+recover a pending software update first. PostgreSQL and ALPR briefly stop while
+the updater saves a protected configuration recovery copy, changes the listener
+and ALPR connection together, and verifies authenticated database and application
+health. PostgreSQL remains bound to 127.0.0.1. Your browser address, Blue Iris URLs,
+API key, credentials, records and images stay the same. Failed or interrupted
+changes restore the exact previous PostgreSQL configuration. Updates, software
+rollback and retained-data reinstall preserve the selected database port. This
+control changes only the native cluster; it does not change Docker PostgreSQL.
+
+Keep this page open while services restart. A port conflict is reported without
+stopping ALPR. If automatic recovery needs administrator assistance, preserve
+the installation and protected updater logs; do not delete configuration files
+or reinstall with an empty database. After updating from a release without the
+database-port capability, restart Windows once to activate the control.

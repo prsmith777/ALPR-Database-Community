@@ -68,7 +68,7 @@ export default async function SettingsSectionPage({ sectionId, privacyView = "st
 
   const windows = process.env.ALPR_DEPLOYMENT_PROFILE === "windows-native";
   const connection = windows && sectionId === "general" && canManageMaintenance
-    ? {port:Number(process.env.PORT),snapshot:await readCommunityUpdateControlSnapshot()} : null;
+    ? {port:Number(process.env.PORT),databasePort:Number(process.env.DB_HOST?.split(":").at(-1)),snapshot:await readCommunityUpdateControlSnapshot()} : null;
   return (
     <SettingsForm
       initialWindowsConnection={connection}

@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.1.55 — 2026-10-07
+
+- Change the private native Windows PostgreSQL port later under Settings →
+  General → Windows connection ports. The updater rejects occupied or shared
+  ports before stopping ALPR, coordinates PostgreSQL and application settings,
+  and verifies both services after restarting. PostgreSQL stays local to the
+  computer; browser and Blue Iris addresses stay the same.
+- Save a protected configuration recovery copy and journal before changing the
+  database listener. Restore the exact previous configuration after failure or
+  interrupted maintenance; block conflicting maintenance until recovery finishes.
+- Preserve the selected database port through browser updates, software rollback
+  and retained-data reinstall, alongside the application port and network choice.
+- Update User Guide 3.23, Windows installation and migration guidance, Settings
+  help coverage, roadmap and public documentation links for both port controls.
+
 ## 0.1.54 — 2026-10-07
 
 - Choose application and local database ports in Windows Setup. Detect occupied
