@@ -347,13 +347,23 @@ test("PDF generation rejects an empty content model", () => {
   );
 });
 
-test("PDF block headings reserve room for following content", async () => {
-  const pdfSource = await source("lib/help-manual-pdf.mjs");
-  const blockStart = pdfSource.indexOf("renderBlock(block)");
-  const noteStart = pdfSource.indexOf('if (block.type === "note")', blockStart);
-  assert.ok(blockStart >= 0 && noteStart > blockStart);
-  assert.match(pdfSource.slice(blockStart, noteStart), /ensureSpace\(54\)/);
-  assert.match(pdfSource, /section heading, summary, role line, and first block together[\s\S]*ensureSpace\(130\)/);
+test("PDF block headings stay with long following paragraphs near page boundaries", () => {
+  for (const type of ["note", "example", "steps", "bullets"]) {
+    for (let lines = 12; lines <= 40; lines++) {
+      const first = "FIRSTCONTENT " + "Choose an unused application port for parallel Windows installation. ".repeat(5);
+      const block = { type, title: "BLOCKHEADING", text: first, scenario: first,
+        items: [first], steps: ["Verify the new address."], result: "Ready" };
+      const manual = { title: "Layout fixture", description: "Page boundary regression", manualVersion: "test",
+        updatedAt: "2026-10-07", coverageBaseline: "Synthetic", sections: [{ title: "Setup", summary: "Windows setup",
+          roles: ["admin"], blocks: [{ type: "paragraph", text: Array(lines).fill("Filler").join("\n") }, block] }] };
+      const pdf = generateHelpManualPdf(manual).toString("ascii");
+      const pages = [...pdf.matchAll(/stream\n([\s\S]*?)endstream/g)].map((match) => match[1]);
+      const headingPage = pages.findIndex((page) => page.includes("(BLOCKHEADING)"));
+      const contentPage = pages.findIndex((page) => page.includes("FIRSTCONTENT"));
+      assert.ok(headingPage >= 0, "block heading is missing");
+      assert.equal(headingPage, contentPage, type + " orphaned its heading with " + lines + " filler lines");
+    }
+  }
 });
 
 test("Windows installation guidance matches Setup choices and shipped platform status", async () => {
