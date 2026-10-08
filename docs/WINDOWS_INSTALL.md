@@ -6,18 +6,6 @@ Linux. Windows Setup installs the application and required components and
 starts ALPR automatically after Windows boots. You do not need Docker, WSL,
 Python, Node.js, or a terminal to use the installer.
 
-## Changing ports after installation
-
-Administrators can change either port under **Settings → General → Windows
-connection ports**. **Application port** changes your browser and Blue Iris
-destination URLs. **Local PostgreSQL port** changes only the private database;
-your browser address and Blue Iris URLs stay the same. Choose an unused port
-between 1024 and 65535, different from the other port, then select the matching
-restart button. ALPR verifies the restarted services and restores the previous
-connection if the change fails. Finish pending software updates first. When
-updating from an older release, restart Windows once if the new control asks
-for it. Updates and retained-data reinstall preserve your selected ports.
-
 ## Before you start
 
 - Use an x64 Windows computer or VM, a local NTFS drive, an internet connection,
@@ -104,11 +92,22 @@ application port and use the native installation's API key. Keep the old
 installation and backup until you accept the migration. See the
 [migration guide](MIGRATION_GUIDE.md) for supported source versions and export.
 
-## Change the application port later
+## Changing ports after installation
 
-On native Windows, open **Settings → General → Windows connection port**.
-Enter an unused port from 1024 through 65535 and select **Change port and
-restart**. Finish any pending software update first. ALPR checks for conflicts,
+Administrators can change either port under **Settings → General → Windows
+connection ports**. **Application port** changes your browser and Blue Iris
+destination URLs. **Local PostgreSQL port** changes only the private database;
+your browser address and Blue Iris URLs stay the same. Choose an unused port
+between 1024 and 65535, different from the other port, then select the matching
+restart button. ALPR verifies the restarted services and restores the previous
+connection if the change fails. Finish pending software updates first. When
+updating from an older release, restart Windows once if the new control asks
+for it. Updates and retained-data reinstall preserve your selected ports.
+
+### Application port
+
+On native Windows, open **Settings → General → Windows connection ports**.
+Enter an unused port from 1024 through 65535 and select **Change application port and restart**. Finish any pending software update first. ALPR checks for conflicts,
 keeps the existing local-network preference, adjusts its owned firewall rule
 and shortcuts, restarts and verifies the listener. A failure or interrupted
 change restores the previous port.

@@ -133,6 +133,8 @@ try {
   // service-SID ACLs and private files do not inherit these account grants.
   ps("foreach($p in @(" + [root, programs, commonData].map(q).join(",") + ")){[void][IO.Directory]::CreateDirectory($p);$acl=Get-Acl -LiteralPath $p;foreach($sid in @('S-1-5-19','S-1-5-20')){$acl.AddAccessRule((New-Object Security.AccessControl.FileSystemAccessRule((New-Object Security.Principal.SecurityIdentifier($sid)),'ReadAndExecute','None','None','Allow')))};Set-Acl -LiteralPath $p -AclObject $acl}");
   report.installerSourceSha256 = await hashFile(path.join(checkout, "scripts/windows/Install.ps1"));
+  report.databasePortHelperSourceSha256 = await hashFile(path.join(checkout,"scripts/windows/Database-Port.ps1"));
+  report.databasePortControllerSourceSha256 = await hashFile(path.join(checkout,"scripts/windows-database-port.mjs"));
   report.recoveryHelperSourceSha256 = await hashFile(path.join(checkout, "scripts/windows/Setup-Helpers.ps1"));
   const older = await verifyWindowsPackage(previous, { allowPreview: true });
   const newer = await verifyWindowsPackage(target, { allowPreview: true });
@@ -237,9 +239,19 @@ try {
   assert.equal((await changeWindowsDatabasePort({id:databaseJournal.requestId},process.env,{deployment,recover:true})).currentDatabasePort,dbPort);
   deployment=await loadWindowsDeployment(installationFile,{allowPreview:true});await deployment.health();
   assert.equal(deployment.sql('SHOW port'),String(dbPort));assert.equal(await hashFile(autoFile),originalAutoHash);
+  // Occupy a port after preflight but before apply to force an actual PostgreSQL
+  // startup failure. The recovery path must restore configuration and both services.
+  const lateConflict=net.createServer(),latePort=await freePort();
+  try{
+    await assert.rejects(changeWindowsDatabasePort({id:randomUUID(),databasePort:latePort},process.env,{deployment,progress:async()=>{
+      lateConflict.listen(latePort,'127.0.0.1');await once(lateConflict,'listening');
+    }}),/previous PostgreSQL port was restored/);
+  }finally{if(lateConflict.listening)await new Promise(resolve=>lateConflict.close(resolve));}
+  deployment=await loadWindowsDeployment(installationFile,{allowPreview:true});await deployment.health();await deployment.attest();
+  assert.equal(deployment.sql('SHOW port'),String(dbPort));assert.equal(await hashFile(autoFile),originalAutoHash);
   await (await signedInActions(deployment))({operation:'database-port',databasePort:nextDatabasePort});
   deployment=await loadWindowsDeployment(installationFile,{allowPreview:true});await deployment.health();
-  report.databasePort={status:'passed',realHttpAdminAction:true,realPostgreSqlListener:true,loopbackOnly:true,conflictPreservedApplication:true,credentialsRecordsSettingsImagesPreserved:true,interruptedChangeRestoredExactConfiguration:true};
+  report.databasePort={status:'passed',realHttpAdminAction:true,realPostgreSqlListener:true,loopbackOnly:true,conflictPreservedApplication:true,credentialsRecordsSettingsImagesPreserved:true,interruptedChangeRestoredExactConfiguration:true,failedDatabaseStartupRecovered:true};
   report.inPlaceBridge={status:"passed",realPriorApplication:true,noUninstall:true,technicalValidation:true,acceptanceThroughHttp:true};
   deployment.sql("UPDATE public.plate_reads SET camera_name='Changed after update' WHERE plate_number='SCMTEST1'; INSERT INTO public.plates(plate_number,occurrence_count) VALUES ('POSTUPDATE',0);");
   await writeFile(settingsFile, "general:\n  maxRecords: 111\n");

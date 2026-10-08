@@ -571,7 +571,7 @@ separate PostgreSQL 17 cluster under `C:\ProgramData\ALPR Community\management\p
 a logical import does not modify Docker PostgreSQL or its published ports.
 Records are independent after import. Setup does not automatically renumber ports.
 
-Settings → General → Windows connection ports changes the application port later
+Settings → General → Windows connection ports lets you change the application port later
 through the privileged updater. It checks ownership and port availability, uses
 the shared maintenance lock, retains a private recovery journal, preserves the
 network preference, updates the owned firewall rule and shortcuts, and attests

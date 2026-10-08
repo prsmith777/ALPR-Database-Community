@@ -60,7 +60,7 @@ export async function changeWindowsDatabasePort(request,environment=process.env,
   if(!/^[a-f0-9]{64}$/.test(checked.backupSha256))throw new Error('Invalid database configuration recovery copy');
   journal={formatVersion:1,...record,current:deployment.installation.current,backupSha256:checked.backupSha256,phase:'pending'};
   await atomicJson(journalFile,journal);
-  options.progress?.('Changing the local PostgreSQL port and restarting ALPR. Keep this page open.');
+  await options.progress?.('Changing the local PostgreSQL port and restarting ALPR. Keep this page open.');
   try{run('apply',journal);journal.phase='committed';await atomicJson(journalFile,journal);return result(journal);}
   catch(error){
    try{run('restore',journal);journal.phase='restored';await atomicJson(journalFile,journal);}
