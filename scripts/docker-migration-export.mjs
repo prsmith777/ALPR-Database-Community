@@ -154,8 +154,12 @@ export async function exportDockerMigration({ appId, databaseId, destination, co
   } finally {
     try {
       if (restart) {
-        await run(["start", selected.Id]);
-        if (!(await inspect(selected.Id, run)).State.Running) throw new Error("The backup operation ended, but the original Docker application did not restart. Start that selected container in Docker Desktop; its data is preserved.");
+        try {
+          await run(["start", selected.Id]);
+          if (!(await inspect(selected.Id, run)).State.Running) throw new Error("not running");
+        } catch {
+          throw new Error("The backup operation ended, but the original Docker application " + summary(selected).name + " did not restart. Start that selected container in Docker; its data is preserved.");
+        }
       }
     } finally {
       await rm(scratch, { recursive: true, force: true });

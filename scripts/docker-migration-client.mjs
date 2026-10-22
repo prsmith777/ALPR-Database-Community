@@ -40,6 +40,7 @@ export function dockerPostgresArguments(program, args, env) {
   if (tool === "psql" && !mapped.includes("--version") && !mapped.includes("--command")) throw new Error("Docker export accepts read-only source queries only.");
   return ["run", "--rm", "--name", "alpr-export-client-" + randomUUID(),
     "--label", "org.alpr.migration-client=true", "--network", "container:" + source,
+    ...(process.platform === "linux" ? ["--user", String(process.getuid()) + ":" + String(process.getgid())] : []),
     "--read-only", "--cap-drop", "ALL", "--security-opt", "no-new-privileges",
     "--mount", "type=bind,src=" + scratch + ",dst=/export",
     "--env", "PGPASSWORD", "--env", "PGSSLMODE", "--env", "PGOPTIONS=-c default_transaction_read_only=on -c statement_timeout=120000",
