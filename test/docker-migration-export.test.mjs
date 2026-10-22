@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import path from "node:path";
 import { mkdtemp, rm, readFile } from "node:fs/promises";
 import os from "node:os";
-import { sourceCandidates, validateSourcePair, exportDockerMigration } from "../scripts/docker-migration-export.mjs";
+import { sourceCandidates, validateSourcePair, exportDockerMigration, assertDockerBackupSeparation } from "../scripts/docker-migration-export.mjs";
 import { dockerPostgresArguments, POSTGRES_CLIENT_IMAGE } from "../scripts/docker-migration-client.mjs";
 const appId = "a".repeat(64), dbId = "b".repeat(64);
 function fixtures() {
@@ -88,4 +88,11 @@ test("database password whitespace is preserved across logical migration", async
   const endpoint = pg.readEndpoint({ ALPR_MIGRATION_SOURCE_HOST: "127.0.0.1", ALPR_MIGRATION_SOURCE_DATABASE: "postgres",
     ALPR_MIGRATION_SOURCE_USER: "postgres", ALPR_MIGRATION_SOURCE_PASSWORD: "  fixture secret  " }, "ALPR_MIGRATION_SOURCE");
   assert.equal(endpoint.password, "  fixture secret  ");
+});
+test("backup paths cannot intersect original bind storage on Linux or Docker Desktop", () => {
+  assert.throws(() => assertDockerBackupSeparation(["/srv/alpr/storage"], ["/srv/alpr/storage/backup"], "linux"), /outside/);
+  assert.throws(() => assertDockerBackupSeparation(["C:/ALPR/storage"], ["C:/ALPR/storage/backup"], "win32"), /outside/);
+  assert.throws(() => assertDockerBackupSeparation(["/run/desktop/mnt/host/c/ALPR/storage"], ["C:/ALPR/storage/backup"], "win32"), /outside/);
+  assert.throws(() => assertDockerBackupSeparation(["/host_mnt/c/ALPR/auth"], ["C:/ALPR/auth/backup"], "win32"), /outside/);
+  assert.doesNotThrow(() => assertDockerBackupSeparation(["/srv/alpr/storage"], ["/srv/alpr/backup"], "linux"));
 });

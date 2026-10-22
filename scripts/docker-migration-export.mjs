@@ -79,8 +79,52 @@ async function sourceEvidence(env, application) {
   return { sourceProfile: source.profile.id, sourceLabel: source.profile.label, serverMajor: major,
     schemaFingerprint: source.schemaFingerprint, tableCounts: counts, plateReads: counts.plate_reads || "0", application };
 }
-async function prepare({ appId, databaseId, scratch }, run) {
+function dockerHostPath(value, platform) {
+  if (typeof value !== "string" || !value) return null;
+  let normalized = value.replaceAll("\\", "/");
+  if (platform === "win32") {
+    normalized = normalized.replace(/^\/(?:run\/desktop\/mnt\/host|host_mnt|mnt)\/([a-z])\//i, "$1:/")
+      .replace(/^\/([a-z])\//i, "$1:/");
+    return /^[a-z]:\//i.test(normalized) ? path.win32.resolve(normalized) : null;
+  }
+  return path.posix.isAbsolute(normalized) ? path.posix.resolve(normalized) : null;
+}
+export function assertDockerBackupSeparation(roots, candidates, platform = process.platform) {
+  const impl = platform === "win32" ? path.win32 : path.posix;
+  const inside = (parent, child) => {
+    const relative = impl.relative(parent, child);
+    return relative === "" || (relative !== ".." && !relative.startsWith(".." + impl.sep) && !impl.isAbsolute(relative));
+  };
+  for (const source of roots.map(value => dockerHostPath(value, platform)).filter(Boolean)) {
+    for (const candidate of candidates) {
+      const target = impl.resolve(candidate);
+      if (inside(source, target) || inside(target, source)) throw new Error("Choose a backup folder outside the original Docker storage, settings and authentication folders. No source application was stopped.");
+    }
+  }
+}
+async function checkBackupLocation(app, candidates, run) {
+  const roots = [];
+  for (const mount of app.Mounts || []) {
+    if (!["/app/storage", "/app/config", "/app/auth"].includes(mount.Destination)) continue;
+    if (mount.Source) roots.push(mount.Source);
+    if (mount.Type === "volume" && mount.Name) {
+      const records = JSON.parse((await run(["volume", "inspect", mount.Name])).stdout);
+      const device = records[0]?.Options?.device;
+      if (!device) continue;
+      const absolute = dockerHostPath(device, process.platform);
+      if (absolute) roots.push(absolute);
+      else if (!device.startsWith(":") && !device.startsWith("//")) {
+        const working = dockerHostPath(app.Config.Labels?.["com.docker.compose.project.working_dir"], process.platform);
+        if (working) roots.push((process.platform === "win32" ? path.win32 : path.posix).resolve(working, device));
+      }
+    }
+  }
+  assertDockerBackupSeparation(roots, candidates);
+}
+
+async function prepare({ appId, databaseId, scratch, destination }, run) {
   const app = await inspect(appId, run), database = await inspect(databaseId, run);
+  await checkBackupLocation(app, [scratch, ...(destination ? [destination] : [])], run);
   const config = plainConfig(await configuration(run, app, scratch));
   const env = { ...validateSourcePair(app, database, config), ALPR_MIGRATION_DOCKER_SCRATCH: scratch };
   await run(["image", "inspect", POSTGRES_CLIENT_IMAGE]).catch(() => run(["pull", POSTGRES_CLIENT_IMAGE], { timeout: 10 * 60_000 }));
@@ -115,7 +159,7 @@ export async function exportDockerMigration({ appId, databaseId, destination, co
   const run = options.docker || docker;
   let selected, restart = false;
   try {
-    const result = await prepare({ appId, databaseId, scratch }, run);
+    const result = await prepare({ appId, databaseId, scratch, destination }, run);
     selected = result.app;
     if (result.evidence.sourceProfile !== expected.sourceProfile || result.evidence.schemaFingerprint !== expected.schemaFingerprint) throw new Error("The source schema changed after review. Review it again.");
     // Full IDs prevent a renamed/replaced container from being stopped by name.

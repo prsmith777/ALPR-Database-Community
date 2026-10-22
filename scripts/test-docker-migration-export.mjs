@@ -55,15 +55,23 @@ try {
     await writeFile(path.join(fixture, "auth/auth.json"), JSON.stringify({ password: "synthetic-hash", apiKey: "a".repeat(64), sessions: {} }));
     await writeFile(path.join(fixture, "storage/images/test.jpg"), "synthetic image");
     const mounts = [];
+    const bindMounted = major === 17 && !community;
     for (const folder of ["config", "auth", "storage"]) {
-      const name = network + "-" + folder; await docker(["volume", "create", name]); volumes.push(name);
-      mounts.push("--mount", "type=volume,src=" + name + ",dst=/app/" + folder);
+      if (bindMounted) mounts.push("--mount", "type=bind,src=" + path.join(fixture, folder) + ",dst=/app/" + folder);
+      else {
+        const name = network + "-" + folder; await docker(["volume", "create", name]); volumes.push(name);
+        mounts.push("--mount", "type=volume,src=" + name + ",dst=/app/" + folder);
+      }
     }
     const app = (await docker(["create", "--init", "--name", network + "-app", "--network", network, ...mounts,
       "--env", "DB_PASSWORD", "--env", "TZ=America/Denver", "alpine:3.23", "sleep", "3600"],
       { environment: { ...process.env, DB_PASSWORD: password }, timeout: 300_000 })).stdout.trim();
     owned.push(app);
-    for (const folder of ["config", "auth", "storage"]) await docker(["cp", path.join(fixture, folder) + path.sep + ".", app + ":/app/" + folder]);
+    if (!bindMounted) for (const folder of ["config", "auth", "storage"]) await docker(["cp", path.join(fixture, folder) + path.sep + ".", app + ":/app/" + folder]);
+    if (bindMounted) {
+      await assert.rejects(previewDockerExport({ appId: app, databaseId: db, workParent: path.join(fixture, "storage") }), /outside the original Docker/);
+      assert.equal(await readFile(path.join(fixture, "storage/images/test.jpg"), "utf8"), "synthetic image");
+    }
     if (major === 13) await docker(["start", app]);
     const listed = await listDockerSources();
     assert.ok(listed.containers.some(item => item.id === app && item.application));
