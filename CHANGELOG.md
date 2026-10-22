@@ -12,6 +12,8 @@
   the selected source application's prior running/stopped state.
 - Refuse conflicting database settings, changed source data, overwritten backups
   and populated import targets. Imports do not merge old and new histories.
+- Wait through temporary systemd user-bus permissions during Linux update-helper
+  startup, within the existing readiness timeout.
 - Update User Guide 3.24, migration/install instructions and the product roadmap
   to distinguish native backups from Docker exports and preserve newer records.
 
