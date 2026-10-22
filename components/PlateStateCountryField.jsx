@@ -10,7 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { getPlateStateCountries, updatePlateStateCountry } from "@/app/actions";
 
-export default function PlateStateCountryField({ plateNumber, value, onSaved }) {
+export default function PlateStateCountryField({ plateNumber, value, onSaved, compact = false }) {
   const { can } = useAccess();
   const inputId = useId();
   const optionsId = useId();
@@ -37,7 +37,7 @@ export default function PlateStateCountryField({ plateNumber, value, onSaved }) 
     return () => { active = false; };
   }, [open]);
 
-  if (!can("plate.review")) return <span className="whitespace-pre-wrap break-words">{savedValue || "—"}</span>;
+  if (!can("plate.review")) return <span className={compact ? "block truncate" : "whitespace-pre-wrap break-words"} title={savedValue || ""}>{savedValue || "—"}</span>;
 
   const save = async (event) => {
     event.preventDefault();
@@ -58,8 +58,8 @@ export default function PlateStateCountryField({ plateNumber, value, onSaved }) 
   };
 
   return <>
-    <Button type="button" variant="ghost" size="sm" className="h-auto max-w-48 justify-start gap-2 whitespace-normal px-1 py-1 text-left font-normal" aria-label={"Edit State/Country for " + plateNumber} onClick={() => { setDraft(savedValue); setError(""); setOpen(true); }}>
-      <span className="min-w-0 break-words">{savedValue || "Add State/Country"}</span><Pencil className="h-3 w-3 shrink-0" />
+    <Button type="button" variant="ghost" size="sm" className={compact ? "h-auto w-full max-w-full justify-start gap-2 whitespace-nowrap px-1 py-1 text-left font-normal" : "h-auto max-w-48 justify-start gap-2 whitespace-normal px-1 py-1 text-left font-normal"} title={savedValue || "Add State/Country"} aria-label={"Edit State/Country for " + plateNumber} onClick={() => { setDraft(savedValue); setError(""); setOpen(true); }}>
+      <span className={compact ? "min-w-0 truncate" : "min-w-0 break-words"}>{savedValue || "Add State/Country"}</span><Pencil className="h-3 w-3 shrink-0" />
     </Button>
     <Dialog open={open} onOpenChange={(next) => { if (!saving) setOpen(next); }}>
       <DialogContent className="sm:max-w-md">

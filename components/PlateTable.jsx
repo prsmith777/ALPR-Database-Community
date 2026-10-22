@@ -47,10 +47,8 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import {
-  Table,
   TableBody,
   TableCell,
-  TableHead,
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
@@ -98,6 +96,8 @@ import { useRouter } from "next/navigation";
 import PlateMatchModeSelect from "@/components/PlateMatchModeSelect";
 import PlateImage from "@/components/PlateImage";
 import PlateStateCountryField from "@/components/PlateStateCountryField";
+import ResizablePlateTable, { ResizableTableHead, TableValue } from "@/components/ResizablePlateTable";
+import TableRowActions from "@/components/TableRowActions";
 import { plateCorrectionDefaults, isAliasOnlyCorrection } from "@/lib/plate-correction-defaults.mjs";
 import MultiSelectFilter from "@/components/MultiSelectFilter";
 import LiveFeedDateRangeFilter from "@/components/LiveFeedDateRangeFilter";
@@ -156,12 +156,12 @@ const SortButton = ({ label, field, sort, onSort }) => {
     <Button
       variant="ghost"
       size="sm"
-      className="h-8 p-0 hover:bg-transparent hover:text-primary data-[active=true]:text-primary flex items-center gap-1"
+      className="h-8 max-w-full min-w-0 p-0 hover:bg-transparent hover:text-primary data-[active=true]:text-primary flex items-center gap-1"
       onClick={() => onSort(field)}
       data-active={isActive}
     >
-      {label}
-      <Icon className="h-2 w-2" />
+      <span className="truncate">{label}</span>
+      <Icon className="h-2 w-2 shrink-0" />
     </Button>
   );
 };
@@ -187,7 +187,6 @@ const POPUP_ACTION_ICON_CLASS = "mr-1 h-3.5 w-3.5 shrink-0";
 const POPUP_ACTION_LABEL_CLASS = "min-w-0 truncate whitespace-nowrap";
 const POPUP_ACTION_GRID_CLASS = "grid w-full grid-cols-7 gap-2";
 const POPUP_ACTION_SLOT_CLASS = "min-h-8 min-w-0";
-const TABLE_ACTION_BUTTON_CLASS = "h-8 w-8 p-0";
 const CONFIRM_NEXT_SCAN_TIMEOUT_MS = 15000;
 const SEARCH_FILTER_DEBOUNCE_MS = 250;
 
@@ -245,11 +244,11 @@ function PlateIdentity({ plate, compact = false }) {
   const wasResolved = observed !== plate.plate_number;
 
   return (
-    <div className={compact ? "space-y-1" : "space-y-1.5"}>
+    <div className={compact ? "min-w-0 space-y-1" : "min-w-0 space-y-1.5"}>
       <div className="flex flex-wrap items-center gap-2">
         <Link
           href={`/live_feed?search=${encodeURIComponent(plate.plate_number)}&matchMode=off`}
-          className="text-foreground underline-offset-4 hover:underline focus-visible:rounded-sm focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-blue-500"
+          className="min-w-0 max-w-full truncate text-foreground underline-offset-4 hover:underline focus-visible:rounded-sm focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-blue-500"
           title={`View exact reads for ${plate.plate_number}`}
         >
           {plate.plate_number}
@@ -262,14 +261,10 @@ function PlateIdentity({ plate, compact = false }) {
         </Badge>
       </div>
       {wasResolved && (
-        <div className="text-[11px] text-muted-foreground">
-          Camera read {observed}
-        </div>
+        <TableValue className="text-[11px] text-muted-foreground">{`Camera read ${observed}`}</TableValue>
       )}
       {plate.known_name && (
-        <div className="text-gray-500 dark:text-gray-400 font-sans">
-          {plate.known_name}
-        </div>
+        <TableValue className="text-gray-500 dark:text-gray-400 font-sans">{plate.known_name}</TableValue>
       )}
     </div>
   );
@@ -291,13 +286,14 @@ function DirectionBadge({ plate }) {
   return (
     <Badge
       variant="outline"
+      style={{ maxWidth: "100%" }}
       className={ready
         ? "border-cyan-500/40 text-cyan-500"
         : pending
           ? "border-amber-500/40 text-amber-500"
           : "border-muted-foreground/30 text-muted-foreground"}
     >
-      {label}
+      <span className="truncate" title={label}>{label}</span>
     </Badge>
   );
 }
@@ -312,15 +308,16 @@ function PlateTimestamp({ timestamp, timeFormat }) {
   return (
     <time
       dateTime={value.toISOString()}
+      title={formatHydrationSafeDateTime(value, { timeZone, options: { dateStyle: "short", timeStyle: "medium", hour12: timeFormat === 12 } })}
       className="block whitespace-nowrap leading-tight"
     >
-      <span className="block">
+      <span className="block truncate">
         {formatHydrationSafeDateTime(value, {
           timeZone,
           options: { year: "numeric", month: "numeric", day: "numeric" },
         })}
       </span>
-      <span className="mt-0.5 block">
+      <span className="mt-0.5 block truncate">
         {formatHydrationSafeDateTime(value, {
           timeZone,
           options: {
@@ -2125,70 +2122,70 @@ export default function PlateTable({
         <div className="rounded-md border dark:bg-[#0e0e10]">
           {/* Desktop Table */}
           <div className="hidden sm:block">
-            <Table>
+            <ResizablePlateTable surface="live-feed" showStateCountry={showStateCountry}>
               <TableHeader className="dark:bg-[#161618]">
                 <TableRow>
-                  <TableHead className="w-24">Image</TableHead>
-                  <TableHead className="w-28 sm:w-16">
+                  <ResizableTableHead columnId="image">Image</ResizableTableHead>
+                  <ResizableTableHead columnId="plate_number">
                     <SortButton
                       label="Plate Number"
                       field="plate_number"
                       sort={sort}
                       onSort={onSort}
                     />
-                  </TableHead>
-                  {showStateCountry && <TableHead className="w-40">State/Country</TableHead>}
-                  <TableHead className="w-28 hidden sm:table-cell">
+                  </ResizableTableHead>
+                  {showStateCountry && <ResizableTableHead columnId="state_country">State/Country</ResizableTableHead>}
+                  <ResizableTableHead columnId="confidence">
                     <SortButton
                       label="%"
                       field="confidence"
                       sort={sort}
                       onSort={onSort}
                     />
-                  </TableHead>
-                  <TableHead className="w-24 hidden sm:table-cell">
+                  </ResizableTableHead>
+                  <ResizableTableHead columnId="occurrence_count">
                     <SortButton
                       label="Count"
                       field="occurrence_count"
                       sort={sort}
                       onSort={onSort}
                     />
-                  </TableHead>
-                  <TableHead className="w-18 sm:w-40">
+                  </ResizableTableHead>
+                  <ResizableTableHead columnId="tags">
                     <SortButton
                       label="Tags"
                       field="tags"
                       sort={sort}
                       onSort={onSort}
                     />
-                  </TableHead>
-                  <TableHead className="w-32 hidden sm:table-cell">
+                  </ResizableTableHead>
+                  <ResizableTableHead columnId="camera_name">
                     <SortButton
                       label="Camera"
                       field="camera_name"
                       sort={sort}
                       onSort={onSort}
                     />
-                  </TableHead>
-                  <TableHead className="w-36 hidden md:table-cell">
+                  </ResizableTableHead>
+                  <ResizableTableHead columnId="direction">
                     <SortButton
                       label="Direction"
                       field="direction"
                       sort={sort}
                       onSort={onSort}
                     />
-                  </TableHead>
-                  <TableHead className="w-24 sm:w-40">
+                  </ResizableTableHead>
+                  <ResizableTableHead columnId="timestamp">
                     <SortButton
                       label="Timestamp"
                       field="timestamp"
                       sort={sort}
                       onSort={onSort}
                     />
-                  </TableHead>
-                  <TableHead className="hidden w-px whitespace-nowrap px-2 text-right sm:table-cell">
+                  </ResizableTableHead>
+                  <ResizableTableHead columnId="actions" className="text-right">
                     Actions
-                  </TableHead>
+                  </ResizableTableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -2212,7 +2209,7 @@ export default function PlateTable({
                           plate={plate}
                           onClick={(e) => handleImageClick(e, plate)}
                           priority={plateIndex === 0}
-                          className=""
+                          className="max-w-full h-auto"
                         />
                       </TableCell>
                       <TableCell
@@ -2223,13 +2220,13 @@ export default function PlateTable({
                         <PlateIdentity plate={plate} />
                       </TableCell>
                       {showStateCountry && <TableCell>
-                        <PlateStateCountryField plateNumber={plate.plate_number} value={plate.state_country} onSaved={onStateCountrySaved} />
+                        <PlateStateCountryField compact plateNumber={plate.plate_number} value={plate.state_country} onSaved={onStateCountrySaved} />
                       </TableCell>}
-                      <TableCell className="hidden sm:table-cell">
+                      <TableCell>
                         {formatConfidence(plate.confidence)}
                       </TableCell>
-                      <TableCell className="hidden sm:table-cell">
-                        {plate.occurrence_count}
+                      <TableCell>
+                        <TableValue>{plate.occurrence_count}</TableValue>
                       </TableCell>
                       <TableCell>
                         <div className="flex flex-wrap items-center gap-1.5">
@@ -2238,19 +2235,19 @@ export default function PlateTable({
                               <Badge
                                 key={tag.name}
                                 variant="secondary"
-                                className="text-xs py-0.5 pl-2 pr-1 flex items-center space-x-1"
+                                className="min-w-0 max-w-full text-xs py-0.5 pl-2 pr-1 flex items-center space-x-1"
                                 style={{
                                   backgroundColor: tag.color,
                                   color: "#fff",
                                 }}
                               >
-                                <span>{tag.name}</span>
+                                <span className="min-w-0 truncate" title={tag.name}>{tag.name}</span>
                                 {canManageTags && <Tooltip>
                                   <TooltipTrigger asChild>
                                     <Button
                                       variant="ghost"
                                       size="icon"
-                                      className="h-4 w-4 p-0 hover:bg-red-500 hover:text-white rounded-full"
+                                      className="h-4 w-4 shrink-0 p-0 hover:bg-red-500 hover:text-white rounded-full"
                                       aria-label={`Remove ${tag.name} tag from ${plate.plate_number}`}
                                       onClick={() =>
                                         onRemoveTag(
@@ -2273,14 +2270,14 @@ export default function PlateTable({
                           )}
                         </div>
                       </TableCell>
-                      <TableCell className="hidden sm:table-cell">
-                        {plate.camera_name || (
+                      <TableCell>
+                        <TableValue>{plate.camera_name || (
                           <span className="text-sm text-gray-500 dark:text-gray-400 italic">
                             Unknown
                           </span>
-                        )}
+                        )}</TableValue>
                       </TableCell>
-                      <TableCell className="hidden md:table-cell">
+                      <TableCell>
                         <DirectionBadge plate={plate} />
                       </TableCell>
                       <TableCell className="text-xs sm:text-sm">
@@ -2290,199 +2287,27 @@ export default function PlateTable({
                         />
                       </TableCell>
 
-                      <TableCell className="hidden w-px whitespace-nowrap px-2 sm:table-cell">
-                        <div className="flex justify-end gap-0.5">
-                          {canManageTags && <DropdownMenu>
-                            <Tooltip>
-                              <TooltipTrigger asChild>
-                                <DropdownMenuTrigger asChild>
-                                  <Button
-                                    variant="ghost"
-                                    size="icon"
-                                    className={TABLE_ACTION_BUTTON_CLASS}
-                                    aria-label={`Add tag to ${plate.plate_number}`}
-                                  >
-                                    <Tag className="h-4 w-4" />
-                                  </Button>
-                                </DropdownMenuTrigger>
-                              </TooltipTrigger>
-                              <TooltipContent>Add tag</TooltipContent>
-                            </Tooltip>
-                            <DropdownMenuContent>
-                              {availableTags.map((tag) => (
-                                <DropdownMenuItem
-                                  key={tag.name}
-                                  onClick={() =>
-                                    onAddTag(plate.plate_number, tag.name)
-                                  }
-                                >
-                                  <div className="flex items-center">
-                                    <div
-                                      className="w-3 h-3 rounded-full mr-2"
-                                      style={{ backgroundColor: tag.color }}
-                                    />
-                                    {tag.name}
-                                  </div>
-                                </DropdownMenuItem>
-                              ))}
-                            </DropdownMenuContent>
-                          </DropdownMenu>}
-                          {canManageKnownPlates && <Tooltip>
-                            <TooltipTrigger asChild>
-                              <Button
-                                variant="ghost"
-                                size="icon"
-                                className={TABLE_ACTION_BUTTON_CLASS}
-                                aria-label={`Add ${plate.plate_number} to known plates`}
-                                onClick={() => {
-                                  setActivePlate(plate);
-                                  setIsAddKnownPlateOpen(true);
-                                }}
-                              >
-                                <Plus className="h-4 w-4" />
-                              </Button>
-                            </TooltipTrigger>
-                            <TooltipContent>Add to known plates</TooltipContent>
-                          </Tooltip>}
-                          {canReview && <Tooltip>
-                            <TooltipTrigger asChild>
-                              <Button
-                                variant="ghost"
-                                size="icon"
-                                className={TABLE_ACTION_BUTTON_CLASS}
-                                aria-label={`Correct plate ${plate.plate_number}`}
-                                onClick={() => {
-                                  setCorrection(correctionDraft({
-                                    canBatchReview,
-                                    canManageAliases,
-                                    id: plate.id,
-                                    plateNumber: plate.plate_number,
-                                    observedPlate: plate.observed_plate || plate.plate_number,
-                                    cameraName: plate.camera_name || "",
-                                    image: correctionImageFromRead(plate),
-                                  }));
-                                  setIsCorrectPlateOpen(true);
-                                }}
-                              >
-                                <Pencil className="h-4 w-4" />
-                              </Button>
-                            </TooltipTrigger>
-                            <TooltipContent>Correct plate</TooltipContent>
-                          </Tooltip>}
-                          {canRead && <Tooltip>
-                            <TooltipTrigger asChild>
-                              <Button
-                                variant="ghost"
-                                size="icon"
-                                className={TABLE_ACTION_BUTTON_CLASS}
-                                aria-label={`Review history for ${plate.plate_number}`}
-                                onClick={() => openReviewHistory(plate)}
-                              >
-                                <History className="h-4 w-4" />
-                              </Button>
-                            </TooltipTrigger>
-                            <TooltipContent>Review history</TooltipContent>
-                          </Tooltip>}
-                          {biHost && buildBlueIrisPlatePlaybackPath(
-                            plate.bi_path,
-                            plate.plate_bi_camera,
-                            plate.timestamp,
-                          ) ? (
-                            <Tooltip>
-                              <TooltipTrigger asChild>
-                                <Button
-                                  variant="ghost"
-                                  size="icon"
-                                  className={TABLE_ACTION_BUTTON_CLASS}
-                                  aria-label={`Open ${plate.plate_number} in Blue Iris`}
-                                  onClick={() =>
-                                    window.open(
-                                      buildBlueIrisUiUrl(
-                                        biHost,
-                                        buildBlueIrisPlatePlaybackPath(
-                                          plate.bi_path,
-                                          plate.plate_bi_camera,
-                                          plate.timestamp,
-                                        ),
-                                      ),
-                                      "_blank"
-                                    )
-                                  }
-                                >
-                                  <ExternalLink className="h-4 w-4" />
-                                </Button>
-                              </TooltipTrigger>
-                              <TooltipContent>Open in Blue Iris</TooltipContent>
-                            </Tooltip>
-                          ) : (
-                            <Tooltip>
-                              <TooltipTrigger asChild>
-                                <span
-                                  className="inline-flex"
-                                  tabIndex={0}
-                                  role="button"
-                                  aria-disabled="true"
-                                  aria-label="Blue Iris link unavailable"
-                                >
-                                  <Button
-                                    variant="ghost"
-                                    size="icon"
-                                    className={TABLE_ACTION_BUTTON_CLASS}
-                                    aria-label="Blue Iris link unavailable"
-                                    disabled
-                                  >
-                                    <ExternalLink className="h-4 w-4" />
-                                  </Button>
-                                </span>
-                              </TooltipTrigger>
-                              <TooltipContent>
-                                Blue Iris link unavailable
-                              </TooltipContent>
-                            </Tooltip>
-                          )}
-                          {canViewAudit && <Tooltip>
-                            <TooltipTrigger asChild>
-                              <Button
-                                variant="ghost"
-                                size="icon"
-                                className={TABLE_ACTION_BUTTON_CLASS}
-                                asChild
-                              >
-                                <Link
-                                  href={`/logs?readId=${plate.id}&expand=first`}
-                                  aria-label={`View logs for read ${plate.id}`}
-                                >
-                                  <ScrollText className="h-4 w-4" />
-                                </Link>
-                              </Button>
-                            </TooltipTrigger>
-                            <TooltipContent>View logs for this read</TooltipContent>
-                          </Tooltip>}
-
-                          {canDelete && <Tooltip>
-                            <TooltipTrigger asChild>
-                              <Button
-                                variant="ghost"
-                                size="icon"
-                                className={`${TABLE_ACTION_BUTTON_CLASS} text-red-500 hover:text-red-700`}
-                                aria-label={`Delete record for ${plate.plate_number}`}
-                                onClick={() => {
-                                  setActivePlate(plate);
-                                  setIsDeleteConfirmOpen(true);
-                                }}
-                              >
-                                <Trash2 className="h-4 w-4" />
-                              </Button>
-                            </TooltipTrigger>
-                            <TooltipContent>Delete record</TooltipContent>
-                          </Tooltip>}
-                        </div>
+                      <TableCell className="text-right">
+                        <TableRowActions plateNumber={plate.plate_number} actions={[
+                          canManageTags && { id: "tag", label: "Add tag", ariaLabel: `Add tag to ${plate.plate_number}`, icon: Tag, items: availableTags.map((tag) => ({ id: tag.name, label: tag.name, color: tag.color, onSelect: () => onAddTag(plate.plate_number, tag.name) })) },
+                          canManageKnownPlates && { id: "known", label: "Add to known plates", ariaLabel: `Add ${plate.plate_number} to known plates`, icon: Plus, onSelect: () => { setActivePlate(plate); setIsAddKnownPlateOpen(true); } },
+                          canReview && { id: "correct", label: "Correct plate", ariaLabel: `Correct plate ${plate.plate_number}`, icon: Pencil, onSelect: () => {
+                            setCorrection(correctionDraft({ canBatchReview, canManageAliases, id: plate.id, plateNumber: plate.plate_number, observedPlate: plate.observed_plate || plate.plate_number, cameraName: plate.camera_name || "", image: correctionImageFromRead(plate) }));
+                            setIsCorrectPlateOpen(true);
+                          } },
+                          canRead && { id: "history", label: "Review history", ariaLabel: `Review history for ${plate.plate_number}`, icon: History, onSelect: () => openReviewHistory(plate) },
+                          { id: "blue-iris", label: biHost && buildBlueIrisPlatePlaybackPath(plate.bi_path, plate.plate_bi_camera, plate.timestamp) ? "Open in Blue Iris" : "Blue Iris link unavailable", ariaLabel: `Open ${plate.plate_number} in Blue Iris`, icon: ExternalLink,
+                            disabled: !biHost || !buildBlueIrisPlatePlaybackPath(plate.bi_path, plate.plate_bi_camera, plate.timestamp),
+                            onSelect: () => window.open(buildBlueIrisUiUrl(biHost, buildBlueIrisPlatePlaybackPath(plate.bi_path, plate.plate_bi_camera, plate.timestamp)), "_blank") },
+                          canViewAudit && { id: "logs", label: "View logs for this read", ariaLabel: `View logs for read ${plate.id}`, icon: ScrollText, href: `/logs?readId=${plate.id}&expand=first` },
+                          canDelete && { id: "delete", label: "Delete record", ariaLabel: `Delete record for ${plate.plate_number}`, icon: Trash2, destructive: true, onSelect: () => { setActivePlate(plate); setIsDeleteConfirmOpen(true); } },
+                        ]} />
                       </TableCell>
                     </TableRow>
                   ))
                 )}
               </TableBody>
-            </Table>
+            </ResizablePlateTable>
           </div>
 
           {/* Mobile Card View */}
