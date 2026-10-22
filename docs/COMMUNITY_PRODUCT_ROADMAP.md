@@ -2,17 +2,21 @@
 
 Last reviewed: October 21, 2026
 
-## Docker-to-Windows export implementation
+## Docker-to-Windows migration export
 
-The next release adds source-selecting export for Original/Community Docker
+Community v0.1.56 adds source-selecting export for Original/Community Docker
 installations on Windows and Linux. Windows Setup exposes export before native
-installation; Linux uses ./alpr-community migrate export-docker. Both produce the
-same verified logical backup, with source profile/record-count review, image and
-authentication preservation, and restoration of the selected app's original
+installation; Linux uses `./alpr-community migrate export-docker`. Both produce
+the same verified logical backup, with source profile/record-count review, image
+and authentication preservation, and restoration of the selected app's original
 running state. Native imports continue to require an empty target and do not
 merge histories. See [migration procedure](DOCKER_TO_WINDOWS_MIGRATION.md).
-Acceptance and release status must be checked in the associated pull request;
-this section does not claim the change is already published.
+
+Automated validation covers Original PostgreSQL 13/17 and Community PostgreSQL 17
+Docker exports, named volumes and bind mounts, and a Linux-created backup restored
+into native Windows PostgreSQL. The Windows graphical exporter compiles, but a
+real Windows Docker Desktop source export remains a field-test limitation.
+GitHub Releases records publication and the exact release assets.
 
 ## Native Windows is available
 

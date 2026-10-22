@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.1.56 — Docker migration export (unreleased)
+## 0.1.56 — 2026-10-21
 
 - Export the original Docker ALPR database from Windows Setup before creating a
   native installation. Select the source application/database explicitly and

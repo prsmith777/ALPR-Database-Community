@@ -5,9 +5,8 @@ Linux**, with an Original ALPR v0.1.9-compatible database or Community v0.1.20+
 on PostgreSQL 13 or 17. It creates the same verified folder that Windows Setup
 imports. Do not update, replace or delete the old Docker database to export it.
 
-These controls are part of the Docker migration exporter change; use a release
-that includes them. Older releases, including v0.1.55, do not include this
-graphical Docker exporter.
+These controls are available in Community v0.1.56 and later. Older releases,
+including v0.1.55, do not include this graphical Docker exporter.
 
 ## Choose the correct backup tool
 
