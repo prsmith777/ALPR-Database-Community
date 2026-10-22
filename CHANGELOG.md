@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.1.58 — 2026-10-21
+
+- Resize Recognition Feed and Plate Database columns using draggable header dividers or the keyboard, with separate saved widths per browser and a reset option.
+- Keep narrow text readable through ellipses and hover text, protect minimum control widths, and allow horizontal scrolling.
+- Start Actions as a compact menu with full labels; widening the column restores the individual action icons.
+- Update User Guide 3.26 and current installation/update examples.
+
 ## 0.1.57 — 2026-10-21
 
 - Enable batch correction and recurring OCR-misread aliases by default for administrators; retain the batch preview and unchanged-plate safeguards. Operators retain single-read correction.

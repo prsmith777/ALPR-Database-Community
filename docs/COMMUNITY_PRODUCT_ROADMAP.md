@@ -2,6 +2,16 @@
 
 Last reviewed: October 21, 2026
 
+## Adjustable table columns
+
+Community v0.1.58 adds draggable header dividers to Recognition Feed and Plate
+Database. Each table remembers its widths separately in the current browser.
+Keyboard resizing, individual resets and Reset widths are available. Narrow text
+uses ellipses and full-value hover text; minimum widths preserve controls and
+wider tables scroll horizontally. Actions starts as a compact menu and expands
+to individual icons when the column is wide enough. Mobile cards retain their
+existing layout.
+
 ## Plate review and State/Country
 
 Community v0.1.57 enables batch correction and recurring misread aliases by

@@ -21,7 +21,7 @@ test("live feed plate identities open exact matching read history", async () => 
   }
   assert.match(
     plateTable,
-    /className="text-foreground underline-offset-4 hover:underline/
+    /className="[^"]*text-foreground underline-offset-4 hover:underline/
   );
   assert.doesNotMatch(
     plateTable,
@@ -205,18 +205,16 @@ test("live feed image review advances visibly and starts focused on the plate", 
   assert.match(plateTable, /<DialogFooter className="self-end lg:col-start-1 lg:row-start-2">/);
 });
 
-test("records table keeps its action controls compact at the right edge", async () => {
-  const plateTable = await source("components/PlateTable.jsx");
-
-  assert.match(plateTable, /const TABLE_ACTION_BUTTON_CLASS = "h-8 w-8 p-0"/);
-  assert.match(
-    plateTable,
-    /<TableHead className="hidden w-px whitespace-nowrap px-2 text-right sm:table-cell">\s*Actions/
-  );
-  assert.match(
-    plateTable,
-    /<TableCell className="hidden w-px whitespace-nowrap px-2 sm:table-cell">\s*<div className="flex justify-end gap-0\.5">/
-  );
+test("records table keeps action controls compact and accessible at the right edge", async () => {
+  const [plateTable, rowActions] = await Promise.all([
+    source("components/PlateTable.jsx"), source("components/TableRowActions.jsx"),
+  ]);
+  assert.match(plateTable, /<ResizableTableHead columnId="actions" className="text-right">/);
+  assert.match(plateTable, /<TableCell className="text-right">\s*<TableRowActions/);
+  assert.match(rowActions, /justify-end/);
+  assert.match(rowActions, /h-8 w-8/);
+  assert.match(rowActions, /aria-label=\{`Actions for \$\{plateNumber\}`\}/);
+  assert.match(rowActions, /<ActionLabel action=\{action\}/);
 });
 
 test("plate correction opens with an editable caret instead of selected text", async () => {
@@ -267,7 +265,7 @@ test("plate identifiers request a slashed-zero glyph throughout the interface", 
   assert.match(styles, /font-variant-numeric: slashed-zero/);
   assert.match(styles, /font-feature-settings: "zero" 1/);
   assert.match(styles, /var\(--font-geist-mono\)/);
-  assert.match(plateTable, /Camera read \{observed\}/);
+  assert.match(plateTable, /Camera read (?:\{observed\}|\$\{observed\})/);
   assert.doesNotMatch(plateTable, /text-\[11px\] font-sans text-muted-foreground/);
 });
 

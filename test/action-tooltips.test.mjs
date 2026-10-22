@@ -7,27 +7,32 @@ async function source(path) {
 }
 
 test("plate tables label icon-only row actions with accessible tooltips", async () => {
-  const [liveFeed, plateDatabase, knownPlates, databaseFilters] = await Promise.all([
+  const [liveFeed, plateDatabase, knownPlates, databaseFilters, rowActions] = await Promise.all([
     source("components/PlateTable.jsx"),
     source("components/plateDbTable.jsx"),
     source("components/KnownPlatesTable.jsx"),
     source("components/PlateDatabaseFilters.jsx"),
+    source("components/TableRowActions.jsx"),
   ]);
 
   for (const component of [liveFeed, plateDatabase]) {
     assert.match(component, /TooltipProvider/);
-    assert.match(component, /<TooltipContent>Add tag<\/TooltipContent>/);
+    assert.match(component, /<TableRowActions/);
+    assert.match(component, /label: "Add tag"/);
     assert.match(component, /<TooltipContent>Remove tag<\/TooltipContent>/);
-    assert.match(component, /<TooltipContent>Delete record<\/TooltipContent>/);
+    assert.match(component, /label: "Delete record"/);
     assert.match(component, /aria-label=\{`More actions for \$\{plate\.plate_number\}`\}/);
   }
 
+  assert.match(rowActions, /<TooltipContent>\{action\.label\}<\/TooltipContent>/);
+  assert.match(rowActions, /aria-label=\{action\.ariaLabel\}/);
+  assert.match(rowActions, /aria-label=\{`Actions for \$\{plateNumber\}`\}/);
   assert.match(liveFeed, /aria-label="Open filters"/);
   assert.match(liveFeed, /<TooltipContent>Open filters<\/TooltipContent>/);
-  assert.match(liveFeed, /<TooltipContent>Correct plate<\/TooltipContent>/);
+  assert.match(liveFeed, /label: "Correct plate"/);
   assert.match(liveFeed, /Confirm detected plate/);
-  assert.match(liveFeed, /<TooltipContent>View logs for this read<\/TooltipContent>/);
-  assert.match(liveFeed, /href=\{`\/logs\?readId=\$\{plate\.id\}&expand=first`\}/);
+  assert.match(liveFeed, /label: "View logs for this read"/);
+  assert.match(liveFeed, /href: `\/logs\?readId=\$\{plate\.id\}&expand=first`/);
   assert.match(plateDatabase, /<TooltipContent>View insights<\/TooltipContent>/);
   assert.match(plateDatabase, /Monitor plate/);
   assert.match(knownPlates, /<TooltipProvider delayDuration=\{250\}>/);

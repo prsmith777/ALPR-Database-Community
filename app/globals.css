@@ -200,3 +200,8 @@
     @apply bg-background text-foreground;
   }
 }
+
+/* Fixed column widths keep long content inside its own cell. */
+.resizable-plate-table td {
+  overflow: hidden;
+}

@@ -100,6 +100,8 @@ import {
 } from "@/lib/table-page-size-preference.mjs";
 import ResultsPagination from "@/components/ResultsPagination";
 import PlateStateCountryField from "@/components/PlateStateCountryField";
+import ResizablePlateTable, { ResizableTableHead, TableValue } from "@/components/ResizablePlateTable";
+import TableRowActions from "@/components/TableRowActions";
 
 const formatDaysAgo = (days) => {
   if (days === 0) return "Today";
@@ -266,12 +268,12 @@ export default function PlateTable({ matchingSettings, showStateCountry = false 
 
   const getSortIcon = (columnKey) => {
     if (sortConfig.key !== columnKey) {
-      return <ChevronsUpDown className="ml-2 h-2 w-2" />;
+      return <ChevronsUpDown className="ml-2 h-2 w-2 shrink-0" />;
     }
     return sortConfig.direction === "asc" ? (
-      <ChevronUp className="ml-2 h-2 w-2" />
+      <ChevronUp className="ml-2 h-2 w-2 shrink-0" />
     ) : (
-      <ChevronDown className="ml-2 h-2 w-2" />
+      <ChevronDown className="ml-2 h-2 w-2 shrink-0" />
     );
   };
 
@@ -470,81 +472,81 @@ export default function PlateTable({ matchingSettings, showStateCountry = false 
       {/* Desktop Table View */}
       <div className="rounded-md border dark:bg-[#0e0e10]">
         <div className="hidden sm:block">
-          <Table>
+          <ResizablePlateTable surface="plate-database" showStateCountry={showStateCountry}>
             <TableHeader>
               <TableRow>
-                <TableHead className="w-[180px]">
+                <ResizableTableHead columnId="plate_number">
                   <Button
                     variant="ghost"
                     onClick={() => requestSort("plate_number")}
-                    className="h-8 flex items-center font-semibold p-0"
+                    className="h-8 max-w-full min-w-0 flex items-center font-semibold p-0"
                   >
-                    Plate Number
+                    <span className="truncate">Plate Number</span>
                     {getSortIcon("plate_number")}
                   </Button>
-                </TableHead>
-                <TableHead className="w-[140px]">
+                </ResizableTableHead>
+                <ResizableTableHead columnId="occurrence_count">
                   <Button
                     variant="ghost"
                     onClick={() => requestSort("occurrence_count")}
-                    className="h-8 flex items-center font-semibold p-0"
+                    className="h-8 max-w-full min-w-0 flex items-center font-semibold p-0"
                   >
-                    Seen
+                    <span className="truncate">Seen</span>
                     {getSortIcon("occurrence_count")}
                   </Button>
-                </TableHead>
-                {showStateCountry && <TableHead className="w-40">State/Country</TableHead>}
-                <TableHead className="w-56 2xl:w-96">
+                </ResizableTableHead>
+                {showStateCountry && <ResizableTableHead columnId="state_country">State/Country</ResizableTableHead>}
+                <ResizableTableHead columnId="name">
                   <Button
                     variant="ghost"
                     onClick={() => requestSort("name")}
-                    className="h-8 flex items-center font-semibold p-0"
+                    className="h-8 max-w-full min-w-0 flex items-center font-semibold p-0"
                   >
-                    Name
+                    <span className="truncate">Name</span>
                     {getSortIcon("name")}
                   </Button>
-                </TableHead>
-                <TableHead>
+                </ResizableTableHead>
+                <ResizableTableHead columnId="notes">
                   <Button
                     variant="ghost"
                     onClick={() => requestSort("notes")}
-                    className="h-8 flex items-center font-semibold p-0"
+                    className="h-8 max-w-full min-w-0 flex items-center font-semibold p-0"
                   >
-                    Notes
+                    <span className="truncate">Notes</span>
                     {getSortIcon("notes")}
                   </Button>
-                </TableHead>
-                <TableHead className="w-[180px]">
+                </ResizableTableHead>
+                <ResizableTableHead columnId="first_seen_at">
                   <Button
                     variant="ghost"
                     onClick={() => requestSort("first_seen_at")}
-                    className="h-8 flex items-center font-semibold p-0"
+                    className="h-8 max-w-full min-w-0 flex items-center font-semibold p-0"
                   >
-                    First Seen
+                    <span className="truncate">First Seen</span>
                     {getSortIcon("first_seen_at")}
                   </Button>
-                </TableHead>
-                <TableHead className="w-[240px]">
+                </ResizableTableHead>
+                <ResizableTableHead columnId="last_seen_at">
                   <Button
                     variant="ghost"
                     onClick={() => requestSort("last_seen_at")}
-                    className="h-8 flex items-center font-semibold p-0"
+                    className="h-8 max-w-full min-w-0 flex items-center font-semibold p-0"
                   >
-                    Last Seen
+                    <span className="truncate">Last Seen</span>
                     {getSortIcon("last_seen_at")}
                   </Button>
-                </TableHead>
-                <TableHead className="w-[150px]">
+                </ResizableTableHead>
+                <ResizableTableHead columnId="tags">
                   <Button
                     variant="ghost"
                     onClick={() => requestSort("tags")}
-                    className="h-8 flex items-center font-semibold p-0"
+                    className="h-8 max-w-full min-w-0 flex items-center font-semibold p-0"
                   >
-                    Tags
+                    <span className="truncate">Tags</span>
                     {getSortIcon("tags")}
                   </Button>
-                </TableHead>
-                <TableHead className="w-[120px] text-right">Actions</TableHead>
+                </ResizableTableHead>
+                <ResizableTableHead columnId="actions" className="text-right">Actions</ResizableTableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -559,7 +561,8 @@ export default function PlateTable({ matchingSettings, showStateCountry = false 
                   <TableRow key={plate.plate_number}>
                     <TableCell className="font-mono text-lg font-medium">
                       <span
-                        className={`px-2 cursor-pointer transition-colors duration-200
+                        title={plate.plate_number}
+                        className={`block truncate px-2 cursor-pointer transition-colors duration-200
                             ${plate.flagged ? "text-[#F31260]" : "text-primary"}
                             hover:underline`}
                         onClick={() => handleOpenInsights(plate.plate_number)}
@@ -567,18 +570,18 @@ export default function PlateTable({ matchingSettings, showStateCountry = false 
                         {plate.plate_number}
                       </span>
                     </TableCell>
-                    <TableCell>{plate.occurrence_count}</TableCell>
+                    <TableCell><TableValue>{plate.occurrence_count}</TableValue></TableCell>
                     {showStateCountry && <TableCell>
-                      <PlateStateCountryField plateNumber={plate.plate_number} value={plate.state_country} onSaved={({ plate_number, state_country }) => {
+                      <PlateStateCountryField compact plateNumber={plate.plate_number} value={plate.state_country} onSaved={({ plate_number, state_country }) => {
                         setData((current) => current.map((row) => row.plate_number === plate_number ? { ...row, state_country } : row));
                       }} />
                     </TableCell>}
-                    <TableCell>{plate.name}</TableCell>
-                    <TableCell>{plate.notes}</TableCell>
+                    <TableCell><TableValue>{plate.name}</TableValue></TableCell>
+                    <TableCell><TableValue>{plate.notes}</TableValue></TableCell>
                     <TableCell>
-                      {formatFirstSeen(plate.first_seen_at)}
+                      <TableValue>{formatFirstSeen(plate.first_seen_at)}</TableValue>
                     </TableCell>
-                    <TableCell>{formatLastSeen(plate.last_seen_at)}</TableCell>
+                    <TableCell><TableValue>{formatLastSeen(plate.last_seen_at)}</TableValue></TableCell>
                     <TableCell>
                       <div className="flex flex-wrap items-center gap-1.5">
                         {plate.tags?.length > 0 ? (
@@ -586,19 +589,19 @@ export default function PlateTable({ matchingSettings, showStateCountry = false 
                             <Badge
                               key={tag.name}
                               variant="secondary"
-                              className="text-xs py-0.5 pl-2 pr-1 flex items-center space-x-1"
+                              className="min-w-0 max-w-full text-xs py-0.5 pl-2 pr-1 flex items-center space-x-1"
                               style={{
                                 backgroundColor: tag.color,
                                 color: "#fff",
                               }}
                             >
-                              <span>{tag.name}</span>
+                              <span className="min-w-0 truncate" title={tag.name}>{tag.name}</span>
                               {canManageTags && <Tooltip>
                                 <TooltipTrigger asChild>
                                   <Button
                                     variant="ghost"
                                     size="icon"
-                                    className="h-4 w-4 p-0 hover:bg-red-500 hover:text-white rounded-full"
+                                    className="h-4 w-4 shrink-0 p-0 hover:bg-red-500 hover:text-white rounded-full"
                                     aria-label={`Remove ${tag.name} tag from ${plate.plate_number}`}
                                     onClick={() =>
                                       handleRemoveTag(
@@ -625,134 +628,19 @@ export default function PlateTable({ matchingSettings, showStateCountry = false 
                       </div>
                     </TableCell>
                     <TableCell className="text-right">
-                      <div className="flex justify-end space-x-2">
-                        {canManageTags && <DropdownMenu>
-                          <Tooltip>
-                            <TooltipTrigger asChild>
-                              <DropdownMenuTrigger asChild>
-                                <Button
-                                  variant="ghost"
-                                  size="icon"
-                                  aria-label={`Add tag to ${plate.plate_number}`}
-                                >
-                                  <Tag className="h-4 w-4" />
-                                  <span className="sr-only">Add tag</span>
-                                </Button>
-                              </DropdownMenuTrigger>
-                            </TooltipTrigger>
-                            <TooltipContent>Add tag</TooltipContent>
-                          </Tooltip>
-                          <DropdownMenuContent align="end">
-                            {availableTags.map((tag) => (
-                              <DropdownMenuItem
-                                key={tag.name}
-                                onClick={() =>
-                                  handleAddTag(plate.plate_number, tag.name)
-                                }
-                              >
-                                <div className="flex items-center">
-                                  <div
-                                    className="w-3 h-3 rounded-full mr-2"
-                                    style={{ backgroundColor: tag.color }}
-                                  />
-                                  {tag.name}
-                                </div>
-                              </DropdownMenuItem>
-                            ))}
-                          </DropdownMenuContent>
-                        </DropdownMenu>}
-                        {canManageKnownPlates && <Tooltip>
-                          <TooltipTrigger asChild>
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              aria-label={`Add ${plate.plate_number} to known plates`}
-                              onClick={() => {
-                                setActivePlate(plate);
-                                setIsAddKnownPlateOpen(true);
-                              }}
-                            >
-                              <Plus className="h-4 w-4" />
-                              <span className="sr-only">
-                                Add to known plates
-                              </span>
-                            </Button>
-                          </TooltipTrigger>
-                          <TooltipContent>Add to known plates</TooltipContent>
-                        </Tooltip>}
-                        <Tooltip>
-                          <TooltipTrigger asChild>
-                            <Button variant="ghost" size="icon" asChild>
-                              <Link
-                                href={`/live_feed?search=${encodeURIComponent(plate.plate_number)}`}
-                                aria-label={`Review individual reads for ${plate.plate_number}`}
-                              >
-                                <History className="h-4 w-4" />
-                              </Link>
-                            </Button>
-                          </TooltipTrigger>
-                          <TooltipContent>Review individual reads</TooltipContent>
-                        </Tooltip>
-                        {canReview && <Tooltip>
-                          <TooltipTrigger asChild>
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              aria-label={`${
-                                plate.flagged ? "Stop monitoring" : "Monitor"
-                              } ${plate.plate_number}`}
-                              className={
-                                plate.flagged
-                                  ? "text-red-500 hover:text-red-700"
-                                  : ""
-                              }
-                              onClick={() =>
-                                handleToggleFlag(
-                                  plate.plate_number,
-                                  !plate.flagged
-                                )
-                              }
-                            >
-                              <Flag
-                                className={`h-4 w-4 ${
-                                  plate.flagged ? "fill-current" : ""
-                                }`}
-                              />
-                              <span className="sr-only">
-                                {plate.flagged ? "Stop monitoring" : "Monitor plate"}
-                              </span>
-                            </Button>
-                          </TooltipTrigger>
-                          <TooltipContent>
-                            {plate.flagged ? "Stop monitoring" : "Monitor plate"}
-                          </TooltipContent>
-                        </Tooltip>}
-
-                        {canDelete && <Tooltip>
-                          <TooltipTrigger asChild>
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              className="text-red-500 hover:text-red-700"
-                              aria-label={`Delete record for ${plate.plate_number}`}
-                              onClick={() => {
-                                setActivePlate(plate);
-                                setIsDeleteConfirmOpen(true);
-                              }}
-                            >
-                              <Trash2 className="h-4 w-4" />
-                              <span className="sr-only">Delete record</span>
-                            </Button>
-                          </TooltipTrigger>
-                          <TooltipContent>Delete record</TooltipContent>
-                        </Tooltip>}
-                      </div>
+                      <TableRowActions plateNumber={plate.plate_number} actions={[
+                        canManageTags && { id: "tag", label: "Add tag", ariaLabel: `Add tag to ${plate.plate_number}`, icon: Tag, items: availableTags.map((tag) => ({ id: tag.name, label: tag.name, color: tag.color, onSelect: () => handleAddTag(plate.plate_number, tag.name) })) },
+                        canManageKnownPlates && { id: "known", label: "Add to known plates", ariaLabel: `Add ${plate.plate_number} to known plates`, icon: Plus, onSelect: () => { setActivePlate(plate); setIsAddKnownPlateOpen(true); } },
+                        { id: "history", label: "Review individual reads", ariaLabel: `Review individual reads for ${plate.plate_number}`, icon: History, href: `/live_feed?search=${encodeURIComponent(plate.plate_number)}` },
+                        canReview && { id: "monitor", label: plate.flagged ? "Stop monitoring" : "Monitor plate", ariaLabel: `${plate.flagged ? "Stop monitoring" : "Monitor"} ${plate.plate_number}`, icon: Flag, active: plate.flagged, iconClassName: plate.flagged ? "fill-current" : "", onSelect: () => handleToggleFlag(plate.plate_number, !plate.flagged) },
+                        canDelete && { id: "delete", label: "Delete record", ariaLabel: `Delete record for ${plate.plate_number}`, icon: Trash2, destructive: true, onSelect: () => { setActivePlate(plate); setIsDeleteConfirmOpen(true); } },
+                      ]} />
                     </TableCell>
                   </TableRow>
                 ))
               )}
             </TableBody>
-          </Table>
+          </ResizablePlateTable>
         </div>
 
         {/* Mobile Card View */}
