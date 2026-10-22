@@ -19,7 +19,7 @@ export function docker(args, { environment = process.env, timeout = 120_000 } = 
     child.on("close", code => {
       clearTimeout(timer);
       if (code === 0) resolve({ stdout, stderr });
-      else reject(new Error("Docker operation failed (" + String(args[0]) + "). Check Docker is running and the selected source is available."));
+      else reject(new Error("Docker operation failed (" + String(args[0]) + "). Check Docker is running and the selected source is available.", { cause: { code, stderr } }));
     });
   });
 }

@@ -30,6 +30,7 @@ try {
       try { await psql(db, "SELECT 1;"); break; }
       catch (error) { if (attempt === 60) throw error; await new Promise(resolve => setTimeout(resolve, 500)); }
     }
+    console.log("Preparing isolated Original schema on PostgreSQL " + major);
     for (const file of ["schema.sql", "migrations.sql"]) {
       const local = path.join(workspace, major + "-" + file); await writeFile(local, await original(file));
       await docker(["cp", local, db + ":/tmp/" + file]);

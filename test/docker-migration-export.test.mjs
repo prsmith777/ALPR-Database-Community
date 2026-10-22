@@ -30,6 +30,7 @@ test("source pairing follows the selected application's configured network alias
   assert.throws(() => validateSourcePair(app, { ...database, State: { Running: false } }), /running/);
   assert.throws(() => validateSourcePair(app, { ...database, Id: appId }), /separate/);
   assert.throws(() => validateSourcePair(app, database, { database: { host: "foreign:5432" } }), /does not match/);
+  assert.throws(() => validateSourcePair(app, database, { database: { password: "different-fixture" } }), /settings differ/);
 });
 test("client transport uses a PostgreSQL 17 client, read-only sessions, no published ports, and no password argument", () => {
   const scratch = path.resolve(os.tmpdir(), "private export");

@@ -28,6 +28,9 @@ export function validateSourcePair(app, database, config = {}) {
   if (app.Id === database.Id || !database.State.Running) throw new Error("Choose a separate running Docker PostgreSQL database.");
   if (!sourceCandidates([app]).some(record => record.application) || !sourceCandidates([database]).some(record => record.database)) throw new Error("Select an ALPR Docker application and PostgreSQL container.");
   const a = envOf(app), d = envOf(database), settings = config.database || {};
+  for (const [variable, field] of [["DB_HOST", "host"], ["DB_NAME", "name"], ["DB_USER", "user"], ["DB_PASSWORD", "password"]]) {
+    if (a[variable] && settings[field] && a[variable] !== settings[field]) throw new Error("The source environment and saved database settings differ. Use the advanced migration procedure to identify the effective source; no application was stopped.");
+  }
   const host = a.DB_HOST || settings.host || "db:5432";
   const [hostname, portText = "5432"] = host.split(":");
   const port = Number(portText);
@@ -107,7 +110,7 @@ export async function exportDockerMigration({ appId, databaseId, destination, co
   await mkdir(lockPath);
   const scratch = await mkdtemp(path.join(parent, "alpr-docker-export-"));
   const run = options.docker || docker;
-  let selected, restart = false, completed = false, sealed = false;
+  let selected, restart = false;
   try {
     const result = await prepare({ appId, databaseId, scratch }, run);
     selected = result.app;
@@ -130,22 +133,25 @@ export async function exportDockerMigration({ appId, databaseId, destination, co
     const configCopy = path.join(scratch, "config-stopped");
     await copyDirectory(run, appId, "/app/config", configCopy);
     const optional = async file => readFile(file).then(() => file, error => { if (error.code === "ENOENT") return undefined; throw error; });
+    const sameInventory = (a, b) => JSON.stringify(Object.entries(a).sort()) === JSON.stringify(Object.entries(b).sort());
     const manifest = await createMigrationBundle({ dumpPath: env.ALPR_MIGRATION_DUMP_PATH, storagePath: storage,
       configPath: await optional(path.join(configCopy, "settings.yaml")), authPath: await optional(path.join(auth, "auth.json")),
-      destination, sourceQuiesced: true, configEnvironment: envOf(stopped) });
-    sealed = true;
-    const second = path.join(scratch, "storage-check");
-    await copyDirectory(run, appId, "/app/storage", second);
-    if (JSON.stringify(await fileInventory(storage)) !== JSON.stringify(await fileInventory(second))) throw new Error("Source images changed during export. Stop every writer and retry.");
-    const after = await sourceEvidence(env, summary(await inspect(appId, run)));
-    if ((await inspect(appId, run)).State.Running || JSON.stringify(before.tableCounts) !== JSON.stringify(after.tableCounts) || before.schemaFingerprint !== after.schemaFingerprint) throw new Error("The source changed during export. Stop every writer and retry.");
-    const verified = await verifyMigrationBundle(destination);
-    if (JSON.stringify(verified.database.source.tableCounts) !== JSON.stringify(after.tableCounts)) throw new Error("The dump does not match the stopped source.");
-    completed = true;
-    return { destination, sourceProfile: manifest.source, plateReads: after.plateReads, filesVerified: Object.keys(manifest.files).length,
+      destination, sourceQuiesced: true, configEnvironment: envOf(stopped), beforeSeal: async () => {
+        for (const [name, first] of [["storage", storage], ["config", configCopy], ["auth", auth]]) {
+          const second = path.join(scratch, name + "-check");
+          await copyDirectory(run, appId, "/app/" + name, second);
+          if (!sameInventory(await fileInventory(first), await fileInventory(second))) throw new Error("Source files changed during export. Stop every writer and retry.");
+        }
+        const current = await inspect(appId, run);
+        const after = await sourceEvidence(env, summary(current));
+        if (current.State.Running || !sameInventory(before.tableCounts, after.tableCounts) || before.schemaFingerprint !== after.schemaFingerprint) throw new Error("The source changed during export. Stop every writer and retry.");
+        const verified = await pg.readVerifiedManifest(env.ALPR_MIGRATION_DUMP_PATH);
+        if (!sameInventory(verified.manifest.source.tableCounts, after.tableCounts)) throw new Error("The dump does not match the stopped source.");
+      } });
+    await verifyMigrationBundle(destination);
+    return { destination, sourceProfile: manifest.source, plateReads: before.plateReads, filesVerified: Object.keys(manifest.files).length,
       application: summary(stopped), database: summary(result.database) };
   } finally {
-    if (sealed && !completed) await rm(path.join(destination, "migration-backup.json"), { force: true });
     try {
       if (restart) {
         await run(["start", selected.Id]);
