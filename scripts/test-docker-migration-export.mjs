@@ -19,7 +19,9 @@ async function psql(id, sql) {
   return (await docker(["exec", id, "psql", "-h", "127.0.0.1", "-U", "postgres", "-d", "postgres", "-At", "--set", "ON_ERROR_STOP=1", "-c", sql])).stdout.trim();
 }
 try {
-  for (const major of [13, 17]) {
+  for (const scenario of [{ major: 13, community: false }, { major: 17, community: false }, { major: 17, community: true }]) {
+    const { major, community } = scenario;
+    const scenarioId = String(major) + (community ? "-community" : "-original");
     const suffix = randomUUID(), network = "alpr-export-fixture-" + suffix;
     await docker(["network", "create", network]); networks.push(network);
     const password = randomUUID();
@@ -42,8 +44,12 @@ try {
       const unexpected = loaded.stderr.split("\n").filter(line => line.includes("ERROR:") && !line.includes('relation "devmgmt" does not exist'));
       assert.deepEqual(unexpected, [], "Pinned Original schema preparation failed unexpectedly.");
     }
+    if (community) {
+      await docker(["cp", path.resolve(import.meta.dirname, "../migrations.sql"), db + ":/tmp/community.sql"]);
+      await docker(["exec", db, "psql", "-h", "127.0.0.1", "-U", "postgres", "-d", "postgres", "--set", "ON_ERROR_STOP=1", "--single-transaction", "-f", "/tmp/community.sql"]);
+    }
     await psql(db, "INSERT INTO public.plates(plate_number,occurrence_count) VALUES ('TEST0001',1); INSERT INTO public.plate_reads(plate_number,camera_name,image_path,timestamp) VALUES ('TEST0001','Synthetic camera','images/test.jpg',CURRENT_TIMESTAMP);");
-    const fixture = path.join(workspace, "files-" + major);
+    const fixture = path.join(workspace, "files-" + scenarioId);
     for (const folder of ["config", "auth", "storage/images"]) await mkdir(path.join(fixture, folder), { recursive: true });
     await writeFile(path.join(fixture, "config/settings.yaml"), "general:\n  maxRecords: 4321\n");
     await writeFile(path.join(fixture, "auth/auth.json"), JSON.stringify({ password: "synthetic-hash", apiKey: "a".repeat(64), sessions: {} }));
@@ -53,7 +59,7 @@ try {
       const name = network + "-" + folder; await docker(["volume", "create", name]); volumes.push(name);
       mounts.push("--mount", "type=volume,src=" + name + ",dst=/app/" + folder);
     }
-    const app = (await docker(["create", "--name", network + "-app", "--network", network, ...mounts,
+    const app = (await docker(["create", "--init", "--name", network + "-app", "--network", network, ...mounts,
       "--env", "DB_PASSWORD", "--env", "TZ=America/Denver", "alpine:3.23", "sleep", "3600"],
       { environment: { ...process.env, DB_PASSWORD: password }, timeout: 300_000 })).stdout.trim();
     owned.push(app);
@@ -63,8 +69,8 @@ try {
     assert.ok(listed.containers.some(item => item.id === app && item.application));
     assert.ok(!JSON.stringify(listed).includes(password));
     const preview = await previewDockerExport({ appId: app, databaseId: db, workParent: workspace });
-    assert.equal(preview.sourceProfile, "original-alpr-v0.1.9"); assert.equal(preview.plateReads, "1");
-    const request = { appId: app, databaseId: db, destination: path.join(workspace, "backup-" + major),
+    assert.equal(preview.sourceProfile, community ? "alpr-community-v0.1.20-plus" : "original-alpr-v0.1.9"); assert.equal(preview.plateReads, "1");
+    const request = { appId: app, databaseId: db, destination: path.join(workspace, "backup-" + scenarioId),
       confirmation: preview.confirmation, expected: preview, writersPaused: true };
     if (major === 13) {
       let injected = false;
@@ -81,7 +87,7 @@ try {
     assert.equal(await psql(db, "SELECT count(*) FROM public.plate_reads;"), "1");
     assert.equal(JSON.parse(await readFile(path.join(request.destination, "auth/auth.json"), "utf8")).apiKey, "a".repeat(64));
     if (process.env.ALPR_DOCKER_TEST_OUTPUT && major === 13) await cp(request.destination, path.resolve(process.env.ALPR_DOCKER_TEST_OUTPUT), { recursive: true, errorOnExist: true, force: false });
-    console.log("Docker PostgreSQL " + major + " export passed source attestation, exact row counts, named-volume images/config/auth, restart recovery and unchanged source.");
+    console.log("Docker " + scenarioId + " export passed source attestation, exact row counts, named-volume images/config/auth, restart recovery and unchanged source.");
   }
 } finally {
   for (const id of owned.reverse()) await docker(["rm", "--force", id]).catch(() => {});
