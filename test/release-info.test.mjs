@@ -23,8 +23,8 @@ test("release information resolves a commit-pinned deployment image", () => {
     ALPR_RELEASE_CHANNEL: "staging",
   });
 
-  assert.equal(release.version, "0.1.57");
-  assert.equal(release.manualVersion, "3.25");
+  assert.equal(release.version, "0.1.58");
+  assert.equal(release.manualVersion, "3.26");
   assert.equal(release.manualUpdatedAt, "October 21, 2026");
   assert.equal(release.gitSha, "8cd2fa8");
   assert.equal(release.channel, "staging");
@@ -32,11 +32,13 @@ test("release information resolves a commit-pinned deployment image", () => {
   assert.equal(release.readOnly, true);
   assert.equal(
     release.notes.title,
-    "Plate review defaults and State/Country"
+    "Resizable columns and compact actions"
   );
   assert.equal(release.notes.publishedAt, "2026-10-21");
   assert.ok(release.notes.items.length >= 3);
   const notes = release.notes.items.join(" ");
+  assert.match(notes, /draggable header dividers/);
+  assert.match(notes, /Actions compact/);
   assert.match(notes, /State\/Country/);
   assert.match(notes, /off by default/);
   assert.match(notes, /preview and unchanged-plate safeguards/);
