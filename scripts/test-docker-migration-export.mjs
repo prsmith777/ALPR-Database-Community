@@ -34,7 +34,13 @@ try {
     for (const file of ["schema.sql", "migrations.sql"]) {
       const local = path.join(workspace, major + "-" + file); await writeFile(local, await original(file));
       await docker(["cp", local, db + ":/tmp/" + file]);
-      await docker(["exec", db, "psql", "-U", "postgres", "-d", "postgres", "--set", "ON_ERROR_STOP=1", "--single-transaction", "-f", "/tmp/" + file]);
+      // The pinned Original schema has an ALTER OWNER for devmgmt before its
+      // migrations create that table. Reproduce its entrypoint semantics, then
+      // require the complete migrations and supported schema to validate.
+      const loaded = await docker(["exec", db, "psql", "-U", "postgres", "-d", "postgres",
+        ...(file === "migrations.sql" ? ["--set", "ON_ERROR_STOP=1", "--single-transaction"] : []), "-f", "/tmp/" + file]);
+      const unexpected = loaded.stderr.split("\n").filter(line => line.includes("ERROR:") && !line.includes('relation "devmgmt" does not exist'));
+      assert.deepEqual(unexpected, [], "Pinned Original schema preparation failed unexpectedly.");
     }
     await psql(db, "INSERT INTO public.plates(plate_number,occurrence_count) VALUES ('TEST0001',1); INSERT INTO public.plate_reads(plate_number,camera_name,image_path,timestamp) VALUES ('TEST0001','Synthetic camera','images/test.jpg',CURRENT_TIMESTAMP);");
     const fixture = path.join(workspace, "files-" + major);

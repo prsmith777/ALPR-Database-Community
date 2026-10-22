@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.1.56 — Docker migration export (unreleased)
+
+- Export the original Docker ALPR database from Windows Setup before creating a
+  native installation. Select the source application/database explicitly and
+  review the recognized source profile, PostgreSQL version and plate-read count.
+- Export Docker sources on Linux with `./alpr-community migrate export-docker`
+  and copy the same verified portable folder to native Windows.
+- Preserve source database volumes and ports, use read-only database sessions,
+  verify logical dump counts plus images/settings/authentication, and restore
+  the selected source application's prior running/stopped state.
+- Refuse conflicting database settings, changed source data, overwritten backups
+  and populated import targets. Imports do not merge old and new histories.
+- Update User Guide 3.24, migration/install instructions and the product roadmap
+  to distinguish native backups from Docker exports and preserve newer records.
+
+
 ## 0.1.55 — 2026-10-07
 
 - Change the private native Windows PostgreSQL port later under Settings →
