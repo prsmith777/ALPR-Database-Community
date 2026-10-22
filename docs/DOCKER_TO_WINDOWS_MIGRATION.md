@@ -37,7 +37,9 @@ Docker database.
    and **plate-read count**. If the count is zero and you expected historical
    records, cancel and select the correct source. Unknown or incomplete schemas
    stop the export.
-5. Pause other jobs or applications that write to this database or image storage.
+5. Pause Blue Iris ingestion and other jobs or applications that write to this
+   database or image storage. Keep ingestion paused until the Windows import has
+   been verified.
    Confirm the displayed source and choose a private local backup location.
    The tool stops only the selected Docker ALPR application, makes and verifies
    its logical dump, images, settings and authentication, then restarts it if it
@@ -46,9 +48,10 @@ Docker database.
    folder automatically. Keep the entire folder, including `migration-backup.json`.
    A failure preserves source data and any partial export; keep the diagnostic
    folder. A partial export is not a usable migration backup.
-7. Pause ingestion on the old source **again** before importing. The backup tool
-   restarts the original app; the confirmation box in Setup is deliberately reset.
-   Continue with the import procedure below.
+7. Keep ingestion on the old source paused through import and verification.
+   The exporter restarts the app but does not control Blue Iris senders; Setup's
+   confirmation is deliberately reset. If ingestion resumed after export, create
+   a fresh export for cutover so later reads are included. Continue below.
 
 The tool uses PostgreSQL 17 client containers and may download the matching
 official image. It connects within the selected database container's network
@@ -76,13 +79,15 @@ identifies itself as a native Windows backup.
 3. Select the original application and database from the numbered lists. Enter
    an absolute path to a private local backup directory. Review the displayed
    source type and plate-read count.
-4. Pause every other database/image writer, then type the confirmation shown by
+4. Pause Blue Iris ingestion and every other database/image writer, then type
+   the confirmation shown by
    the exporter. The selected source application is briefly stopped and returned
    to its original running/stopped state. Wait for the verified backup path.
 5. Copy the **entire completed backup folder** from Linux to Windows using your
    normal protected file transfer. Include hidden files and all manifests.
    Never copy `/var/lib/postgresql/data` into the Windows database directory.
-6. Pause old-source ingestion again before import. In Windows Setup select
+6. Keep old-source ingestion paused until import is verified. If it resumed,
+   export again before cutover to include later reads. In Windows Setup select
    **Move an existing ALPR database and images**, browse to the copied folder
    containing `migration-backup.json`, and continue below.
 

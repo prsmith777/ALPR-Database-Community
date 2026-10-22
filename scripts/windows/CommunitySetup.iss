@@ -397,7 +397,7 @@ begin
       BackupPath := UTF8Decode(BackupBytes);
       MigrationPage.Values[0] := Trim(BackupPath);
       SourceStoppedCheck.Checked := False;
-      MsgBox('Your Docker backup is selected. Pause ingestion on the original source again before continuing. Import requires an empty native target and cannot merge an existing Community database.', mbInformation, MB_OK);
+      MsgBox('Your Docker backup is selected. Keep source ingestion paused until import is verified. If it resumed, create a fresh export for cutover. Import requires an empty native target and cannot merge an existing Community database.', mbInformation, MB_OK);
     end;
     DeleteFile(ResultFile);
   finally

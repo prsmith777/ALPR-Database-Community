@@ -52,7 +52,7 @@ try {
     $dbBox = New-Object Windows.Forms.ComboBox; $dbBox.DropDownStyle = 'DropDownList'; $dbBox.SetBounds(20,175,680,28)
     foreach ($item in $databases) { [void]$dbBox.Items.Add($item.name + ' | ' + $item.image) }
     $notice = New-Object Windows.Forms.Label; $notice.SetBounds(20,220,680,65)
-    $notice.Text = 'The next step shows the source version and record count. Export pauses only the selected Docker app and restarts it afterward. Other database writers must be paused. Existing native Community data is never replaced or merged.'
+    $notice.Text = 'The next step shows the source version and record count. Export pauses only the selected Docker app and restarts it afterward. Pause Blue Iris ingestion and other writers before export; keep ingestion paused until Windows import is verified. Existing native data is never replaced or merged.'
     $button = New-Object Windows.Forms.Button; $button.Text = 'Review source'; $button.SetBounds(410,315,140,35); $button.DialogResult = 'OK'
     $cancel = New-Object Windows.Forms.Button; $cancel.Text = 'Cancel'; $cancel.SetBounds(565,315,130,35); $cancel.DialogResult = 'Cancel'
     $form.Controls.AddRange(@($appLabel,$appBox,$dbLabel,$dbBox,$notice,$button,$cancel))
@@ -72,7 +72,7 @@ try {
     $request = @{appId=$app.id;databaseId=$database.id;workParent=$work}
     $preview = Invoke-Exporter 'preview' $request
     $form.Hide()
-    $message = "Source application: $($app.name)`r`nDatabase container: $($database.name)`r`n$($preview.sourceLabel) on PostgreSQL $($preview.serverMajor)`r`nPlate reads: $($preview.plateReads)`r`n`r`nIs this the original database you want? Pause every OTHER database writer before continuing. ALPR will stop only this Docker application, verify the backup, then restart it."
+    $message = "Source application: $($app.name)`r`nDatabase container: $($database.name)`r`n$($preview.sourceLabel) on PostgreSQL $($preview.serverMajor)`r`nPlate reads: $($preview.plateReads)`r`n`r`nIs this the original database you want? Pause Blue Iris ingestion and every other database writer before continuing. Keep ingestion paused until the Windows import is verified. ALPR will stop only this Docker application, verify the backup, then restart it; it does not control Blue Iris."
     if ($preview.plateReads -eq '0') { $message += "`r`n`r`nWARNING: this source has ZERO plate reads. Cancel if you expected historical records." }
     if ([Windows.Forms.MessageBox]::Show($message,'Confirm original Docker source','OKCancel','Warning') -ne 'OK') { exit 0 }
     $dialog = New-Object Windows.Forms.FolderBrowserDialog
@@ -87,7 +87,7 @@ try {
     $result = Invoke-Exporter 'export' $request
     $form.Close(); $form = $null
     if ($ResultFile) { [IO.File]::WriteAllText($ResultFile, $result.destination, (New-Object Text.UTF8Encoding($false))) }
-    [void][Windows.Forms.MessageBox]::Show("Verified Docker backup: $($result.destination)`r`nPlate reads: $($result.plateReads)`r`n`r`nKeep the entire folder. For Windows import choose Move an existing ALPR database and images. Pause source ingestion again before importing. Existing native data cannot be merged; back it up before planning a fresh target.",'Docker backup complete','OK','Information')
+    [void][Windows.Forms.MessageBox]::Show("Verified Docker backup: $($result.destination)`r`nPlate reads: $($result.plateReads)`r`n`r`nKeep the entire folder. For Windows import choose Move an existing ALPR database and images. Keep source ingestion paused until import is verified. If ingestion resumed, create a fresh export before cutover to include later records. Existing native data cannot be merged; back it up before planning a fresh target.",'Docker backup complete','OK','Information')
 } catch {
     if ($form) { $form.Close(); $form = $null }
     [void][Windows.Forms.MessageBox]::Show($_.Exception.Message,'Docker migration backup','OK','Error')

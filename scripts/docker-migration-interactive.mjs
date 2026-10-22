@@ -24,12 +24,12 @@ try {
   const preview = await previewDockerExport({ appId: app.id, databaseId: database.id, workParent: parent });
   console.log(preview.sourceLabel + ", PostgreSQL " + preview.serverMajor + ", plate reads: " + preview.plateReads);
   if (preview.plateReads === "0") console.log("WARNING: this source is empty. Cancel if you expected historical records.");
-  console.log("Pause every other database writer. The selected original Docker app will stop briefly and restart afterward.");
+  console.log("Pause Blue Iris ingestion and every other database/image writer. Keep ingestion paused until Windows import is verified. The selected original Docker app restarts afterward; this does not resume Blue Iris senders.");
   if (await input.question("Type EXPORT ORIGINAL DOCKER DATABASE to confirm: ") !== "EXPORT ORIGINAL DOCKER DATABASE") throw new Error("Cancelled without stopping the source.");
   const destination = path.join(parent, "Docker-ALPR-" + randomUUID());
   const result = await exportDockerMigration({ appId: app.id, databaseId: database.id, destination,
     confirmation: preview.confirmation, expected: preview, writersPaused: true });
-  console.log("Verified backup: " + result.destination + os.EOL + "Copy the entire folder to Windows. Pause source ingestion again before import. The importer requires an empty target and does not merge existing records.");
+  console.log("Verified backup: " + result.destination + os.EOL + "Copy the entire folder to Windows. Keep source ingestion paused until import is verified. If it resumed, export again before cutover to include later reads. The importer requires an empty target and does not merge existing records.");
 } catch (error) {
   console.error(error.message); process.exitCode = 1;
 } finally { input.close(); }
