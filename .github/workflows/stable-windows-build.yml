@@ -1,0 +1,105 @@
+name: Stable Windows packaging 0.1.57
+on:
+  push:
+    branches: [codex/windows-stable-057-build]
+permissions:
+  contents: read
+  actions: read
+jobs:
+  package:
+    runs-on: windows-2022
+    timeout-minutes: 25
+    steps:
+      - name: Check out the exact reviewed stable source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: c6aa277c8affe77ccf6af0b830755784a4c9173c
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Verify the immutable release identity
+        shell: pwsh
+        run: |
+          if ((git rev-parse HEAD).Trim() -ne 'c6aa277c8affe77ccf6af0b830755784a4c9173c') { throw 'Unexpected source commit' }
+          if ((git rev-parse 'v0.1.57^{commit}').Trim() -ne 'c6aa277c8affe77ccf6af0b830755784a4c9173c') { throw 'Tag differs from reviewed source' }
+          if (git status --porcelain) { throw 'Stable source must be clean' }
+      - name: Set up Node.js 24
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: 24
+      - name: Download synthetic Linux Docker export for real Windows restore
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: synthetic-docker-migration-bundle
+          run-id: 39709991108
+          github-token: ${{ github.token }}
+          path: ${{ runner.temp }}/docker-migration-bundle
+      - name: Set portable backup fixture path
+        shell: pwsh
+        run: Add-Content -LiteralPath $env:GITHUB_ENV -Value "ALPR_DOCKER_TEST_BUNDLE=$env:RUNNER_TEMP/docker-migration-bundle"
+      - name: Canonical disposable test directory
+        shell: pwsh
+        run: |
+          $fixtureTemp = Join-Path $env:RUNNER_TEMP 'alpr-community-runtime-tests'
+          New-Item -ItemType Directory -Force -Path $fixtureTemp | Out-Null
+          $fixtureTemp = node -e "console.log(require('node:fs').realpathSync(process.argv[1]))" $fixtureTemp
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          Add-Content -LiteralPath $env:GITHUB_ENV -Value "TEMP=$fixtureTemp"
+          Add-Content -LiteralPath $env:GITHUB_ENV -Value "TMP=$fixtureTemp"
+      - name: Install locked native dependencies
+        shell: pwsh
+        run: |
+          corepack enable
+          corepack prepare yarn@1.22.22 --activate
+          yarn install --frozen-lockfile --ignore-scripts
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          node scripts/install-openvino-runtime.mjs
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Build exact stable runtime and probe all CPU models
+        run: yarn package:windows
+      - name: Build stable installer after compiled lifecycle checks
+        shell: pwsh
+        run: |
+          $package = @(Get-ChildItem -LiteralPath dist -Directory -Filter 'alpr-community-0.1.57-c6aa277c8aff-windows-x64')
+          if ($package.Count -ne 1) { throw 'Expected exact stable package' }
+          yarn package:windows:setup --package $package[0].FullName
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Build matching UI update assets
+        shell: pwsh
+        run: |
+          yarn package:windows:update --package (Join-Path $PWD 'dist/alpr-community-0.1.57-c6aa277c8aff-windows-x64')
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $metadata = Get-Content -Raw -LiteralPath dist/setup/ALPR-Community-0.1.57-Windows-x64-Setup.exe.json | ConvertFrom-Json
+          if ($metadata.commit -ne 'c6aa277c8affe77ccf6af0b830755784a4c9173c' -or $metadata.channel -ne 'stable') { throw 'Stable installer identity differs' }
+      - name: Verify isolated native PostgreSQL and ingestion
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path .native-dependencies | Out-Null
+          $archiveFile = Join-Path $PWD '.native-dependencies/postgresql17.zip'
+          Invoke-WebRequest -Uri 'https://get.enterprisedb.com/postgresql/postgresql-17.10-1-windows-x64-binaries.zip' -OutFile $archiveFile
+          if ((Get-FileHash -LiteralPath $archiveFile -Algorithm SHA256).Hash.ToLowerInvariant() -ne 'f9aafca58e7026a1ef2caeee711acf761671e57904d430adc85f468374f5a821') { throw 'PostgreSQL binary archive checksum mismatch' }
+          $destination = Join-Path $PWD '.native-dependencies/postgresql17'
+          Add-Type -AssemblyName System.IO.Compression.FileSystem
+          $archive = [IO.Compression.ZipFile]::OpenRead($archiveFile)
+          try {
+            foreach ($entry in $archive.Entries) {
+              $name = $entry.FullName.Replace('\','/')
+              if ($name -notmatch '^pgsql/(bin|lib|share)/' -or $name.EndsWith('/')) { continue }
+              if ($name.Split('/') -contains '..') { throw 'Unsafe archive path' }
+              $file = Join-Path $destination $name
+              New-Item -ItemType Directory -Force -Path (Split-Path -Parent $file) | Out-Null
+              [IO.Compression.ZipFileExtensions]::ExtractToFile($entry,$file)
+            }
+          } finally { $archive.Dispose() }
+          $package = Get-ChildItem -LiteralPath dist -Directory -Filter 'alpr-community-*-windows-x64' | Select-Object -First 1
+          node scripts/test-windows-native-runtime.mjs $package.FullName (Join-Path $destination 'pgsql/bin')
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          node scripts/test-windows-migration-runtime.mjs $package.FullName $package.FullName (Join-Path $destination 'pgsql/bin')
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Save reviewable stable release assets
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: community-windows-stable-0.1.57
+          path: dist/
+          include-hidden-files: true
+          retention-days: 7
+          if-no-files-found: error
