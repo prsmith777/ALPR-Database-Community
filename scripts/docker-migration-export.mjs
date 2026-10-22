@@ -39,11 +39,14 @@ export function validateSourcePair(app, database, config = {}) {
   const names = [database.Name.replace(/^\//, ""), ...shared.flatMap(name => [database.NetworkSettings.Networks[name].IPAddress, ...(database.NetworkSettings.Networks[name].Aliases || [])])];
   if (!shared.length || !names.includes(hostname)) throw new Error("The selected database does not match the application's configured Docker database. No source was stopped.");
   const password = a.DB_PASSWORD || settings.password || d.POSTGRES_PASSWORD;
+  const databaseName = a.DB_NAME || settings.name || d.POSTGRES_DB || "postgres";
+  const user = a.DB_USER || settings.user || d.POSTGRES_USER || "postgres";
+  if (![databaseName, user].every(value => typeof value === "string" && /^[A-Za-z_][A-Za-z0-9_$-]{0,62}$/.test(value))) throw new Error("Use the advanced procedure for nonstandard database names. Docker export does not accept connection strings or endpoint overrides.");
   if (!password) throw new Error("The source database credential is unavailable. Preserve the source and contact support.");
   return { ...process.env, ALPR_PG_BIN_DIR: "",
     ALPR_MIGRATION_DOCKER_SOURCE: database.Id, ALPR_MIGRATION_SOURCE_HOST: "127.0.0.1",
-    ALPR_MIGRATION_SOURCE_PORT: String(port), ALPR_MIGRATION_SOURCE_DATABASE: a.DB_NAME || settings.name || d.POSTGRES_DB || "postgres",
-    ALPR_MIGRATION_SOURCE_USER: a.DB_USER || settings.user || d.POSTGRES_USER || "postgres",
+    ALPR_MIGRATION_SOURCE_PORT: String(port), ALPR_MIGRATION_SOURCE_DATABASE: databaseName,
+    ALPR_MIGRATION_SOURCE_USER: user,
     ALPR_MIGRATION_SOURCE_PASSWORD: password, ALPR_MIGRATION_SOURCE_SSLMODE: "disable" };
 }
 async function inspect(id, run) {
