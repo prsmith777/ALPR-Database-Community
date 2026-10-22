@@ -364,7 +364,7 @@ jobs:
         env:
           ALPR_DOCKER_TEST_OUTPUT: ${{ runner.temp }}/docker-migration-bundle
         run: node scripts/test-docker-migration-export.mjs
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
           name: synthetic-docker-migration-bundle
           path: ${{ runner.temp }}/docker-migration-bundle
@@ -416,7 +416,7 @@ jobs:
           node --test --test-concurrency=1 --test-reporter=spec --test-reporter=tap --test-reporter-destination=stdout --test-reporter-destination=.native-dependencies/windows-native-tests.tap test/*.test.mjs
       - name: Keep native test diagnostics
         if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: community-windows-test-diagnostics
           path: .native-dependencies/windows-native-tests.tap
@@ -470,7 +470,7 @@ jobs:
           node scripts/test-windows-migration-runtime.mjs $package.FullName $package.FullName (Join-Path $destination 'pgsql/bin')
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Keep reviewable preview package
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: community-windows-preview
           path: dist/
