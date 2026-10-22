@@ -53,7 +53,13 @@ export async function ensureCommunityUpdateAgent(options = {}) {
   });
   let busReady = false;
   for (let attempt = 0; attempt < attempts; attempt++) {
-    if (await busAvailable()) { busReady = true; break; }
+    try {
+      if (await busAvailable()) { busReady = true; break; }
+    } catch (error) {
+      // systemd may create the runtime directory before assigning its owner.
+      // Retry only that startup condition within the existing readiness limit.
+      if (error.code !== "EACCES") throw error;
+    }
     await wait(500);
   }
   if (!busReady) throw new Error("The owner's systemd user bus is unavailable; run the recovery command from that account's login session");

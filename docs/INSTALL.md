@@ -64,7 +64,7 @@ Clone the canonical repository and detach at the exact stable release tag:
 ```bash
 git clone https://github.com/prsmith777/ALPR-Database-Community.git
 cd ALPR-Database-Community
-git checkout --detach v0.1.55
+git checkout --detach v0.1.56
 ./alpr-community install
 ```
 

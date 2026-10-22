@@ -101,3 +101,25 @@ test("unsupported hosts, root, unavailable buses, and denied sudo leave a clear 
     assert.match(f.messages.join("\n"), /\.\/alpr-community agent install/);
   } finally { await f.cleanup(); }
 });
+
+test("helper readiness waits for temporary user-bus permissions but bounds persistent denial", async () => {
+  const f = await fixture();
+  try {
+    let probes = 0;
+    const transient = async () => {
+      if (++probes === 1) throw Object.assign(new Error("user manager starting"), { code: "EACCES" });
+      return true;
+    };
+    assert.equal((await ensureCommunityUpdateAgent({ ...f.options, busAvailable: transient })).status, "ready");
+    assert.equal(probes, 2);
+    f.commands.length = 0;
+    probes = 0;
+    const denied = async () => { probes++; throw Object.assign(new Error("denied"), { code: "EACCES" }); };
+    await assert.rejects(ensureCommunityUpdateAgent({ ...f.options, busAvailable: denied }), /user bus is unavailable/);
+    assert.equal(probes, f.options.readyAttempts);
+    assert.ok(!f.commands.some(c => c.command === "systemctl"));
+    await assert.rejects(ensureCommunityUpdateAgent({ ...f.options, busAvailable: async () => {
+      throw Object.assign(new Error("filesystem failure"), { code: "EIO" });
+    } }), /filesystem failure/);
+  } finally { await f.cleanup(); }
+});

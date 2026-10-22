@@ -72,3 +72,9 @@ test("legacy paths become portable without accepting traversal or external image
     assert.throws(() => normalizeMigratedStorageReference(input));
   }
 });
+
+test("a changed external source cannot publish a completed migration seal", async (t) => {
+  const f = await fixture(t);
+  await assert.rejects(createMigrationBundle({ ...f, beforeSeal() { throw new Error("source changed"); } }), /source changed/);
+  await assert.rejects(readFile(path.join(f.destination, "migration-backup.json")), { code: "ENOENT" });
+});

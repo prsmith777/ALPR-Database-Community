@@ -347,7 +347,31 @@ jobs:
       - name: Verify runtime-only image contents
         run: node scripts/verify-runtime-image.mjs alpr-ci:${{ github.sha }}
 
+  docker-migration-export:
+    name: Docker source export and portable Windows backup
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: 24
+      - name: Install locked export dependencies
+        run: yarn install --frozen-lockfile --ignore-scripts
+      - name: Export isolated Original PostgreSQL 13 and 17 sources
+        env:
+          ALPR_DOCKER_TEST_OUTPUT: ${{ runner.temp }}/docker-migration-bundle
+        run: node scripts/test-docker-migration-export.mjs
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: synthetic-docker-migration-bundle
+          path: ${{ runner.temp }}/docker-migration-bundle
+          retention-days: 7
+
   windows-native:
+    needs: docker-migration-export
     name: Native Windows preview
     runs-on: windows-2022
     timeout-minutes: 30
@@ -360,6 +384,14 @@ jobs:
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: 24
+      - name: Download synthetic Linux Docker export for real Windows restore
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: synthetic-docker-migration-bundle
+          path: ${{ runner.temp }}/docker-migration-bundle
+      - name: Set portable backup fixture path
+        shell: pwsh
+        run: Add-Content -LiteralPath $env:GITHUB_ENV -Value "ALPR_DOCKER_TEST_BUNDLE=$env:RUNNER_TEMP/docker-migration-bundle"
       - name: Use a canonical disposable fixture directory
         shell: pwsh
         run: |

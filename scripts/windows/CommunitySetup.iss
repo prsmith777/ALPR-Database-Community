@@ -79,6 +79,7 @@ Source: "{#PackageRoot}\LICENSE"; DestDir: "{app}"; Flags: ignoreversion
 
 [Icons]
 Name: "{commonprograms}\ALPR Database Community"; Filename: "{code:GetOpenAlprUrl}"; Comment: "Open ALPR Database Community"
+Name: "{commonprograms}\ALPR Docker Migration Backup"; Filename: "{sys}\WindowsPowerShell\v1.0\powershell.exe"; Parameters: "-NoProfile -STA -ExecutionPolicy Bypass -WindowStyle Hidden -File ""{autopf}\ALPR Community\host\ExportDockerMigration.ps1"""; Comment: "Export the original Docker ALPR database and images"
 Name: "{commonprograms}\ALPR Migration Backup"; Filename: "{sys}\WindowsPowerShell\v1.0\powershell.exe"; Parameters: "-NoProfile -STA -ExecutionPolicy Bypass -WindowStyle Hidden -File ""{autopf}\ALPR Community\host\ExportMigration.ps1"""; Comment: "Make a verified ALPR backup for another computer"
 Name: "{commondesktop}\ALPR Database Community"; Filename: "{code:GetOpenAlprUrl}"; Comment: "Open ALPR Database Community"
 
@@ -96,6 +97,7 @@ var
   PasswordPage: TInputQueryWizardPage;
   InstallModePage: TInputOptionWizardPage;
   MigrationPage: TInputDirWizardPage;
+  DockerBackupButton: TNewButton;
   PortsPage: TInputQueryWizardPage;
   InstalledAppPort: Integer;
   SourceStoppedCheck: TNewCheckBox;
@@ -155,6 +157,8 @@ end;
 
 function ShouldSkipPage(PageID: Integer): Boolean; forward;
 
+procedure DockerBackupClick(Sender: TObject); forward;
+
 procedure InitializeWizard;
 begin
   InstallModePage := CreateInputOptionPage(wpWelcome, 'Set up ALPR', 'Choose how to start',
@@ -172,7 +176,7 @@ begin
     InstallModePage.SelectedValueIndex := 2;
 #endif
   MigrationPage := CreateInputDirPage(InstallModePage.ID, 'Move your ALPR data', 'Choose your migration backup folder',
-    'Select the folder containing migration-backup.json. The backup and original computer remain available for recovery.', False, '');
+    'Select the folder containing migration-backup.json. For an original Docker installation on this Windows computer, create its backup below first. For Linux, export on the Linux host and copy the entire folder here.', False, '');
   MigrationPage.Add('ALPR migration backup:');
   SourceStoppedCheck := TNewCheckBox.Create(WizardForm);
   SourceStoppedCheck.Parent := MigrationPage.Surface;
@@ -180,6 +184,13 @@ begin
   SourceStoppedCheck.Width := MigrationPage.SurfaceWidth;
   SourceStoppedCheck.Height := ScaleY(36);
   SourceStoppedCheck.Caption := 'I have paused ingestion on the old ALPR installation';
+  DockerBackupButton := TNewButton.Create(WizardForm);
+  DockerBackupButton.Parent := MigrationPage.Surface;
+  DockerBackupButton.Top := SourceStoppedCheck.Top + SourceStoppedCheck.Height + ScaleY(8);
+  DockerBackupButton.Width := ScaleX(290);
+  DockerBackupButton.Height := ScaleY(30);
+  DockerBackupButton.Caption := 'Back up original Docker ALPR...';
+  DockerBackupButton.OnClick := @DockerBackupClick;
   ProgressPage := CreateOutputProgressPage('Setting up ALPR', 'Please wait while Setup completes the current step');
   PortsPage := CreateInputQueryPage(MigrationPage.ID, 'Connection ports',
     'Choose how to connect to this installation',
@@ -224,6 +235,7 @@ begin
     (PasswordPage.Values[1] <> '') or (WorkRoot = '') or NetworkAccessCheck.Checked or
     (NetworkAccessCheck.Top + NetworkAccessCheck.Height > PasswordPage.SurfaceHeight) or
     (SourceStoppedCheck.Top + SourceStoppedCheck.Height > MigrationPage.SurfaceHeight) or
+    (DockerBackupButton.Top + DockerBackupButton.Height > MigrationPage.SurfaceHeight) or
     SourceStoppedCheck.Checked or (InstallModePage.SelectedValueIndex <> 0) or
     (ProgressPage.ProgressBar.Position <> 37) then
     RaiseException('Startup probe did not initialize the password page and workspace.');
@@ -340,7 +352,7 @@ begin
   Parameters := '-NoProfile -NonInteractive -ExecutionPolicy Bypass -File "' +
     ExpandConstant('{tmp}\Setup.ps1') + '" -Operation ' + Operation +
     ' -WorkRoot "' + WorkRoot + '"';
-  if Operation = 'prepare' then
+  if (Operation = 'prepare') or (Operation = 'verify') then
     Parameters := Parameters + ' -PackageRoot "' + ExpandConstant('{tmp}\payload') +
       '" -ManifestSha256 {#ManifestSha256}';
   if ((Operation = 'prepare') or (Operation = 'check-ports')) and
@@ -357,6 +369,41 @@ begin
     Parameters := Parameters + ' -MigrationBackup "' + MigrationPage.Values[0] + '"';
   Result := ExecAndLogOutput(Powershell, Parameters, '', SW_HIDE,
     ewWaitUntilTerminated, ResultCode, @SetupOutput);
+end;
+
+procedure DockerBackupClick(Sender: TObject);
+var
+  ResultCode: Integer;
+  ResultFile, BackupPath, Parameters: String;
+  BackupBytes: AnsiString;
+begin
+#ifndef StartupProbe
+  DockerBackupButton.Enabled := False;
+  try
+    ExtractTemporaryFile('Setup.ps1');
+    ExtractTemporaryFile('Setup-Helpers.ps1');
+    ExtractTemporaryFiles('{tmp}\payload\*');
+    if not RunSetupOperation('verify', ResultCode) or (ResultCode <> 0) or (LastError <> '') then begin
+      MsgBox('The exporter payload could not be verified. Keep the setup log.', mbError, MB_OK);
+      Exit;
+    end;
+    ResultFile := ExpandConstant('{tmp}\docker-export-result.txt');
+    DeleteFile(ResultFile);
+    Parameters := '-NoProfile -STA -ExecutionPolicy Bypass -WindowStyle Hidden -File "' +
+      ExpandConstant('{tmp}\payload\host\ExportDockerMigration.ps1') + '" -PackageRoot "' +
+      ExpandConstant('{tmp}\payload') + '" -ResultFile "' + ResultFile + '"';
+    if Exec(Powershell, Parameters, '', SW_HIDE, ewWaitUntilTerminated, ResultCode) and
+      (ResultCode = 0) and LoadStringFromFile(ResultFile, BackupBytes) then begin
+      BackupPath := UTF8Decode(BackupBytes);
+      MigrationPage.Values[0] := Trim(BackupPath);
+      SourceStoppedCheck.Checked := False;
+      MsgBox('Your Docker backup is selected. Keep source ingestion paused until import is verified. If it resumed, create a fresh export for cutover. Import requires an empty native target and cannot merge an existing Community database.', mbInformation, MB_OK);
+    end;
+    DeleteFile(ResultFile);
+  finally
+    DockerBackupButton.Enabled := True;
+  end;
+#endif
 end;
 
 function PrepareToInstall(var NeedsRestart: Boolean): String;

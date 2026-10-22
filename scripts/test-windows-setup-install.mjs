@@ -17,7 +17,7 @@ export async function verifyWindowsSetupInstall({compiler,sourceText,failure='no
   await mkdir(path.join(scratch,'payload'));await writeFile(path.join(scratch,'payload/probe.txt'),'disposable fixture');
   await writeFile(path.join(scratch,'Setup-Helpers.ps1'),'# Fixture only');await writeFile(path.join(scratch,'setup-prerequisites.json'),'{}');
   await writeFile(path.join(scratch,'Setup.ps1'),`param([string]$Operation,[string]$WorkRoot,[string]$PackageRoot,[string]$ManifestSha256,[switch]$UpdateExisting)\n$ErrorActionPreference='Stop'\nif($Operation -eq 'prepare'){Write-Output 'ALPR_SETUP_PROGRESS:fixture prepared';exit 0}\nif($Operation -eq 'install'){\n if('${failure}' -in @('exit','error-zero')){Write-Output 'ALPR_SETUP_ERROR:Fixture installation refused';if('${failure}' -eq 'exit'){exit 7};exit 0}\n if('${failure}' -ne 'missing-port'){Write-Output 'ALPR_SETUP_PORT:3001'}\n if('${failure}' -ne 'missing-completion'){Write-Output 'ALPR_SETUP_COMPLETE:verified'}\n exit 0\n}\nexit 0\n`);
-  const code=section(source,'function Powershell: String;','function InitializeSetup:')+section(source,'procedure SetupOutput(','procedure UninstallOutput(');
+  const code=section(source,'function Powershell: String;','function InitializeSetup:')+section(source,'procedure SetupOutput(','procedure UninstallOutput(').replace(section(source,'procedure DockerBackupClick(Sender: TObject);\nvar','function PrepareToInstall'),'');
   const fixture=`#define ManifestSha256 "${'0'.repeat(64)}"
 [Setup]
 AppId=ALPR-Install-Gate-${path.basename(scratch)}

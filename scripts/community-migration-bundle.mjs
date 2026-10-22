@@ -60,7 +60,7 @@ export async function verifyMigrationBundle(root) {
   return { ...manifest, database };
 }
 
-export async function createMigrationBundle({ dumpPath, storagePath, configPath, authPath, destination, sourceQuiesced, configEnvironment = {} }) {
+export async function createMigrationBundle({ dumpPath, storagePath, configPath, authPath, destination, sourceQuiesced, configEnvironment = {}, beforeSeal = async () => {} }) {
   if (sourceQuiesced !== true) throw new Error("Stop source ALPR and database writers before creating a migration backup.");
   destination = path.resolve(destination);
   separate(path.resolve(dumpPath), destination);
@@ -111,6 +111,7 @@ export async function createMigrationBundle({ dumpPath, storagePath, configPath,
   }
   const files = await fileInventory(destination);
   validateInventory(files);
+  await beforeSeal(); // Exporters can recheck a stopped external source before publishing the completion seal.
   const manifest = { format: FORMAT, formatVersion: 1, createdAt: new Date().toISOString(),
     sourceQuiesced: true, source: database.source.applicationProfile, ...(timeZone ? { runtimeTimeZone: timeZone } : {}), files };
   await writeFile(path.join(destination, MANIFEST), JSON.stringify(manifest, null, 2) + "\n", { mode: 0o600, flag: "wx" });

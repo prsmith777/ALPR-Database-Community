@@ -420,6 +420,12 @@ Windows-invalid filenames, changed backups, and existing destination data are
 refused. Copy the entire completed folder to Windows, including the manifests.
 Do not copy PostgreSQL's physical data directory between operating systems.
 
+For Docker sources on Windows or Linux, prefer the
+[Docker source exporter](DOCKER_TO_WINDOWS_MIGRATION.md). It displays the source
+profile and record count and produces this verified bundle without requiring a
+native Windows installation first. The advanced endpoint procedure below remains
+available for non-Docker Linux sources.
+
 ### Create the backup on Linux
 
 This step is performed by the source administrator. Keep the original database

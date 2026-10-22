@@ -5,7 +5,11 @@ For a native Windows destination, start with the
 installer's **Move an
 existing ALPR database and images** option and the verified portable backup
 described in [Linux-to-Windows migration](WINDOWS_NATIVE.md#cross-platform-import).
-The workflow below creates a separate Linux Docker target.
+For Docker sources on either Windows or Linux, follow the
+[Docker-to-Windows export procedure](DOCKER_TO_WINDOWS_MIGRATION.md). It identifies
+the original container/database and creates the import folder; the native Windows
+backup shortcut does not export Docker. The workflow below creates a separate
+Linux Docker target.
 
 The Community migration wizard moves a supported existing ALPR database and
 image library into a separate PostgreSQL 17 Community target. It creates the

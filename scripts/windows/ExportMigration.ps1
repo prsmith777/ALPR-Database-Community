@@ -13,7 +13,7 @@ try {
     Assert-SetupHost
     $root = Assert-SetupDirectory "$env:ProgramFiles\ALPR Community"
     if ([IO.Path]::GetFullPath($PSScriptRoot) -ne (Join-Path $root 'host')) { throw 'Run the installed ALPR Migration Backup shortcut' }
-    $choice = [Windows.Forms.MessageBox]::Show('ALPR will pause briefly while it makes a verified copy of your database, images and settings, then restart. Choose a local folder for the backup.','ALPR Migration Backup','OKCancel','Information')
+    $choice = [Windows.Forms.MessageBox]::Show('This backs up native Windows Community only. For an original Docker database use ALPR Docker Migration Backup or the Docker backup button in Setup. Native ALPR will pause briefly, then restart. Choose a local folder for its backup.','ALPR Migration Backup','OKCancel','Information')
     if ($choice -ne 'OK') { exit }
     $dialog = New-Object Windows.Forms.FolderBrowserDialog
     $dialog.Description = 'Choose where to save your ALPR migration backup'
