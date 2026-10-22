@@ -2,6 +2,19 @@
 
 Last reviewed: October 21, 2026
 
+## Plate review and State/Country
+
+Community v0.1.57 enables batch correction and recurring misread aliases by
+default for administrators, with the existing preview and unchanged-plate
+safeguards. Long tag menus scroll within the available viewport, including
+inside the image detail modal.
+
+Settings → General can enable the State/Country column in Recognition Feed and
+Plate Database. It is off by default. Operators and administrators can type a
+manual value or select a previously entered value. Metadata is shared by reads
+of the same effective plate, audited, and preserved in normal database backups.
+State/Country is not inferred from OCR.
+
 ## Docker-to-Windows migration export
 
 Community v0.1.56 adds source-selecting export for Original/Community Docker

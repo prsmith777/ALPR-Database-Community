@@ -23,8 +23,8 @@ test("release information resolves a commit-pinned deployment image", () => {
     ALPR_RELEASE_CHANNEL: "staging",
   });
 
-  assert.equal(release.version, "0.1.56");
-  assert.equal(release.manualVersion, "3.24");
+  assert.equal(release.version, "0.1.57");
+  assert.equal(release.manualVersion, "3.25");
   assert.equal(release.manualUpdatedAt, "October 21, 2026");
   assert.equal(release.gitSha, "8cd2fa8");
   assert.equal(release.channel, "staging");
@@ -32,11 +32,14 @@ test("release information resolves a commit-pinned deployment image", () => {
   assert.equal(release.readOnly, true);
   assert.equal(
     release.notes.title,
-    "Docker-to-Windows database migration"
+    "Plate review defaults and State/Country"
   );
   assert.equal(release.notes.publishedAt, "2026-10-21");
   assert.ok(release.notes.items.length >= 3);
   const notes = release.notes.items.join(" ");
+  assert.match(notes, /State\/Country/);
+  assert.match(notes, /off by default/);
+  assert.match(notes, /preview and unchanged-plate safeguards/);
   assert.match(notes, /LPR camera/i);
   assert.match(notes, /Linux or Windows/i);
   assert.match(notes, /download percentages/i);

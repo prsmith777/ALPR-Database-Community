@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.1.57 — 2026-10-21
+
+- Enable batch correction and recurring OCR-misread aliases by default for administrators; retain the batch preview and unchanged-plate safeguards. Operators retain single-read correction.
+- Keep long tag menus within the available screen space and allow scrolling to every tag in tables and the image detail modal.
+- Add an optional State/Country column to Recognition Feed and Plate Database, off by default under Settings → General. Operators and administrators enter values manually or select a previous entry.
+- Share manually entered State/Country values across reads of the same effective plate, validate and audit changes, and provide indexed, case-insensitive saved-value suggestions. Existing records start without a value; OCR does not populate it.
+- Update User Guide 3.25, release notes, Settings help coverage and current installation/update examples.
+
 ## 0.1.56 — 2026-10-21
 
 - Export the original Docker ALPR database from Windows Setup before creating a

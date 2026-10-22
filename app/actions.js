@@ -42,6 +42,7 @@ import {
   updateTagName,
   addUnseenPlate,
 } from "@/lib/db";
+import { savePlateStateCountry, listPlateStateCountries } from "@/lib/plate-state-country.mjs";
 import { normalizePlateMatchingSettings } from "@/lib/plate-matching.mjs";
 import { normalizeVehicleImageSource, vehicleImageSourceData } from "@/lib/vehicle-image-source.mjs";
 import { getPlateReviewRepository } from "@/lib/plate-review-runtime.mjs";
@@ -2738,6 +2739,7 @@ export async function getPlateViewSettings() {
   const config = await getConfig();
   return {
     plateMatching: normalizePlateMatchingSettings(config.plateMatching),
+    showStateCountry: config.general?.showStateCountry === true,
     blueiris: {
       host: config.blueiris?.host || "",
     },
@@ -2790,6 +2792,13 @@ export async function updateSettings(formData) {
         timeFormat: formData.get("timeFormat")
           ? parseInt(formData.get("timeFormat"))
           : currentConfig.general.timeFormat,
+      };
+    }
+
+    if (updateIfExists("showStateCountry")) {
+      newConfig.general = {
+        ...newConfig.general,
+        showStateCountry: formData.get("showStateCountry") === "true",
       };
     }
 
@@ -2967,6 +2976,9 @@ export async function updateSettings(formData) {
     }
 
     revalidatePath("/settings");
+    revalidatePath("/settings/general");
+    revalidatePath("/live_feed");
+    revalidatePath("/database");
     revalidatePath("/settings/integrations");
     revalidatePath("/settings/integrations/pushover");
     revalidatePath("/settings/integrations/email");
@@ -4904,5 +4916,28 @@ export async function createVehicleReidV2ProfileCandidateSnapshot() {
       error,
       "Unable to create the ReID v2 shadow profile candidate snapshot."
     );
+  }
+}
+
+export async function updatePlateStateCountry(plateNumber, stateCountry) {
+  const principal = await requirePermission("plate.review");
+  try {
+    const data = await savePlateStateCountry(getPool, { plateNumber, stateCountry, actor: principal });
+    revalidatePath("/live_feed");
+    revalidatePath("/database");
+    return { success: true, data };
+  } catch (error) {
+    console.error("Error saving State/Country:", error);
+    return { success: false, error: error.code === "INVALID_STATE_COUNTRY" || error.code === "PLATE_NOT_FOUND" || error.code === "INVALID_PLATE" ? error.message : "Unable to save State/Country." };
+  }
+}
+
+export async function getPlateStateCountries() {
+  await requirePermission("plate.read");
+  try {
+    return { success: true, data: await listPlateStateCountries(getPool) };
+  } catch (error) {
+    console.error("Error loading State/Country entries:", error);
+    return { success: false, data: [], error: "Unable to load previous entries." };
   }
 }
