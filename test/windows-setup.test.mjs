@@ -262,3 +262,10 @@ test("setup completion requires the expected selected release and its owned runn
  await writeFile(controller,"param([string]$Operation)\nWrite-Output '"+JSON.stringify({current,commit,status:"Running",listenerOwned:true})+"'\n");
  const result=check();assert.equal(result.status,0,result.stdout+result.stderr);assert.match(result.stdout,/ALPR_SETUP_PORT:3001/);
 });
+
+test("production installer handlers compile, including Docker export and UTF-8 result paths", {
+  skip: process.platform !== "win32" || !existsSync(compiler),
+}, async () => {
+  const { verifyWindowsSetupCompilation } = await import("../scripts/test-windows-setup-compile.mjs");
+  assert.deepEqual(await verifyWindowsSetupCompilation({ compiler }), { verified: true, executed: false });
+});

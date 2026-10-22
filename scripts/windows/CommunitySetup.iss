@@ -375,6 +375,7 @@ procedure DockerBackupClick(Sender: TObject);
 var
   ResultCode: Integer;
   ResultFile, BackupPath, Parameters: String;
+  BackupBytes: AnsiString;
 begin
 #ifndef StartupProbe
   DockerBackupButton.Enabled := False;
@@ -392,7 +393,8 @@ begin
       ExpandConstant('{tmp}\payload\host\ExportDockerMigration.ps1') + '" -PackageRoot "' +
       ExpandConstant('{tmp}\payload') + '" -ResultFile "' + ResultFile + '"';
     if Exec(Powershell, Parameters, '', SW_HIDE, ewWaitUntilTerminated, ResultCode) and
-      (ResultCode = 0) and LoadStringFromFile(ResultFile, BackupPath) then begin
+      (ResultCode = 0) and LoadStringFromFile(ResultFile, BackupBytes) then begin
+      BackupPath := UTF8Decode(BackupBytes);
       MigrationPage.Values[0] := Trim(BackupPath);
       SourceStoppedCheck.Checked := False;
       MsgBox('Your Docker backup is selected. Pause ingestion on the original source again before continuing. Import requires an empty native target and cannot merge an existing Community database.', mbInformation, MB_OK);

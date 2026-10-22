@@ -16,7 +16,7 @@ async function original(file) {
   return response.text();
 }
 async function psql(id, sql) {
-  return (await docker(["exec", id, "psql", "-U", "postgres", "-d", "postgres", "-At", "--set", "ON_ERROR_STOP=1", "-c", sql])).stdout.trim();
+  return (await docker(["exec", id, "psql", "-h", "127.0.0.1", "-U", "postgres", "-d", "postgres", "-At", "--set", "ON_ERROR_STOP=1", "-c", sql])).stdout.trim();
 }
 try {
   for (const major of [13, 17]) {
@@ -37,7 +37,7 @@ try {
       // The pinned Original schema has an ALTER OWNER for devmgmt before its
       // migrations create that table. Reproduce its entrypoint semantics, then
       // require the complete migrations and supported schema to validate.
-      const loaded = await docker(["exec", db, "psql", "-U", "postgres", "-d", "postgres",
+      const loaded = await docker(["exec", db, "psql", "-h", "127.0.0.1", "-U", "postgres", "-d", "postgres",
         ...(file === "migrations.sql" ? ["--set", "ON_ERROR_STOP=1", "--single-transaction"] : []), "-f", "/tmp/" + file]);
       const unexpected = loaded.stderr.split("\n").filter(line => line.includes("ERROR:") && !line.includes('relation "devmgmt" does not exist'));
       assert.deepEqual(unexpected, [], "Pinned Original schema preparation failed unexpectedly.");

@@ -56,6 +56,9 @@ try {
     $button = New-Object Windows.Forms.Button; $button.Text = 'Review source'; $button.SetBounds(410,315,140,35); $button.DialogResult = 'OK'
     $cancel = New-Object Windows.Forms.Button; $cancel.Text = 'Cancel'; $cancel.SetBounds(565,315,130,35); $cancel.DialogResult = 'Cancel'
     $form.Controls.AddRange(@($appLabel,$appBox,$dbLabel,$dbBox,$notice,$button,$cancel))
+    $button.Enabled = $false
+    $appBox.Add_SelectedIndexChanged({ $button.Enabled = $appBox.SelectedIndex -ge 0 -and $dbBox.SelectedIndex -ge 0 })
+    $dbBox.Add_SelectedIndexChanged({ $button.Enabled = $appBox.SelectedIndex -ge 0 -and $dbBox.SelectedIndex -ge 0 })
     $form.AcceptButton = $button; $form.CancelButton = $cancel
     # Deliberate selection prevents silently choosing an empty Community source.
     $form.Hide()
