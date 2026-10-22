@@ -3,7 +3,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { createRequire } from "node:module";
 import { randomUUID } from "node:crypto";
-import { docker, POSTGRES_CLIENT_IMAGE } from "./docker-migration-client.mjs";
+import { docker, POSTGRES_CLIENT_IMAGE, DOCKER_POSTGRES_CONTEXT } from "./docker-migration-client.mjs";
 import { postgresMajorMigrationInternals as pg, runPostgresMigrationCommand } from "./postgres-major-migration.mjs";
 import { createMigrationBundle, verifyMigrationBundle } from "./community-migration-bundle.mjs";
 import { fileInventory, assertRealDirectory } from "./windows-deployment.mjs";
@@ -43,7 +43,7 @@ export function validateSourcePair(app, database, config = {}) {
   const user = a.DB_USER || settings.user || d.POSTGRES_USER || "postgres";
   if (![databaseName, user].every(value => typeof value === "string" && /^[A-Za-z_][A-Za-z0-9_$-]{0,62}$/.test(value))) throw new Error("Use the advanced procedure for nonstandard database names. Docker export does not accept connection strings or endpoint overrides.");
   if (!password) throw new Error("The source database credential is unavailable. Preserve the source and contact support.");
-  return { ...process.env, ALPR_PG_BIN_DIR: "",
+  return { ...process.env, [DOCKER_POSTGRES_CONTEXT]: true, ALPR_PG_BIN_DIR: "",
     ALPR_MIGRATION_DOCKER_SOURCE: database.Id, ALPR_MIGRATION_SOURCE_HOST: "127.0.0.1",
     ALPR_MIGRATION_SOURCE_PORT: String(port), ALPR_MIGRATION_SOURCE_DATABASE: databaseName,
     ALPR_MIGRATION_SOURCE_USER: user,

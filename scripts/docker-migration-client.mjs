@@ -4,6 +4,9 @@ import { existsSync } from "node:fs";
 import { randomUUID } from "node:crypto";
 
 export const POSTGRES_CLIENT_IMAGE = "postgres:17.10";
+// An inherited string environment variable must never redirect a protected
+// native backup. Only the source exporter can attach this in-process capability.
+export const DOCKER_POSTGRES_CONTEXT = Symbol("Docker migration source");
 export function dockerCommand() {
   const desktop = path.join(process.env.ProgramFiles || "C:\\Program Files", "Docker", "Docker", "resources", "bin", "docker.exe");
   return process.platform === "win32" && existsSync(desktop) ? desktop : "docker";

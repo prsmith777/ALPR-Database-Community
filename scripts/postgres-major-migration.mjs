@@ -1,5 +1,5 @@
 import { spawn } from "node:child_process";
-import { dockerPostgres } from "./docker-migration-client.mjs";
+import { dockerPostgres, DOCKER_POSTGRES_CONTEXT } from "./docker-migration-client.mjs";
 import { createHash } from "node:crypto";
 import { createReadStream } from "node:fs";
 import { access, chmod, mkdir, readFile, stat, writeFile } from "node:fs/promises";
@@ -78,8 +78,9 @@ const LEGACY_V019_REQUIRED_PRIMARY_KEYS = Object.freeze({
   tags: Object.freeze(["id"]),
 });
 
-function required(environment, name) {
-  const value = String(environment[name] || "").trim();
+function required(environment, name, { trim = true } = {}) {
+  const supplied = String(environment[name] || "");
+  const value = trim ? supplied.trim() : supplied;
   if (!value) throw new Error(`${name} is required`);
   return value;
 }
@@ -98,7 +99,7 @@ function readEndpoint(environment, prefix) {
     port: parsePort(environment[`${prefix}_PORT`] || "5432", `${prefix}_PORT`),
     database: required(environment, `${prefix}_DATABASE`),
     user: required(environment, `${prefix}_USER`),
-    password: required(environment, `${prefix}_PASSWORD`),
+    password: required(environment, `${prefix}_PASSWORD`, { trim: false }),
     sslMode: String(environment[`${prefix}_SSLMODE`] || "prefer").trim().toLowerCase(),
   };
 }
@@ -154,7 +155,7 @@ function clientEnvironment(endpoint, environment) {
 }
 
 function runProcess(program, args, { environment = process.env, inherit = false } = {}) {
-  if (environment.ALPR_MIGRATION_DOCKER_SOURCE) return dockerPostgres(program, args, environment);
+  if (environment[DOCKER_POSTGRES_CONTEXT] === true) return dockerPostgres(program, args, environment);
   return new Promise((resolvePromise, reject) => {
     const child = spawn(program, args, {
       env: environment,

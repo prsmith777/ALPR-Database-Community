@@ -75,3 +75,17 @@ test("Windows exporter script parses with inbox PowerShell and installer exposes
     assert.equal(result.status, 0, result.stderr);
   }
 });
+
+test("inherited Docker flags cannot redirect a native PostgreSQL process", async () => {
+  const { postgresMajorMigrationInternals: pg } = await import("../scripts/postgres-major-migration.mjs");
+  const result = await pg.runProcess(process.execPath, ["-e", "process.stdout.write('native')"], {
+    environment: { ...process.env, ALPR_MIGRATION_DOCKER_SOURCE: dbId, ALPR_MIGRATION_DOCKER_SCRATCH: os.tmpdir() },
+  });
+  assert.equal(result.stdout, "native");
+});
+test("database password whitespace is preserved across logical migration", async () => {
+  const { postgresMajorMigrationInternals: pg } = await import("../scripts/postgres-major-migration.mjs");
+  const endpoint = pg.readEndpoint({ ALPR_MIGRATION_SOURCE_HOST: "127.0.0.1", ALPR_MIGRATION_SOURCE_DATABASE: "postgres",
+    ALPR_MIGRATION_SOURCE_USER: "postgres", ALPR_MIGRATION_SOURCE_PASSWORD: "  fixture secret  " }, "ALPR_MIGRATION_SOURCE");
+  assert.equal(endpoint.password, "  fixture secret  ");
+});
