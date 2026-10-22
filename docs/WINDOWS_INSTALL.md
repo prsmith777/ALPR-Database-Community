@@ -68,6 +68,19 @@ The current installer is unsigned, so Windows may identify an unknown publisher.
 Use the official release and its checksum. If antivirus blocks a file, retain
 the product's warning and the exact filename for support; keep antivirus enabled.
 
+## Export an existing Docker database first
+
+For Docker Desktop on Windows, choose **Move an existing ALPR database and images**,
+then **Back up original Docker ALPR…** on the migration page. Review the selected
+Docker source and record count before exporting. You do not need to install an
+empty Community database first. The ordinary **ALPR Migration Backup** shortcut
+exports native Windows Community only.
+
+For Docker on Linux, run **./alpr-community migrate export-docker** from a prepared
+current Community checkout on the source host, then copy the entire verified
+folder to Windows. See [Docker-to-Windows migration](DOCKER_TO_WINDOWS_MIGRATION.md)
+for both scenarios and handling a native installation that already contains records.
+
 ## Keep Docker ALPR while verifying native Windows
 
 On the same Windows computer, keep Docker's web/API mapping at 3000 and choose

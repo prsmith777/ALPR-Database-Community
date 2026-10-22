@@ -1,6 +1,18 @@
 # Community product roadmap
 
-Last reviewed: October 7, 2026
+Last reviewed: October 21, 2026
+
+## Docker-to-Windows export implementation
+
+The next release adds source-selecting export for Original/Community Docker
+installations on Windows and Linux. Windows Setup exposes export before native
+installation; Linux uses ./alpr-community migrate export-docker. Both produce the
+same verified logical backup, with source profile/record-count review, image and
+authentication preservation, and restoration of the selected app's original
+running state. Native imports continue to require an empty target and do not
+merge histories. See [migration procedure](DOCKER_TO_WINDOWS_MIGRATION.md).
+Acceptance and release status must be checked in the associated pull request;
+this section does not claim the change is already published.
 
 ## Native Windows is available
 

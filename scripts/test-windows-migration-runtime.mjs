@@ -109,6 +109,15 @@ try {
     assert.equal(source.sql("SELECT count(*) FROM public.plate_reads WHERE plate_number='MIG0001';"), "1");
     console.log(baseline + " logical export/import passed exact pre-migration counts, source-schema attestation, upgrade policy, image checksums, settings, API-key preservation, chosen-password reset, nonempty-target refusal, source preservation, and real-SQL LPR source switching/claim/replay.");
   }
+  if (process.env.ALPR_DOCKER_TEST_BUNDLE) {
+    const target = await cluster('docker-portable-target', targetRelease);
+    const result = await restoreWindowsMigration({ bundleRoot: path.resolve(process.env.ALPR_DOCKER_TEST_BUNDLE) }, { deployment: target.deployment, confirmed: true });
+    assert.equal(result.status, 'validated');
+    assert.equal(target.sql("SELECT count(*) FROM public.plate_reads WHERE plate_number='TEST0001';"), '1');
+    assert.equal(await readFile(path.join(target.data, 'storage/images/test.jpg'), 'utf8'), 'synthetic image');
+    assert.equal(JSON.parse(await readFile(path.join(target.data, 'auth/auth.json'), 'utf8')).apiKey, 'a'.repeat(64));
+    console.log('Real Linux Docker export restored into native Windows PostgreSQL with records, images and API key verified.');
+  }
 } finally {
   for (const item of clusters.reverse()) item.run(path.join(pgBin, "pg_ctl.exe"), ["-D", item.database, "-w", "-m", "fast", "stop"]);
   if (path.dirname(root) !== path.resolve(os.tmpdir())) throw new Error("Unexpected test directory.");

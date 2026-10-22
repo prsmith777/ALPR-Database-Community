@@ -18,7 +18,7 @@ async function source(path) {
 }
 
 test("the user guide is structured, searchable, and role-aware", () => {
-  assert.equal(HELP_MANUAL.manualVersion, "3.23");
+  assert.equal(HELP_MANUAL.manualVersion, "3.24");
   assert.ok(HELP_MANUAL.sections.length >= 24);
 
   const ids = HELP_MANUAL.sections.map((section) => section.id);
@@ -395,6 +395,6 @@ test("Windows installation guidance matches Setup choices and shipped platform s
   assert.match(issueForm, /Native Windows 10 22H2 x64/);
   assert.match(issueForm, /Native Windows 11 x64/);
   assert.match(issueForm, /Settings → Release/);
-  assert.ok(manualText.includes("create a portable windows backup"));
+  assert.ok(manualText.includes("create a portable native windows backup"));
   assert.ok(manualText.includes("localhost refers to the computer"));
 });

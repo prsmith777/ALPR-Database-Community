@@ -1,4 +1,5 @@
 import { spawn } from "node:child_process";
+import { dockerPostgres } from "./docker-migration-client.mjs";
 import { createHash } from "node:crypto";
 import { createReadStream } from "node:fs";
 import { access, chmod, mkdir, readFile, stat, writeFile } from "node:fs/promises";
@@ -153,6 +154,7 @@ function clientEnvironment(endpoint, environment) {
 }
 
 function runProcess(program, args, { environment = process.env, inherit = false } = {}) {
+  if (environment.ALPR_MIGRATION_DOCKER_SOURCE) return dockerPostgres(program, args, environment);
   return new Promise((resolvePromise, reject) => {
     const child = spawn(program, args, {
       env: environment,
