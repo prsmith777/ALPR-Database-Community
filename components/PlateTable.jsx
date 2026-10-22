@@ -97,6 +97,8 @@ import { Switch } from "@/components/ui/switch";
 import { useRouter } from "next/navigation";
 import PlateMatchModeSelect from "@/components/PlateMatchModeSelect";
 import PlateImage from "@/components/PlateImage";
+import PlateStateCountryField from "@/components/PlateStateCountryField";
+import { plateCorrectionDefaults, isAliasOnlyCorrection } from "@/lib/plate-correction-defaults.mjs";
 import MultiSelectFilter from "@/components/MultiSelectFilter";
 import LiveFeedDateRangeFilter from "@/components/LiveFeedDateRangeFilter";
 import FilterHourRange from "@/components/FilterHourRange";
@@ -213,6 +215,8 @@ function correctionImageFromRead(plate) {
 }
 
 function correctionDraft({
+  canBatchReview,
+  canManageAliases,
   id,
   plateNumber,
   observedPlate,
@@ -226,10 +230,9 @@ function correctionDraft({
     cameraName: cameraName || "",
     image: image || null,
     newPlateNumber: plateNumber,
-    correctAll: false,
+    ...plateCorrectionDefaults({ canBatchReview, canManageAliases }),
     unreviewedOnly: true,
     batchCameraOnly: false,
-    rememberAlias: false,
     aliasScope: "all",
     reason: "ocr_character_error",
     notes: "",
@@ -355,6 +358,8 @@ export default function PlateTable({
   sort = { field: "", direction: "" },
   onSort = () => {},
   matchingSettings,
+  showStateCountry = false,
+  onStateCountrySaved,
   biHost,
   isLive = true,
   onLiveChange = () => {},
@@ -1764,9 +1769,7 @@ export default function PlateTable({
       correction.newPlateNumber.trim().toUpperCase() !==
         String(correction.plateNumber || "").trim().toUpperCase()
   );
-  const aliasOnlyCorrection = Boolean(
-    correction?.rememberAlias && correction?.newPlateNumber && !correctionChangesPlate
-  );
+  const aliasOnlyCorrection = isAliasOnlyCorrection(correction);
 
   const selectedVehicleImageAttemptLimit = selectedImage?.vehicleImageQueueKind === "overview" ? 2 : 3;
   const selectedVehicleImageManualRetryEligible = Boolean(selectedImage?.vehicleImageRetryable)
@@ -2134,6 +2137,7 @@ export default function PlateTable({
                       onSort={onSort}
                     />
                   </TableHead>
+                  {showStateCountry && <TableHead className="w-40">State/Country</TableHead>}
                   <TableHead className="w-28 hidden sm:table-cell">
                     <SortButton
                       label="%"
@@ -2190,13 +2194,13 @@ export default function PlateTable({
               <TableBody>
                 {loading ? (
                   <TableRow>
-                    <TableCell colSpan={10} className="text-center py-4">
+                    <TableCell colSpan={showStateCountry ? 10 : 9} className="text-center py-4">
                       Loading...
                     </TableCell>
                   </TableRow>
                 ) : data.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={10} className="text-center py-4">
+                    <TableCell colSpan={showStateCountry ? 10 : 9} className="text-center py-4">
                       No results found
                     </TableCell>
                   </TableRow>
@@ -2218,6 +2222,9 @@ export default function PlateTable({
                       >
                         <PlateIdentity plate={plate} />
                       </TableCell>
+                      {showStateCountry && <TableCell>
+                        <PlateStateCountryField plateNumber={plate.plate_number} value={plate.state_country} onSaved={onStateCountrySaved} />
+                      </TableCell>}
                       <TableCell className="hidden sm:table-cell">
                         {formatConfidence(plate.confidence)}
                       </TableCell>
@@ -2346,6 +2353,8 @@ export default function PlateTable({
                                 aria-label={`Correct plate ${plate.plate_number}`}
                                 onClick={() => {
                                   setCorrection(correctionDraft({
+                                    canBatchReview,
+                                    canManageAliases,
                                     id: plate.id,
                                     plateNumber: plate.plate_number,
                                     observedPlate: plate.observed_plate || plate.plate_number,
@@ -2506,6 +2515,10 @@ export default function PlateTable({
                               }`}
                             >
                               <PlateIdentity plate={plate} compact />
+                              {showStateCountry && <div className="mt-2 font-sans font-normal">
+                                <div className="text-xs text-muted-foreground">State/Country</div>
+                                <PlateStateCountryField plateNumber={plate.plate_number} value={plate.state_country} onSaved={onStateCountrySaved} />
+                              </div>}
                             </div>
                           </div>
 
@@ -2539,6 +2552,8 @@ export default function PlateTable({
                               {canReview && <DropdownMenuItem
                                 onClick={() => {
                                   setCorrection(correctionDraft({
+                                    canBatchReview,
+                                    canManageAliases,
                                     id: plate.id,
                                     plateNumber: plate.plate_number,
                                     observedPlate: plate.observed_plate || plate.plate_number,
@@ -3090,6 +3105,8 @@ export default function PlateTable({
                         title="Correct detected plate"
                         onClick={() => {
                           setCorrection(correctionDraft({
+                            canBatchReview,
+                            canManageAliases,
                             id: selectedImage.id,
                             plateNumber: selectedImage.plateNumber,
                             observedPlate: selectedImage.observedPlate || selectedImage.plateNumber,
@@ -3641,7 +3658,7 @@ export default function PlateTable({
                 onClick={() => handleCorrectSubmit()}
                 disabled={
                   !correction?.newPlateNumber ||
-                  (!correctionChangesPlate && !correction?.rememberAlias) ||
+                  (!correctionChangesPlate && !aliasOnlyCorrection) ||
                   (correctionChangesPlate && correction.correctAll && !correctionPreview)
                 }
               >

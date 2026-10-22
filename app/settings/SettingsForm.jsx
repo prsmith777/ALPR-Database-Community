@@ -129,6 +129,7 @@ export default function SettingsForm({
         newFormData.append("retention", formData.get("retention"));
         newFormData.append("ignoreNonPlate", formData.get("ignoreNonPlate"));
         newFormData.append("timeFormat", Number(formData.get("timeFormat")));
+        newFormData.append("showStateCountry", formData.get("showStateCountry") === "on");
         break;
       case "database":
         ["dbHost", "dbName", "dbUser", "dbPassword"].forEach(appendIfPresent);
@@ -333,6 +334,15 @@ export default function SettingsForm({
           />
           <p className="text-xs text-muted-foreground">
             Used to estimate retention-eligible reads. Community does not automatically delete plate reads or source images.
+          </p>
+        </div>
+        <div className="space-y-2">
+          <div className="flex items-center gap-2">
+            <Switch id="showStateCountry" name="showStateCountry" defaultChecked={initialSettings.general.showStateCountry === true} />
+            <Label htmlFor="showStateCountry">Show State/Country column</Label>
+          </div>
+          <p className="text-xs text-muted-foreground">
+            Display a State/Country column in the recognition feed and plate database. Enter values manually or choose a previous entry. Off by default.
           </p>
         </div>
         <div className="space-y-2 w-fit">

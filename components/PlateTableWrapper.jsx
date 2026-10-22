@@ -60,6 +60,7 @@ export default function PlateTableWrapper({
   timeFormat,
   biHost,
   matchingSettings,
+  showStateCountry = false,
   dashboardTimeFrame,
   dashboardMetric,
   defaultMatchMode = "balanced",
@@ -632,6 +633,14 @@ export default function PlateTableWrapper({
         direction: displayedParams.get("sortDirection") || "desc",
       }}
       matchingSettings={matchingSettings}
+      showStateCountry={showStateCountry}
+      onStateCountrySaved={({ plate_number, state_country }) => {
+        setLiveData((current) => {
+          const next = current.map((plate) => plate.plate_number === plate_number ? { ...plate, state_country } : plate);
+          liveDataRef.current = next;
+          return next;
+        });
+      }}
       onSort={handleSort}
       onUpdateFilters={handleUpdateFilters}
       onAddTag={handleAddTag}

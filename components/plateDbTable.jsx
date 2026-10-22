@@ -99,6 +99,7 @@ import {
   writeTablePageSizePreference,
 } from "@/lib/table-page-size-preference.mjs";
 import ResultsPagination from "@/components/ResultsPagination";
+import PlateStateCountryField from "@/components/PlateStateCountryField";
 
 const formatDaysAgo = (days) => {
   if (days === 0) return "Today";
@@ -128,7 +129,7 @@ const formatTimestamp = (timestamp, timeFormat) => {
   });
 };
 
-export default function PlateTable({ matchingSettings }) {
+export default function PlateTable({ matchingSettings, showStateCountry = false }) {
   const { can } = useAccess();
   const canReview = can("plate.review");
   const canDelete = can("plate.delete");
@@ -492,6 +493,7 @@ export default function PlateTable({ matchingSettings }) {
                     {getSortIcon("occurrence_count")}
                   </Button>
                 </TableHead>
+                {showStateCountry && <TableHead className="w-40">State/Country</TableHead>}
                 <TableHead className="w-56 2xl:w-96">
                   <Button
                     variant="ghost"
@@ -548,7 +550,7 @@ export default function PlateTable({ matchingSettings }) {
             <TableBody>
               {data.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={8} className="text-center py-4">
+                  <TableCell colSpan={showStateCountry ? 9 : 8} className="text-center py-4">
                     No results found
                   </TableCell>
                 </TableRow>
@@ -566,6 +568,11 @@ export default function PlateTable({ matchingSettings }) {
                       </span>
                     </TableCell>
                     <TableCell>{plate.occurrence_count}</TableCell>
+                    {showStateCountry && <TableCell>
+                      <PlateStateCountryField plateNumber={plate.plate_number} value={plate.state_country} onSaved={({ plate_number, state_country }) => {
+                        setData((current) => current.map((row) => row.plate_number === plate_number ? { ...row, state_country } : row));
+                      }} />
+                    </TableCell>}
                     <TableCell>{plate.name}</TableCell>
                     <TableCell>{plate.notes}</TableCell>
                     <TableCell>

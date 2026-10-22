@@ -25,6 +25,7 @@ export default async function Database() {
         <PlateDbTable
           initialData={plateReads}
           matchingSettings={settings.plateMatching}
+          showStateCountry={settings.showStateCountry}
         />
       </TitleNavbar>
     </DashboardLayout>

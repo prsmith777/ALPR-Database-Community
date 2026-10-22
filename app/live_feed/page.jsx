@@ -168,6 +168,7 @@ export default async function LivePlates(props) {
             timeFormat={timeFormat}
             biHost={config?.blueiris?.host}
             matchingSettings={config?.plateMatching}
+            showStateCountry={config?.showStateCountry}
             dashboardTimeFrame={dashboardTimeFrame}
             dashboardMetric={dashboardMetric}
             defaultMatchMode={defaultMatchMode}
