@@ -115,6 +115,8 @@ import { revalidatePath, revalidateTag, unstable_noStore } from "next/cache";
 import { cookies, headers } from "next/headers";
 import { redirect } from "next/navigation";
 import crypto from "crypto";
+import { HomeAssistantDisplayService } from "@/lib/home-assistant-display.mjs";
+import { readMatchTolerance } from "@/lib/blue-iris-camera-binding.mjs";
 import { getConfig, saveConfig } from "@/lib/settings";
 import {
   environmentManagedSettings,
@@ -1756,6 +1758,7 @@ export async function testBlueIrisConnection() {
   try {
     const config = await getConfig();
     const result = await new BlueIrisClient(config.blueiris).testConnection();
+    await new BlueIrisVehicleFrameRepository(await getPool()).syncBlueIrisCameraInventory(result.cameras);
     return { success: true, ...result };
   } catch (error) {
     return {
@@ -1774,7 +1777,13 @@ export async function previewBlueIrisAlertMatch(input = {}) {
       timestamp: input.timestamp,
       toleranceSeconds: input.toleranceSeconds,
     });
-    return { success: true, ...result };
+    const readToleranceSeconds = readMatchTolerance(input.readToleranceSeconds);
+    const reads = await new BlueIrisVehicleFrameRepository(await getPool()).findReadCandidates({
+      camera: input.camera, timestamp: input.timestamp, toleranceSeconds: readToleranceSeconds,
+    });
+    return { success: true, ...result, readToleranceSeconds, reads: reads.map(read => ({
+      id: read.id, cameraName: read.camera_name, plateNumber: read.plate_number, timestamp: new Date(read.timestamp).toISOString(),
+    })) };
   } catch (error) {
     return {
       success: false,
@@ -1785,6 +1794,9 @@ export async function previewBlueIrisAlertMatch(input = {}) {
 
 export async function selectBlueIrisVehicleFrame(input = {}) {
   await requirePermission("system.manage_settings");
+  if (input.readId != null && (!Number.isSafeInteger(Number(input.readId)) || Number(input.readId) < 1)) {
+    return { success: false, message: "Choose a valid ALPR read to own the image." };
+  }
   try {
     const config = await getConfig();
     const pool = await getPool();
@@ -1796,10 +1808,8 @@ export async function selectBlueIrisVehicleFrame(input = {}) {
       camera: input.camera,
       cameraName: input.cameraName,
       timestamp: input.timestamp,
-      toleranceSeconds: Math.min(
-        30,
-        Math.max(1, Number.parseInt(String(input.readToleranceSeconds ?? 3), 10) || 3)
-      ),
+      toleranceSeconds: readMatchTolerance(input.readToleranceSeconds),
+      readId: input.readId == null ? null : Number(input.readId),
     });
     revalidatePath("/live_feed");
     return { success: result.status === "ready", ...result };
@@ -1977,10 +1987,39 @@ export async function getBlueIrisVehicleFrameQueueStatus(input = {}) {
   }
 }
 
+export async function getHomeAssistantDisplays() {
+  await requirePermission("system.manage_settings");
+  try {
+    const pool = await getPool();
+    const [grants, cameras] = await Promise.all([
+      new HomeAssistantDisplayService(pool).list(),
+      pool.query("SELECT DISTINCT camera_name FROM public.plate_reads WHERE NULLIF(BTRIM(camera_name),'') IS NOT NULL ORDER BY camera_name"),
+    ]);
+    return { success: true, grants, cameras: cameras.rows.map(row => row.camera_name) };
+  } catch { return { success: false, error: "Unable to load display access." }; }
+}
+
+export async function createHomeAssistantDisplay(input = {}) {
+  const principal = await requirePermission("system.manage_settings");
+  try {
+    const data = await new HomeAssistantDisplayService(await getPool()).create(input, principal);
+    return { success: true, data };
+  } catch { return { success: false, error: "Unable to create display access. Check the name, exact Home Assistant origin, camera and expiration (1–90 days)." }; }
+}
+
+export async function revokeHomeAssistantDisplay(id) {
+  await requirePermission("system.manage_settings");
+  try {
+    await new HomeAssistantDisplayService(await getPool()).revoke(id);
+    return { success: true };
+  } catch { return { success: false, error: "Unable to revoke display access." }; }
+}
+
 export async function getVehicleImageSourceSetup() {
   await requirePermission("system.manage_settings");
   try {
     const runtime = await getBlueIrisVehicleFrameRuntime();
+    await runtime.queue.refreshCameraInventory({ force: true });
     const [profiles, inventory] = await Promise.all([
       runtime.repository.listOverviewPairProfiles(),
       (await getPool()).query(`SELECT short_name, display_name FROM public.blue_iris_camera_inventory
@@ -2007,9 +2046,10 @@ export async function saveVehicleImageSource(input = {}) {
     const inventory = await (await getPool()).query(`SELECT display_name FROM public.blue_iris_camera_inventory
       WHERE present = TRUE AND enabled = TRUE AND LOWER(BTRIM(short_name)) = LOWER(BTRIM($1))`,
       [normalized.sourceCameraShortName]);
-    if (inventory.rows.length !== 1 || inventory.rows[0].display_name.trim().toLowerCase() !== normalized.sourceCameraName.toLowerCase()) {
+    if (inventory.rows.length !== 1) {
       return { success: false, error: "The selected camera does not match the Blue Iris camera list. Test the Blue Iris connection and try again." };
     }
+    normalized.sourceCameraName = inventory.rows[0].display_name.trim();
     const runtime = await getBlueIrisVehicleFrameRuntime();
     const saved = await runtime.repository.saveOverviewPairProfile({ ...normalized, replacePrimary: true }, principal);
     runtime.worker.wake();
@@ -2898,13 +2938,7 @@ export async function updateSettings(formData) {
     }
 
     if (updateIfExists("haEnabled") || updateIfExists("haWhitelist")) {
-      newConfig.homeassistant = {
-        ...currentConfig.homeassistant,
-        enabled: formData.get("haEnabled") === "true",
-        whitelist: formData.get("haWhitelist")
-          ? JSON.parse(formData.get("haWhitelist"))
-          : currentConfig.homeassistant?.whitelist || [],
-      };
+      throw new Error("The IP whitelist is retired. Create read-only display access in Home Assistant settings.");
     }
     if (
       updateIfExists("bihost") ||

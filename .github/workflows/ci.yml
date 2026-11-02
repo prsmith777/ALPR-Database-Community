@@ -116,6 +116,13 @@ jobs:
           ALPR_AXIS_TEST_SERVER_URL: postgresql://postgres:fixture-test-password@127.0.0.1:5432/postgres
         run: yarn test:camera-inputs:postgres
 
+      - name: Verify tracked upgrades, Blue Iris bindings and read-only display access
+        env:
+          ALPR_COMMUNITY_TEST_SERVER_URL: postgresql://postgres:fixture-test-password@127.0.0.1:5432/postgres
+        run: |
+          git fetch --no-tags origin tag v0.1.42 tag v0.1.55 tag v0.1.58 tag v0.1.59
+          yarn test:community-bugfixes:postgres
+
       - name: Exercise load, no-op, guarded clear, and refusal paths
         shell: bash
         run: |

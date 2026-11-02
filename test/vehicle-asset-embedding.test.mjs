@@ -234,7 +234,7 @@ test("campaign service previews and catalogs only claimed bounded jobs", async (
 });
 
 test("embedding migration is additive, inert, asset-owned, and immutable", async () => {
-  const migrations = await source("migrations.sql");
+  const migrations = (await source("migrations/0060_2026081505_vehicle_asset_embedding_campaign.sql")).replace(/^-- migration:.*\r?\n/, "");
   const marker = migrations.indexOf("2026081505_vehicle_asset_embedding_campaign");
   assert.ok(marker > 0);
   const start = migrations.lastIndexOf("-- Provider-neutral embeddings", marker);

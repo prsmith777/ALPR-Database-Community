@@ -40,6 +40,15 @@ fail closed and clear the session cookie. Middleware does not authenticate by
 client IP, does not trust `X-Forwarded-For`, and does not call the legacy
 whitelist verifier.
 
+The dedicated `/embed/home-assistant/UUID` display shell and its GET-only
+`/api/home-assistant/display/UUID` data/image routes use a separate revocable,
+expiring read-only credential. Credentials are stored hashed, supplied in a
+Bearer header for every data/image request, and cannot authorize normal pages,
+server actions, generic images or any mutation. Camera scopes are enforced in
+the data queries. Only the display shell permits framing, using a nonce-based
+CSP and its exact configured parent origin. All other pages retain frame denial.
+See [Home Assistant displays](HOME_ASSISTANT.md). The old IP whitelist UI is retired.
+
 API-key comparison uses `crypto.timingSafeEqual` after checking byte lengths.
 Unequal-length credentials are rejected without calling `timingSafeEqual`.
 

@@ -142,8 +142,7 @@ Visual similarity and direction are review aids, not identity proof.
 - Pushover credentials, defaults, usage, and direct tests;
 - SMTP email transport, sender identity, and direct tests;
 - HMAC-SHA256-signed webhooks with explicit HTTP and private-network policy;
-- an optional Home Assistant iframe authentication-bypass whitelist for exact
-  trusted client IP addresses.
+- revocable, camera-scoped read-only Home Assistant displays with exact embedding origins.
 
 Integrations are inactive until an administrator supplies endpoints and
 credentials and enables them. They do not require extra ALPR host packages.

@@ -177,7 +177,7 @@ test("vehicle crop failures distinguish invalid evidence, changed sources, and r
 });
 
 test("vehicle crop migration is additive, inert, and asset owned", async () => {
-  const migrations = await source("migrations.sql");
+  const migrations = (await source("migrations/0055_2026081406_vehicle_image_crop_campaign.sql")).replace(/^-- migration:.*\r?\n/, "");
   const marker = migrations.indexOf("2026081406_vehicle_image_crop_campaign");
   assert.ok(marker > 0);
   const sliceStart = migrations.lastIndexOf("-- Asset-owned vehicle crops", marker);

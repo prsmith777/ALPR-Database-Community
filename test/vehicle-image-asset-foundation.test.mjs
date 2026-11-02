@@ -550,7 +550,7 @@ test("executor-only repositories cannot bypass the storage cleanup writer lock",
 
 test("foundation migration is additive, inert, provider-neutral, and storage-safe", async () => {
   const [migration, repositorySource, cleanupSource, reconciliationSource] = await Promise.all([
-    fs.readFile(path.join(ROOT, "migrations.sql"), "utf8"),
+    fs.readFile(path.join(ROOT, "migrations", "0051_2026081402_vehicle_image_asset_foundation.sql"), "utf8").then(sql => sql.replace(/^-- migration:.*\r?\n/, "")),
     fs.readFile(path.join(ROOT, "lib", "vehicle-image-asset-repository.mjs"), "utf8"),
     fs.readFile(path.join(ROOT, "lib", "storage-cleanup.mjs"), "utf8"),
     fs.readFile(path.join(ROOT, "lib", "storage-reconciliation-repository.mjs"), "utf8"),

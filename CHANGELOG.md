@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+- Track ordered SQL migrations with verified checksums and legacy completion markers. Preserve the single-file updater entry point, atomic application, count validation and rollback. Completed cleanups no longer replay; Blue Iris v2 events remain visible and preserved.
+- Resolve Blue Iris display names and short IDs through persisted camera inventory and explicit LPR recording bindings. Refresh camera discovery in settings, expose separate alert/read tolerances and require an explicit owner when several ALPR reads match.
+- Replace the inactive Home Assistant IP-bypass setting with revocable, expiring read-only displays, optional camera scope and exact parent-origin restrictions. Administrative access continues to require its existing login.
+- Add disposable PostgreSQL upgrade fixtures for v0.1.42, v0.1.55, v0.1.58, v0.1.59 and fresh installs, plus production browser checks for Home Assistant and Blue Iris setup.
+
 ## 0.1.59 — 2026-11-01
 
 - Add configurable AXIS License Plate Verifier inputs through HTTP push, MQTT, or both under Settings > Integrations > Camera Inputs. Existing Blue Iris cameras continue automatically.

@@ -7,7 +7,7 @@
   },
   "scripts": {
     "dev": "next dev",
-    "build": "next build",
+    "build": "node scripts/build-migrations.mjs --check && next build",
     "package:windows": "node scripts/build-windows-native.mjs",
     "package:windows:setup": "node scripts/build-windows-setup.mjs",
     "package:windows:update": "node scripts/build-windows-update.mjs",
@@ -31,7 +31,10 @@
     "test:vehicle-image-asset:postgres": "node scripts/test-vehicle-image-asset-postgres.mjs",
     "test:vehicle-event-shadow:postgres": "node scripts/test-vehicle-event-shadow-postgres.mjs",
     "test:vehicle-image-crop:postgres": "node scripts/test-vehicle-image-crop-postgres.mjs",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "migrations:build": "node scripts/build-migrations.mjs",
+    "migrations:check": "node scripts/build-migrations.mjs --check",
+    "test:community-bugfixes:postgres": "node scripts/test-community-bugfixes-postgres.mjs"
   },
   "dependencies": {
     "@radix-ui/react-accordion": "^1.2.1",
