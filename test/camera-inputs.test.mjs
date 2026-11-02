@@ -107,6 +107,11 @@ test("HTTP and MQTT normalize the same physical event to the same idempotency id
     normalizeAxisEvent(mqttEvent(), input).fingerprint,
   );
 });
+test("the documented blank HTTP ImageType uses the enclosing plate type without duplicating it as a scene", () => {
+  const event = normalizeAxisEvent(httpEvent({ ImageArray: [{ ImageType: "", BinaryImage: png }] }), input);
+  assert.equal(event.image, png);
+  assert.equal(event.sceneImage, null);
+});
 test("camera identity, plate length, state, confidence, timestamp units and images are validated", () => {
   for (const values of [
     { MACAddress: "112233445566" },
