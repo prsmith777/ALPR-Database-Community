@@ -73,6 +73,11 @@ export async function exerciseBrowser(config) {
     assert.notEqual(shell.headers.get("x-frame-options"),"DENY");
     assert.ok(shell.headers.get("content-security-policy").includes(`frame-ancestors ${parentOrigin};`));
     assert.equal((await fetch(origin+`/api/home-assistant/display/${grant.id}`)).status,401);
+    for (const readId of ["2147483648", "9999999999"]) {
+      const missing = await fetch(origin+`/api/home-assistant/display/${grant.id}/image/${readId}`,{headers:{Authorization:"Bearer "+grant.token}});
+      assert.equal(missing.status,404,"Out-of-range display image IDs are unavailable, not server errors");
+      assert.equal(missing.headers.get("cache-control"),"no-store, private");
+    }
     assert.equal((await fetch(origin+"/api/current-access",{headers:{Authorization:"Bearer "+grant.token}})).status,401);
     const normal=await fetch(origin+"/login");assert.equal(normal.headers.get("x-frame-options"),"DENY");
     browser=await chromium.launch({executablePath,headless:true});

@@ -40,3 +40,24 @@ test("unauthorized image requests never read storage or execute the data query",
   const handler = createDisplayReadHandler({service:{authorize:async()=>null, imagePath:()=>assert.fail("unexpected data access")},readImage:()=>assert.fail("unexpected storage access")});
   assert.equal((await handler(new Request("http://alpr.invalid"),{params:{grantId:id,readId:"1"}})).status,401);
 });
+
+test("oversized display image IDs return 404 without querying images or storage", async () => {
+  const service = new HomeAssistantDisplayService({ query: async () => assert.fail("Invalid image IDs must not reach PostgreSQL") });
+  service.authorize = async () => ({ id, label: "Display", cameraName: "Camera" });
+  const handler = createDisplayReadHandler({ service, readImage: async () => assert.fail("Invalid image IDs must not read storage") });
+  for (const readId of ["2147483648", "9999999999", "99999999999999999999"]) {
+    const response = await handler(new Request("http://alpr.invalid"), { params: { grantId: id, readId } });
+    assert.equal(response.status, 404, readId);
+    assert.equal(response.headers.get("cache-control"), "no-store, private");
+    assert.equal((await response.arrayBuffer()).byteLength, 0);
+  }
+});
+
+test("display image lookup accepts the positive PostgreSQL integer boundary", async () => {
+  const calls = [];
+  const service = new HomeAssistantDisplayService({ query: async (_sql, values) => { calls.push(values); return { rows: [] }; } });
+  const grant = { cameraName: "Camera" };
+  assert.equal(await service.imagePath(grant, "2147483647"), null);
+  assert.equal(await service.imagePath(grant, "1"), null);
+  assert.deepEqual(calls, [["2147483647", "Camera"], ["1", "Camera"]]);
+});

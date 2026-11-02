@@ -35,6 +35,12 @@ The legacy **Enable Whitelist** and IP login-bypass controls are retired. Old
 configuration values are retained for compatibility but grant no access. The
 obsolete verifier endpoint returns HTTP 410 to authenticated callers.
 
+From v0.1.61, an authenticated display image request with an out-of-range image
+ID returns HTTP 404 without querying images. Missing images, reads outside the
+camera scope, and reads older than 24 hours also return 404. Missing, expired,
+revoked or invalid credentials still return 401. An unavailable image does not
+prevent the display from listing the read or refreshing other images.
+
 ## Verification
 
 `test/home-assistant-display.test.mjs` checks credential isolation and policy

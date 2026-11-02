@@ -23,8 +23,8 @@ test("release information resolves a commit-pinned deployment image", () => {
     ALPR_RELEASE_CHANNEL: "staging",
   });
 
-  assert.equal(release.version, "0.1.60");
-  assert.equal(release.manualVersion, "3.28");
+  assert.equal(release.version, "0.1.61");
+  assert.equal(release.manualVersion, "3.29");
   assert.equal(release.manualUpdatedAt, "November 2, 2026");
   assert.equal(release.gitSha, "8cd2fa8");
   assert.equal(release.channel, "staging");
@@ -32,20 +32,19 @@ test("release information resolves a commit-pinned deployment image", () => {
   assert.equal(release.readOnly, true);
   assert.equal(
     release.notes.title,
-    "Reliable upgrades, Blue Iris setup and Home Assistant displays"
+    "Home Assistant display image validation"
   );
   assert.equal(release.notes.publishedAt, "2026-11-02");
   assert.ok(release.notes.items.length >= 3);
   const notes = release.notes.items.join(" ");
-  assert.match(notes, /pending database migrations/);
-  assert.match(notes, /checksums/);
-  assert.match(notes, /Blue Iris v2 direction observations/);
-  assert.match(notes, /row-count validation and rollback/);
-  assert.match(notes, /recording short IDs/);
-  assert.match(notes, /explicit image owner/);
-  assert.match(notes, /read-only Home Assistant/);
+  assert.match(notes, /HTTP 404/);
+  assert.match(notes, /oversized Home Assistant display image IDs/);
+  assert.match(notes, /before querying images/);
+  assert.match(notes, /read-only display access/);
+  assert.match(notes, /camera scope, expiration, revocation/);
   assert.match(notes, /parent-origin restrictions/);
-  assert.match(notes, /User Guide 3\.28/);
+  assert.match(notes, /no database migrations/);
+  assert.match(notes, /User Guide 3\.29/);
 
 });
 
