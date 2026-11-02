@@ -338,7 +338,7 @@ test("retired cutover UI code preserves safeguards without cluttering Notificati
     readFile(new URL("../components/NotificationCutoverPanel.jsx", import.meta.url), "utf8"),
     readFile(new URL("../app/notifications/page.jsx", import.meta.url), "utf8"),
     readFile(new URL("../migrations.sql", import.meta.url), "utf8"),
-    readFile(new URL("../app/api/plate-reads/route.js", import.meta.url), "utf8"),
+    readFile(new URL("../lib/plate-read-ingestion.js", import.meta.url), "utf8"),
   ]);
   assert.match(actions, /cutoverUnifiedNotificationRule[\s\S]*?requirePermission\("notification\.manage"\)/);
   assert.match(actions, /cutover_one_rule/);

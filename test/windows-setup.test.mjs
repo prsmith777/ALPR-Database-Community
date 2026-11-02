@@ -160,7 +160,7 @@ test("setup cleanup refuses a directory outside its recorded private workspace",
   await writeFile(path.join(fixture,"keep","important.txt"),"retained");
   const result=ps("& ./scripts/windows/Setup.ps1 -Operation cleanup -WorkRoot (Join-Path $env:ALPR_TEST_ROOT 'keep')",{ALPR_TEST_ROOT:fixture});
   assert.notEqual(result.status,0);
-  assert.match(result.stderr,/Unexpected private Setup workspace/);
+  assert.match(result.stderr,/Unexpected\s+private\s+Setup\s+workspace/);
   assert.equal(await readFile(path.join(fixture,"keep","important.txt"),"utf8"),"retained");
 });
 test("setup cleanup removes only its recorded attempt and preserves sibling data", {skip:!powershell}, async (t) => {

@@ -111,6 +111,11 @@ jobs:
           yarn install --frozen-lockfile --ignore-scripts --network-timeout 100000
           node scripts/install-openvino-runtime.mjs
 
+      - name: Verify Axis camera ingestion against isolated PostgreSQL
+        env:
+          ALPR_AXIS_TEST_SERVER_URL: postgresql://postgres:fixture-test-password@127.0.0.1:5432/postgres
+        run: yarn test:camera-inputs:postgres
+
       - name: Exercise load, no-op, guarded clear, and refusal paths
         shell: bash
         run: |

@@ -17,6 +17,7 @@ export async function registerMqttNodeInstrumentation({
 export async function registerNodeInstrumentation({
   logger = console,
   startMqtt = (options) => registerMqttNodeInstrumentation(options),
+  loadCameraInputStartup = () => import("./lib/camera-inputs/startup.mjs"),
   loadVehicleFrameStartup = () => import("./lib/blue-iris-vehicle-frame-startup.mjs"),
   loadNotificationStartup = () => import("./lib/notification-operations-startup.mjs"),
   loadMaintenanceStartup = () => import("./lib/maintenance-startup.mjs"),
@@ -31,7 +32,8 @@ export async function registerNodeInstrumentation({
   if (typeof startMqtt !== "function" || typeof loadVehicleFrameStartup !== "function" || typeof loadNotificationStartup !== "function" || typeof loadMaintenanceStartup !== "function" || typeof loadStorageMonitorStartup !== "function" || typeof loadVehicleAssetCatalogStartup !== "function" || typeof loadVehicleEventShadowStartup !== "function" || typeof loadVehicleImageCropStartup !== "function" || typeof loadVehicleAssetEmbeddingStartup !== "function" || typeof loadVehicleAssetAttributeStartup !== "function" || typeof loadVehicleReidV2LiveStartup !== "function") {
     throw new Error("Node instrumentation loaders must be functions");
   }
-  const [mqttResult, vehicleFrameResult, notificationResult, maintenanceResult, storageMonitorResult, vehicleAssetCatalogResult, vehicleEventShadowResult, vehicleImageCropResult, vehicleAssetEmbeddingResult, vehicleAssetAttributeResult, vehicleReidV2LiveResult] = await Promise.allSettled([
+  const [cameraInputResult, mqttResult, vehicleFrameResult, notificationResult, maintenanceResult, storageMonitorResult, vehicleAssetCatalogResult, vehicleEventShadowResult, vehicleImageCropResult, vehicleAssetEmbeddingResult, vehicleAssetAttributeResult, vehicleReidV2LiveResult] = await Promise.allSettled([
+    (async () => (await loadCameraInputStartup()).startCameraInputsWithRetry({ logger }))(),
     startMqtt({ logger }),
     (async () => {
       const startup = await loadVehicleFrameStartup();
@@ -116,6 +118,7 @@ export async function registerNodeInstrumentation({
     logger?.error?.(`${name} instrumentation startup failed`, { error });
     return { status: "error", error };
   };
+  const cameraInputs = normalizeResult(cameraInputResult, "Camera inputs");
   const mqtt = normalizeResult(mqttResult, "MQTT");
   const vehicleFrames = normalizeResult(vehicleFrameResult, "Blue Iris vehicle frames");
   const notificationOperations = normalizeResult(notificationResult, "Notification operations");
@@ -128,9 +131,10 @@ export async function registerNodeInstrumentation({
   const vehicleAssetAttributes = normalizeResult(vehicleAssetAttributeResult, "Canonical crop attributes");
   const vehicleReid = normalizeResult(vehicleReidV2LiveResult, "Authoritative ReID");
   return {
-    status: mqtt.status === "started" && vehicleFrames.status === "started" && notificationOperations.status === "started" && maintenance.status === "started" && storageMonitor.status === "started" && vehicleAssetCatalog.status === "started" && vehicleEventShadow.status === "started" && vehicleImageCrops.status === "started" && vehicleAssetEmbeddings.status === "started" && vehicleAssetAttributes.status === "started" && vehicleReid.status === "started"
+    status: cameraInputs.status === "started" && mqtt.status === "started" && vehicleFrames.status === "started" && notificationOperations.status === "started" && maintenance.status === "started" && storageMonitor.status === "started" && vehicleAssetCatalog.status === "started" && vehicleEventShadow.status === "started" && vehicleImageCrops.status === "started" && vehicleAssetEmbeddings.status === "started" && vehicleAssetAttributes.status === "started" && vehicleReid.status === "started"
       ? "started"
       : "partial",
+    cameraInputs,
     mqtt,
     vehicleFrames,
     notificationOperations,

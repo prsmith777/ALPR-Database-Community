@@ -23,18 +23,18 @@ test("release information resolves a commit-pinned deployment image", () => {
     ALPR_RELEASE_CHANNEL: "staging",
   });
 
-  assert.equal(release.version, "0.1.58");
-  assert.equal(release.manualVersion, "3.26");
-  assert.equal(release.manualUpdatedAt, "October 21, 2026");
+  assert.equal(release.version, "0.1.59");
+  assert.equal(release.manualVersion, "3.27");
+  assert.equal(release.manualUpdatedAt, "November 1, 2026");
   assert.equal(release.gitSha, "8cd2fa8");
   assert.equal(release.channel, "staging");
   assert.equal(release.source, "commit-pinned image");
   assert.equal(release.readOnly, true);
   assert.equal(
     release.notes.title,
-    "Resizable columns and compact actions"
+    "Axis HTTP and MQTT camera inputs"
   );
-  assert.equal(release.notes.publishedAt, "2026-10-21");
+  assert.equal(release.notes.publishedAt, "2026-11-01");
   assert.ok(release.notes.items.length >= 3);
   const notes = release.notes.items.join(" ");
   assert.match(notes, /draggable header dividers/);

@@ -22,7 +22,7 @@ test("plate-read route delegates to the authentication-first wrapper", async () 
 });
 
 test("committed plate reads publish a lightweight feed event instead of revalidating the page", async () => {
-  const source = await fs.readFile("app/api/plate-reads/route.js", "utf8");
+  const source = await fs.readFile("lib/plate-read-ingestion.js", "utf8");
 
   assert.equal(source.includes('from "@/app/actions"'), false);
   assert.equal(source.includes('from "next/cache"'), false);

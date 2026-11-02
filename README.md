@@ -166,6 +166,10 @@ checksums local or SSH image storage, and starts an outbound-isolated target
 for browser review. It stores no passwords in state and never stops, switches,
 or deletes the retained source.
 
+## Camera inputs
+
+Settings > Integrations > Camera Inputs supports Blue Iris and AXIS License Plate Verifier HTTP/MQTT sources. Existing Blue Iris feeds continue automatically. See [camera input setup](docs/CAMERA_INPUTS.md).
+
 ## Blue Iris ingestion
 
 Send ALPR JSON to `/api/plate-reads`. Authenticate with either of these HTTP

@@ -34,7 +34,7 @@ test("partial Blue Iris metadata remains usable for future API correlation", () 
 
 test("ingestion and migrations preserve Blue Iris pointers without storing BVR content", async () => {
   const [route, migrations] = await Promise.all([
-    readFile(new URL("../app/api/plate-reads/route.js", import.meta.url), "utf8"),
+    readFile(new URL("../lib/plate-read-ingestion.js", import.meta.url), "utf8"),
     readFile(new URL("../migrations.sql", import.meta.url), "utf8"),
   ]);
 

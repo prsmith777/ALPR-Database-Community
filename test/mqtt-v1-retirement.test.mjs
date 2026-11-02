@@ -10,7 +10,7 @@ test("obsolete MQTT v1 application code is no longer executable", async () => {
   const [actions, notificationsPage, plateRoute] = await Promise.all([
     readSource("app/actions.js"),
     readSource("app/notifications/page.jsx"),
-    readSource("app/api/plate-reads/route.js"),
+    readSource("lib/plate-read-ingestion.js"),
   ]);
 
   const forbiddenActionTokens = [

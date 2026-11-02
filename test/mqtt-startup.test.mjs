@@ -184,6 +184,7 @@ test("Node instrumentation starts MQTT and canonical image workers together", as
   let vehicleAssetAttributeCalls = 0;
   let vehicleReidLiveCalls = 0;
   const result = await registerNodeInstrumentation({
+    loadCameraInputStartup: async () => ({ startCameraInputsWithRetry: async () => ({ status: "started" }) }),
     logger,
     async startMqtt(options) {
       mqttCalls += 1;
@@ -310,6 +311,7 @@ test("a canonical embedding instrumentation import failure cannot prevent MQTT s
   const { logger, entries } = makeLogger();
   let mqttCalls = 0;
   const result = await registerNodeInstrumentation({
+    loadCameraInputStartup: async () => ({ startCameraInputsWithRetry: async () => ({ status: "started" }) }),
     logger,
     async startMqtt() {
       mqttCalls += 1;
