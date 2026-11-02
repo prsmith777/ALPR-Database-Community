@@ -682,7 +682,8 @@ export function CameraInputs() {
             <CardTitle>Recent Axis events</CardTitle>
             <CardDescription>
               Camera-supplied observations are retained for seven days. Images
-              follow the application’s image retention policy.
+              use application storage. Thumbnails show the latest observation
+              for each passage.
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">

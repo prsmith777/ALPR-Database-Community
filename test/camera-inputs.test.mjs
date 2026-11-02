@@ -7,6 +7,7 @@ import mqtt from "mqtt";
 import mqttPacket from "mqtt-packet";
 import {
   normalizeAxisEvent,
+  InputError,
   readAxisRequest,
   topicMatches,
   validateTopicFilter,
@@ -127,6 +128,15 @@ test("disabled image storage discards received image data without requiring a se
   });
   assert.equal(event.image, null);
   assert.equal(event.sceneImage, null);
+});
+test("malformed scalar and image fields are permanent input errors", () => {
+  for (const event of [
+    null, [], "bad", mqttEvent({ text: { toString: "bad" } }),
+    mqttEvent({ capture_timestamp: { toString: "bad" } }),
+    mqttEvent({ lpConfidence: {} }), mqttEvent({ lpImage: {} }),
+    httpEvent({ ImageArray: [null] }),
+    httpEvent({ ImageArray: [{ ImageType: {} }] }),
+  ]) assert.throws(() => normalizeAxisEvent(event, input), InputError);
 });
 test("direction labels remain independent of vehicle view", () => {
   const event = normalizeAxisEvent(
@@ -419,10 +429,10 @@ test("MQTT connection test uses an independent session and reports subscription 
   assert.notEqual(options.clientId, buildSubscriberOptions(input).clientId);
 });
 
-test("real MQTT QoS 1 sends PUBACK only after the event has been durably received", async () => {
+test("real MQTT QoS 1 acknowledges poison input and persists valid input before PUBACK", async () => {
   const sockets = new Set();
   let socket;
-  let acked = false;
+  const acked = new Set();
   let persist;
   let received;
   const receivedGate = new Promise((resolve) => {
@@ -457,7 +467,7 @@ test("real MQTT QoS 1 sends PUBACK only after the event has been durably receive
           );
           resolve();
         }
-        if (packet.cmd === "puback") acked = true;
+        if (packet.cmd === "puback") acked.add(packet.messageId);
       });
     });
     server.listen(0, "127.0.0.1");
@@ -484,7 +494,8 @@ test("real MQTT QoS 1 sends PUBACK only after the event has been durably receive
     mqttInputs: async () => [configured],
     get: async () => configured,
     status: async () => {},
-    receive: async () => {
+    receive: async (_input, event) => {
+      normalizeAxisEvent(event, configured);
       received();
       await persistGate;
       return {};
@@ -493,6 +504,15 @@ test("real MQTT QoS 1 sends PUBACK only after the event has been durably receive
   try {
     await runtime.sync();
     await subscribed;
+    for (const [index, event] of [null, mqttEvent({ lpImage: {} })].entries()) {
+      const messageId = index + 1;
+      socket.write(mqttPacket.generate({cmd: "publish", topic: configured.topic_filter,
+        payload: Buffer.from(JSON.stringify(event)), qos: 1, messageId, retain: false, dup: false}));
+      const until = Date.now() + 2000;
+      while (!acked.has(messageId) && Date.now() < until)
+        await new Promise((resolve) => setTimeout(resolve, 10));
+      assert.ok(acked.has(messageId), "Permanent malformed input must not block the subscription");
+    }
     socket.write(
       mqttPacket.generate({
         cmd: "publish",
@@ -505,12 +525,12 @@ test("real MQTT QoS 1 sends PUBACK only after the event has been durably receive
       }),
     );
     await receivedGate;
-    assert.equal(acked, false);
+    assert.equal(acked.has(7), false);
     persist();
     const until = Date.now() + 2000;
-    while (!acked && Date.now() < until)
+    while (!acked.has(7) && Date.now() < until)
       await new Promise((resolve) => setTimeout(resolve, 10));
-    assert.equal(acked, true);
+    assert.equal(acked.has(7), true);
   } finally {
     persist();
     await runtime.stop();

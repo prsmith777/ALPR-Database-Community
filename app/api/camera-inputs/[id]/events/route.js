@@ -11,9 +11,13 @@ export async function GET(_request, { params }) {
     const pool = await getPool();
     const result = await pool.query(
       `SELECT events.id,events.status,events.received_at,events.transport,
-      events.payload - 'image' - 'sceneImage' AS event, reads.thumbnail_path,reads.image_path,passages.scene_image_path,passages.scene_thumbnail_path
+      events.payload - 'image' - 'sceneImage' AS event,
+      CASE WHEN passages.last_event_id=events.id THEN reads.thumbnail_path END AS thumbnail_path,
+      CASE WHEN passages.last_event_id=events.id THEN reads.image_path END AS image_path,
+      CASE WHEN passages.last_event_id=events.id THEN passages.scene_image_path END AS scene_image_path,
+      CASE WHEN passages.last_event_id=events.id THEN passages.scene_thumbnail_path END AS scene_thumbnail_path
       FROM public.camera_input_events events LEFT JOIN public.plate_reads reads ON reads.id=events.read_id
-      LEFT JOIN public.camera_input_passages passages ON passages.read_id=events.read_id
+      LEFT JOIN public.camera_input_passages passages ON passages.id=events.passage_id
       WHERE events.input_id=$1 ORDER BY events.id DESC LIMIT 5`,
       [id],
     );

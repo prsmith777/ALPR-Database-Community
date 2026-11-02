@@ -7790,6 +7790,9 @@ CREATE TABLE IF NOT EXISTS public.camera_input_passages (
  direction_label VARCHAR(80), scene_image_path VARCHAR(255), scene_thumbnail_path VARCHAR(255)
 );
 CREATE INDEX IF NOT EXISTS idx_camera_input_passage_lookup ON public.camera_input_passages(input_id,car_id,last_capture DESC);
+ALTER TABLE public.camera_input_events ADD COLUMN IF NOT EXISTS passage_id UUID
+ REFERENCES public.camera_input_passages(id) ON DELETE SET NULL;
+CREATE INDEX IF NOT EXISTS idx_camera_input_event_passage ON public.camera_input_events(passage_id);
 INSERT INTO public.schema_migrations(version,description) VALUES
  ('2026110101_axis_camera_inputs','Configurable Blue Iris and Axis HTTP/MQTT inputs with durable Axis receipts and passage correlation.')
 ON CONFLICT(version) DO NOTHING;

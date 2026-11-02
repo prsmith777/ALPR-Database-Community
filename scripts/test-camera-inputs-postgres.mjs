@@ -142,8 +142,29 @@ try {
       input.camera_name,
     ])
   ).rows[0];
+  assert.notEqual(read.confidence, null, "A reported zero is not missing confidence");
   assert.equal(Number(read.confidence), 0);
   assert.ok(read.image_path);
+  // Exercise recovery through the duplicate branch of the shared ingestor.
+  const initialReceipt = (await pool.query(
+    "SELECT * FROM public.camera_input_events WHERE read_id=$1", [read.id],
+  )).rows[0];
+  await pool.query("UPDATE public.camera_input_passages SET read_id=NULL WHERE read_id=$1", [read.id]);
+  await pool.query("UPDATE public.camera_input_events SET status='pending' WHERE id=$1", [initialReceipt.id]);
+  let duplicateHook = 0;
+  const recoveryProcessor = new AxisEventProcessor({ pool, storage,
+    ingest: (data, request, context) => processPlateRead(data, request, {
+      ...context,
+      onAcceptedRead: async (query, id, trackImage) => {
+        assert.equal(Number(id), read.id, "Duplicate hook receives the existing read ID");
+        duplicateHook++;
+        return context.onAcceptedRead(query, id, trackImage);
+      },
+    }),
+  });
+  assert.equal(await recoveryProcessor.process(initialReceipt), true);
+  assert.equal(duplicateHook, 1);
+  assert.equal((await pool.query("SELECT COUNT(*)::int AS count FROM public.plate_reads WHERE camera_name=$1", [input.camera_name])).rows[0].count, 1);
   await deliver(
     input,
     body(input, {
@@ -299,6 +320,10 @@ try {
     ).rows[0].plate_number,
     "FINAL12",
   );
+  assert.equal((await pool.query(
+    `SELECT COUNT(*)::int AS count FROM public.camera_input_events WHERE input_id=$1 AND
+    (read_id IS NULL OR passage_id IS NULL OR payload ? 'image' OR payload ? 'sceneImage')`, [finalInput.id],
+  )).rows[0].count, 0, "Final import links buffered receipts and removes their embedded images");
   await deliver(
     finalInput,
     body(finalInput, {
@@ -310,6 +335,27 @@ try {
   await pool.query(
     "UPDATE public.camera_input_passages SET last_seen=CURRENT_TIMESTAMP-INTERVAL '31 seconds' WHERE input_id=$1 AND car_id='77'",
     [finalInput.id],
+  );
+  const staleCandidate = (await pool.query(
+    `SELECT events.* FROM public.camera_input_passages passages JOIN public.camera_input_events events ON events.id=passages.last_event_id
+    WHERE passages.input_id=$1 AND passages.car_id='77'`, [finalInput.id],
+  )).rows[0];
+  const queuedUpdate = await repository.receive(finalInput, body(finalInput, {
+    carID: "77", plateText: "FALL128", carState: "update", capture_timestamp: "1793287994500",
+  }), "http");
+  await processor.process(staleCandidate, { finalize: true });
+  assert.equal((await pool.query(
+    "SELECT COUNT(*)::int AS count FROM public.plate_reads WHERE plate_number IN ('FALL123','FALL128')",
+  )).rows[0].count, 0, "A durable update still in the inbox prevents premature finalization");
+  await processor.process((await pool.query(
+    "SELECT * FROM public.camera_input_events WHERE id=$1", [queuedUpdate.eventId],
+  )).rows[0]);
+  await processor.process(staleCandidate, { finalize: true });
+  assert.equal((await pool.query(
+    "SELECT COUNT(*)::int AS count FROM public.plate_reads WHERE plate_number IN ('FALL123','FALL128')",
+  )).rows[0].count, 0, "A newer observation invalidates an old fallback candidate");
+  await pool.query(
+    "UPDATE public.camera_input_passages SET last_seen=CURRENT_TIMESTAMP-INTERVAL '31 seconds' WHERE input_id=$1 AND car_id='77'", [finalInput.id],
   );
   const runtime = new CameraInputRuntime({
     pool,
@@ -329,7 +375,7 @@ try {
   assert.equal(
     (
       await pool.query(
-        "SELECT COUNT(*)::int AS count FROM public.plate_reads WHERE plate_number='FALL123'",
+        "SELECT COUNT(*)::int AS count FROM public.plate_reads WHERE plate_number='FALL128'",
       )
     ).rows[0].count,
     1,
@@ -385,6 +431,9 @@ try {
   assert.equal(enriched.length, 1);
   assert.ok(enriched[0].image_path);
   assert.ok(enriched[0].scene_image_path);
+  const { storageReconciliationRepositoryInternals } = await import("../lib/storage-reconciliation-repository.mjs");
+  const sceneReferences = await storageReconciliationRepositoryInternals.referencedPathSet(pool, [enriched[0].scene_image_path]);
+  assert.ok(sceneReferences.has(enriched[0].scene_image_path.replaceAll("\\", "/")), "Stored Axis scenes are not classified as orphan files");
   assert.equal(
     (await repository.receive(input, enrichment, "http")).eventId,
     null,

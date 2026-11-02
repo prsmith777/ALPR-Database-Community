@@ -43,7 +43,7 @@ The subscriber saves a validated event to PostgreSQL before acknowledging QoS 1 
 - Camera in/out direction labels are configurable. Movement direction is kept separate from front/rear vehicle view. Later direction observations use the existing durable direction-notification pipeline.
 - Human-reviewed plate corrections take precedence over automatic OCR changes. Original observations and subsequent camera metadata remain separate.
 - An optional raw Axis ROI ID limits imports to one area of interest. Blank accepts every ROI; the raw event ID may differ from the camera UI's displayed AOI number.
-- Receipt metadata is retained for seven days. Embedded image data is removed after import; saved plate and scene images use existing application retention. Recent events display supplied plate and scene thumbnails. Pending finalization retains the required image-bearing receipt.
+- Receipt metadata is retained for seven days. Embedded image data is removed after import, including earlier buffered observations in finalized mode. Saved plate and scene images use application storage. Recent events display thumbnails only beside the latest observation for a passage, so an earlier plate value is not paired with a later corrected image. Pending finalization retains the required image-bearing receipt.
 
 ## Compatibility and validation
 
