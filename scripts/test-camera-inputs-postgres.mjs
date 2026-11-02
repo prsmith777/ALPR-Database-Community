@@ -687,6 +687,25 @@ try {
 } finally {
   await applicationPool?.end();
   await pool?.end();
-  if (created) await admin.query(`DROP DATABASE "${database}" WITH (FORCE)`);
-  await admin.end();
+  try {
+    if (created) {
+      // Pool.end() can resolve before PostgreSQL has consumed every socket's
+      // Terminate message. Forcing DROP during that gap emits an idle-pool
+      // error on Linux. Wait for graceful disconnect and refuse a leaked pool.
+      const deadline = Date.now() + 5000;
+      while (true) {
+        const active = await admin.query(
+          "SELECT COUNT(*)::int AS count FROM pg_stat_activity WHERE datname=$1",
+          [database],
+        );
+        if (active.rows[0].count === 0) break;
+        if (Date.now() >= deadline)
+          throw new Error("Test database still has active connections after pool shutdown");
+        await new Promise((resolve) => setTimeout(resolve, 50));
+      }
+      await admin.query(`DROP DATABASE "${database}"`);
+    }
+  } finally {
+    await admin.end();
+  }
 }
