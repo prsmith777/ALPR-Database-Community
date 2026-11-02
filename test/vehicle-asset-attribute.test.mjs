@@ -229,7 +229,7 @@ test("attribute campaign processes only claimed bounded preview jobs", async () 
 });
 
 test("attribute migration is additive, inert, crop-owned, and immutable", async () => {
-  const migrations = await source("migrations.sql");
+  const migrations = (await source("migrations/0061_2026081506_vehicle_asset_attribute_campaign.sql")).replace(/^-- migration:.*\r?\n/, "");
   const marker = migrations.indexOf("2026081506_vehicle_asset_attribute_campaign");
   const embeddingMarker = migrations.indexOf("2026081505_vehicle_asset_embedding_campaign");
   assert.ok(marker > embeddingMarker);

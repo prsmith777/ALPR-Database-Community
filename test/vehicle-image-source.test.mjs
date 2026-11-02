@@ -5,10 +5,10 @@ import { normalizeVehicleImageSource } from "../lib/vehicle-image-source.mjs";
 import { BlueIrisVehicleFrameService } from "../lib/blue-iris-vehicle-frame.mjs";
 import { isOverviewAssetCandidate, overviewSourceCameraName } from "../lib/vehicle-image-asset-model.mjs";
 
-test("explicit LPR source binds its own camera at the plate event, without accepting an overview alias", () => {
+test("explicit LPR source retains its recording-camera binding at the plate event", () => {
   const input = { plateCameraName: "My driveway", directionLabel: "Arriving", sourceCameraShortName: "Cam42", sourceMode: "lpr_camera" };
-  const result = normalizeVehicleImageSource({ ...input, sourceCameraName: "Wrong camera", expectedDeltaMs: 8000 });
-  assert.equal(result.sourceCameraName, "My driveway");
+  const result = normalizeVehicleImageSource({ ...input, sourceCameraName: "Blue Iris driveway", expectedDeltaMs: 8000 });
+  assert.equal(result.sourceCameraName, "Blue Iris driveway");
   assert.equal(result.expectedDeltaMs, 0);
   for (const invalid of [{ ...input, sourceMode: "invalid" }, { ...input, sourceCameraShortName: "" },
     { ...input, toleranceMs: 5000 }, { ...input, sourceMode: "overview", sourceCameraName: "MY DRIVEWAY" }]) {
@@ -17,7 +17,7 @@ test("explicit LPR source binds its own camera at the plate event, without accep
   assert.equal(normalizeVehicleImageSource({ ...input, sourceMode: "overview", sourceCameraName: "Wide view", expectedDeltaMs: -1500 }).expectedDeltaMs, -1500);
 });
 
-async function frameFixture({ incomplete = false, plateOnly = false, monochrome = false } = {}) {
+async function frameFixture({ incomplete = false, plateOnly = false, monochrome = false, mismatchedCamera = false } = {}) {
   const buffer = await sharp({ create: { width: 320, height: 200, channels: 3,
     background: monochrome ? { r: 90, g: 90, b: 90 } : { r: 15, g: 70, b: 160 } } })
     .composite([{ input: { create: { width: 200, height: 100, channels: 3,
@@ -34,8 +34,8 @@ async function frameFixture({ incomplete = false, plateOnly = false, monochrome 
   const result = await service.processOverviewRead({
     read: { id: 7, camera_name: "Driveway LPR", plate_number: "FIXTURE", timestamp: new Date().toISOString(),
       bi_trigger_direction_label: "Arriving", vehicle_image_claim_token: "11111111-1111-4111-8111-111111111111" },
-    profile: { id: 1, source_mode: "lpr_camera", source_camera_name: "Driveway LPR", source_camera_short_name: "Cam42",
-      expected_delta_ms: 0, tolerance_ms: 250, revision: 1 }, camera: "Cam42", alreadyClaimed: true,
+    profile: { id: 1, source_mode: "lpr_camera", plate_camera_name: "Driveway LPR", source_camera_name: "Blue Iris driveway", source_camera_short_name: "Cam42",
+      expected_delta_ms: 0, tolerance_ms: 250, revision: 1 }, camera: mismatchedCamera ? "WrongCamera" : "Cam42", alreadyClaimed: true,
   });
   return { result, ready, failed };
 }
@@ -47,7 +47,7 @@ test("whole-vehicle LPR recordings retain provenance and enter the existing crop
   const read = { vehicle_image_status: "ready", vehicle_image_path: ready.framePath,
     vehicle_image_source_kind: ready.sourceKind, vehicle_image_selection_metadata: ready.selectionMetadata };
   assert.ok(isOverviewAssetCandidate(read));
-  assert.equal(overviewSourceCameraName(read), "Driveway LPR");
+  assert.equal(overviewSourceCameraName(read), "Blue Iris driveway");
   assert.ok(ready.detectionBox && ready.imageWidth === 320);
 });
 
@@ -58,4 +58,8 @@ test("plate-only, clipped, and monochrome LPR recordings never become identity e
     assert.equal(result.status, "unavailable");
     assert.equal(failed.retryable, false);
   }
+});
+
+test("an LPR display alias never overrides the explicit recording short ID", async () => {
+  await assert.rejects(frameFixture({mismatchedCamera:true}),/explicit recording camera binding/);
 });

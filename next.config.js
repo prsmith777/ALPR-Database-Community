@@ -14,13 +14,17 @@ const nextConfig = {
         source: "/:path*",
         headers: [
           { key: "X-Content-Type-Options", value: "nosniff" },
-          { key: "X-Frame-Options", value: "DENY" },
           { key: "Referrer-Policy", value: "no-referrer" },
           {
             key: "Permissions-Policy",
             value: "camera=(), geolocation=(), microphone=()",
           },
         ],
+      },
+      {
+        // Only the dedicated display supplies its own exact-origin CSP policy.
+        source: "/((?!embed/home-assistant/[0-9a-fA-F-]{36}$).*)",
+        headers: [{ key: "X-Frame-Options", value: "DENY" }],
       },
     ];
   },

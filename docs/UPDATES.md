@@ -47,7 +47,7 @@ shown on the GitHub Releases page, rather than deploying moving `main`:
 ```bash
 git clone https://github.com/prsmith777/ALPR-Database-Community.git
 cd ALPR-Database-Community
-git checkout --detach v0.1.59
+git checkout --detach v0.1.60
 ./alpr-community install
 ```
 
@@ -88,7 +88,7 @@ alpr_native_update() (
   set -Eeuo pipefail
   download_dir="$(mktemp -d /tmp/alpr-maintenance-download.XXXXXX)"
   trap 'rm -rf -- "$download_dir"' EXIT
-  asset_base="https://github.com/prsmith777/ALPR-Database-Community/releases/download/v0.1.59"
+  asset_base="https://github.com/prsmith777/ALPR-Database-Community/releases/download/v0.1.60"
   curl -fLsS --retry 3 "$asset_base/community-maintenance.sh" -o "$download_dir/community-maintenance.sh"
   curl -fLsS --retry 3 "$asset_base/community-maintenance.sh.sha256" -o "$download_dir/community-maintenance.sh.sha256"
   (cd "$download_dir" && sha256sum --check --strict community-maintenance.sh.sha256)
@@ -99,7 +99,7 @@ unset -f alpr_native_update
 ```
 
 The launcher verifies the canonical repository and exact released tag, loads the
-fixed tools outside your checkout, and asks for **INSTALL v0.1.59**. It uses the
+fixed tools outside your checkout, and asks for **INSTALL v0.1.60**. It uses the
 same guarded backup/install workflow and does not reset or reinstall your system.
 It temporarily stops only this installation's matching per-user systemd update
 agent, then restarts it with the installed code. Keep the terminal open and do
@@ -371,3 +371,20 @@ ALPR_UPDATE_CLEANUP=ALPR_UPDATE_CLEANUP
 
 These acknowledgements prevent an unattended typo from installing, accepting,
 rolling back, or deleting rollback assets. They are not passwords.
+
+## v0.1.60: tracked migration transition
+
+Existing installations use the normal Windows or Linux update workflow. A direct
+update from v0.1.55, v0.1.58 or v0.1.59 requires no manual SQL and no intermediate
+release. The updater adopts existing migration completion markers and applies
+only pending work. Blue Iris v2 zone-crossing observations are preserved and
+remain visible to current-direction queries. Backup, count-loss rejection and
+rollback remain enabled.
+
+If v0.1.58 previously rolled back with a direction-observation count decrease,
+retain that restored installation and recovery backup, then update normally to
+v0.1.60. Do not delete observations or disable count validation to force an update.
+If an applied-migration checksum differs, keep the backup and investigate the
+source/package mismatch. Do not edit the stored checksum or replay old cleanup.
+
+For the new Home Assistant access setup, see [Home Assistant displays](HOME_ASSISTANT.md).

@@ -8,16 +8,22 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
+import { resolveBlueIrisCamera } from "@/lib/blue-iris-camera-binding.mjs";
 
 function DirectionImageSource({ cameraName, direction, profiles, cameras, onSaved }) {
   const saved = profiles.filter((item) => item.plateCameraName === cameraName && item.directionLabel === direction)
     .sort((a, b) => Number(b.enabled) - Number(a.enabled) || b.id - a.id)[0];
-  const lprCamera = cameras.find((camera) => camera.name.toLowerCase() === cameraName.toLowerCase());
-  const [draft, setDraft] = useState(() => saved || { sourceMode: "lpr_camera", sourceCameraName: cameraName,
+  const lprCamera = resolveBlueIrisCamera(cameras, cameraName);
+  const [draft, setDraft] = useState(() => saved || { sourceMode: "lpr_camera", sourceCameraName: lprCamera?.name || cameraName,
     sourceCameraShortName: lprCamera?.id || "", expectedDeltaMs: 0, toleranceMs: 1500, enabled: true });
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
   const prefix = `image-source-${direction.replace(/[^a-z0-9]/gi, "-")}`;
+  const lprId = lprCamera?.id, lprName = lprCamera?.name;
+  useEffect(() => {
+    if (lprId) setDraft(current => current.sourceMode === "lpr_camera" && !current.sourceCameraShortName
+      ? { ...current, sourceCameraName: lprName, sourceCameraShortName: lprId } : current);
+  }, [lprId, lprName]);
   async function save() {
     setBusy(true); setMessage("");
     try {
@@ -41,24 +47,23 @@ function DirectionImageSource({ cameraName, direction, profiles, cameras, onSave
       <div className="space-y-2">
         <Label htmlFor={`${prefix}-mode`}>Vehicle image source</Label>
         <Select value={draft.sourceMode} disabled={busy} onValueChange={(sourceMode) => setDraft({ ...draft, sourceMode,
-          sourceCameraName: sourceMode === "lpr_camera" ? cameraName : "",
+          sourceCameraName: sourceMode === "lpr_camera" ? lprCamera?.name || cameraName : "",
           sourceCameraShortName: sourceMode === "lpr_camera" ? lprCamera?.id || "" : "", expectedDeltaMs: 0 })}>
           <SelectTrigger id={`${prefix}-mode`}><SelectValue /></SelectTrigger>
           <SelectContent><SelectItem value="lpr_camera">This LPR camera</SelectItem><SelectItem value="overview">Overview camera</SelectItem></SelectContent>
         </Select>
       </div>
-      {draft.sourceMode === "overview" ? <div className="space-y-2">
-        <Label htmlFor={`${prefix}-camera`}>Overview camera</Label>
+      <div className="space-y-2">
+        <Label htmlFor={`${prefix}-camera`}>{draft.sourceMode === "overview" ? "Overview camera" : "Blue Iris recording camera for this LPR"}</Label>
         <Select value={draft.sourceCameraShortName || ""} disabled={busy} onValueChange={(id) => {
           const selected = cameras.find((camera) => camera.id === id);
           setDraft({ ...draft, sourceCameraShortName: id, sourceCameraName: selected?.name || "" });
         }}><SelectTrigger id={`${prefix}-camera`}><SelectValue placeholder="Choose a Blue Iris camera" /></SelectTrigger>
-          <SelectContent>{cameras.filter((camera) => camera.name.toLowerCase() !== cameraName.toLowerCase())
+          <SelectContent>{cameras.filter((camera) => draft.sourceMode === "lpr_camera" || camera.name.toLowerCase() !== cameraName.toLowerCase())
             .map((camera) => <SelectItem key={camera.id} value={camera.id}>{camera.name} ({camera.id})</SelectItem>)}</SelectContent>
         </Select>
-      </div> : <p className="self-end text-sm text-muted-foreground">
-        Uses recordings from {cameraName}. The view must show the whole vehicle, rather than just the plate.
-      </p>}
+      </div>
+      {draft.sourceMode === "lpr_camera" && <p className="self-end text-sm text-muted-foreground">Bind the ALPR camera {cameraName} to its Blue Iris recording camera. Its view must show the whole vehicle.</p>}
       {draft.sourceMode === "overview" ? <div className="space-y-2">
         <Label htmlFor={`${prefix}-offset`}>Timing offset (seconds)</Label>
         <Input id={`${prefix}-offset`} type="number" min="-30" max="30" step="0.1" disabled={busy}
@@ -87,6 +92,7 @@ function DirectionImageSource({ cameraName, direction, profiles, cameras, onSave
 export default function VehicleImageSourceSettings({ profile }) {
   const [data, setData] = useState(null);
   const [error, setError] = useState("");
+  const [refreshing, setRefreshing] = useState(false);
   useEffect(() => {
     let active = true;
     getVehicleImageSourceSetup().then((result) => {
@@ -100,17 +106,23 @@ export default function VehicleImageSourceSettings({ profile }) {
     if (!result.success) throw new Error(result.error);
     setData(result.data);
   }
+  async function refresh() {
+    setRefreshing(true); setError("");
+    try { await reload(); } catch (failure) { setError(failure.message); }
+    finally { setRefreshing(false); }
+  }
   const directions = [...new Set([profile.frontDirectionLabel, profile.rearDirectionLabel].filter(Boolean))];
   return <Card className="mt-5">
     <CardHeader><CardTitle>Vehicle images for ReID</CardTitle><CardDescription>
       Choose where ALPR gets whole-vehicle images for each saved direction. The same setup works on Windows and Linux.
     </CardDescription></CardHeader>
     <CardContent className="space-y-4">
+      <Button type="button" variant="outline" onClick={refresh} disabled={refreshing}>{refreshing ? "Refreshing cameras…" : "Refresh Blue Iris cameras"}</Button>
       <p className="text-sm text-muted-foreground">Blue Iris must record the selected camera. ALPR checks the recorded frames near each new plate read
         and rejects incomplete, ambiguous, or monochrome night views. A plate thumbnail alone cannot produce a reliable ReID match.</p>
       {error ? <p role="status">{error}</p> : !data ? <p>Loading image setup…</p> : !directions.length
         ? <p>Save your camera direction labels above first.</p> : <>
-          {!data.cameras.length ? <p>Open Blue Iris settings and click Test connection to load your camera list, then return here.</p> : null}
+          {!data.cameras.length ? <p>No enabled Blue Iris recording cameras are available. Check the connection and refresh the camera list.</p> : null}
           {directions.map((direction) => <DirectionImageSource key={`${profile.cameraName}:${direction}`} cameraName={profile.cameraName}
             direction={direction} profiles={data.profiles} cameras={data.cameras} onSaved={reload} />)}
         </>}

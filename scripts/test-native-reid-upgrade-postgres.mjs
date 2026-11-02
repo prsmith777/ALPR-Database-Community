@@ -35,7 +35,7 @@ try {
     VALUES ($1, 'vehicle_crop', 'test-retired-cache', 'failed', 'images/upgrade-plate.jpg', 'TEST_ONLY')`, [readId]);
   const derivedRead = await pool.query(`INSERT INTO public.plate_reads (plate_number, camera_name, timestamp)
     VALUES ('TSTUP02', 'Synthetic upgrade camera', CURRENT_TIMESTAMP) RETURNING id`);
-  for (const [id, classifier] of [[readId, "blue-iris-zone-crossing-v1"], [derivedRead.rows[0].id, "retired-derived-classifier"]]) {
+  for (const [id, classifier] of [[readId, "blue-iris-zone-crossing-v1"], [derivedRead.rows[0].id, "vehicle-reid-orientation-knn-v1"]]) {
     await pool.query(`INSERT INTO public.vehicle_direction_observations
       (read_id, camera_key, embedding_model, classifier_version, profile_version, status, orientation)
       VALUES ($1, 'synthetic', 'fixture', $2, 1, 'unknown', 'unknown')`, [id, classifier]);

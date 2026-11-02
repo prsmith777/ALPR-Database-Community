@@ -17,7 +17,7 @@ test("stopped-source evidence counts only unbound non-Blue-Iris direction data",
   const snapshot = await captureNativeUpgradeSnapshot(query, before);
   assert.deepEqual(snapshot, { formatVersion: 1, native: false,
     directionRetirements: { vehicle_orientation_labels: "2", vehicle_direction_observations: "1" } });
-  assert.match(calls.at(-1), /classifier_version <> 'blue-iris-zone-crossing-v1' AND source_embedding_id IS NULL/);
+  assert.match(calls.at(-1), /classifier_version IN \('vehicle-reid-orientation-knn-v1','canonical-crop-orientation-knn-v2'\) AND source_embedding_id IS NULL/);
   const after = { schema_migrations: 2, vehicle_orientation_labels: 3,
     vehicle_direction_observations: 3, plate_reads: 24, users: 1, tags: 2 };
   assert.deepEqual(compareSavedNativeUpgradeCounts(before, after, snapshot, true).losses, []);

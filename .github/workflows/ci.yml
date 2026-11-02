@@ -116,6 +116,13 @@ jobs:
           ALPR_AXIS_TEST_SERVER_URL: postgresql://postgres:fixture-test-password@127.0.0.1:5432/postgres
         run: yarn test:camera-inputs:postgres
 
+      - name: Verify tracked upgrades, Blue Iris bindings and read-only display access
+        env:
+          ALPR_COMMUNITY_TEST_SERVER_URL: postgresql://postgres:fixture-test-password@127.0.0.1:5432/postgres
+        run: |
+          git fetch --no-tags origin tag v0.1.42 tag v0.1.55 tag v0.1.58 tag v0.1.59
+          yarn test:community-bugfixes:postgres
+
       - name: Exercise load, no-op, guarded clear, and refusal paths
         shell: bash
         run: |
@@ -187,6 +194,7 @@ jobs:
             VALUES
               ('vehicle-image-asset-cleanup:v1', 'ci-disposable-pg17'),
               ('vehicle-image-asset-campaign:v1', 'ci-disposable-pg17'),
+              ('overview-export:v1', 'ci-disposable-pg17'),
               ('vehicle-event-shadow:v1', 'ci-disposable-pg17');
             INSERT INTO public.codex_integration_test_guard (scope, guard_token)
             VALUES ('vehicle-image-crop:v1', 'ci-disposable-pg17');
@@ -198,7 +206,10 @@ jobs:
             DATABASE_URL='postgresql://postgres:fixture-test-password@127.0.0.1:5432/fixture_test' \
             yarn test:vehicle-image-asset-cleanup:postgres || pg_test_failed=1
 
-          DATABASE_URL='postgresql://postgres:fixture-test-password@127.0.0.1:5432/fixture_test' \
+          OVERVIEW_EXPORT_POSTGRES_TEST_OPT_IN='true' \
+            OVERVIEW_EXPORT_POSTGRES_TEST_DATABASE='fixture_test' \
+            OVERVIEW_EXPORT_POSTGRES_TEST_GUARD_TOKEN='ci-disposable-pg17' \
+            DATABASE_URL='postgresql://postgres:fixture-test-password@127.0.0.1:5432/fixture_test' \
             yarn test:overview-export:postgres || pg_test_failed=1
 
           VEHICLE_IMAGE_ASSET_POSTGRES_TEST_OPT_IN='true' \

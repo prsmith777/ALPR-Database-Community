@@ -51,6 +51,7 @@ import ReleaseInformationCard from "./ReleaseInformationCard";
 import StorageHealthCard from "./StorageHealthCard";
 import StorageMaintenancePanel from "./StorageMaintenancePanel";
 import BlueIrisConnectionTest from "./BlueIrisConnectionTest";
+import HomeAssistantAccessSettings from "./HomeAssistantAccessSettings";
 import WindowsConnectionSettings from "./WindowsConnectionSettings";
 
 const DATA_PRIVACY_ROUTES = Object.freeze({
@@ -177,15 +178,6 @@ export default function SettingsForm({
         newFormData.append("webhookTimeoutSeconds", formData.get("webhookTimeoutSeconds"));
         newFormData.append("webhookAllowHttp", formData.get("webhookAllowHttp") === "on");
         newFormData.append("webhookAllowPrivateNetworks", formData.get("webhookAllowPrivateNetworks") === "on");
-        break;
-      case "homeassistant":
-        // IP-list saves are partial updates and must preserve the enable switch.
-        if (!formData.has("haWhitelist") || formData.has("haEnabled")) {
-          newFormData.append("haEnabled", formData.get("haEnabled") === "on");
-        }
-        if (formData.get("haWhitelist")) {
-          newFormData.append("haWhitelist", formData.get("haWhitelist"));
-        }
         break;
       case "blueiris":
         [
@@ -671,49 +663,7 @@ export default function SettingsForm({
     </div>
   );
 
-  const renderHomeAssistantSection = () => (
-    <div key="homeassistant-section" className="space-y-6">
-      <div>
-        <h2 className="text-2xl font-semibold text-foreground mb-2">
-          HomeAssistant iframe Login Bypass
-        </h2>
-        <p className="text-muted-foreground">
-          Configure access for HomeAssistant iframe integration.
-        </p>
-      </div>
-      <div className="space-y-6">
-        <div className="max-w-2xl">
-          <div className="flex items-center justify-between py-4 border-b">
-            <div className="space-y-1">
-              <Label htmlFor="haEnabled" className="text-sm font-medium">
-                Enable Whitelist
-              </Label>
-              <p className="text-sm text-muted-foreground">
-                Allow specific devices to bypass authentication when accessing
-                the app via HomeAssistant iframe.
-              </p>
-            </div>
-            <Switch
-              id="haEnabled"
-              name="haEnabled"
-              defaultChecked={initialSettings.homeassistant?.enabled}
-            />
-          </div>
-        </div>
-
-        {initialSettings.homeassistant?.enabled && (
-          <IPWhitelistManager
-            initialIPs={initialSettings.homeassistant?.whitelist || []}
-            onUpdate={(newIPs) => {
-              const formData = new FormData();
-              formData.append("haWhitelist", JSON.stringify(newIPs));
-              handleSettingsSubmit(formData);
-            }}
-          />
-        )}
-      </div>
-    </div>
-  );
+  const renderHomeAssistantSection = () => <HomeAssistantAccessSettings />;
 
   const renderSecuritySection = () => (
     <div key="security-section" className="space-y-6">
@@ -1029,85 +979,3 @@ export default function SettingsForm({
     </SettingsShell>
   );
 }
-
-const IPWhitelistManager = ({ initialIPs = [], onUpdate }) => {
-  const [newIP, setNewIP] = useState("");
-  const [error, setError] = useState("");
-
-  const isValidIP = (ip) => {
-    // Basic IP validation (IPv4 and IPv6)
-    const ipv4Regex = /^(\d{1,3}\.){3}\d{1,3}$/;
-    const ipv6Regex =
-      /^([0-9a-fA-F]{1,4}:){7}[0-9a-fA-F]{1,4}$|^(([0-9a-fA-F]{1,4}:){0,6}[0-9a-fA-F]{1,4})?::([0-9a-fA-F]{1,4}:){0,6}[0-9a-fA-F]{1,4}$/;
-
-    return ipv4Regex.test(ip) || ipv6Regex.test(ip);
-  };
-
-  const handleAddIP = () => {
-    setError("");
-    if (!newIP) {
-      setError("Please enter an IP address");
-      return;
-    }
-
-    if (!isValidIP(newIP)) {
-      setError("Please enter a valid IP address");
-      return;
-    }
-
-    if (initialIPs.includes(newIP)) {
-      setError("This IP is already in the whitelist");
-      return;
-    }
-
-    onUpdate([...initialIPs, newIP]);
-    setNewIP("");
-  };
-
-  const handleRemoveIP = (ipToRemove) => {
-    onUpdate(initialIPs.filter((ip) => ip !== ipToRemove));
-  };
-
-  return (
-    <div className="space-y-4">
-      <div className="space-y-3">
-        <Label htmlFor="ipInput" className="text-sm font-medium">
-          IP Address Whitelist
-        </Label>
-        <div className="flex gap-3 max-w-md">
-          <Input
-            id="ipInput"
-            value={newIP}
-            onChange={(e) => setNewIP(e.target.value)}
-            placeholder="Enter IP address"
-            className="flex-1"
-          />
-          <Button onClick={handleAddIP} size="sm">
-            Add IP
-          </Button>
-        </div>
-        {error && <p className="text-sm text-destructive">{error}</p>}
-      </div>
-
-      <div className="flex flex-wrap gap-2">
-        {initialIPs.map((ip) => (
-          <Badge
-            key={ip}
-            variant="secondary"
-            className="flex items-center gap-2 px-3 py-1"
-          >
-            {ip}
-            <Button
-              variant="ghost"
-              size="sm"
-              className="h-4 w-4 p-0 hover:bg-transparent"
-              onClick={() => handleRemoveIP(ip)}
-            >
-              <X className="h-3 w-3" />
-            </Button>
-          </Badge>
-        ))}
-      </div>
-    </div>
-  );
-};

@@ -9,8 +9,18 @@ import { BlueIrisVehicleFrameRepository } from "../lib/blue-iris-vehicle-frame-r
 const { Pool } = pg;
 const connectionString = String(process.env.DATABASE_URL || "").trim();
 if (!connectionString) throw new Error("DATABASE_URL is required");
+const expectedDatabase = process.env.OVERVIEW_EXPORT_POSTGRES_TEST_DATABASE;
+if (process.env.OVERVIEW_EXPORT_POSTGRES_TEST_OPT_IN !== "true"
+    || !/^(?:fixture_test|codex_(?:overview_export|community_bugfix)_[0-9a-f]{8,32})$/.test(expectedDatabase || "")
+    || decodeURIComponent(new URL(connectionString).pathname.slice(1)) !== expectedDatabase) {
+  throw new Error("Overview export tests require an explicitly named disposable database.");
+}
 
 const pool = new Pool({ connectionString, max: 5 });
+try {
+  const guard = await pool.query("SELECT current_database() AS name, scope, guard_token FROM public.codex_integration_test_guard WHERE scope='overview-export:v1'");
+  assert.deepEqual(guard.rows, [{name:expectedDatabase,scope:"overview-export:v1",guard_token:process.env.OVERVIEW_EXPORT_POSTGRES_TEST_GUARD_TOKEN}]);
+} catch (error) { await pool.end(); throw error; }
 const migrations = await fs.readFile(new URL("../migrations.sql", import.meta.url), "utf8");
 const claimA = "11111111-1111-4111-8111-111111111111";
 const claimB = "22222222-2222-4222-8222-222222222222";
@@ -131,6 +141,10 @@ try {
         `Legacy route ${suffix}`,
       ],
     );
+    // This transaction models a pre-migration schema. Completed migrations are
+    // deliberately skipped by the tracked runner; reset only this fixture's
+    // target marker, and roll it back with the synthetic legacy constraint.
+    await legacyFallbackClient.query("DELETE FROM public.schema_migrations WHERE version='2026081201_entry_overview_route_payload'");
     await legacyFallbackClient.query(migrations);
     await legacyFallbackClient.query(
       `INSERT INTO public.vehicle_entry_fallback_decisions (
@@ -178,6 +192,7 @@ try {
          (LOWER($1), LOWER($2), LOWER($3), 'primary', 'street', 0, 1500, 92, TRUE)`,
       [`Duplicate Overview ${suffix}`, `Duplicate LPR ${suffix}`, `Duplicate Direction ${suffix}`]
     );
+    await duplicateClient.query("DELETE FROM public.schema_migrations WHERE version='2026081005_entry_overview_primary'");
     await assert.rejects(
       duplicateClient.query(migrations),
       /Duplicate enabled primary overview profiles/

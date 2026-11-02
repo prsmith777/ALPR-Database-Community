@@ -22,7 +22,7 @@ export const RETIRED_IDENTITY_TABLES = Object.freeze([
 ]);
 export const RETIRED_DIRECTION_PREDICATES = Object.freeze({
   vehicle_orientation_labels: "TRUE",
-  vehicle_direction_observations: "classifier_version <> 'blue-iris-zone-crossing-v1'",
+  vehicle_direction_observations: "classifier_version IN ('vehicle-reid-orientation-knn-v1','canonical-crop-orientation-knn-v2')",
 });
 export function compareMinimumCounts(sourceCounts, targetCounts) {
   const losses = [];

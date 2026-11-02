@@ -23,30 +23,30 @@ test("release information resolves a commit-pinned deployment image", () => {
     ALPR_RELEASE_CHANNEL: "staging",
   });
 
-  assert.equal(release.version, "0.1.59");
-  assert.equal(release.manualVersion, "3.27");
-  assert.equal(release.manualUpdatedAt, "November 1, 2026");
+  assert.equal(release.version, "0.1.60");
+  assert.equal(release.manualVersion, "3.28");
+  assert.equal(release.manualUpdatedAt, "November 2, 2026");
   assert.equal(release.gitSha, "8cd2fa8");
   assert.equal(release.channel, "staging");
   assert.equal(release.source, "commit-pinned image");
   assert.equal(release.readOnly, true);
   assert.equal(
     release.notes.title,
-    "Axis HTTP and MQTT camera inputs"
+    "Reliable upgrades, Blue Iris setup and Home Assistant displays"
   );
-  assert.equal(release.notes.publishedAt, "2026-11-01");
+  assert.equal(release.notes.publishedAt, "2026-11-02");
   assert.ok(release.notes.items.length >= 3);
   const notes = release.notes.items.join(" ");
-  assert.match(notes, /draggable header dividers/);
-  assert.match(notes, /Actions compact/);
-  assert.match(notes, /State\/Country/);
-  assert.match(notes, /off by default/);
-  assert.match(notes, /preview and unchanged-plate safeguards/);
-  assert.match(notes, /LPR camera/i);
-  assert.match(notes, /Linux or Windows/i);
-  assert.match(notes, /download percentages/i);
-  assert.match(notes, /Software Updates/);
-  assert.match(notes, /PowerShell 5\.1/);
+  assert.match(notes, /pending database migrations/);
+  assert.match(notes, /checksums/);
+  assert.match(notes, /Blue Iris v2 direction observations/);
+  assert.match(notes, /row-count validation and rollback/);
+  assert.match(notes, /recording short IDs/);
+  assert.match(notes, /explicit image owner/);
+  assert.match(notes, /read-only Home Assistant/);
+  assert.match(notes, /parent-origin restrictions/);
+  assert.match(notes, /User Guide 3\.28/);
+
 });
 
 test("an explicit valid SHA overrides the image tag", () => {
