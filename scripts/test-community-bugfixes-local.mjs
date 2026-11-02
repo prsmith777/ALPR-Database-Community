@@ -28,6 +28,22 @@ try {
   started=true;
   let browserTest;
   if (process.argv.includes("--browser")) browserTest=(await import("./test-community-browser.mjs")).exerciseBrowser;
+  if (process.argv.includes("--overview-export")) {
+    const previous = browserTest;
+    browserTest = async config => {
+      await config.pool.query("CREATE TABLE public.codex_integration_test_guard(scope TEXT PRIMARY KEY,guard_token TEXT NOT NULL)");
+      await config.pool.query("INSERT INTO public.codex_integration_test_guard VALUES ('overview-export:v1','local-disposable-pg17')");
+      const url = `postgresql://postgres:${secret}@127.0.0.1:${port}/${config.database}`;
+      const result=spawnSync(process.execPath,[path.join(import.meta.dirname,"test-overview-export-postgres.mjs")],{
+        windowsHide:true,encoding:"utf8",env:{...process.env,DATABASE_URL:url,
+          OVERVIEW_EXPORT_POSTGRES_TEST_OPT_IN:"true",OVERVIEW_EXPORT_POSTGRES_TEST_DATABASE:config.database,
+          OVERVIEW_EXPORT_POSTGRES_TEST_GUARD_TOKEN:"local-disposable-pg17"},
+      });
+      if(result.status!==0)throw new Error(result.stderr || result.error || "Overview fixture failed");
+      console.log(result.stdout.trim());
+      await previous?.(config);
+    };
+  }
   await exerciseCommunityBugfixes({host:"127.0.0.1",port,user:"postgres",password:secret},{browserTest});
 } finally {
   if(started)run("pg_ctl",["-D",data,"-w","-m","fast","stop"],{stdio:"ignore"});
