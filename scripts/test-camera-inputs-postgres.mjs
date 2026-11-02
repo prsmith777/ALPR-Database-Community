@@ -294,6 +294,11 @@ try {
     (error) => error.status === 409,
     "Buffered final-mode passages must finish before changing source identity",
   );
+  await assert.rejects(
+    () => repository.save({ processing_mode: "immediate" }, finalInput.id),
+    (error) => error.status === 409,
+    "Changing mode cannot strand buffered observations before their fallback runs",
+  );
   assert.equal(
     (
       await pool.query(
