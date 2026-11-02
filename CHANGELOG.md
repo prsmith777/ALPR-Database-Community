@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.1.61 — 2026-11-02
+
+- Return HTTP 404 for Home Assistant display image IDs outside the supported PostgreSQL integer range. Reject these IDs before querying images, avoiding the previous HTTP 503 response.
+- Preserve display authentication, camera scope, expiration, revocation and read-only restrictions. Add integer-boundary unit, PostgreSQL and production-browser regression checks.
+- Update User Guide 3.29 and current release/install/update guidance. This patch adds no database migrations; existing installations use the normal updater.
+
 ## 0.1.60 — 2026-11-02
 
 - Track ordered SQL migrations with verified checksums and legacy completion markers. Preserve the single-file updater entry point, atomic application, count validation and rollback. Completed cleanups no longer replay; Blue Iris v2 events remain visible and preserved.

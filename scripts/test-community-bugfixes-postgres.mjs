@@ -111,6 +111,11 @@ export async function exerciseCommunityBugfixes(server, { browserTest } = {}) {
         assert.equal(await displays.imagePath(auth,other.id),null);
         const handler = createDisplayReadHandler({service:displays,readImage:async()=>Buffer.from("fixture-image")});
         assert.equal((await handler(new Request("http://fixture",{headers:{authorization:"Bearer "+grant.token}}),{params:{grantId:grant.id,readId:read.id}})).status,200);
+        for (const readId of ["2147483647", "2147483648", "9999999999"]) {
+          const missing = await handler(new Request("http://fixture",{headers:{authorization:"Bearer "+grant.token}}),{params:{grantId:grant.id,readId}});
+          assert.equal(missing.status,404,"Unknown or out-of-range image ID: "+readId);
+          assert.equal(missing.headers.get("cache-control"),"no-store, private");
+        }
         await displays.revoke(grant.id);
         assert.equal(await displays.authorize(grant.id,"Bearer "+grant.token),null);
         assert.equal(await displays.publicGrant(grant.id),null);
