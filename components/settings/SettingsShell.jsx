@@ -50,6 +50,7 @@ const navigationSections = [
   {
     title: "Integrations",
     items: [
+      { title: "Camera Inputs", id: "cameraInputs", href: "/settings/integrations/camera-inputs", icon: ScanSearch, permission: "system.manage_settings" },
       { title: "MQTT", id: "mqtt", href: "/settings/integrations/mqtt", icon: Antenna, permission: "mqtt.manage" },
       { title: "Pushover", id: "pushover", href: "/settings/integrations/pushover", icon: Bell, permission: "system.manage_settings" },
       { title: "Email", id: "email", href: "/settings/integrations/email", icon: Mail, permission: "system.manage_settings" },

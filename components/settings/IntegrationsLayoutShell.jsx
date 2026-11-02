@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 import { SettingsShell } from "@/components/settings/SettingsShell";
 
 const pageDetails = {
+  "/settings/integrations/camera-inputs": { id: "cameraInputs", title: "Camera Inputs", description: "Configure Blue Iris and Axis plate recognition sources, HTTP push, and incoming MQTT events." },
   "/settings/integrations/mqtt": {
     id: "mqtt",
     title: "MQTT",

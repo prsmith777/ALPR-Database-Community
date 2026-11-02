@@ -301,7 +301,7 @@ test("plate-read trigger lookup executes mapped, unmapped, invalid, and omitted 
 
 test("plate ingestion promotes current mapped crossings while preserving legacy shadow data", async () => {
   const [route, migration, settings, readme] = await Promise.all([
-    readFile(new URL("../app/api/plate-reads/route.js", import.meta.url), "utf8"),
+    readFile(new URL("../lib/plate-read-ingestion.js", import.meta.url), "utf8"),
     readFile(new URL("../migrations.sql", import.meta.url), "utf8"),
     readFile(new URL("../components/settings/VehicleIntelligenceSettings.jsx", import.meta.url), "utf8"),
     readFile(new URL("../README.md", import.meta.url), "utf8"),
@@ -314,7 +314,7 @@ test("plate ingestion promotes current mapped crossings while preserving legacy 
   assert.match(route, /applyBlueIrisDirectionEligibility/);
   assert.match(route, /triggerType: blueIrisTriggerColumns\.bi_trigger_type/);
   assert.match(route, /directionStatus: blueIrisTriggerColumns\.bi_trigger_direction_status/);
-  assert.match(route, /directionErrorCode: blueIrisTriggerColumns\.bi_trigger_direction_error_code/);
+  assert.match(route, /directionErrorCode:\s+blueIrisTriggerColumns\.bi_trigger_direction_error_code/);
   assert.match(route, /processVehicleDirection/);
   assert.match(route, /\.\.\.blueIrisTriggerColumns/);
   assert.match(migration, /2026080702_blue_iris_trigger_direction_shadow/);

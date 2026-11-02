@@ -148,7 +148,7 @@ test("database advisory locking makes the durable preview single-flight", async 
 
 test("ingestion no longer invokes cleanup and maintenance schema is dry-run constrained", async () => {
   const [route, database, fileStorage, obsoleteCleanup, migrations] = await Promise.all([
-    readFile(new URL("../app/api/plate-reads/route.js", import.meta.url), "utf8"),
+    readFile(new URL("../lib/plate-read-ingestion.js", import.meta.url), "utf8"),
     readFile(new URL("../lib/db.js", import.meta.url), "utf8"),
     readFile(new URL("../lib/fileStorage.js", import.meta.url), "utf8"),
     readFile(new URL("../lib/cleanupService.js", import.meta.url), "utf8").catch(() => null),

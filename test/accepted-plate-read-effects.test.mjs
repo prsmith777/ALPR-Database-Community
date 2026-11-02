@@ -185,7 +185,7 @@ test("unexpected MQTT failures are returned and cannot block Pushover", async ()
 
 test("the plate route commits each read and MQTT outbox handoff atomically", async () => {
   const [source, migrations] = await Promise.all([
-    readFile(new URL("../app/api/plate-reads/route.js", import.meta.url), "utf8"),
+    readFile(new URL("../lib/plate-read-ingestion.js", import.meta.url), "utf8"),
     readFile(new URL("../migrations.sql", import.meta.url), "utf8"),
   ]);
 
@@ -231,7 +231,7 @@ test("the plate route commits each read and MQTT outbox handoff atomically", asy
   const mqttHandoff = source.indexOf(
     "await mqttService.processAcceptedRead(acceptedRead)"
   );
-  const commit = source.indexOf('await dbClient.query("COMMIT")');
+  const commit = source.lastIndexOf('await dbClient.query("COMMIT")');
   const acceptedEffects = source.indexOf("await processAcceptedPlateReadEffects");
   const pipelineTimeline = source.indexOf("await recordReadPipelineEvents");
 

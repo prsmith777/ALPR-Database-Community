@@ -35,7 +35,7 @@ test("Live Feed surfaces use a route-handler stream and ingestion publishes afte
   const fs = await import("node:fs/promises");
   const [route, ingestion, wrapper, viewer, delta] = await Promise.all([
     fs.readFile("app/api/sse/route.js", "utf8"),
-    fs.readFile("app/api/plate-reads/route.js", "utf8"),
+    fs.readFile("lib/plate-read-ingestion.js", "utf8"),
     fs.readFile("components/PlateTableWrapper.jsx", "utf8"),
     fs.readFile("components/LiveRecognitionViewer.jsx", "utf8"),
     fs.readFile("app/api/live-feed/changes/route.js", "utf8"),

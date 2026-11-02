@@ -254,7 +254,7 @@ test("migration enforces immutable observations, append-only reviews, and disabl
 });
 
 test("ingestion resolves aliases before known-plate behavior and durable notification handoff", async () => {
-  const route = await readFile(new URL("../app/api/plate-reads/route.js", import.meta.url), "utf8");
+  const route = await readFile(new URL("../lib/plate-read-ingestion.js", import.meta.url), "utf8");
   const resolveIndex = route.indexOf("resolvePlateAliasWithClient");
   const ignoredIndex = route.indexOf("isPlateIgnored(effectivePlate)");
   const recordIndex = route.indexOf("recordAliasApplicationWithClient");
