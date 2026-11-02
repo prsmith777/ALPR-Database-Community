@@ -1,6 +1,17 @@
 # Community product roadmap
 
-Last reviewed: November 1, 2026
+Last reviewed: November 2, 2026
+
+## Reliable upgrades and integration setup
+
+Community v0.1.60 tracks ordered database migrations with completion markers and
+checksums, preserving existing updater entry points and rollback safeguards.
+Completed cleanup does not replay, and Blue Iris v2 direction events are preserved.
+Blue Iris setup binds ALPR aliases to explicit recording short IDs, refreshes the
+camera list and requires an explicit read owner when several records match.
+Home Assistant uses revocable, expiring read-only displays with camera scopes and
+exact parent origins; the inactive IP bypass controls are retired. See
+[Home Assistant displays](HOME_ASSISTANT.md) and [Database migrations](../migrations/README.md).
 
 ## Axis camera recognition
 
