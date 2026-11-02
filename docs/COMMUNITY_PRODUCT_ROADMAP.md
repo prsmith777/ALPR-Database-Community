@@ -1,6 +1,17 @@
 # Community product roadmap
 
-Last reviewed: October 21, 2026
+Last reviewed: November 1, 2026
+
+## Axis camera recognition
+
+Community v0.1.59 adds per-camera recognition sources under Settings >
+Integrations > Camera Inputs. Existing Blue Iris cameras continue automatically.
+AXIS License Plate Verifier can send HTTP push, MQTT, or both, with configurable
+camera identity, broker/topic, images, ROI, direction labels and passage timing.
+Durable receipts support retry, transport deduplication and later corrections
+while preserving original observations and human review. Recognition remains
+independent of recording. Real Axis camera/firmware validation remains outstanding;
+see [Camera inputs](CAMERA_INPUTS.md) for supported formats and setup.
 
 ## Adjustable table columns
 
@@ -90,6 +101,8 @@ inherited Git history. Every release gate requires:
 
 - API-key-authenticated plate ingestion, including Blue Iris JSON and image
   macros;
+- AXIS License Plate Verifier HTTP/MQTT input with scoped credentials, durable
+  event receipts, configurable source selection and connection diagnostics;
 - an event-driven Recognition Feed, searchable database, dashboard, tags,
   known and monitored plates, audited corrections, recurring OCR aliases, and
   bounded CSV/JSON exports;

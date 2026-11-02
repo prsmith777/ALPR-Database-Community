@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.1.59 — 2026-11-01
+
+- Add configurable AXIS License Plate Verifier inputs through HTTP push, MQTT, or both under Settings > Integrations > Camera Inputs. Existing Blue Iris cameras continue automatically.
+- Store validated events durably before acknowledgement, correlate passages, deduplicate transports, apply later OCR/image/direction corrections, and preserve original observations and human review.
+- Configure camera identity, broker/topic, optional ROI, image storage, movement direction labels, and immediate or finalized processing; include connection tests and recent-event diagnostics.
+- Keep recording independent from recognition. Axis events do not create Blue Iris recording links or automatically enable vehicle identification from scene images.
+- Update User Guide 3.27 and installation/update examples. Physical Axis hardware was unavailable; firmware-specific compatibility still needs camera testing.
+- Fix the PostgreSQL integration-test connection password for authenticated CI servers.
+- Update vulnerable Next.js, Nodemailer and transitive dependencies; remove unused legacy image and UI-generator dependencies.
+
 ## 0.1.58 — 2026-10-21
 
 - Resize Recognition Feed and Plate Database columns using draggable header dividers or the keyboard, with separate saved widths per browser and a reset option.

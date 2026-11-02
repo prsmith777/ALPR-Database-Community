@@ -30,7 +30,7 @@ try {
   process.env.DB_HOST = `${testUrl.hostname}:${testUrl.port}`;
   process.env.DB_NAME = database;
   process.env.DB_USER = decodeURIComponent(testUrl.username || "postgres");
-  process.env.DB_PASSWORD = "test-only";
+  process.env.DB_PASSWORD = decodeURIComponent(testUrl.password || "test-only");
   process.env.ALPR_CONFIG_FILE_PATH = path.join(temporary, "settings.yaml");
   process.env.ALPR_AUTH_FILE_PATH = path.join(temporary, "auth.json");
   process.env.STORAGE_PATH = path.join(temporary, "storage");
