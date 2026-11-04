@@ -4,6 +4,21 @@ Open **Settings > Integrations > Camera Inputs**. Select a recognition source fo
 
 Recognition and recording are independent. An Axis camera may supply recognition directly while Blue Iris continues recording it. This integration does not manufacture Blue Iris alert/clip pointers for Axis events; playback pointers require an actual Blue Iris alert association. The existing Blue Iris recording setup remains available independently.
 
+## Delete a camera input
+
+Select **Delete input** in the camera's Actions column or configuration form,
+then confirm the named camera. Deletion stops new imports, revokes the input's
+HTTP credential and disconnects its MQTT subscription. Queued detections and
+unfinished passages are cancelled. Saved plate reads, direction observations,
+and saved plate/scene images are preserved, so the camera can still appear in
+historical data filters.
+
+Deleted inputs stay out of this settings list, including Blue Iris cameras
+discovered from history. Blue Iris recognition for a deleted camera name is
+ignored until you explicitly add that name again. **Add camera input** can
+reuse the name and device identity with a fresh input ID and HTTP credential.
+The camera's own publishing setup and a shared MQTT broker are managed separately.
+
 ## Blue Iris
 
 Use the exact camera name sent in the Blue Iris alert JSON. Send the existing alert body to `/api/plate-reads`, authenticated with the existing integration API key in `x-api-key` or `Authorization: Bearer`. Existing unregistered camera names continue to be accepted automatically.

@@ -43,7 +43,20 @@ try {
     new URL("../migrations.sql", import.meta.url),
     "utf8",
   );
+  const deletionMigration = migrations.indexOf("-- 0077_2026110301_camera_input_deletion.sql");
+  assert.ok(deletionMigration > 0);
+  await pool.query(migrations.slice(0, deletionMigration));
+  const upgradeId = "77777777-0000-4000-8000-000000000077";
+  const beforeUpgrade = (await pool.query(
+    `INSERT INTO public.camera_inputs(id,camera_name,source,transport,device_id,credential_hash)
+     VALUES ($1,'Upgrade Existing','axis','http','EE0000000077',repeat('a',64)) RETURNING *`, [upgradeId],
+  )).rows[0];
   await pool.query(migrations);
+  const { deleted_at: upgradeDeletedAt, ...afterUpgrade } = (await pool.query(
+    "SELECT * FROM public.camera_inputs WHERE id=$1", [upgradeId],
+  )).rows[0];
+  assert.equal(upgradeDeletedAt, null);
+  assert.deepEqual(afterUpgrade, beforeUpgrade, "Upgrading a populated installation preserves existing camera configuration");
   const [
     { processPlateRead, processCameraDirection },
     { default: storage },
@@ -670,8 +683,99 @@ try {
     timestamp: "2026-10-29T15:01:00.000Z",
   });
   assert.equal(after.status, 201);
+  // Removal preserves accepted history and image references, but cancels work
+  // that has not been imported. It must wait for an already-running ingestion.
+  const removable = await repository.get((await repository.save({
+    camera_name: "Delete Input", source: "axis", transport: "both",
+    device_id: "DD0000000001", processing_mode: "final",
+    broker_id: input.broker_id, topic_filter: "axis/delete/#",
+  })).input.id);
+  await deliver(removable, body(removable, {
+    plateText: "KEEP123", carID: "kept", carState: "lost", capture_timestamp: "1793294994000",
+    ImageArray: [{ ImageType: "plate", BinaryImage: image }, { ImageType: "scene", BinaryImage: image }],
+  }));
+  const kept = (await pool.query("SELECT * FROM public.plate_reads WHERE camera_name=$1", [removable.camera_name])).rows[0];
+  const scene = (await pool.query("SELECT * FROM public.camera_input_passages WHERE read_id=$1", [kept.id])).rows[0];
+  const buffered = await deliver(removable, body(removable, {
+    carID: "buffered", plateText: "DROP123", capture_timestamp: "1793295994000",
+  }));
+  const queued = await repository.receive(removable, body(removable, {
+    carID: "queued", plateText: "DROP456", capture_timestamp: "1793296994000",
+  }), "http");
+  const inflight = await repository.receive(removable, body(removable, {
+    carID: "inflight", plateText: "FLIGHT1", carState: "lost", capture_timestamp: "1793297994000",
+  }), "http");
+  let entered, proceed;
+  const enteredGate = new Promise((resolve) => { entered = resolve; });
+  const proceedGate = new Promise((resolve) => { proceed = resolve; });
+  const activeProcessor = new AxisEventProcessor({ pool, storage, ingest: async (...args) => {
+    entered(); await proceedGate; return processPlateRead(...args);
+  }});
+  const active = activeProcessor.process((await pool.query("SELECT * FROM public.camera_input_events WHERE id=$1", [inflight.eventId])).rows[0]);
+  let removal;
+  try {
+    await enteredGate;
+    let removed = false;
+    removal = repository.remove({ id: removable.id.toUpperCase(), camera_name: removable.camera_name }).then((result) => { removed = true; return result; });
+    let waiting = false;
+    const deadline = Date.now() + 3000;
+    while (!waiting && Date.now() < deadline) {
+      waiting = (await pool.query("SELECT EXISTS(SELECT 1 FROM pg_locks WHERE locktype='advisory' AND mode='ExclusiveLock' AND NOT granted) AS waiting")).rows[0].waiting;
+      if (!waiting) await new Promise((resolve) => setTimeout(resolve, 10));
+    }
+    assert.equal(waiting, true, "Deletion waits for in-flight passage processing");
+    assert.equal(removed, false);
+    proceed();
+    assert.equal(await active, true);
+    assert.equal((await removal).discarded_events, 1);
+  } finally {
+    proceed();
+    await Promise.allSettled([active, removal]);
+  }
+  assert.deepEqual((await pool.query("SELECT * FROM public.plate_reads WHERE id=$1", [kept.id])).rows[0], kept);
+  assert.ok(await storage.resolveExistingImagePath(kept.image_path));
+  assert.ok(await storage.resolveExistingImagePath(scene.scene_image_path));
+  assert.equal((await pool.query("SELECT scene_image_path FROM public.camera_input_passages WHERE id=$1", [scene.id])).rows[0].scene_image_path, scene.scene_image_path);
+  assert.equal((await pool.query("SELECT COUNT(*)::int AS count FROM public.plate_reads WHERE camera_name=$1", [removable.camera_name])).rows[0].count, 2);
+  assert.equal(await repository.get(removable.id), null);
+  assert.equal((await repository.list()).some((row) => row.camera_name === removable.camera_name), false, "History does not rediscover a deleted input as Blue Iris");
+  assert.equal((await repository.mqttInputs()).some((row) => row.id === removable.id), false);
+  await assert.rejects(() => repository.receive(removable, body(removable, { carID: "late" }), "http"), (error) => error.status === 403);
+  await assert.rejects(() => repository.save({ direction_in: "Changed" }, removable.id), (error) => error.status === 404);
+  for (const id of [buffered.eventId, queued.eventId]) {
+    const abandoned = (await pool.query("SELECT * FROM public.camera_input_events WHERE id=$1", [id])).rows[0];
+    assert.equal(await processor.process(abandoned, { finalize: true }), false);
+    assert.equal(abandoned.payload.image, undefined);
+    assert.notEqual(abandoned.status, "pending");
+  }
+  const deletedRow = (await pool.query("SELECT * FROM public.camera_inputs WHERE id=$1", [removable.id])).rows[0];
+  assert.equal(deletedRow.credential_hash, null);
+  assert.equal(deletedRow.broker_id, null);
+  assert.ok(deletedRow.deleted_at);
+  assert.equal((await repository.remove({ id: removable.id })).already_deleted, true);
+  const replacement = await repository.save({ camera_name: removable.camera_name, source: "axis", device_id: removable.device_id });
+  assert.notEqual(replacement.input.id, removable.id);
+  assert.ok(replacement.credential);
+  await repository.remove({ id: removable.id });
+  assert.ok(await repository.get(replacement.input.id), "A stale deletion cannot delete the replacement");
+  assert.equal((await pool.query("SELECT COUNT(*)::int AS count FROM public.mqttbrokers WHERE id=$1", [input.broker_id])).rows[0].count, 1);
+  assert.ok(await repository.get(input.id), "Other camera inputs are preserved");
+
+  assert.equal((await processPlateRead({ camera: "Legacy Delete", plate_number: "LEGACY1" })).status, 201);
+  assert.equal((await repository.list()).find((row) => row.camera_name === "Legacy Delete").legacy, true);
+  await repository.remove({ camera_name: "Legacy Delete" });
+  assert.equal((await repository.list()).some((row) => row.camera_name === "Legacy Delete"), false);
+  assert.equal((await processPlateRead({ camera: "Legacy Delete", plate_number: "BLOCKED" })).status, 200);
+  assert.equal((await pool.query("SELECT COUNT(*)::int AS count FROM public.plate_reads WHERE camera_name='Legacy Delete'")).rows[0].count, 1);
+  const biReplacement = await repository.save({ camera_name: "Legacy Delete", source: "blue_iris" });
+  await assert.rejects(() => repository.remove({ camera_name: "Legacy Delete" }), (error) => error.status === 409, "A stale implicit-camera action cannot delete a newly configured input");
+  assert.equal((await processPlateRead({ camera: "Legacy Delete", plate_number: "RESTORE" })).status, 201);
+  assert.ok(await repository.get(biReplacement.input.id));
+  assert.equal((await pool.query("SELECT connection_status FROM public.camera_inputs WHERE camera_name='Legacy Delete' AND deleted_at IS NOT NULL")).rows[0].connection_status, "deleted");
+  await pool.query(migrations);
+  assert.equal(await repository.get(removable.id), null, "Repeated migrations preserve deletion");
   console.log(
-    "PASS: real PostgreSQL schema/upgrade, existing Blue Iris ingestion, Axis HTTP/MQTT deduplication, corrections, immutable observations, image storage, finalization, carID reuse, manual review preservation, transaction rollback and retry.",
+    "PASS: real PostgreSQL schema/upgrade, Blue Iris compatibility, Axis HTTP/MQTT deduplication, corrections, images, finalization, rollback/retry, camera input deletion, in-flight synchronization, history preservation and safe replacement.",
   );
 } catch (error) {
   console.error(

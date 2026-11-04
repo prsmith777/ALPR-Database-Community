@@ -9542,3 +9542,34 @@ $source_ae7c8a94fcbe92b3$;
   END IF;
 END;
 $migration$;
+
+-- 0077_2026110301_camera_input_deletion.sql
+DO $migration$
+DECLARE recorded_hash TEXT;
+BEGIN
+  SELECT sql_sha256 INTO recorded_hash FROM public.schema_migrations WHERE version = '2026110301_camera_input_deletion';
+  IF FOUND THEN
+    IF recorded_hash IS NOT NULL AND recorded_hash <> 'b9f84473098bb46f9c93f7f71eb46efe53aedd5d0b69fab9b8a974189cd5a199' THEN
+      RAISE EXCEPTION 'Applied migration checksum differs: 2026110301_camera_input_deletion';
+    END IF;
+    IF recorded_hash IS NULL THEN
+      UPDATE public.schema_migrations SET sql_sha256 = 'b9f84473098bb46f9c93f7f71eb46efe53aedd5d0b69fab9b8a974189cd5a199' WHERE version = '2026110301_camera_input_deletion';
+    END IF;
+  ELSE
+    EXECUTE $source_b9f84473098bb46f$-- migration: 2026110301_camera_input_deletion
+-- Keep source identity and passage/image references after removing an input.
+ALTER TABLE public.camera_inputs ADD COLUMN deleted_at TIMESTAMPTZ;
+DROP INDEX public.uq_camera_inputs_name;
+CREATE UNIQUE INDEX uq_camera_inputs_name ON public.camera_inputs(LOWER(BTRIM(camera_name))) WHERE deleted_at IS NULL;
+DROP INDEX public.uq_camera_inputs_device;
+CREATE UNIQUE INDEX uq_camera_inputs_device ON public.camera_inputs(device_id) WHERE source='axis' AND deleted_at IS NULL;
+INSERT INTO public.schema_migrations(version,description) VALUES
+ ('2026110301_camera_input_deletion','Remove camera inputs while preserving imported reads, images and archived source identity.');
+$source_b9f84473098bb46f$;
+    IF NOT EXISTS (SELECT 1 FROM public.schema_migrations WHERE version = '2026110301_camera_input_deletion') THEN
+      RAISE EXCEPTION 'Migration did not record completion: 2026110301_camera_input_deletion';
+    END IF;
+    UPDATE public.schema_migrations SET sql_sha256 = 'b9f84473098bb46f9c93f7f71eb46efe53aedd5d0b69fab9b8a974189cd5a199' WHERE version = '2026110301_camera_input_deletion';
+  END IF;
+END;
+$migration$;

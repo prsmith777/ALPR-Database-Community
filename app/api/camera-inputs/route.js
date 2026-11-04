@@ -2,6 +2,7 @@ import { getPool } from "@/lib/db";
 import { denyUnlessRoutePermission } from "@/lib/route-permission.mjs";
 import { CameraInputRepository } from "@/lib/camera-inputs/repository.mjs";
 import { InputError, readAxisRequest } from "@/lib/camera-inputs/axis.mjs";
+import { refreshCameraInputs } from "@/lib/camera-inputs/runtime.mjs";
 
 export async function GET() {
   const denied = await denyUnlessRoutePermission("system.manage_settings");
@@ -56,6 +57,24 @@ export async function POST(request) {
                 : "Unable to save camera settings",
       },
       { status },
+    );
+  }
+}
+
+export async function DELETE(request) {
+  const denied = await denyUnlessRoutePermission("system.manage_settings");
+  if (denied) return denied;
+  try {
+    const data = await readAxisRequest(request, 64 * 1024);
+    if (!data || Array.isArray(data) || typeof data !== "object")
+      throw new InputError("Expected a camera input to delete");
+    const result = await new CameraInputRepository(await getPool()).remove(data);
+    refreshCameraInputs();
+    return Response.json(result, { headers: { "Cache-Control": "no-store" } });
+  } catch (error) {
+    return Response.json(
+      { error: error instanceof InputError ? error.message : "Unable to delete camera input" },
+      { status: error instanceof InputError ? error.status : 503 },
     );
   }
 }
