@@ -1,6 +1,6 @@
 # Community product roadmap
 
-Last reviewed: November 2, 2026
+Last reviewed: November 4, 2026
 
 ## Reliable upgrades and integration setup
 
@@ -23,6 +23,11 @@ Durable receipts support retry, transport deduplication and later corrections
 while preserving original observations and human review. Recognition remains
 independent of recording. Real Axis camera/firmware validation remains outstanding;
 see [Camera inputs](CAMERA_INPUTS.md) for supported formats and setup.
+
+Community v0.1.62 adds camera input deletion for Axis and Blue Iris, including
+automatically discovered Blue Iris cameras. Deletion stops imports and cancels
+unfinished work while preserving saved plate history and images. Deleted inputs
+stay hidden; explicitly adding the camera again creates a fresh input identity.
 
 ## Adjustable table columns
 

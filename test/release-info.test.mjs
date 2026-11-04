@@ -23,28 +23,28 @@ test("release information resolves a commit-pinned deployment image", () => {
     ALPR_RELEASE_CHANNEL: "staging",
   });
 
-  assert.equal(release.version, "0.1.61");
+  assert.equal(release.version, "0.1.62");
   assert.equal(release.manualVersion, "3.30");
-  assert.equal(release.manualUpdatedAt, "November 3, 2026");
+  assert.equal(release.manualUpdatedAt, "November 4, 2026");
   assert.equal(release.gitSha, "8cd2fa8");
   assert.equal(release.channel, "staging");
   assert.equal(release.source, "commit-pinned image");
   assert.equal(release.readOnly, true);
   assert.equal(
     release.notes.title,
-    "Home Assistant display image validation"
+    "Camera input deletion"
   );
-  assert.equal(release.notes.publishedAt, "2026-11-02");
+  assert.equal(release.notes.publishedAt, "2026-11-04");
   assert.ok(release.notes.items.length >= 3);
   const notes = release.notes.items.join(" ");
-  assert.match(notes, /HTTP 404/);
-  assert.match(notes, /oversized Home Assistant display image IDs/);
-  assert.match(notes, /before querying images/);
-  assert.match(notes, /read-only display access/);
-  assert.match(notes, /camera scope, expiration, revocation/);
-  assert.match(notes, /parent-origin restrictions/);
-  assert.match(notes, /no database migrations/);
-  assert.match(notes, /User Guide 3\.29/);
+  assert.match(notes, /Delete Axis and Blue Iris camera inputs/);
+  assert.match(notes, /saved plate history and images preserved/);
+  assert.match(notes, /revoke the HTTP credential/);
+  assert.match(notes, /MQTT subscription/);
+  assert.match(notes, /fresh input identity and credential/);
+  assert.match(notes, /tracked database migration/);
+  assert.match(notes, /without manual SQL/);
+  assert.match(notes, /User Guide 3\.30/);
 
 });
 

@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.1.62 — 2026-11-04
+
+- Add **Delete input** to Axis and Blue Iris camera input settings, including automatically discovered Blue Iris cameras, with a named confirmation dialog.
+- Stop imports, revoke the deleted input's HTTP credential, retire its live MQTT subscription, and cancel queued detections and unfinished passages. Preserve saved plate reads, direction observations, images, shared brokers, and other camera inputs.
+- Keep deleted inputs out of the settings list after refresh. Re-adding the same camera creates a fresh input identity and credential; stale deletion requests cannot remove its replacement.
+- Add a tracked database migration and real PostgreSQL, MQTT and browser coverage for deletion, in-flight processing and history preservation. Update User Guide 3.30 and current install/update guidance; existing installations use the normal updater without manual SQL.
+
 ## 0.1.61 — 2026-11-02
 
 - Return HTTP 404 for Home Assistant display image IDs outside the supported PostgreSQL integer range. Reject these IDs before querying images, avoiding the previous HTTP 503 response.

@@ -47,7 +47,7 @@ shown on the GitHub Releases page, rather than deploying moving `main`:
 ```bash
 git clone https://github.com/prsmith777/ALPR-Database-Community.git
 cd ALPR-Database-Community
-git checkout --detach v0.1.61
+git checkout --detach v0.1.62
 ./alpr-community install
 ```
 
@@ -88,7 +88,7 @@ alpr_native_update() (
   set -Eeuo pipefail
   download_dir="$(mktemp -d /tmp/alpr-maintenance-download.XXXXXX)"
   trap 'rm -rf -- "$download_dir"' EXIT
-  asset_base="https://github.com/prsmith777/ALPR-Database-Community/releases/download/v0.1.61"
+  asset_base="https://github.com/prsmith777/ALPR-Database-Community/releases/download/v0.1.62"
   curl -fLsS --retry 3 "$asset_base/community-maintenance.sh" -o "$download_dir/community-maintenance.sh"
   curl -fLsS --retry 3 "$asset_base/community-maintenance.sh.sha256" -o "$download_dir/community-maintenance.sh.sha256"
   (cd "$download_dir" && sha256sum --check --strict community-maintenance.sh.sha256)
@@ -99,7 +99,7 @@ unset -f alpr_native_update
 ```
 
 The launcher verifies the canonical repository and exact released tag, loads the
-fixed tools outside your checkout, and asks for **INSTALL v0.1.61**. It uses the
+fixed tools outside your checkout, and asks for **INSTALL v0.1.62**. It uses the
 same guarded backup/install workflow and does not reset or reinstall your system.
 It temporarily stops only this installation's matching per-user systemd update
 agent, then restarts it with the installed code. Keep the terminal open and do
@@ -371,6 +371,19 @@ ALPR_UPDATE_CLEANUP=ALPR_UPDATE_CLEANUP
 
 These acknowledgements prevent an unattended typo from installing, accepting,
 rolling back, or deleting rollback assets. They are not passwords.
+
+## v0.1.62: camera input deletion
+
+Use the normal Windows or Linux update workflow. The updater applies the new
+tracked migration without manual SQL. Existing camera inputs remain enabled
+and keep their saved configuration unless you explicitly delete them.
+
+Open **Settings > Integrations > Camera Inputs**, select **Delete input**, and
+confirm the named camera. Imports stop, queued detections and unfinished passages
+are cancelled, and saved plate history and images are kept. Deleted Blue Iris
+camera names are ignored until explicitly added again. To reconnect any deleted
+camera, use **Add camera input** and configure its new HTTP endpoint/credential
+or MQTT subscription as appropriate. See [Camera inputs](CAMERA_INPUTS.md).
 
 ## v0.1.61: Home Assistant image validation
 
