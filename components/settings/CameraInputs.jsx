@@ -2,9 +2,13 @@
 
 import Link from "next/link";
 import Image from "next/image";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import {
+  AlertDialog, AlertDialogCancel, AlertDialogContent, AlertDialogDescription,
+  AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import {
   Card,
   CardContent,
@@ -30,13 +34,13 @@ const blank = {
 };
 const selectClass =
   "h-10 w-full rounded-md border border-input bg-background px-3 text-sm";
-async function api(url, data) {
+async function api(url, data, method = "POST") {
   const response = await fetch(
     url,
     data === undefined
       ? { cache: "no-store" }
       : {
-          method: "POST",
+          method,
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(data),
         },
@@ -69,6 +73,10 @@ export function CameraInputs() {
   const [brokerDraft, setBrokerDraft] = useState(null);
   const [origin, setOrigin] = useState("");
   const [loaded, setLoaded] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState(null);
+  const [deleteError, setDeleteError] = useState("");
+  const deleteTrigger = useRef(null);
+  const addCameraButton = useRef(null);
   const load = useCallback(async () => {
     const result = await api("/api/camera-inputs");
     setInputs(result.inputs);
@@ -169,6 +177,35 @@ export function CameraInputs() {
       setBusy(false);
     }
   }
+  async function remove() {
+    const target = deleteTarget;
+    if (!target || busy) return;
+    setBusy(true);
+    setDeleteError("");
+    try {
+      await api("/api/camera-inputs", { id: target.id, camera_name: target.camera_name }, "DELETE");
+      setInputs((current) => current.filter((input) => input.camera_name !== target.camera_name));
+      if (draft?.camera_name === target.camera_name) {
+        setDraft(null);
+        setBrokerDraft(null);
+      }
+      setCredential((current) => current?.id === target.id ? null : current);
+      setListening(null);
+      setEvents([]);
+      setDeleteTarget(null);
+      setMessage("Camera input deleted. Saved plate history and images are kept.");
+      await load().catch(() => setMessage("Camera input deleted. Refresh the page to reload the list."));
+    } catch (error) {
+      setDeleteError(error.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+  const confirmDelete = (input) => {
+    deleteTrigger.current = document.activeElement;
+    setDeleteError("");
+    setDeleteTarget(input);
+  };
   return (
     <div className="space-y-6">
       <Card>
@@ -181,7 +218,7 @@ export function CameraInputs() {
                 Existing Blue Iris cameras work automatically.
               </CardDescription>
             </div>
-            <Button onClick={() => edit(blank)}>Add camera input</Button>
+            <Button ref={addCameraButton} onClick={() => edit(blank)}>Add camera input</Button>
           </div>
         </CardHeader>
         <CardContent>
@@ -259,6 +296,15 @@ export function CameraInputs() {
                             ) : null}
                           </>
                         ) : null}
+                        <Button
+                          variant="destructive"
+                          size="sm"
+                          disabled={busy}
+                          aria-label={`Delete input ${input.camera_name}`}
+                          onClick={() => confirmDelete(input)}
+                        >
+                          Delete input
+                        </Button>
                       </div>
                     </td>
                   </tr>
@@ -270,6 +316,7 @@ export function CameraInputs() {
             <p className="py-6 text-muted-foreground">
               Connect your first camera using Add camera input. Existing Blue
               Iris feeds also appear automatically after their first read.
+              To reconnect a deleted camera, use Add camera input.
             </p>
           ) : null}
         </CardContent>
@@ -633,10 +680,15 @@ export function CameraInputs() {
                 />
                 Enable this input
               </label>
-              <div className="flex gap-3">
+              <div className="flex flex-wrap gap-3">
                 <Button disabled={busy || !draft.source} type="submit">
                   {busy ? "Saving…" : "Save camera input"}
                 </Button>
+                {draft.id || draft.legacy ? (
+                  <Button type="button" variant="destructive" disabled={busy} onClick={() => confirmDelete(draft)}>
+                    Delete input
+                  </Button>
+                ) : null}
                 <Button
                   type="button"
                   variant="outline"
@@ -738,6 +790,30 @@ export function CameraInputs() {
           Configure Blue Iris
         </Link>
       </p>
+      <AlertDialog open={Boolean(deleteTarget)} onOpenChange={(open) => {
+        if (!open && !busy) { setDeleteTarget(null); setDeleteError(""); }
+      }}>
+        <AlertDialogContent onCloseAutoFocus={(event) => {
+          event.preventDefault();
+          const target = deleteTrigger.current?.isConnected ? deleteTrigger.current : addCameraButton.current;
+          target?.focus();
+        }}>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete camera input?</AlertDialogTitle>
+            <AlertDialogDescription>
+              ALPR will stop importing from <strong>{deleteTarget?.camera_name}</strong> and cancel its queued detections
+              and unfinished passages. Saved plate history and images are kept.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          {deleteError ? <p role="alert" className="text-sm text-destructive">{deleteError}</p> : null}
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={busy}>Cancel</AlertDialogCancel>
+            <Button variant="destructive" disabled={busy} onClick={() => void remove()}>
+              {busy ? "Deleting…" : "Delete input"}
+            </Button>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

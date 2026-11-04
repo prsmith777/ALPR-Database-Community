@@ -438,6 +438,7 @@ test("real MQTT QoS 1 acknowledges poison input and persists valid input before 
   const sockets = new Set();
   let socket;
   const acked = new Set();
+  let unsubscribed = false;
   let persist;
   let received;
   const receivedGate = new Promise((resolve) => {
@@ -473,6 +474,10 @@ test("real MQTT QoS 1 acknowledges poison input and persists valid input before 
           resolve();
         }
         if (packet.cmd === "puback") acked.add(packet.messageId);
+        if (packet.cmd === "unsubscribe") {
+          unsubscribed = packet.unsubscriptions.includes("axis/test/event");
+          connection.write(mqttPacket.generate({ cmd: "unsuback", messageId: packet.messageId }));
+        }
       });
     });
     server.listen(0, "127.0.0.1");
@@ -536,6 +541,10 @@ test("real MQTT QoS 1 acknowledges poison input and persists valid input before 
     while (!acked.has(7) && Date.now() < until)
       await new Promise((resolve) => setTimeout(resolve, 10));
     assert.equal(acked.has(7), true);
+    runtime.repository.mqttInputs = async () => [];
+    await runtime.sync();
+    assert.equal(unsubscribed, true, "Removing an input cancels its live broker subscription");
+    assert.equal(runtime.clients.size, 0);
   } finally {
     persist();
     await runtime.stop();
