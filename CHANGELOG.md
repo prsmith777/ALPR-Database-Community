@@ -5,6 +5,7 @@
 - Restore touch scrolling inside the Tags and Cameras dropdowns in mobile Recognition Feed search options, including long camera and tag lists.
 - Preserve the filter panel's background scroll lock and keep its Close button above the sticky header.
 - Add browser regression checks using 30 cameras and 40 tags, including native touch swipes, WebKit touch-event handling and desktop scrolling.
+- Pin the verified legacy Linux maintenance launcher to this release and add a version-consistency check against the update guide.
 - Update User Guide 3.31 and current release/install/update guidance. This patch adds no database migrations; existing installations use the normal updater.
 
 ## 0.1.62 — 2026-11-04

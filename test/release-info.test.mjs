@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
+import packageJson from "../package.json" with { type: "json" };
 
 import {
   getReleaseInfo,
@@ -16,6 +17,12 @@ import {
 async function source(path) {
   return readFile(new URL(`../${path}`, import.meta.url), "utf8");
 }
+
+test("the legacy maintenance launcher targets the documented current release", async () => {
+  const launcher = await source("community-maintenance.sh");
+  assert.equal(launcher.match(/^release_tag="(v\d+\.\d+\.\d+)"/m)?.[1], "v"+packageJson.version);
+  assert.ok((await source("docs/UPDATES.md")).includes("**INSTALL v"+packageJson.version+"**"));
+});
 
 test("release information resolves a commit-pinned deployment image", () => {
   const release = getReleaseInfo({

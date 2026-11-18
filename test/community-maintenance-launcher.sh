@@ -5,6 +5,8 @@ fixture="$(mktemp -d /tmp/alpr-maintenance-test.XXXXXX)"
 trap 'case "$fixture" in /tmp/alpr-maintenance-test.*) rm -rf -- "$fixture" ;; esac' EXIT
 mkdir -p "$fixture/bin" "$fixture/installation" "$fixture/source/scripts"
 export MAINTENANCE_FIXTURE_ROOT="$fixture"
+export MAINTENANCE_FIXTURE_VERSION="$(node -p "require('$repository_root/package.json').version")"
+export MAINTENANCE_FIXTURE_TAG="v$MAINTENANCE_FIXTURE_VERSION"
 export ALPR_NODE_BINARY="$(command -v node)"
 export PATH="$fixture/bin:$PATH"
 export FIXTURE_MODE=success
@@ -19,11 +21,11 @@ case "$*" in
     else echo https://github.com/prsmith777/ALPR-Database-Community.git; fi ;;
   'status --porcelain --untracked-files=no') [[ "$FIXTURE_MODE" != dirty ]] || echo ' M tracked-file'; true ;;
   'fetch origin '* ) [[ "$FIXTURE_MODE" != fetch-failed ]] ;;
-  'rev-parse v0.1.46^{commit}') printf '%040d\n' 2 ;;
+  "rev-parse $MAINTENANCE_FIXTURE_TAG^{commit}") printf '%040d\n' 2 ;;
   'merge-base --is-ancestor '* ) [[ "$FIXTURE_MODE" != wrong-branch ]] ;;
   'show '*':package.json')
     if [[ "$FIXTURE_MODE" == wrong-version ]]; then echo '{"version":"0.1.42"}'
-    else echo '{"version":"0.1.46"}'; fi ;;
+    else printf '{"version":"%s"}\n' "$MAINTENANCE_FIXTURE_VERSION"; fi ;;
   'archive --format=tar '*) tar -cf - -C "$MAINTENANCE_FIXTURE_ROOT/source" . ;;
   *) echo "Unexpected Git mutation: $*" >&2; exit 1 ;;
 esac
@@ -36,7 +38,7 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 const fixture = process.env.MAINTENANCE_FIXTURE_ROOT;
 assert.equal(process.argv[2], join(fixture, "installation"));
-assert.equal(process.argv[3], "v0.1.46");
+assert.equal(process.argv[3], process.env.MAINTENANCE_FIXTURE_TAG);
 assert.ok(!fileURLToPath(import.meta.url).startsWith(join(fixture, "installation")));
 writeFileSync(join(fixture, "called"), "verified isolated driver");
 STUB
