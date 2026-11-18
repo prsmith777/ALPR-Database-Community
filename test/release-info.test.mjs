@@ -23,28 +23,28 @@ test("release information resolves a commit-pinned deployment image", () => {
     ALPR_RELEASE_CHANNEL: "staging",
   });
 
-  assert.equal(release.version, "0.1.62");
-  assert.equal(release.manualVersion, "3.30");
-  assert.equal(release.manualUpdatedAt, "November 4, 2026");
+  assert.equal(release.version, "0.1.63");
+  assert.equal(release.manualVersion, "3.31");
+  assert.equal(release.manualUpdatedAt, "November 18, 2026");
   assert.equal(release.gitSha, "8cd2fa8");
   assert.equal(release.channel, "staging");
   assert.equal(release.source, "commit-pinned image");
   assert.equal(release.readOnly, true);
   assert.equal(
     release.notes.title,
-    "Camera input deletion"
+    "Mobile filter scrolling"
   );
-  assert.equal(release.notes.publishedAt, "2026-11-04");
+  assert.equal(release.notes.publishedAt, "2026-11-18");
   assert.ok(release.notes.items.length >= 3);
   const notes = release.notes.items.join(" ");
-  assert.match(notes, /Delete Axis and Blue Iris camera inputs/);
-  assert.match(notes, /saved plate history and images preserved/);
-  assert.match(notes, /revoke the HTTP credential/);
-  assert.match(notes, /MQTT subscription/);
-  assert.match(notes, /fresh input identity and credential/);
-  assert.match(notes, /tracked database migration/);
+  assert.match(notes, /Restore touch scrolling/);
+  assert.match(notes, /every tag and camera/);
+  assert.match(notes, /background|page behind the filter panel/);
+  assert.match(notes, /Close button/);
+  assert.match(notes, /30 cameras and 40 tags/);
+  assert.match(notes, /no database migrations/);
   assert.match(notes, /without manual SQL/);
-  assert.match(notes, /User Guide 3\.30/);
+  assert.match(notes, /User Guide 3\.31/);
 
 });
 
