@@ -1599,11 +1599,13 @@ export default function PlateTable({
   };
 
   // Mobile filter sheet content
+  // Portalled dropdowns need their own scroll lock inside the modal sheet.
   const MobileFilters = () => (
     <div className="space-y-6 py-4">
       <div className="space-y-2">
         <h4 className="text-sm font-medium">Filter by Tag</h4>
         <MultiSelectFilter
+          modal
           ariaLabel="Filter by tags"
           allLabel="All tags"
           value={selectedTags}
@@ -1617,6 +1619,7 @@ export default function PlateTable({
       <div className="space-y-2">
         <h4 className="text-sm font-medium">Filter by Camera</h4>
         <MultiSelectFilter
+          modal
           ariaLabel="Filter by cameras"
           allLabel="All cameras"
           value={selectedCameras}
@@ -1629,6 +1632,7 @@ export default function PlateTable({
       <div className="space-y-2">
         <h4 className="text-sm font-medium">Filter by Review Status</h4>
         <MultiSelectFilter
+          modal
           ariaLabel="Filter by review status"
           allLabel="All review statuses"
           value={selectedReviewStatuses}
@@ -1641,6 +1645,7 @@ export default function PlateTable({
       <div className="space-y-2">
         <h4 className="text-sm font-medium">Filter by Direction</h4>
         <MultiSelectFilter
+          modal
           ariaLabel="Filter by direction"
           allLabel="All directions"
           value={selectedDirections}
@@ -1896,7 +1901,7 @@ export default function PlateTable({
                   </Tooltip>
                   <SheetContent
                     side="bottom"
-                    className="h-[80vh] px-4 pt-0 pb-8 overflow-y-auto"
+                    className="h-[80vh] px-4 pt-0 pb-8 overflow-y-auto [&>button]:z-20"
                   >
                     <SheetHeader className="sticky top-0 bg-background pt-4 pb-2 z-10">
                       <SheetTitle>Filter Results</SheetTitle>

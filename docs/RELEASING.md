@@ -11,7 +11,9 @@ pull request verifies that the complete published surface is synchronized.
    compatibility impact, and documentation changes.
 3. Update `lib/release-info.mjs` and its tests so **Settings → Release** shows
    the correct title, date, and concise release notes.
-4. Update exact-tag examples in `docs/INSTALL.md` and `docs/UPDATES.md`.
+4. Update exact-tag examples in `docs/INSTALL.md` and `docs/UPDATES.md`, and pin
+   `community-maintenance.sh` to the same release tag so its confirmation and
+   isolated update tools agree with the published instructions.
 5. Update the version placeholder in `.github/ISSUE_TEMPLATE/bug_report.yml`.
 6. Run the complete test, sanitation, typecheck, lint, application-build, and
    Docker-image gates before merging.

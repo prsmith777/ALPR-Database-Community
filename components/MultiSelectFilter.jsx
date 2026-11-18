@@ -18,6 +18,7 @@ export default function MultiSelectFilter({
   onChange,
   exclusiveValues = [],
   className,
+  modal = false,
 }) {
   const selected = Array.isArray(value) ? value : [];
 
@@ -46,7 +47,7 @@ export default function MultiSelectFilter({
         : `${selected.length} selected`;
 
   return (
-    <Popover>
+    <Popover modal={modal}>
       <PopoverTrigger asChild>
         <Button
           id={id}

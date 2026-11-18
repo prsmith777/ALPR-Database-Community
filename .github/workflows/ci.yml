@@ -14,6 +14,39 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  mobile-filter-scroll:
+    name: Mobile filter scrolling
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - name: Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: 24
+      - name: Install locked application dependencies
+        run: yarn install --frozen-lockfile --ignore-scripts
+      - name: Install isolated browser test tools
+        run: |
+          npm install --prefix "$RUNNER_TEMP/alpr-mobile-scroll-runtime" --no-audit --no-fund playwright@1.65.1 esbuild@0.28.2
+          node "$RUNNER_TEMP/alpr-mobile-scroll-runtime/node_modules/playwright/cli.js" install --with-deps chromium webkit
+      - name: Verify mobile touch, WebKit and desktop scrolling
+        run: |
+          ALPR_TEST_PLAYWRIGHT_MODULE="$RUNNER_TEMP/alpr-mobile-scroll-runtime/node_modules/playwright/index.mjs" \
+          ALPR_TEST_ESBUILD_MODULE="$RUNNER_TEMP/alpr-mobile-scroll-runtime/node_modules/esbuild/lib/main.js" \
+          node scripts/test-mobile-filter-scroll.mjs
+      - name: Keep synthetic browser test evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: mobile-filter-scroll-evidence
+          path: output/mobile-filter-scroll/
+          retention-days: 7
+          if-no-files-found: warn
+
   linux-update-helper:
     name: Linux helper and unattended startup
     runs-on: ubuntu-latest
